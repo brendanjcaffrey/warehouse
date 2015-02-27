@@ -17,7 +17,10 @@ module Export
         set output to output & start of thisTrack & "\n"
         set output to output & finish of thisTrack & "\n"
         set output to output & track number of thisTrack & "\n"
+        set output to output & track count of thisTrack & "\n"
         set output to output & disc number of thisTrack & "\n"
+        set output to output & disc count of thisTrack & "\n"
+        set output to output & played count of thisTrack & "\n"
         output & location of thisTrack as text
       end tell
       SCRIPT
