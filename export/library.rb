@@ -1,10 +1,21 @@
 module Export
   class Library
+    SET_DELIMS = <<-SCRIPT
+      set AppleScript'"'"'s text item delimiters to {}
+      set oldDelims to AppleScript'"'"'s text item delimiters
+    SCRIPT
+
+    RESET_DELIMS = <<-SCRIPT
+      set AppleScript'\"'\"'s text item delimiters to oldDelims
+    SCRIPT
+
     TOTAL_TRACK_COUNT = 'tell application "iTunes" to get count of tracks in library playlist 1'
     TRACK_INFO = <<-SCRIPT
       tell application "iTunes"
-        set thisTrack to track %d of library playlist 1
+        set output to ""
+        set thisTrack to track %d
 
+        #{SET_DELIMS}
         set output to database ID of thisTrack & "\n"
         set output to output & name of thisTrack & "\n"
         set output to output & sort name of thisTrack & "\n"
@@ -21,9 +32,39 @@ module Export
         set output to output & disc number of thisTrack & "\n"
         set output to output & disc count of thisTrack & "\n"
         set output to output & played count of thisTrack & "\n"
-        output & location of thisTrack as text
+        set output to output & location of thisTrack as text
+        #{RESET_DELIMS}
+
+        output
       end tell
-      SCRIPT
+    SCRIPT
+
+    TOTAL_PLAYLIST_COUNT = 'tell application "iTunes" to get count of user playlists'
+
+    PLAYLIST_INFO = <<-SCRIPT
+      tell application "iTunes"
+        set output to ""
+        set thisPlaylist to user playlist %1$d
+
+        #{SET_DELIMS}
+        set output to output & id of thisPlaylist & "\n"
+        set output to output & name of thisPlaylist & "\n"
+
+        try
+          get parent of thisPlaylist
+          set output to output & id of parent of thisPlaylist & "\n"
+        on error
+          set output to output & "-1" & "\n"
+        end try
+
+        repeat with thisTrack in tracks of user playlist %1$d
+          set output to output & database ID of thisTrack & "\n"
+        end repeat
+        #{RESET_DELIMS}
+
+        output
+      end tell
+    SCRIPT
 
     def total_track_count
       `osascript -e '#{TOTAL_TRACK_COUNT}'`.to_i
@@ -33,6 +74,16 @@ module Export
       track_number = track_index + 1
       split = `osascript -e '#{TRACK_INFO % track_number}'`.split("\n")
       Track.new(*split)
+    end
+
+    def total_playlist_count
+      `osascript -e '#{TOTAL_PLAYLIST_COUNT}'`.to_i
+    end
+
+    def playlist_info(playlist_index)
+      playlist_number = playlist_index + 1
+      split = `osascript -e '#{PLAYLIST_INFO % playlist_number}'`.split("\n", 4)
+      Playlist.new(*split)
     end
   end
 end
