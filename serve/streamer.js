@@ -18,8 +18,11 @@ var Streamer = function(data) {
 
   this.audio = document.getElementById("audio");
 
-  this.isPlaying = false;
+  this.playing = false;
   this.shuffle = false;
+  this.repeat = false;
+
+  this.playlist = [];
   this.playlistIndex = 0;
 
   this.nowPlayingRow = null;
@@ -84,7 +87,7 @@ Streamer.prototype.play = function() {
     });
   }
 
-  streamer.isPlaying = true;
+  streamer.playing = true;
   $("#playpause").removeClass('ion-ios-play').addClass('ion-ios-pause');
   streamer.audio.play();
 }
@@ -95,12 +98,17 @@ Streamer.prototype.stop = function() {
 }
 
 Streamer.prototype.pause = function() {
-  streamer.isPlaying = false;
+  streamer.playing = false;
   $("#playpause").removeClass('ion-ios-pause').addClass('ion-ios-play');
   streamer.audio.pause();
 }
 
 Streamer.prototype.prev = function() {
+  if (streamer.repeat && streamer.srcTrack) {
+    streamer.rewind();
+    return;
+  }
+
   streamer.playlistIndex--;
   if (streamer.playlistIndex < 0) {
     streamer.playlistIndex = streamer.playlist.length - 1;
@@ -112,6 +120,11 @@ Streamer.prototype.prev = function() {
 }
 
 Streamer.prototype.next = function() {
+  if (streamer.repeat && streamer.srcTrack) {
+    streamer.rewind();
+    return;
+  }
+
   streamer.playlistIndex++;
   if (streamer.playlistIndex >= streamer.playlist.length) {
     streamer.playlistIndex = 0;
@@ -123,8 +136,12 @@ Streamer.prototype.next = function() {
 }
 
 Streamer.prototype.playPause = function() {
-  if (streamer.isPlaying) { streamer.pause(); }
-  else                    { streamer.play(); }
+  if (streamer.playing) { streamer.pause(); }
+  else                  { streamer.play(); }
+}
+
+Streamer.prototype.rewind = function() {
+  streamer.audio.currentTime = streamer.srcTrack.start;
 }
 
 Streamer.prototype.toggleShuffle = function() {
@@ -139,6 +156,16 @@ Streamer.prototype.toggleShuffle = function() {
   streamer.buildPlaylist(null);
 }
 
+Streamer.prototype.toggleRepeat = function() {
+  if (streamer.repeat) {
+    streamer.repeat = false;
+    $('#repeat').addClass('disabled');
+  } else {
+    streamer.repeat = true;
+    $('#repeat').removeClass('disabled');
+  }
+}
+
 Streamer.prototype.start = function() {
   $("#control, #tracks").removeClass("hidden");
   $("#loading").remove();
@@ -147,6 +174,7 @@ Streamer.prototype.start = function() {
   $("#prev").click(streamer.prev);
   $("#next").click(streamer.next);
   $("#shuffle").click(streamer.toggleShuffle);
+  $("#repeat").click(streamer.toggleRepeat);
 
   var table = $("#tracks").DataTable({
     "drawCallback": function (settings) {
