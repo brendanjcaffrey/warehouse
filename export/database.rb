@@ -42,6 +42,7 @@ module Export
         disc INTEGER,
         disc_count INTEGER,
         play_count INTEGER,
+        ext TEXT,
         file TEXT
       );
     SQL
@@ -69,18 +70,23 @@ module Export
     ALBUM_SQL = 'INSERT INTO albums (name, sort_name, artist_id) VALUES (?,?,?);'
 
     TRACK_SQL = <<-SQL
-      INSERT INTO tracks (id, name, sort_name, artist_id, album_id, genre_id,
-        duration, start, finish, track, track_count, disc, disc_count, play_count, file)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+      INSERT INTO tracks (id, name, sort_name, artist_id, album_id, genre_id, duration,
+      start, finish, track, track_count, disc, disc_count, play_count, ext, file)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
     SQL
 
     PLAYLIST_SQL = 'INSERT INTO playlists (id, name, parent_id, count) VALUES (?,?,?,?);'
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?,?);'
 
+    ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
+
     def initialize(file_name)
       File.unlink(file_name) if File.exists?(file_name)
-      @genres = @albums = @artists = {}
+      @genres = {}
+      @artists = {}
+      @albums = {}
+      @skipped_tracks = {}
 
       @db = SQLite3::Database.new(file_name)
       @db.execute(CREATE_GENRES_SQL)
@@ -92,17 +98,24 @@ module Export
     end
 
     def create_track(track)
+      ext = track.file.split('.').last.downcase
+      if ACCEPTABLE_EXTENSIONS.index(ext) == nil
+        puts "Skipping #{track.file} due to invalid extension #{ext.inspect}"
+        @skipped_tracks[track.id] = true
+        return
+      end
+
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
       album = album_id(track.album, track.sort_album, artist)
 
       @db.execute(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album, genre,
         track.duration, track.start, track.finish, track.track, track.track_count, track.disc,
-        track.disc_count, track.play_count, track.file])
+        track.disc_count, track.play_count, ext, track.file])
     end
 
     def create_playlist(playlist)
-      tracks = playlist.tracks
+      tracks = playlist.tracks.select { |track_id| !@skipped_tracks.has_key?(track_id.to_s) }
       @db.execute(PLAYLIST_SQL, playlist.id, playlist.name, playlist.parent_id, tracks.count)
       tracks.each { |track_id| @db.execute(PLAYLIST_TRACK_SQL, playlist.id, track_id) }
     end

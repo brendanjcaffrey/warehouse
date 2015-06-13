@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="//cdn.datatables.net/1.10.7/css/jquery.dataTables.min.css" />
+  <link rel="stylesheet" href="http://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css" />
+</head>
+
+<body>
+  <div id="loading">Loading...</div>
+
+  <div id="control" class="hidden">
+    <i class="icon ion-ios-rewind" id="prev"></i>
+    <i class="icon ion-ios-play" id="playpause"></i>
+    <i class="icon ion-ios-fastforward" id="next"></i>
+    <audio id="audio" preload></audio>
+  </div>
+
+
+  <table id="tracks" class="hidden">
+    <thead>
+      <tr><th>Name</th><th>Time</th><th>Artist</th><th>Album</th>
+          <th>Genre</th><th>Plays</th></tr>
+    </thead>
+
+    <tbody id="tracks-body"></tbody>
+  </table>
+
+  <script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
+  <script src="//cdn.datatables.net/1.10.7/js/jquery.dataTables.min.js"></script>
+  <script src="models.js"></script>
+  <script src="streamer.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+local:
+  base_path: /Users/Brendan/Music/
+  database_name: export.db
+
+remote:
+  base_path: /home/brendan/music/
+  database_name: export.db
