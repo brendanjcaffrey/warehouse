@@ -87,6 +87,7 @@ Streamer.prototype.play = function() {
     });
   }
 
+  streamer.api.row(streamer.nowPlayingRow).show().draw(false);
   streamer.playing = true;
   $("#playpause").removeClass('ion-ios-play').addClass('ion-ios-pause');
   streamer.audio.play();
