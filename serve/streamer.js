@@ -226,17 +226,17 @@ $(window).load(function() {
     streamer = new Streamer(data);
     streamer.start();
 
-    $(document).bind('keydown', 'ctrl+g', function(e) {
+    $(document).bind('keydown', 'right', function(e) {
       streamer.next();
       return false;
     });
 
-    $(document).bind('keydown', 'ctrl+r', function(e) {
+    $(document).bind('keydown', 'left', function(e) {
       streamer.prev();
       return false;
     });
 
-    $(document).bind('keydown', 'ctrl+space', function(e) {
+    $(document).bind('keydown', 'space', function(e) {
       streamer.playPause();
       return false;
     });
