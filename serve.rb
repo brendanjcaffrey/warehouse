@@ -45,6 +45,10 @@ get '/streamer.js' do
   send_file 'serve/streamer.js', type: :js
 end
 
+get '/jquery.hotkeys.js' do
+  send_file 'serve/jquery.hotkeys.js', type: :js
+end
+
 get '/data.json' do
   json genres: db.execute(GENRE_SQL),
        artists: db.execute(ARTIST_SQL),

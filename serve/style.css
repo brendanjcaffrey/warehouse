@@ -2,9 +2,18 @@
   display: none;
 }
 
+.disabled {
+  color: #CCCCCC;
+}
+
 #control .icon {
   font-size: 32px;
   padding: 0 5px;
+}
+
+#control #shuffle {
+  font-size: 30px;
+  padding: 0 5px 0 10px;
 }
 
 td .icon {
