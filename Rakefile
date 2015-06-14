@@ -17,3 +17,10 @@ task :serve do
 
   Sinatra::Application.run!
 end
+
+task :remote do
+  Config.set_env('remote')
+  require_relative 'serve'
+
+  Sinatra::Application.run!
+end

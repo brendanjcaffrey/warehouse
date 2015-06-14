@@ -92,7 +92,7 @@ module Export
     def initialize(file_name)
       @file_name = file_name
       if File.exists?(@file_name)
-        @plays = SQLite3::Database.new(file_name).execute('SELECT * FROM plays');
+        @plays = SQLite3::Database.new(@file_name).execute('SELECT * FROM plays');
       else
         @plays = []
       end
@@ -104,8 +104,8 @@ module Export
     end
 
     def build_tables
-      File.unlink(file_name) if File.exists?(@file_name)
-      @db = SQLite3::Database.new(file_name)
+      File.unlink(@file_name) if File.exists?(@file_name)
+      @db = SQLite3::Database.new(@file_name)
       @db.execute(CREATE_GENRES_SQL)
       @db.execute(CREATE_ARTISTS_SQL)
       @db.execute(CREATE_ALBUMS_SQL)

@@ -7,6 +7,10 @@ module Config
     @env = env
   end
 
+  def remote?
+    @env == 'remote'
+  end
+
   def vals
     @vals ||= begin
       YAML.load(File.open('config.yaml'))

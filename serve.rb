@@ -16,6 +16,14 @@ end
 
 database_name = Config['database_name']
 music_path = Config['music_path']
+
+if Config.remote?
+  set :environment, :production
+  set :bind, '0.0.0.0'
+else
+  set :environment, :development
+end
+
 db = SQLite3::Database.new(database_name)
 GENRE_SQL = 'SELECT id, name FROM genres';
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists';
