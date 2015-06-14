@@ -16,7 +16,7 @@ Audio.prototype.currentTimeUpdated = function() {
   var audio = this.audios[this.nowPlayingSlot];
   var track = this.tracks[this.nowPlayingSlot];
 
-  if (audio.currentTime >= audio.duration || audio.currentTime >= audio.finish) {
+  if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
     $.post('/play/' + track.id + '.' + track.ext);
     this.streamer.next();
   }
