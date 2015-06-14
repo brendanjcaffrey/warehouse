@@ -66,6 +66,13 @@ module Export
       end tell
     SCRIPT
 
+    INCREMENT_PLAYED_COUNT = <<-SCRIPT
+      tell application "iTunes"
+        set thisTrack to some track of library playlist 1 whose database ID is %d
+        set played count of thisTrack to (played count of thisTrack) + 1
+      end tell
+    SCRIPT
+
     def total_track_count
       `osascript -e '#{TOTAL_TRACK_COUNT}'`.to_i
     end
@@ -84,6 +91,10 @@ module Export
       playlist_number = playlist_index + 1
       split = `osascript -e '#{PLAYLIST_INFO % playlist_number}'`.split("\n", 4)
       Playlist.new(*split)
+    end
+
+    def add_play(track_id)
+      `osascript -e '#{INCREMENT_PLAYED_COUNT % track_id}'`
     end
   end
 end

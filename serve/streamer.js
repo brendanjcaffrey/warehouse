@@ -215,6 +215,7 @@ Streamer.prototype.start = function() {
   streamer.audio.addEventListener("timeupdate", function() {
     if (streamer.audio.currentTime >= streamer.audio.duration ||
         streamer.audio.currentTime >= streamer.srcTrack.finish) {
+      $.post('/play/' + streamer.srcTrack.id + '.' + streamer.srcTrack.ext);
       streamer.next();
     }
   });

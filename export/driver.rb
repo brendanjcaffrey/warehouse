@@ -1,3 +1,6 @@
+require 'net/http'
+require 'json'
+
 module Export
   class Driver
     def initialize(database, library, progress)
@@ -7,6 +10,22 @@ module Export
     end
 
     def go!
+      if Config.local('update_plays')
+        puts 'Updating local plays...'
+        @database.plays.each do |database_id|
+          @library.add_play(database_id)
+        end
+      end
+
+      if Config.remote('update_plays')
+        puts 'Updating remote plays...'
+        uri = URI(Config.remote('base_url') + '/plays.json')
+        JSON.parse(Net::HTTP.get(uri)).each do |database_id|
+          @library.add_play(database_id)
+        end
+      end
+
+      @database.build_tables
       track_count = @library.total_track_count
       @progress.start('Exporting tracks...', track_count)
 

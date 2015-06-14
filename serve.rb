@@ -15,7 +15,7 @@ configure do
 end
 
 database_name = Config['database_name']
-base_path = Config['base_path']
+music_path = Config['music_path']
 db = SQLite3::Database.new(database_name)
 GENRE_SQL = 'SELECT id, name FROM genres';
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists';
@@ -63,6 +63,24 @@ get '/tracks/*.*' do
   if file == nil || ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
     raise Sinatra::NotFound
   else
-    send_file base_path + file, type: ext
+    send_file music_path + file, type: ext
+  end
+end
+
+get '/plays.json' do
+  json db.execute('SELECT * FROM plays').flatten
+end
+
+post '/play/*.*' do
+  id, ext = params['splat']
+  actual_ext = db.get_first_value('SELECT ext FROM tracks WHERE id=?', id)
+
+  if ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
+    puts 'hi'
+    puts id, ext, actual_ext
+    puts 'yo'
+    raise Sinatra::NotFound
+  else
+    db.execute('INSERT INTO plays (track_id) VALUES (?)', id);
   end
 end

@@ -2,6 +2,8 @@ require 'sqlite3'
 
 module Export
   class Database
+    attr_reader :plays
+
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (
         id INTEGER PRIMARY KEY,
@@ -63,6 +65,12 @@ module Export
       );
     SQL
 
+    CREATE_PLAYS_SQL = <<-SQL
+      CREATE TABLE plays (
+        track_id INTEGER
+      );
+    SQL
+
     GENRE_SQL = 'INSERT INTO genres (name) VALUES (?);'
 
     ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES (?,?);'
@@ -82,12 +90,21 @@ module Export
     ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
     def initialize(file_name)
-      File.unlink(file_name) if File.exists?(file_name)
+      @file_name = file_name
+      if File.exists?(@file_name)
+        @plays = SQLite3::Database.new(file_name).execute('SELECT * FROM plays');
+      else
+        @plays = []
+      end
+
       @genres = {}
       @artists = {}
       @albums = {}
       @skipped_tracks = {}
+    end
 
+    def build_tables
+      File.unlink(file_name) if File.exists?(@file_name)
       @db = SQLite3::Database.new(file_name)
       @db.execute(CREATE_GENRES_SQL)
       @db.execute(CREATE_ARTISTS_SQL)
@@ -95,6 +112,7 @@ module Export
       @db.execute(CREATE_TRACKS_SQL)
       @db.execute(CREATE_PLAYLISTS_SQL)
       @db.execute(CREATE_PLAYLIST_TRACK_SQL)
+      @db.execute(CREATE_PLAYS_SQL)
     end
 
     def create_track(track)

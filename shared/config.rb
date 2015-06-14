@@ -16,6 +16,14 @@ module Config
     end
   end
 
+  def local(key)
+    vals['local'][key]
+  end
+
+  def remote(key)
+    vals['remote'][key]
+  end
+
   def [](key)
     if @env.nil? || !['local', 'remote'].include?(@env)
       puts 'Invalid config environment'
