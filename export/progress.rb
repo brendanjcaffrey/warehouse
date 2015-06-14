@@ -5,11 +5,12 @@ module Export
     def start(message, count)
       puts "\n\n" if @bar
       puts message
+      return if ENV['SILENT']
       @bar = ProgressBar.new(count, :counter, :bar, :eta)
     end
 
     def increment!
-      @bar.increment!
+      @bar.increment! if @bar
     end
   end
 end
