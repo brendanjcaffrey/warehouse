@@ -3,9 +3,6 @@ require 'sinatra'
 require 'sinatra/json'
 
 configure do
-  mime_type :css, 'text/css'
-  mime_type :js, 'application/javascript'
-
   mime_type :mp3, 'audio/mpeg'
   mime_type :mp4, 'audio/mp4'
   mime_type :m4a, 'audio/mp4'
@@ -13,6 +10,8 @@ configure do
   mime_type :aiff, 'audio/aif'
   mime_type :wav, 'audio/wav'
 end
+
+set :public_folder, Proc.new { File.join(root, "serve") }
 
 database_name = Config['database_name']
 music_path = Config['music_path']
@@ -39,22 +38,6 @@ end
 
 get '/' do
   send_file 'serve/index.html'
-end
-
-get '/style.css' do
-  send_file 'serve/style.css', type: :css
-end
-
-get '/models.js' do
-  send_file 'serve/models.js', type: :js
-end
-
-get '/streamer.js' do
-  send_file 'serve/streamer.js', type: :js
-end
-
-get '/jquery.hotkeys.js' do
-  send_file 'serve/jquery.hotkeys.js', type: :js
 end
 
 get '/data.json' do
