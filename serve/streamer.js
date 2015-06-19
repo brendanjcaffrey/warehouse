@@ -164,9 +164,7 @@ Streamer.prototype.start = function() {
   })
 
   $("#tracks tbody").on("click", "tr", function () {
-    if ($(this).hasClass("selected")) {
-      $(this).removeClass("selected");
-    } else {
+    if (!$(this).hasClass("selected")) {
       table.$("tr.selected").removeClass("selected");
       $(this).addClass("selected");
     }
