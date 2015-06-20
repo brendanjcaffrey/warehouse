@@ -71,6 +71,13 @@ module Export
       );
     SQL
 
+    CREATE_USERS_SQL = <<-SQL
+      CREATE TABLE users (
+        token TEXT,
+        username TEXT
+      );
+    SQL
+
     GENRE_SQL = 'INSERT INTO genres (name) VALUES (?);'
 
     ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES (?,?);'
@@ -113,6 +120,7 @@ module Export
       @db.execute(CREATE_PLAYLISTS_SQL)
       @db.execute(CREATE_PLAYLIST_TRACK_SQL)
       @db.execute(CREATE_PLAYS_SQL)
+      @db.execute(CREATE_USERS_SQL)
     end
 
     def create_track(track)

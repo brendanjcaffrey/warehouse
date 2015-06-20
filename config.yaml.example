@@ -8,3 +8,8 @@ remote:
   music_path: /home/brendan/music/
   database_name: export.db
   update_plays: false
+
+users:
+  brendan:
+    password: test123
+    track_plays: true
