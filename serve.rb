@@ -47,15 +47,22 @@ get '/data.json' do
        tracks: db.execute(TRACK_SQL)
 end
 
-get '/tracks/*.*' do
-  id, ext = params['splat']
-  file, actual_ext = db.get_first_row('SELECT file, ext FROM tracks WHERE id=?', id)
-
+def find_track(db, music_path, id, ext, download)
+  name, file, actual_ext = db.get_first_row('SELECT name, file, ext FROM tracks WHERE id=?', id)
   if file == nil || ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
-    raise Sinatra::NotFound
+    false
   else
-    send_file music_path + file, type: ext
+    headers['Content-Disposition'] = "attachment; filename=\"#{name}.#{ext}\"" if download
+    send_file(music_path + file, type: ext)
   end
+end
+
+get '/tracks/*.*' do
+  find_track(db, music_path, params['splat'][0], params['splat'][1], false)
+end
+
+get '/download/*.*' do
+  find_track(db, music_path, params['splat'][0], params['splat'][1], true)
 end
 
 get '/plays.json' do
@@ -67,9 +74,6 @@ post '/play/*.*' do
   actual_ext = db.get_first_value('SELECT ext FROM tracks WHERE id=?', id)
 
   if ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
-    puts 'hi'
-    puts id, ext, actual_ext
-    puts 'yo'
     raise Sinatra::NotFound
   else
     db.execute('INSERT INTO plays (track_id) VALUES (?)', id);

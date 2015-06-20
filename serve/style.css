@@ -41,3 +41,19 @@ table.dataTable tbody td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+#contextMenu {
+  padding: 0;
+  border: 1px solid #DDDDDD;
+  background: #FFFFFF;
+}
+
+#contextMenu li {
+  list-style-type: none;
+  padding: 5px;
+  cursor: pointer;
+}
+
+#contextMenu li.hover {
+  background: #CCCCCC;
+}

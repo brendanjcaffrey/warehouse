@@ -22,6 +22,53 @@ var Streamer = function(data) {
   this.nowPlayingRow = null;
 }
 
+Streamer.prototype.highlightRow = function(row) {
+  if (!$(row).hasClass("selected")) {
+    $("tr.selected").removeClass("selected");
+    $(row).addClass("selected");
+  }
+}
+
+Streamer.prototype.manualRowPlay = function(row) {
+  $(row).addClass("selected");
+  this.setNowPlaying(row);
+  this.playlist.rebuild(this.shuffle, this.audio.getNowPlayingTrackId());
+  this.play();
+}
+
+Streamer.prototype.hideMenu = function() {
+  $('#contextMenu').remove();
+}
+
+Streamer.prototype.showMenu = function(row, e) {
+  this.highlightRow(row);
+  var menu = $('<ul id="contextMenu">');
+  var self = this;
+
+  var download = $('<li>Download</li>')
+      .hover(function() { $(this).addClass("hover"); },
+             function() { $(this).removeClass("hover"); })
+      .mousedown(function() {
+        var track = self.api.row(row).data();
+        window.location = '/download/' + String(track.id) + '.' + String(track.ext);
+      });
+  menu.append(download);
+
+  var play = $('<li>Play</li>')
+      .hover(function() { $(this).addClass("hover"); },
+             function() { $(this).removeClass("hover"); })
+      .mousedown(function() { self.manualRowPlay(row); });
+  menu.append(play);
+
+  var x = e.pageX + (window.event ? $(window).scrollLeft() : 0);
+  var y = e.pageY + (window.event ? $(window).scrollTop() : 0);
+  menu.css({ "position": "absolute", top: y-2, left: x-2 });
+
+  $("body").append(menu);
+  $("body").one("click", this.hideMenu);
+  $(document).one("mousedown", this.hideMenu);
+}
+
 Streamer.prototype.setNowPlaying = function(row) {
   this.clearNowPlaying();
 
@@ -156,18 +203,10 @@ Streamer.prototype.start = function() {
   table.page.len(50);
   table.draw();
 
-  $("#tracks tbody").on("dblclick", "tr", function() {
-    $(this).addClass("selected");
-    self.setNowPlaying(this);
-    self.playlist.rebuild(self.shuffle, self.audio.getNowPlayingTrackId());
-    self.play();
-  })
-
-  $("#tracks tbody").on("click", "tr", function () {
-    if (!$(this).hasClass("selected")) {
-      table.$("tr.selected").removeClass("selected");
-      $(this).addClass("selected");
-    }
+  $("#tracks tbody").on("dblclick", "tr", function() { self.manualRowPlay(this); })
+  $("#tracks tbody").on("click", "tr", function () { self.highlightRow(this); });
+  $("#tracks tbody").on("contextmenu", "tr", function (e) {
+    self.showMenu(this, e); return false;
   });
 }
 
@@ -177,18 +216,15 @@ $(window).load(function() {
     streamer.start();
 
     $(document).bind("keydown", "right", function(e) {
-      streamer.next();
-      return false;
+      streamer.next(); return false;
     });
 
     $(document).bind("keydown", "left", function(e) {
-      streamer.prev();
-      return false;
+      streamer.prev(); return false;
     });
 
     $(document).bind("keydown", "space", function(e) {
-      streamer.playPause();
-      return false;
+      streamer.playPause(); return false;
     });
 
     // this is how the chrome extension communicates with the web app
