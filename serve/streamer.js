@@ -60,9 +60,9 @@ Streamer.prototype.showMenu = function(row, e) {
       .mousedown(function() { self.manualRowPlay(row); });
   menu.append(play);
 
-  var x = e.pageX + (window.event ? $(window).scrollLeft() : 0);
-  var y = e.pageY + (window.event ? $(window).scrollTop() : 0);
-  menu.css({ "position": "absolute", top: y-2, left: x-2 });
+  var x = e.pageX - 2;
+  var y = e.pageY - 17;
+  menu.css({ "position": "absolute", top: y, left: x });
 
   $("body").append(menu);
   $("body").one("click", this.hideMenu);
