@@ -9,11 +9,11 @@ module Export
       set AppleScript'\"'\"'s text item delimiters to oldDelims
     SCRIPT
 
-    TOTAL_TRACK_COUNT = 'tell application "iTunes" to get count of tracks in library playlist 1'
+    TOTAL_TRACK_COUNT = 'tell application "iTunes" to get count of file tracks in library playlist 1'
     TRACK_INFO = <<-SCRIPT
       tell application "iTunes"
         set output to ""
-        set thisTrack to track %d
+        set thisTrack to file track %d
 
         #{SET_DELIMS}
         set output to database ID of thisTrack & "\n"
@@ -57,7 +57,7 @@ module Export
           set output to output & "-1" & "\n"
         end try
 
-        repeat with thisTrack in tracks of user playlist %1$d
+        repeat with thisTrack in file tracks of user playlist %1$d
           set output to output & database ID of thisTrack & "\n"
         end repeat
         #{RESET_DELIMS}
@@ -68,7 +68,7 @@ module Export
 
     INCREMENT_PLAYED_COUNT = <<-SCRIPT
       tell application "iTunes"
-        set thisTrack to some track of library playlist 1 whose database ID is %d
+        set thisTrack to some file track of library playlist 1 whose database ID is %d
         set played count of thisTrack to (played count of thisTrack) + 1
       end tell
     SCRIPT
