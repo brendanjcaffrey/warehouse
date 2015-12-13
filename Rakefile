@@ -11,7 +11,7 @@ task :export do
   Export::Driver.new(database, library, progress).go!
 end
 
-task :serve do
+task :local do
   Config.set_env('local')
   require_relative 'serve'
 
