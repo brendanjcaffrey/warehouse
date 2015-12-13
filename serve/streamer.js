@@ -95,9 +95,11 @@ Streamer.prototype.play = function() {
     if (data.id == trackId) { self.setNowPlaying(node); }
   });
 
-  this.skipRebuild = true;
-  this.api.row(this.nowPlayingRow).show().draw(false);
-  this.skipRebuild = false;
+  if ($("input[type=search]").text() == "") {
+    this.skipRebuild = true;
+    this.api.row(this.nowPlayingRow).show().draw(false);
+    this.skipRebuild = false;
+  }
 
   this.playing = true;
   $("#playpause").removeClass("ion-ios-play").addClass("ion-ios-pause");
