@@ -1,18 +1,18 @@
 var Streamer = function(data) {
-  var to_hash = function(hash, object, index, array) {
+  var toHash = function(hash, object, index, array) {
     hash[object.id] = object;
     return hash;
   }
 
-  var artists = data["artists"].map(function (row) { return new Artist(row); }).reduce(to_hash, {});
-  var albums = data["albums"].map(function (row) { return new Album(row); }).reduce(to_hash, {});
-  var genres = data["genres"].map(function (row) { return new Genre(row); }).reduce(to_hash, {});
+  var artists = data["artists"].map(function (row) { return new Artist(row); }).reduce(toHash, {});
+  var albums = data["albums"].map(function (row) { return new Album(row); }).reduce(toHash, {});
+  var genres = data["genres"].map(function (row) { return new Genre(row); }).reduce(toHash, {});
 
-  this.tracks_arr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); });
-  this.tracks_hash = this.tracks_arr.reduce(to_hash, {});
+  this.tracksArr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); });
+  this.tracksHash = this.tracksArr.reduce(toHash, {});
 
   this.audio = new Audio(this);
-  this.playlist = new Playlist();
+  this.playlist = new Playlist(this.audio, this.tracksHash);
 
   this.playing = false;
   this.shuffle = false;
@@ -32,7 +32,7 @@ Streamer.prototype.highlightRow = function(row) {
 Streamer.prototype.manualRowPlay = function(row) {
   $(row).addClass("selected");
   this.setNowPlaying(row);
-  this.playlist.rebuild(this.shuffle, this.audio.getNowPlayingTrackId());
+  this.playlist.rebuild(this.shuffle, this.api.row(row).data().id);
   this.play();
 }
 
@@ -74,10 +74,7 @@ Streamer.prototype.setNowPlaying = function(row) {
 
   $(row).addClass("now-playing");
   $(row).find("td:first-child").prepend('<i class="icon ion-ios-volume-high"></i>');
-
-  var track = this.api.row(row).data();
   this.nowPlayingRow = row;
-  this.audio.load(track);
 }
 
 Streamer.prototype.clearNowPlaying = function() {
@@ -93,24 +90,18 @@ Streamer.prototype.clearNowPlaying = function() {
 Streamer.prototype.play = function() {
   var self = this;
 
-  if (!this.nowPlayingRow) {
-    var trackId = this.playlist.getCurrentTrackId();
-    this.api.rows(function(index, data, node) {
-      if (data.id == trackId) self.setNowPlaying(node);
-    });
-  }
+  var trackId = this.playlist.getCurrentTrackId();
+  this.api.rows(function(index, data, node) {
+    if (data.id == trackId) { self.setNowPlaying(node); }
+  });
 
   this.skipRebuild = true;
   this.api.row(this.nowPlayingRow).show().draw(false);
   this.skipRebuild = false;
 
-  var next = this.tracks_hash[this.playlist.getNextTrackId()];
-  if (next.id != this.playlist.getCurrentTrackId()) this.audio.preload(next);
-
   this.playing = true;
   $("#playpause").removeClass("ion-ios-play").addClass("ion-ios-pause");
   this.audio.play();
-  this.audio
 }
 
 Streamer.prototype.stop = function() {
@@ -125,14 +116,14 @@ Streamer.prototype.pause = function() {
 }
 
 Streamer.prototype.prev = function() {
-  if (this.repeat && this.audio.tryRewind()) return;
+  if (this.repeat && this.audio.tryRewind()) { return; }
 
   this.playlist.moveBack();
   if (this.nowPlayingRow) { this.stop(); this.play(); }
 }
 
 Streamer.prototype.next = function() {
-  if (this.repeat && this.audio.tryRewind()) return;
+  if (this.repeat && this.audio.tryRewind()) { return; }
 
   this.playlist.moveForward();
   if (this.nowPlayingRow) { this.stop(); this.play(); }
@@ -181,7 +172,7 @@ Streamer.prototype.start = function() {
     "drawCallback": function (settings) {
       // when a track starts playing, we redraw the table to show its page
       // this is to prevent rebuilding the playlist when that happens
-      if (self.skipRebuild) return;
+      if (self.skipRebuild) { return; }
 
       // this drawCallback is called immediately after defining the table,
       // so there's no way to gracefully set this except here
@@ -190,14 +181,14 @@ Streamer.prototype.start = function() {
     },
     "lengthChange": false,
     "columns": [
-      { "data": { "_": "name", "sort": "sort_name" } },
+      { "data": { "_": "name", "sort": "sortName" } },
       { "data": { "_": "time", "sort": "duration" }, "type": "numeric" },
-      { "data": { "_": "artist", "sort": "sort_artist" } },
-      { "data": { "_": "album", "sort": "sort_album" } },
+      { "data": { "_": "artist", "sort": "sortArtist" } },
+      { "data": { "_": "album", "sort": "sortAlbum" } },
       { "data": "genre" },
-      { "data": "play_count" },
+      { "data": "playCount" },
     ],
-    "data": self.tracks_arr
+    "data": self.tracksArr
   });
 
   table.page.len(50);
@@ -229,7 +220,7 @@ $(window).load(function() {
 
     // this is how the chrome extension communicates with the web app
     window.addEventListener("message", function(event) {
-      if (event.data.source != "itunes-streamer") return;
+      if (event.data.source != "itunes-streamer") { return; }
 
       switch (event.data.type) {
         case "play-pause": streamer.playPause(); break;

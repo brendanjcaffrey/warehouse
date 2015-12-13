@@ -1,14 +1,14 @@
-function fix_sort_name(model) {
-  model.sort_name = model.sort_name == "" ? model.name : model.sort_name;
+function fixSortName(model) {
+  model.sortName = model.sortName == "" ? model.name : model.sortName;
 }
 
-function seconds_to_time(seconds) {
+function secondsToTime(seconds) {
   var min = Math.floor(Math.ceil(seconds) / 60);
   var sec = Math.ceil(seconds) % 60;
   return String(min) + ":" + (sec < 10 ? "0" : "") + String(sec);
 }
 
-function ext_to_type(ext) {
+function extToType(ext) {
   switch (ext) {
     case 'mp3': return 'audio/mpeg';
     case 'mp4': return 'audio/mp4';
@@ -20,11 +20,11 @@ function ext_to_type(ext) {
 }
 
 var GenreIndices = ["id", "name"];
-var ArtistIndices = ["id", "name", "sort_name"];
-var AlbumIndices = ["id", "artist_id", "name", "sort_name"];
-var TrackIndices = ["id", "name", "sort_name", "artist_id", "album_id", "genre_id",
-                    "duration", "start", "finish", "track", "track_count", "disc",
-                    "disc_count", "play_count", "ext"];
+var ArtistIndices = ["id", "name", "sortName"];
+var AlbumIndices = ["id", "artistId", "name", "sortName"];
+var TrackIndices = ["id", "name", "sortName", "artistId", "albumId", "genreId",
+                    "duration", "start", "finish", "track", "trackCount", "disc",
+                    "discCount", "playCount", "ext"];
 
 var Genre = function(row) {
   for (index in GenreIndices) {
@@ -37,7 +37,7 @@ var Artist = function(row) {
     this[ArtistIndices[index]] = row[index];
   }
 
-  fix_sort_name(this);
+  fixSortName(this);
 }
 
 var Album = function(row) {
@@ -45,7 +45,7 @@ var Album = function(row) {
     this[AlbumIndices[index]] = row[index];
   }
 
-  fix_sort_name(this);
+  fixSortName(this);
 }
 
 var Track = function(row, artists, albums, genres) {
@@ -53,11 +53,11 @@ var Track = function(row, artists, albums, genres) {
     this[TrackIndices[index]] = row[index]
   }
 
-  this.time = seconds_to_time(this.duration);
-  this.artist = artists[this.artist_id].name;
-  this.sort_artist = artists[this.artist_id].sort_name;
-  this.album = albums[this.album_id].name;
-  this.sort_album = albums[this.album_id].sort_name;
-  this.genre = genres[this.genre_id].name;
-  fix_sort_name(this);
+  this.time = secondsToTime(this.duration);
+  this.artist = artists[this.artistId].name;
+  this.sortArtist = artists[this.artistId].sortName;
+  this.album = albums[this.albumId].name;
+  this.sortAlbum = albums[this.albumId].sortName;
+  this.genre = genres[this.genreId].name;
+  fixSortName(this);
 }
