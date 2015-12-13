@@ -170,6 +170,11 @@ Streamer.prototype.start = function() {
   $("#shuffle").click(function() { self.toggleShuffle() });
   $("#repeat").click(function() { self.toggleRepeat() });
 
+  ["#playpause", "#prev", "#next"].forEach(function(val, idx, arr) {
+    $(val).mousedown(function() { $(val).addClass('disabled'); });
+    $(val).mouseup(function() { $(val).removeClass('disabled'); });
+  });
+
   var table = $("#tracks").DataTable({
     "drawCallback": function (settings) {
       // when a track starts playing, we redraw the table to show its page
