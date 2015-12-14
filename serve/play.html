@@ -2,34 +2,45 @@
 <html>
 <head>
   <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/bootstrap.min.css" />
   <link rel="stylesheet" href="//cdn.datatables.net/1.10.10/css/jquery.dataTables.min.css" />
-  <link rel="stylesheet" href="http://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css" />
+  <link rel="stylesheet" href="//code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css" />
 </head>
 
 <body>
   <div id="loading">Loading...</div>
 
-  <div id="control" class="hidden">
-    <i class="icon ion-ios-rewind" id="prev"></i>
-    <i class="icon ion-ios-play" id="playpause"></i>
-    <i class="icon ion-ios-fastforward" id="next"></i>
-    <i class="icon ion-ios-shuffle disabled" id="shuffle"></i>
-    <i class="icon ion-ios-reload disabled" id="repeat"></i>
+  <div id="control-row" class="hidden row">
+    <div id="control" class="col-md-8">
+      <i class="icon ion-ios-rewind" id="prev"></i>
+      <i class="icon ion-ios-play" id="playpause"></i>
+      <i class="icon ion-ios-fastforward" id="next"></i>
+      <i class="icon ion-ios-shuffle disabled" id="shuffle"></i>
+      <i class="icon ion-ios-reload disabled" id="repeat"></i>
 
-    <audio id="audio1" preload></audio>
-    <audio id="audio2" preload></audio>
-    <audio id="audio3" preload></audio>
+      <audio id="audio1" preload></audio>
+      <audio id="audio2" preload></audio>
+      <audio id="audio3" preload></audio>
+    </div>
+    <div id="filter" class="col-md-4">
+    </div>
   </div>
 
+  <div id="content-row" class="hidden row">
+    <div class="col-md-2">
+    </div>
 
-  <table id="tracks" class="hidden">
-    <thead>
-      <tr><th>Name</th><th>Time</th><th>Artist</th><th>Album</th>
-          <th>Genre</th><th>Plays</th></tr>
-    </thead>
+    <div class="col-md-10">
+      <table id="tracks">
+        <thead>
+          <tr><th>Name</th><th>Time</th><th>Artist</th><th>Album</th>
+              <th>Genre</th><th>Plays</th></tr>
+        </thead>
 
-    <tbody id="tracks-body"></tbody>
-  </table>
+        <tbody id="tracks-body"></tbody>
+      </table>
+    </div>
+  </div>
 
   <script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
   <script src="//cdn.datatables.net/1.10.7/js/jquery.dataTables.min.js"></script>

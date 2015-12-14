@@ -161,7 +161,7 @@ Streamer.prototype.toggleRepeat = function() {
 Streamer.prototype.start = function() {
   var self = this;
 
-  $("#control, #tracks").removeClass("hidden");
+  $("#control-row, #content-row").removeClass("hidden");
   $("#loading").remove();
 
   $("#playpause").click(function() { self.playPause() });
@@ -170,10 +170,9 @@ Streamer.prototype.start = function() {
   $("#shuffle").click(function() { self.toggleShuffle() });
   $("#repeat").click(function() { self.toggleRepeat() });
 
-  ["#playpause", "#prev", "#next"].forEach(function(val, idx, arr) {
-    $(val).mousedown(function() { $(val).addClass('disabled'); });
-    $(val).mouseup(function() { $(val).removeClass('disabled'); });
-  });
+  $("#playpause, #prev, #next").mousedown(function() { $(this).addClass('disabled'); });
+  $("#playpause, #prev, #next").mouseup(function() { $(this).removeClass('disabled'); });
+  $("#playpause, #prev, #next").mouseleave(function() { $(this).removeClass('disabled'); });
 
   var table = $("#tracks").DataTable({
     "drawCallback": function (settings) {
@@ -182,7 +181,7 @@ Streamer.prototype.start = function() {
       if (self.skipRebuild) { return; }
 
       // this drawCallback is called immediately after defining the table,
-      // so there's no way to gracefully set this except here
+      // so there's no way to gracefully set the api variable except here
       self.api = this.api();
       self.playlist.rebuild(self.shuffle, self.audio.getNowPlayingTrackId(), self.api);
     },
@@ -212,6 +211,7 @@ $(window).load(function() {
   $.getJSON("/data.json", function(data) {
     var streamer = new Streamer(data);
     streamer.start();
+    $("#tracks_filter").detach().appendTo($("#filter"));
 
     $(document).bind("keydown", "right", function(e) {
       streamer.next(); return false;

@@ -6,9 +6,13 @@
   color: #CCCCCC;
 }
 
+#control {
+  padding-left: 20px;
+}
+
 #control .icon {
   font-size: 32px;
-  padding: 0 5px;
+  padding: 0 5px 0 5px;
 }
 
 #control #shuffle, #control #repeat {
@@ -16,9 +20,29 @@
   padding: 0 5px 0 10px;
 }
 
+#filter {
+  padding-top: 12px;
+}
+
+#filter input {
+  margin-left: 5px;
+}
+
+#tracks_filter {
+  float: right;
+}
+
+#playlists {
+  padding-left: 8px;
+}
+
 td .icon {
   padding-right: 4px;
   font-size: 15px;
+}
+
+table.dataTable tbody th, table.dataTable tbody td {
+  padding: 5px 8px !important;
 }
 
 table.dataTable tbody tr.selected {
