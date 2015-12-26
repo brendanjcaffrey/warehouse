@@ -20,18 +20,20 @@ var Streamer = function(data) {
   this.repeat = false;
 
   this.skipRebuild = false;
-  this.nowPlayingRow = null;
+  this.nowPlayingRow = this.selectedRow = null;
 }
 
 Streamer.prototype.highlightRow = function(row) {
   if (!$(row).hasClass("selected")) {
-    $("tr.selected").removeClass("selected");
+    if (this.selectedRow) { $(this.selectedRow).removeClass("selected"); }
     $(row).addClass("selected");
   }
+
+  this.selectedRow = row;
 }
 
 Streamer.prototype.manualRowPlay = function(row) {
-  $(row).addClass("selected");
+  this.highlightRow(row);
   this.setNowPlaying(row);
   this.playlist.rebuild(this.shuffle, this.stopped, this.api.row(row).data().id);
   this.play();
