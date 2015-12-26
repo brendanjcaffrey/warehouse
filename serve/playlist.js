@@ -46,19 +46,15 @@ Playlist.prototype.getCurrentTrackId = function() {
 
 Playlist.prototype.moveBack = function() {
   this.playlistIndex--;
-  if (this.playlistIndex < 0) {
-    this.playlistIndex = this.playlist.length - 1;
-  }
+  if (this.playlistIndex < 0) { this.playlistIndex = this.playlist.length - 1; }
+
   this.onUpdate(-1);
 }
 
-Playlist.prototype.getNextIndex = function() {
-  if (this.playlistIndex + 1 >= this.playlist.length) { return 0; }
-  return this.playlistIndex + 1;
-}
-
 Playlist.prototype.moveForward = function() {
-  this.playlistIndex = this.getNextIndex();
+  this.playlistIndex += 1;
+  if (this.playlistIndex >= this.playlist.length) { this.playlistIndex = 0; }
+
   this.onUpdate(-1);
 }
 

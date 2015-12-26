@@ -45,19 +45,21 @@ Audio.prototype.loadTracks = function(tracksArr) {
 
   // find which slots don't have something we want in them
   allSlots = []; for (var i = 0; i < this.numSlots; ++i) { allSlots.push(i); }
-  freeSlots = allSlots.filter(function(idx) { return self.tracks[idx] == null || intersection.indexOf(self.tracks[idx].id) == -1 });
+  freeSlots = allSlots.filter(function(idx) {
+    return self.tracks[idx] == null || intersection.indexOf(self.tracks[idx].id) == -1
+  });
+
   // find which tracks we don't already have loaded
   needsLoading = tracksArr.filter(function(track) { return intersection.indexOf(track.id) == -1; });
-
   console.assert(freeSlots.length >= needsLoading.length);
+
   // load them
   for (var i = 0; i < needsLoading.length; ++i) { this.loadIntoSlot(needsLoading[i], freeSlots[i]); }
 
-  // find the now playing spot, pause all other ones
-  for (var i = 0; i < this.numSlots; ++i)
-  {
+  // find the now playing spot, pause and rewind all other ones
+  for (var i = 0; i < this.numSlots; ++i) {
     if (this.tracks[i].id == tracksArr[0].id) { this.nowPlayingSlot = i; }
-    else { this.audios[i].pause(); }
+    else { this.audios[i].pause(); this.rewindTrackInSlot(i); }
   }
 }
 
@@ -74,8 +76,12 @@ Audio.prototype.pause = function() {
 Audio.prototype.tryRewind = function() {
   if (!this.tracks[this.nowPlayingSlot]) return false;
 
-  this.audios[this.nowPlayingSlot].currentTime = this.tracks[this.nowPlayingSlot].start;
+  this.rewindTrackInSlot(this.nowPlayingSlot);
   return true;
+}
+
+Audio.prototype.rewindTrackInSlot = function(slot) {
+  this.audios[slot].currentTime = this.tracks[slot].start;
 }
 
 Audio.prototype.getNowPlayingTrackId = function() {
