@@ -14,6 +14,7 @@ var Streamer = function(data) {
   this.audio = new Audio(this);
   this.playlist = new Playlist(this.audio, this.tracksHash);
 
+  this.stopped = true;
   this.playing = false;
   this.shuffle = false;
   this.repeat = false;
@@ -32,7 +33,7 @@ Streamer.prototype.highlightRow = function(row) {
 Streamer.prototype.manualRowPlay = function(row) {
   $(row).addClass("selected");
   this.setNowPlaying(row);
-  this.playlist.rebuild(this.shuffle, this.api.row(row).data().id);
+  this.playlist.rebuild(this.shuffle, this.stopped, this.api.row(row).data().id);
   this.play();
 }
 
@@ -101,6 +102,7 @@ Streamer.prototype.play = function() {
     this.skipRebuild = false;
   }
 
+  this.stopped = false;
   this.playing = true;
   $("#playpause").removeClass("ion-ios-play").addClass("ion-ios-pause");
   this.audio.play();
@@ -145,7 +147,7 @@ Streamer.prototype.toggleShuffle = function() {
     $("#shuffle").removeClass("disabled");
   }
 
-  this.playlist.rebuild(this.shuffle, this.audio.getNowPlayingTrackId());
+  this.playlist.rebuild(this.shuffle, this.stopped, this.audio.getNowPlayingTrackId());
 }
 
 Streamer.prototype.toggleRepeat = function() {
@@ -183,7 +185,7 @@ Streamer.prototype.start = function() {
       // this drawCallback is called immediately after defining the table,
       // so there's no way to gracefully set the api variable except here
       self.api = this.api();
-      self.playlist.rebuild(self.shuffle, self.audio.getNowPlayingTrackId(), self.api);
+      self.playlist.rebuild(self.shuffle, self.stopped, self.audio.getNowPlayingTrackId(), self.api);
     },
     "lengthChange": false,
     "columns": [

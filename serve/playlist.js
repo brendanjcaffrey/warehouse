@@ -11,7 +11,7 @@ Playlist.prototype.shufflePlaylist = function() {
     x = this.playlist[--i], this.playlist[i] = this.playlist[j], this.playlist[j] = x);
 }
 
-Playlist.prototype.rebuild = function(shuffle, nowPlayingId, api) {
+Playlist.prototype.rebuild = function(shuffle, stopped, nowPlayingId, api) {
   if (api) this.api = api
   this.playlist = this.api.rows({search: "applied"}).data().map(function (x) { return x.id });
 
@@ -25,11 +25,11 @@ Playlist.prototype.rebuild = function(shuffle, nowPlayingId, api) {
 
   if (shuffle) {
     // pull out the currently playing track
-    if (this.playlistIndex >= 0) { this.playlist.splice(this.playlistIndex, 1); }
+    if (this.playlistIndex >= 0 && !stopped) { this.playlist.splice(this.playlistIndex, 1); }
     this.shufflePlaylist();
 
     // and add it back at the beginning
-    if (this.playlistIndex >= 0)
+    if (this.playlistIndex >= 0 && !stopped)
     {
       this.playlist.unshift(nowPlayingId);
       this.playlistIndex = 0;
