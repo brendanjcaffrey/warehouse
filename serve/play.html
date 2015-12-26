@@ -3,6 +3,7 @@
 <head>
   <link rel="stylesheet" href="/style.css" />
   <link rel="stylesheet" href="/bootstrap.min.css" />
+  <link rel="stylesheet" href="/bootstrap-slider.css" />
   <link rel="stylesheet" href="//cdn.datatables.net/1.10.10/css/jquery.dataTables.min.css" />
   <link rel="stylesheet" href="//code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css" />
 </head>
@@ -17,6 +18,9 @@
       <i class="icon ion-ios-fastforward" id="next"></i>
       <i class="icon ion-ios-shuffle disabled" id="shuffle"></i>
       <i class="icon ion-ios-reload disabled" id="repeat"></i>
+
+      <input id="volume" type="text" value="" data-slider-min="0" data-slider-max="100"
+        data-slider-step="1" data-slider-orientation="horizontal" data-slider-tooltip="hide" />
 
       <audio id="audio1" preload></audio>
       <audio id="audio2" preload></audio>
@@ -45,11 +49,12 @@
   <script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
   <script src="//cdn.datatables.net/1.10.7/js/jquery.dataTables.min.js"></script>
   <script src="//cdn.datatables.net/plug-ins/1.10.7/api/row().show().js"></script>
-  <script src="jquery.hotkeys.js"></script>
+  <script src="/jquery.hotkeys.js"></script>
+  <script src="/bootstrap-slider.js"></script>
 
-  <script src="models.js"></script>
-  <script src="playlist.js"></script>
-  <script src="audio.js"></script>
-  <script src="streamer.js"></script>
+  <script src="/models.js"></script>
+  <script src="/playlist.js"></script>
+  <script src="/audio.js"></script>
+  <script src="/streamer.js"></script>
 </body>
 </html>

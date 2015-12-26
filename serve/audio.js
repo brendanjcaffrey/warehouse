@@ -10,6 +10,7 @@ var Audio = function(streamer) {
 
   this.nowPlayingSlot = 0;
   this.streamer = streamer;
+  this.currentVolume = 0;
 }
 
 Audio.prototype.currentTimeUpdated = function() {
@@ -87,4 +88,13 @@ Audio.prototype.rewindTrackInSlot = function(slot) {
 Audio.prototype.getNowPlayingTrackId = function() {
   if (!this.tracks[this.nowPlayingSlot]) { return -1; }
   return this.tracks[this.nowPlayingSlot].id;
+}
+
+Audio.prototype.updateAllVolumes = function(intVal) {
+  this.currentVolume = intVal;
+  floatVal = intVal / 100.0;
+
+  for (var i = 0; i < this.numSlots; ++i) {
+    this.audios[i].volume = floatVal;
+  }
 }

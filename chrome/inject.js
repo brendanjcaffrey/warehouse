@@ -5,7 +5,6 @@ chrome.runtime.sendMessage({type: "init"}, function(response) {});
 chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse) {
     var command = request.type;
-    if (command != "play-pause" && command != "next" && command != "prev") return;
 
     // inject javascript to send a message to the web page
     var script = document.createElement("script");

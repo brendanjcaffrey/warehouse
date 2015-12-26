@@ -16,7 +16,7 @@
 
   "commands": {
     "play-pause": {
-      "description": "Play/pause",
+      "description": "Play/Pause",
     	"global": true
     },
     "next": {
@@ -25,6 +25,14 @@
     },
     "prev": {
     	"description": "Previous track",
+    	"global": true
+    },
+    "volume-up": {
+    	"description": "Increase volume by 10%",
+    	"global": true
+    },
+    "volume-down": {
+    	"description": "Decrease volume by 10%",
     	"global": true
     }
   }

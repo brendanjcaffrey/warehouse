@@ -162,6 +162,26 @@ Streamer.prototype.toggleRepeat = function() {
   }
 }
 
+Streamer.prototype.volumeUpdated = function(value) {
+  this.audio.updateAllVolumes(value);
+}
+
+Streamer.prototype.volumeUp = function() {
+  value = this.audio.currentVolume + 10;
+  if (value > 100) { value = 100; }
+
+  this.volumeUpdated(value);
+  this.volume.slider('setValue', value);
+}
+
+Streamer.prototype.volumeDown = function() {
+  value = this.audio.currentVolume - 10;
+  if (value < 0) { value = 0; }
+
+  this.volumeUpdated(value);
+  this.volume.slider('setValue', value);
+}
+
 Streamer.prototype.start = function() {
   var self = this;
 
@@ -177,6 +197,11 @@ Streamer.prototype.start = function() {
   $("#playpause, #prev, #next").mousedown(function() { $(this).addClass('disabled'); });
   $("#playpause, #prev, #next").mouseup(function() { $(this).removeClass('disabled'); });
   $("#playpause, #prev, #next").mouseleave(function() { $(this).removeClass('disabled'); });
+
+  // create slider, initialize volume to 50%
+  this.volume = $("#volume").slider({value: 50}).
+    on('slide', function(slider) { self.volumeUpdated(slider.value); });
+  self.volumeUpdated(50);
 
   var table = $("#tracks").DataTable({
     "drawCallback": function (settings) {
@@ -229,14 +254,24 @@ $(window).load(function() {
       streamer.playPause(); return false;
     });
 
+    $(document).bind("keydown", "ctrl+up", function(e) {
+      streamer.volumeUp(); return false;
+    });
+
+    $(document).bind("keydown", "ctrl+down", function(e) {
+      streamer.volumeDown(); return false;
+    });
+
     // this is how the chrome extension communicates with the web app
     window.addEventListener("message", function(event) {
       if (event.data.source != "itunes-streamer") { return; }
 
       switch (event.data.type) {
-        case "play-pause": streamer.playPause(); break;
-        case "next":       streamer.next(); break;
-        case "prev":       streamer.prev(); break;
+        case "play-pause":  streamer.playPause(); break;
+        case "next":        streamer.next(); break;
+        case "prev":        streamer.prev(); break;
+        case "volume-up":   streamer.volumeUp(); break;
+        case "volume-down": streamer.volumeDown(); break;
       }
     }, false);
   });
