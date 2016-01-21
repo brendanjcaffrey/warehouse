@@ -1,4 +1,5 @@
 require 'require_all'
+require 'sinatra'
 require_relative 'shared/config.rb'
 
 task :export do
@@ -15,14 +16,14 @@ task :local do
   Config.set_env('local')
   require_relative 'serve'
 
-  Sinatra::Application.run!
+  Serve.run!
 end
 
 task :remote do
   Config.set_env('remote')
   require_relative 'serve'
 
-  Sinatra::Application.run!
+  Serve.run!
 end
 
 task :test do

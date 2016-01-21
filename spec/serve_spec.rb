@@ -9,6 +9,7 @@ module Config
   def [](key)
     return '__test.db' if key == 'database_name'
     return './' if key == 'music_path'
+    return 'YJ1xcuoBPTUYX_cUZzEB' if key == 'secret'
   end
 
   def remote?
@@ -32,7 +33,7 @@ describe 'iTunes Streamer' do
   include Rack::Test::Methods
 
   def app
-    Sinatra::Application
+    Serve
   end
 
   before :each do
