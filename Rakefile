@@ -6,7 +6,7 @@ task :export do
   Config.set_env('local')
   require_all 'export'
 
-  database = Export::Database.new(Config['database_name'])
+  database = Export::Database.new(Config['database_username'], Config['database_name'])
   library = Export::Library.new
   progress = Export::Progress.new
   Export::Driver.new(database, library, progress).go!
@@ -33,7 +33,7 @@ task :test do
   require_relative 'export/database'
   require_relative 'export/track'
 
-  database = Export::Database.new('__test.db')
+  database = Export::Database.new(Config['database_username'], 'test_itunes_streamer')
   database.build_tables
   database.create_track(Export::Track.new(1, 'test_title', '', 'test_artist', '', 'test_album',
                                           '', 'test_genre', 1.23, 0.1, 1.22, 1, 10, 1, 2, 5,
@@ -41,5 +41,4 @@ task :test do
   `echo "1.mp3 contents" > __test.mp3`
   puts `rspec`
   `rm __test.mp3`
-  `rm __test.db`
 end

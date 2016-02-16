@@ -2,12 +2,14 @@ ENV['RACK_ENV'] = 'test'
 
 require 'rspec'
 require 'rack/test'
+require 'yaml'
 
 module Config
   module_function
 
   def [](key)
-    return '__test.db' if key == 'database_name'
+    return YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
+    return 'test_itunes_streamer' if key == 'database_name'
     return './' if key == 'music_path'
     return 'YJ1xcuoBPTUYX_cUZzEB' if key == 'secret'
   end
@@ -36,14 +38,21 @@ describe 'iTunes Streamer' do
     Serve
   end
 
+  before :all do
+    @db = PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+  end
+
   before :each do
-    @db = SQLite3::Database.new(Config['database_name'])
-    @db.execute('DELETE FROM plays')
-    @db.execute('DELETE FROM users')
+    @db.exec('DELETE FROM plays')
+    @db.exec('DELETE FROM users')
+  end
+
+  def get_first_value(query)
+    @db.exec(query).getvalue(0, 0)
   end
 
   def fake_auth(username)
-    @db.execute('INSERT INTO users (username, token) VALUES (?, ?)', username, '123')
+    @db.exec_params('INSERT INTO users (username, token) VALUES ($1, $2)', [username, '123'])
     { 'rack.session' => { 'token' => '123' }}
   end
 
@@ -61,7 +70,7 @@ describe 'iTunes Streamer' do
       follow_redirect!
 
       expect(last_request.url).to eq('http://example.org/play')
-      expect(@db.get_first_value('SELECT username FROM users')).to eq('test123')
+      expect(get_first_value('SELECT username FROM users')).to eq('test123')
     end
 
     it 'should reject an invalid username' do
@@ -145,9 +154,9 @@ describe 'iTunes Streamer' do
 
   describe 'plays.json' do
     it 'should dump all plays' do
-      @db.execute('INSERT INTO plays (track_id) VALUES (1)')
-      @db.execute('INSERT INTO plays (track_id) VALUES (2)')
-      @db.execute('INSERT INTO plays (track_id) VALUES (1)')
+      @db.exec('INSERT INTO plays (track_id) VALUES (1)')
+      @db.exec('INSERT INTO plays (track_id) VALUES (2)')
+      @db.exec('INSERT INTO plays (track_id) VALUES (1)')
 
       get '/plays.json'
       expect(last_response.body).to eq('[1,2,1]')
@@ -168,12 +177,12 @@ describe 'iTunes Streamer' do
 
     it 'should create a play if tracking this user\'s play is enabled' do
       post '/play/1.mp3', {}, fake_auth('test123')
-      expect(@db.get_first_value('SELECT COUNT(*) FROM plays')).to eq(1)
+      expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('1')
     end
 
-    it 'should create a play if tracking this user\'s play is enabled', :focus do
+    it 'should create a play if tracking this user\'s play is enabled' do
       post '/play/1.mp3', {}, fake_auth('notrack')
-      expect(@db.get_first_value('SELECT COUNT(*) FROM plays')).to eq(0)
+      expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('0')
     end
   end
 end

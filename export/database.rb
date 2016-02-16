@@ -1,19 +1,24 @@
-require 'sqlite3'
+require 'pg'
 
 module Export
   class Database
     attr_reader :plays
 
+    DATABASE_EXISTS_SQL = 'SELECT datname FROM pg_database;'
+    CREATE_DATABASE_SQL = 'CREATE DATABASE %s;'
+    DROP_DATABASE_SQL = 'DROP DATABASE %s;'
+    GET_PLAYS_SQL = 'SELECT track_id FROM plays;'
+
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (
-        id INTEGER PRIMARY KEY,
+        id SERIAL,
         name TEXT
       );
     SQL
 
     CREATE_ARTISTS_SQL = <<-SQL
       CREATE TABLE artists (
-        id INTEGER PRIMARY KEY,
+        id SERIAL,
         name TEXT,
         sort_name TEXT
       );
@@ -21,7 +26,7 @@ module Export
 
     CREATE_ALBUMS_SQL = <<-SQL
       CREATE TABLE albums (
-        id INTEGER PRIMARY KEY,
+        id SERIAL,
         artist_id INTEGER,
         name TEXT,
         sort_name TEXT
@@ -51,7 +56,7 @@ module Export
 
     CREATE_PLAYLISTS_SQL = <<-SQL
       CREATE TABLE playlists (
-        id INTEGER PRIMARY KEY,
+        id SERIAL,
         name TEXT,
         parent_id INTEGER,
         count INTEGER
@@ -78,31 +83,43 @@ module Export
       );
     SQL
 
-    GENRE_SQL = 'INSERT INTO genres (name) VALUES (?);'
+    GENRE_SQL = 'INSERT INTO genres (name) VALUES ($1) RETURNING id;'
 
-    ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES (?,?);'
+    ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1,$2) RETURNING id;'
 
-    ALBUM_SQL = 'INSERT INTO albums (name, sort_name, artist_id) VALUES (?,?,?);'
+    ALBUM_SQL = 'INSERT INTO albums (name, sort_name, artist_id) VALUES ($1,$2,$3) RETURNING id;'
 
     TRACK_SQL = <<-SQL
       INSERT INTO tracks (id, name, sort_name, artist_id, album_id, genre_id, duration,
       start, finish, track, track_count, disc, disc_count, play_count, ext, file)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
     SQL
 
-    PLAYLIST_SQL = 'INSERT INTO playlists (id, name, parent_id, count) VALUES (?,?,?,?);'
+    PLAYLIST_SQL = 'INSERT INTO playlists (id, name, parent_id, count) VALUES ($1,$2,$3,$4);'
 
-    PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?,?);'
+    PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
     ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
-    def initialize(file_name)
-      @file_name = file_name
-      if File.exists?(@file_name)
-        @plays = SQLite3::Database.new(@file_name).execute('SELECT * FROM plays');
+    def initialize(database_username, database_name)
+      @database_username = database_username
+      @database_name = database_name
+
+      pg_db = PG.connect(user: @database_username, dbname: 'postgres')
+      database_exists = pg_db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
+
+      if database_exists
+        app_db = PG.connect(user: @database_username, dbname: @database_name)
+        @plays = app_db.exec(GET_PLAYS_SQL).values.flatten
+        app_db.close
+
+        pg_db.exec(DROP_DATABASE_SQL % @database_name)
       else
         @plays = []
       end
+
+      pg_db.exec(CREATE_DATABASE_SQL % [@database_name])
+      pg_db.close
 
       @genres = {}
       @artists = {}
@@ -111,16 +128,15 @@ module Export
     end
 
     def build_tables
-      File.unlink(@file_name) if File.exists?(@file_name)
-      @db = SQLite3::Database.new(@file_name)
-      @db.execute(CREATE_GENRES_SQL)
-      @db.execute(CREATE_ARTISTS_SQL)
-      @db.execute(CREATE_ALBUMS_SQL)
-      @db.execute(CREATE_TRACKS_SQL)
-      @db.execute(CREATE_PLAYLISTS_SQL)
-      @db.execute(CREATE_PLAYLIST_TRACK_SQL)
-      @db.execute(CREATE_PLAYS_SQL)
-      @db.execute(CREATE_USERS_SQL)
+      @db = PG.connect(user: @database_username, dbname: @database_name)
+      @db.exec(CREATE_GENRES_SQL)
+      @db.exec(CREATE_ARTISTS_SQL)
+      @db.exec(CREATE_ALBUMS_SQL)
+      @db.exec(CREATE_TRACKS_SQL)
+      @db.exec(CREATE_PLAYLISTS_SQL)
+      @db.exec(CREATE_PLAYLIST_TRACK_SQL)
+      @db.exec(CREATE_PLAYS_SQL)
+      @db.exec(CREATE_USERS_SQL)
     end
 
     def create_track(track)
@@ -135,15 +151,15 @@ module Export
       artist = artist_id(track.artist, track.sort_artist)
       album = album_id(track.album, track.sort_album, artist)
 
-      @db.execute(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album, genre,
+      @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album, genre,
         track.duration, track.start, track.finish, track.track, track.track_count, track.disc,
         track.disc_count, track.play_count, ext, track.file])
     end
 
     def create_playlist(playlist)
       tracks = playlist.tracks.select { |track_id| !@skipped_tracks.has_key?(track_id.to_s) }
-      @db.execute(PLAYLIST_SQL, playlist.id, playlist.name, playlist.parent_id, tracks.count)
-      tracks.each { |track_id| @db.execute(PLAYLIST_TRACK_SQL, playlist.id, track_id) }
+      @db.exec_params(PLAYLIST_SQL, [playlist.id, playlist.name, playlist.parent_id, tracks.count])
+      tracks.each { |track_id| @db.exec_params(PLAYLIST_TRACK_SQL, [playlist.id, track_id]) }
     end
 
     private
@@ -153,8 +169,8 @@ module Export
     end
 
     def create_genre(name)
-      @db.execute(GENRE_SQL, name)
-      @genres[name] = @db.last_insert_row_id
+      result = @db.exec_params(GENRE_SQL, [name])
+      @genres[name] = result[0]['id']
     end
 
     def artist_id(name, sort_name)
@@ -162,8 +178,8 @@ module Export
     end
 
     def create_artist(name, sort_name)
-      @db.execute(ARTIST_SQL, name, sort_name)
-      @artists[name] = @db.last_insert_row_id
+      result = @db.exec_params(ARTIST_SQL, [name, sort_name])
+      @artists[name] = result[0]['id']
     end
 
     def album_id(name, sort_name, artist_id)
@@ -172,8 +188,8 @@ module Export
     end
 
     def create_album(name, sort_name, artist_id)
-      @db.execute(ALBUM_SQL, name, sort_name, artist_id)
-      @albums[artist_id][name] = @db.last_insert_row_id
+      result = @db.exec_params(ALBUM_SQL, [name, sort_name, artist_id])
+      @albums[artist_id][name] = result[0]['id']
     end
   end
 end

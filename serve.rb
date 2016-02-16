@@ -1,15 +1,10 @@
-require 'sqlite3'
+require 'pg'
 require 'sinatra/base'
 require 'sinatra/json'
 
-if !File.exists?(Config['database_name'])
-  puts 'Unable to find export database, please generate with `rake export` first'
-  exit
-end
-
-LOG_IN_SQL = 'INSERT INTO users (token, username) VALUES (?, ?)'
-LOGGED_IN_SQL = 'SELECT COUNT(*) FROM users WHERE token=?'
-USERNAME_SQL = 'SELECT username FROM users WHERE token=?'
+LOG_IN_SQL = 'INSERT INTO users (token, username) VALUES ($1, $2)'
+LOGGED_IN_SQL = 'SELECT COUNT(*) FROM users WHERE token=$1'
+USERNAME_SQL = 'SELECT username FROM users WHERE token=$1'
 
 GENRE_SQL = 'SELECT id, name FROM genres';
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists';
@@ -17,9 +12,9 @@ ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums';
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_id, genre_id, duration, start, ' +
   'finish, track, track_count, disc, disc_count, play_count, ext FROM tracks'
 
-TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=?'
-TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE id=?'
-CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES (?)'
+TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1'
+TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE id=$1'
+CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1)'
 PLAYS_SQL = 'SELECT * FROM plays'
 
 ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
@@ -47,7 +42,7 @@ class Serve < Sinatra::Base
   end
 
   def db
-    @db ||= SQLite3::Database.new(Config['database_name'])
+    @db ||= PG.connect(user: Config['database_username'], dbname: Config['database_name'])
   end
 
   def valid_user?(username, password)
@@ -59,7 +54,7 @@ class Serve < Sinatra::Base
   end
 
   def check_login
-    session[:token] && db.get_first_value(LOGGED_IN_SQL, session[:token]) > 0
+    session[:token] && db.exec_params(LOGGED_IN_SQL, [session[:token]]).getvalue(0, 0).to_i > 0
   end
 
   get '/' do
@@ -69,7 +64,7 @@ class Serve < Sinatra::Base
   post '/' do
     if valid_user?(params[:username], params[:password])
       token = SecureRandom.urlsafe_base64(15).tr('lIO0', 'sxyz')
-      db.execute(LOG_IN_SQL, token, params[:username])
+      db.exec_params(LOG_IN_SQL, [token, params[:username]])
 
       session[:token] = token
       redirect to('/play')
@@ -88,17 +83,17 @@ class Serve < Sinatra::Base
 
   get '/data.json' do
     if check_login
-      json genres: db.execute(GENRE_SQL),
-           artists: db.execute(ARTIST_SQL),
-           albums: db.execute(ALBUM_SQL),
-           tracks: db.execute(TRACK_SQL)
+      json genres: db.exec(GENRE_SQL).values,
+           artists: db.exec(ARTIST_SQL).values,
+           albums: db.exec(ALBUM_SQL).values,
+           tracks: db.exec(TRACK_SQL).values
     else
       redirect to('/')
     end
   end
 
   def find_track(db, music_path, id, ext, download)
-    name, file, actual_ext = db.get_first_row(TRACK_INFO_SQL, id)
+    name, file, actual_ext = db.exec_params(TRACK_INFO_SQL, [id]).values.first
     if file == nil || ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
       false
     else
@@ -127,7 +122,7 @@ class Serve < Sinatra::Base
   end
 
   get '/plays.json' do
-    json db.execute(PLAYS_SQL).flatten
+    json db.exec(PLAYS_SQL).values.flatten.map(&:to_i)
   end
 
   post '/play/*.*' do
@@ -135,13 +130,14 @@ class Serve < Sinatra::Base
       redirect to('/')
     else
       id, ext = params['splat']
-      actual_ext = db.get_first_value(TRACK_EXT_SQL, id)
+      result = db.exec_params(TRACK_EXT_SQL, [id])
+      actual_ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
 
       if ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
         raise Sinatra::NotFound
       else
-        username = db.get_first_value(USERNAME_SQL, session[:token])
-        db.execute(CREATE_PLAY_SQL, id) if track_user_plays?(username)
+        username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)
+        db.exec_params(CREATE_PLAY_SQL, [id]) if track_user_plays?(username)
       end
     end
   end

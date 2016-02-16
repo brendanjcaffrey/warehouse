@@ -4,3 +4,4 @@ config.yaml
 log/*.log
 tmp/pids/*.pid
 tmp/sockets/*.sock
+postgres_sync.sh
