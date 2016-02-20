@@ -110,7 +110,11 @@ module Export
 
       if database_exists
         app_db = PG.connect(user: @database_username, dbname: @database_name)
-        @plays = app_db.exec(GET_PLAYS_SQL).values.flatten
+        begin
+          @plays = app_db.exec(GET_PLAYS_SQL).values.flatten
+        rescue
+          @plays = []
+        end
         app_db.close
 
         pg_db.exec(DROP_DATABASE_SQL % @database_name)

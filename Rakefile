@@ -12,6 +12,16 @@ task :export do
   Export::Driver.new(database, library, progress).go!
 end
 
+task :update_plays do
+  Config.set_env('local')
+  require_all 'export'
+
+  database = Export::Database.new(Config['database_username'], Config['database_name'])
+  library = Export::Library.new
+  progress = Export::Progress.new
+  Export::Driver.new(database, library, progress).update_plays!
+end
+
 task :local do
   Config.set_env('local')
   require_relative 'serve'

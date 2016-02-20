@@ -9,7 +9,7 @@ module Export
       @progress = progress
     end
 
-    def go!
+    def update_plays!
       if Config.local('update_plays')
         puts 'Updating local plays...'
         @database.plays.each do |database_id|
@@ -24,7 +24,9 @@ module Export
           @library.add_play(database_id)
         end
       end
+    end
 
+    def go!
       @database.build_tables
       track_count = @library.total_track_count
       @progress.start('Exporting tracks...', track_count)

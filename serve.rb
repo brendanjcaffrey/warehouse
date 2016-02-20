@@ -42,7 +42,11 @@ class Serve < Sinatra::Base
   end
 
   def db
-    @db ||= PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+    if Config.use_persistent_db?
+      @@db ||= PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+    else
+      @db ||= PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+    end
   end
 
   def valid_user?(username, password)

@@ -9,3 +9,8 @@ pid    File.join(app_dir, 'tmp/pids/unicorn.pid')
 
 stderr_path File.join(app_dir, 'log/unicorn.stderr.log')
 stdout_path File.join(app_dir, 'log/unicorn.stdout.log')
+
+after_fork do |server, worker|
+  require_relative 'shared/config.rb'
+  Config.set_use_persistent_db(true)
+end

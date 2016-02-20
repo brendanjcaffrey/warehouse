@@ -11,6 +11,14 @@ module Config
     @env == 'remote'
   end
 
+  def set_use_persistent_db(val)
+    @use_persistent_db = val
+  end
+
+  def use_persistent_db?
+    @use_persistent_db
+  end
+
   def vals
     @vals ||= begin
       YAML.load(File.open('config.yaml'))
