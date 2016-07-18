@@ -96,9 +96,9 @@ class Serve < Sinatra::Base
     end
   end
 
-  def find_track(db, music_path, id, ext, download)
-    name, file, actual_ext = db.exec_params(TRACK_INFO_SQL, [id]).values.first
-    if file == nil || ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
+  def find_track(db, music_path, id, download)
+    name, file, ext = db.exec_params(TRACK_INFO_SQL, [id]).values.first
+    if file == nil || ACCEPTABLE_EXTENSIONS.index(ext) == nil
       false
     else
       headers['Content-Disposition'] = "attachment; filename=\"#{name}.#{ext}\"" if download
@@ -107,20 +107,18 @@ class Serve < Sinatra::Base
     end
   end
 
-  get '/tracks/*.*' do
+  get '/tracks/*' do
     if !check_login
       redirect to('/')
-    elsif !find_track(db, Config['music_path'], params['splat'][0],
-                      params['splat'][1], false)
+    elsif !find_track(db, Config['music_path'], params['splat'][0], false)
       raise Sinatra::NotFound
     end
   end
 
-  get '/download/*.*' do
+  get '/download/*' do
     if !check_login
       redirect to('/')
-    elsif !find_track(db, Config['music_path'], params['splat'][0],
-                      params['splat'][1], true)
+    elsif !find_track(db, Config['music_path'], params['splat'][0], true)
       raise Sinatra::NotFound
     end
   end
@@ -129,15 +127,15 @@ class Serve < Sinatra::Base
     json db.exec(PLAYS_SQL).values.flatten.map(&:to_i)
   end
 
-  post '/play/*.*' do
+  post '/play/*' do
     if !check_login
       redirect to('/')
     else
-      id, ext = params['splat']
+      id = params['splat'][0]
       result = db.exec_params(TRACK_EXT_SQL, [id])
-      actual_ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
+      ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
 
-      if ext != actual_ext || ACCEPTABLE_EXTENSIONS.index(ext) == nil
+      if ACCEPTABLE_EXTENSIONS.index(ext) == nil
         raise Sinatra::NotFound
       else
         username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)

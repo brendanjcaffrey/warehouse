@@ -53,7 +53,7 @@ Streamer.prototype.showMenu = function(row, e) {
              function() { $(this).removeClass("hover"); })
       .mousedown(function() {
         var track = self.api.row(row).data();
-        window.location = '/download/' + String(track.id) + '.' + String(track.ext);
+        window.location = '/download/' + String(track.id);
       });
   menu.append(download);
 

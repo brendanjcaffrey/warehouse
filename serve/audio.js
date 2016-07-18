@@ -18,7 +18,7 @@ Audio.prototype.currentTimeUpdated = function() {
   var track = this.tracks[this.nowPlayingSlot];
 
   if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
-    $.post('/play/' + track.id + '.' + track.ext);
+    $.post('/play/' + track.id);
     this.streamer.next();
   }
 }
@@ -28,7 +28,7 @@ Audio.prototype.loadIntoSlot = function(track, slot) {
 
   var audio = $(this.audios[slot]);
   // setting #t=123 at the end of the URL sets the start time cross browser
-  audio.attr("src", "/tracks/" + String(track.id) + "." + track.ext + "#t=" + String(track.start));
+  audio.attr("src", "/tracks/" + String(track.id) + "#t=" + String(track.start));
   audio.attr("type", extToType(track.ext));
   audio.attr("data-track-id", String(track.id));
   audio.currentTime = track.start;

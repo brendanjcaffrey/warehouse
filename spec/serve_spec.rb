@@ -10,11 +10,15 @@ module Config
   def [](key)
     return YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
     return 'test_itunes_streamer' if key == 'database_name'
-    return './' if key == 'music_path'
+    return './spec/' if key == 'music_path'
     return 'YJ1xcuoBPTUYX_cUZzEB' if key == 'secret'
   end
 
   def remote?
+    false
+  end
+
+  def use_persistent_db?
     false
   end
 
@@ -114,38 +118,38 @@ describe 'iTunes Streamer' do
     end
   end
 
-  describe '/tracks/*.*' do
+  describe '/tracks/*' do
     it 'should redirect if not logged in' do
-      get '/tracks/1.mp3'
+      get '/tracks/1'
       follow_redirect!
       expect(last_request.url).to eq('http://example.org/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
-      get '/tracks/2.mp3', {}, fake_auth('test123')
+      get '/tracks/2', {}, fake_auth('test123')
       expect(last_response.status).to eq(404)
     end
 
     it 'should send the contents of the file' do
-      get '/tracks/1.mp3', {}, fake_auth('test123')
+      get '/tracks/1', {}, fake_auth('test123')
       expect(last_response.body).to eq("1.mp3 contents\n")
     end
   end
 
-  describe '/download/*.*' do
+  describe '/download/*' do
     it 'should redirect if not logged in' do
-      get '/download/1.mp3'
+      get '/download/1'
       follow_redirect!
       expect(last_request.url).to eq('http://example.org/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
-      get '/download/2.mp3', {}, fake_auth('test123')
+      get '/download/2', {}, fake_auth('test123')
       expect(last_response.status).to eq(404)
     end
 
     it 'should send the contents of the file with a header' do
-      get '/download/1.mp3', {}, fake_auth('test123')
+      get '/download/1', {}, fake_auth('test123')
       expect(last_response.body).to eq("1.mp3 contents\n")
       expect(last_response.headers['Content-Disposition']).to include('attachment')
       expect(last_response.headers['Content-Disposition']).to include('filename="test_title.mp3"')
@@ -163,25 +167,25 @@ describe 'iTunes Streamer' do
     end
   end
 
-  describe '/play/*.*' do
+  describe '/play/*' do
     it 'should redirect if not logged in' do
-      post '/play/1.mp3'
+      post '/play/1'
       follow_redirect!
       expect(last_request.url).to eq('http://example.org/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
-      post '/play/2.mp3', {}, fake_auth('test123')
+      post '/play/2', {}, fake_auth('test123')
       expect(last_response.status).to eq(404)
     end
 
     it 'should create a play if tracking this user\'s play is enabled' do
-      post '/play/1.mp3', {}, fake_auth('test123')
+      post '/play/1', {}, fake_auth('test123')
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('1')
     end
 
     it 'should create a play if tracking this user\'s play is enabled' do
-      post '/play/1.mp3', {}, fake_auth('notrack')
+      post '/play/1', {}, fake_auth('notrack')
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('0')
     end
   end
