@@ -1,3 +1,28 @@
+var PersistentSettings = function() {
+  cookies = Cookies.get();
+  // both default to false
+  this.shuffle = (Cookies.get("shuffle") == "1");
+  this.repeat  = (Cookies.get("repeat") == "1");
+}
+
+PersistentSettings.prototype.persist = function() {
+  Cookies.set("shuffle", this.shuffle ? "1" : "0", { expires: 60 });
+  Cookies.set("repeat", this.repeat ? "1" : "0", { expires: 60 });
+}
+
+PersistentSettings.prototype.getShuffle = function() { return this.shuffle; }
+PersistentSettings.prototype.setShuffle = function(shuffle) {
+  this.shuffle = shuffle;
+  this.persist();
+}
+
+PersistentSettings.prototype.getRepeat = function() { return this.repeat; }
+PersistentSettings.prototype.setRepeat = function(repeat) {
+  this.repeat = repeat;
+  this.persist();
+}
+
+
 var Streamer = function(data) {
   var toHash = function(hash, object, index, array) {
     hash[object.id] = object;
@@ -11,13 +36,12 @@ var Streamer = function(data) {
   this.tracksArr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); });
   this.tracksHash = this.tracksArr.reduce(toHash, {});
 
+  this.settings = new PersistentSettings();
   this.audio = new Audio(this);
-  this.playlist = new Playlist(this.audio, this.tracksHash);
+  this.playlist = new Playlist(this.audio, this.settings, this.tracksHash);
 
   this.stopped = true;
   this.playing = false;
-  this.shuffle = false;
-  this.repeat = false;
 
   this.skipRebuild = false;
   this.nowPlayingRow = this.selectedRow = null;
@@ -35,12 +59,12 @@ Streamer.prototype.highlightRow = function(row) {
 Streamer.prototype.manualRowPlay = function(row) {
   this.highlightRow(row);
   this.setNowPlaying(row);
-  this.playlist.rebuild(this.shuffle, this.stopped, this.api.row(row).data().id);
+  this.playlist.rebuild(this.stopped, this.api.row(row).data().id);
   this.play();
 }
 
 Streamer.prototype.hideMenu = function() {
-  $('#contextMenu').remove();
+  $("#contextMenu").remove();
 }
 
 Streamer.prototype.showMenu = function(row, e) {
@@ -48,16 +72,16 @@ Streamer.prototype.showMenu = function(row, e) {
   var menu = $('<ul id="contextMenu">');
   var self = this;
 
-  var download = $('<li>Download</li>')
+  var download = $("<li>Download</li>")
       .hover(function() { $(this).addClass("hover"); },
              function() { $(this).removeClass("hover"); })
       .mousedown(function() {
         var track = self.api.row(row).data();
-        window.location = '/download/' + String(track.id);
+        window.location = "/download/" + String(track.id);
       });
   menu.append(download);
 
-  var play = $('<li>Play</li>')
+  var play = $("<li>Play</li>")
       .hover(function() { $(this).addClass("hover"); },
              function() { $(this).removeClass("hover"); })
       .mousedown(function() { self.manualRowPlay(row); });
@@ -122,14 +146,14 @@ Streamer.prototype.pause = function() {
 }
 
 Streamer.prototype.prev = function() {
-  if (this.repeat && this.audio.tryRewind()) { return; }
+  if (this.settings.getRepeat() && this.audio.tryRewind()) { return; }
 
   this.playlist.moveBack();
   if (this.nowPlayingRow) { this.stop(); this.play(); }
 }
 
 Streamer.prototype.next = function() {
-  if (this.repeat && this.audio.tryRewind()) { return; }
+  if (this.settings.getRepeat() && this.audio.tryRewind()) { return; }
 
   this.playlist.moveForward();
   if (this.nowPlayingRow) { this.stop(); this.play(); }
@@ -141,23 +165,23 @@ Streamer.prototype.playPause = function() {
 }
 
 Streamer.prototype.toggleShuffle = function() {
-  if (this.shuffle) {
-    this.shuffle = false;
+  if (this.settings.getShuffle()) {
+    this.settings.setShuffle(false);
     $("#shuffle").addClass("disabled");
   } else {
-    this.shuffle = true;
+    this.settings.setShuffle(true);
     $("#shuffle").removeClass("disabled");
   }
 
-  this.playlist.rebuild(this.shuffle, this.stopped, this.audio.getNowPlayingTrackId());
+  this.playlist.rebuild(this.stopped, this.audio.getNowPlayingTrackId());
 }
 
 Streamer.prototype.toggleRepeat = function() {
-  if (this.repeat) {
-    this.repeat = false;
+  if (this.settings.getRepeat()) {
+    this.settings.setRepeat(false);
     $("#repeat").addClass("disabled");
   } else {
-    this.repeat = true;
+    this.settings.setRepeat(true);
     $("#repeat").removeClass("disabled");
   }
 }
@@ -171,7 +195,7 @@ Streamer.prototype.volumeUp = function() {
   if (value > 100) { value = 100; }
 
   this.volumeUpdated(value);
-  this.volume.slider('setValue', value);
+  this.volume.slider("setValue", value);
 }
 
 Streamer.prototype.volumeDown = function() {
@@ -179,11 +203,14 @@ Streamer.prototype.volumeDown = function() {
   if (value < 0) { value = 0; }
 
   this.volumeUpdated(value);
-  this.volume.slider('setValue', value);
+  this.volume.slider("setValue", value);
 }
 
 Streamer.prototype.start = function() {
   var self = this;
+
+  if (!self.settings.getShuffle()) { $("#shuffle").addClass("disabled"); }
+  if (!self.settings.getRepeat()) { $("#repeat").addClass("disabled"); }
 
   $("#control-row, #content-row").removeClass("hidden");
   $("#loading").remove();
@@ -194,13 +221,13 @@ Streamer.prototype.start = function() {
   $("#shuffle").click(function() { self.toggleShuffle() });
   $("#repeat").click(function() { self.toggleRepeat() });
 
-  $("#playpause, #prev, #next").mousedown(function() { $(this).addClass('disabled'); });
-  $("#playpause, #prev, #next").mouseup(function() { $(this).removeClass('disabled'); });
-  $("#playpause, #prev, #next").mouseleave(function() { $(this).removeClass('disabled'); });
+  $("#playpause, #prev, #next").mousedown(function() { $(this).addClass("disabled"); });
+  $("#playpause, #prev, #next").mouseup(function() { $(this).removeClass("disabled"); });
+  $("#playpause, #prev, #next").mouseleave(function() { $(this).removeClass("disabled"); });
 
   // create slider, initialize volume to 50%
   this.volume = $("#volume").slider({value: 50}).
-    on('slide', function(slider) { self.volumeUpdated(slider.value); });
+    on("slide", function(slider) { self.volumeUpdated(slider.value); });
   self.volumeUpdated(50);
 
   var table = $("#tracks").DataTable({
@@ -212,7 +239,7 @@ Streamer.prototype.start = function() {
       // this drawCallback is called immediately after defining the table,
       // so there's no way to gracefully set the api variable except here
       self.api = this.api();
-      self.playlist.rebuild(self.shuffle, self.stopped, self.audio.getNowPlayingTrackId(), self.api);
+      self.playlist.rebuild(self.stopped, self.audio.getNowPlayingTrackId(), self.api);
     },
     "lengthChange": false,
     "columns": [

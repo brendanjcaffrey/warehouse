@@ -1,8 +1,10 @@
-var Playlist = function(audio, tracksHash) {
+var Playlist = function(audio, settings, tracksHash) {
+  this.audio = audio;
+  this.settings = settings;
+  this.tracksHash = tracksHash;
+
   this.playlist = [];
   this.playlistIndex = 0;
-  this.audio = audio;
-  this.tracksHash = tracksHash;
 }
 
 Playlist.prototype.shufflePlaylist = function() {
@@ -11,7 +13,7 @@ Playlist.prototype.shufflePlaylist = function() {
     x = this.playlist[--i], this.playlist[i] = this.playlist[j], this.playlist[j] = x);
 }
 
-Playlist.prototype.rebuild = function(shuffle, stopped, nowPlayingId, api) {
+Playlist.prototype.rebuild = function(stopped, nowPlayingId, api) {
   if (api) this.api = api
   this.playlist = this.api.rows({search: "applied"}).data().map(function (x) { return x.id });
 
@@ -23,7 +25,7 @@ Playlist.prototype.rebuild = function(shuffle, stopped, nowPlayingId, api) {
     this.playlistIndex = 0;
   }
 
-  if (shuffle) {
+  if (this.settings.getShuffle()) {
     // pull out the currently playing track
     if (this.playlistIndex >= 0 && !stopped) { this.playlist.splice(this.playlistIndex, 1); }
     this.shufflePlaylist();
