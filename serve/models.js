@@ -59,5 +59,7 @@ var Track = function(row, artists, albums, genres) {
   this.album = albums[this.albumId].name;
   this.sortAlbum = albums[this.albumId].sortName;
   this.genre = genres[this.genreId].name;
+
   fixSortName(this);
+  this.searchName = this.sortName.toLowerCase();
 }

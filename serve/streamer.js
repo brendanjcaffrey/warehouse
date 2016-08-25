@@ -33,7 +33,12 @@ var Streamer = function(data) {
   var albums = data["albums"].map(function (row) { return new Album(row); }).reduce(toHash, {});
   var genres = data["genres"].map(function (row) { return new Genre(row); }).reduce(toHash, {});
 
-  this.tracksArr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); });
+  var sortStr = function(i1, i2) {
+    if (i1.searchName == i2.searchName) { return 0; }
+    else if (i1.searchName > i2.searchName) { return 1; }
+    else { return -1; }
+  }
+  this.tracksArr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); }).sort(sortStr);
   this.tracksHash = this.tracksArr.reduce(toHash, {});
 
   this.settings = new PersistentSettings();
@@ -45,6 +50,9 @@ var Streamer = function(data) {
 
   this.skipRebuild = false;
   this.nowPlayingRow = this.selectedRow = null;
+
+  this.letterPressString = "";
+  this.letterPressTimeoutID = null;
 }
 
 Streamer.prototype.highlightRow = function(row) {
@@ -114,19 +122,29 @@ Streamer.prototype.clearNowPlaying = function() {
   this.audio.pause();
 }
 
-Streamer.prototype.play = function() {
-  var self = this;
-
-  var trackId = this.playlist.getCurrentTrackId();
+Streamer.prototype.findRowForTrackId = function(trackId) {
+  var ret = null;
   this.api.rows(function(index, data, node) {
-    if (data.id == trackId) { self.setNowPlaying(node); }
+    if (data.id == trackId) { ret = node; }
   });
 
+  return ret;
+}
+
+Streamer.prototype.showRow = function(row)
+{
+  // TODO: row show plug in doesn't work when searching
   if ($("input[type=search]").text() == "") {
     this.skipRebuild = true;
-    this.api.row(this.nowPlayingRow).show().draw(false);
+    this.api.row(row).show().draw(false);
     this.skipRebuild = false;
   }
+}
+
+Streamer.prototype.play = function() {
+  var row = this.findRowForTrackId(this.playlist.getCurrentTrackId());
+  this.setNowPlaying(row);
+  this.showRow(row);
 
   this.stopped = false;
   this.playing = true;
@@ -206,6 +224,26 @@ Streamer.prototype.volumeDown = function() {
   this.volume.slider("setValue", value);
 }
 
+Streamer.prototype.onLetterPress = function(letter) {
+  var self = this;
+  self.letterPressString += letter;
+
+  if (self.letterPressTimeoutID != null) {
+    window.clearTimeout(self.letterPressTimeoutID);
+    self.letterPressTimeoutID = null;
+  }
+
+  self.letterPressTimeoutID = window.setTimeout(function() {
+    track = self.tracksArr.find(function(track) { return track.searchName.substr(0, self.letterPressString.length) >= self.letterPressString; });
+    var row = self.findRowForTrackId(track.id);
+    self.highlightRow(row);
+    self.showRow(row);
+
+    self.letterPressString = "";
+    self.letterPressTimeoutID = null;
+  }, 750);
+}
+
 Streamer.prototype.start = function() {
   var self = this;
 
@@ -278,7 +316,9 @@ $(window).load(function() {
     });
 
     $(document).bind("keydown", "space", function(e) {
-      streamer.playPause(); return false;
+      if (streamer.letterPressTimeoutID != null) { streamer.onLetterPress(" "); }
+      else { streamer.playPause(); }
+      return false;
     });
 
     $(document).bind("keydown", "ctrl+up", function(e) {
@@ -301,5 +341,12 @@ $(window).load(function() {
         case "volume-down": streamer.volumeDown(); break;
       }
     }, false);
+
+    var alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
+    $.each(alphabet, function(i, e) {
+      $(document).bind("keydown", alphabet[i], function(e) {
+        streamer.onLetterPress(alphabet[i]);
+      });
+    });
   });
 });
