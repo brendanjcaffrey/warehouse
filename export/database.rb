@@ -99,31 +99,14 @@ module Export
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
+    TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name AS track_name, artists.name AS artist_name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
+
     ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
     def initialize(database_username, database_name)
       @database_username = database_username
       @database_name = database_name
-
-      pg_db = PG.connect(user: @database_username, dbname: 'postgres')
-      database_exists = pg_db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
-
-      if database_exists
-        app_db = PG.connect(user: @database_username, dbname: @database_name)
-        begin
-          @plays = app_db.exec(GET_PLAYS_SQL).values.flatten
-        rescue
-          @plays = []
-        end
-        app_db.close
-
-        pg_db.exec(DROP_DATABASE_SQL % @database_name)
-      else
-        @plays = []
-      end
-
-      pg_db.exec(CREATE_DATABASE_SQL % [@database_name])
-      pg_db.close
+      @db = PG.connect(user: @database_username, dbname: 'postgres')
 
       @genres = {}
       @artists = {}
@@ -131,16 +114,30 @@ module Export
       @skipped_tracks = {}
     end
 
-    def build_tables
+    def get_plays
+      begin
+        return @db.exec(GET_PLAYS_SQL).values.flatten
+      rescue
+        return []
+      end
+    end
+
+    def get_track_and_artist_name(id)
+      @db.exec_params(TRACK_AND_ARTIST_NAME_SQL, [id]).values.first
+    end
+
+    def clean_and_rebuild
+      database_exists = @db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
+      if database_exists
+        @db.exec(DROP_DATABASE_SQL % @database_name)
+      end
+
+      # have to close and reopen here or PG throws some errors when creating tables
+      @db.exec(CREATE_DATABASE_SQL % [@database_name])
+      @db.close
+
       @db = PG.connect(user: @database_username, dbname: @database_name)
-      @db.exec(CREATE_GENRES_SQL)
-      @db.exec(CREATE_ARTISTS_SQL)
-      @db.exec(CREATE_ALBUMS_SQL)
-      @db.exec(CREATE_TRACKS_SQL)
-      @db.exec(CREATE_PLAYLISTS_SQL)
-      @db.exec(CREATE_PLAYLIST_TRACK_SQL)
-      @db.exec(CREATE_PLAYS_SQL)
-      @db.exec(CREATE_USERS_SQL)
+      build_tables
     end
 
     def create_track(track)
@@ -167,6 +164,17 @@ module Export
     end
 
     private
+
+    def build_tables
+      @db.exec(CREATE_GENRES_SQL)
+      @db.exec(CREATE_ARTISTS_SQL)
+      @db.exec(CREATE_ALBUMS_SQL)
+      @db.exec(CREATE_TRACKS_SQL)
+      @db.exec(CREATE_PLAYLISTS_SQL)
+      @db.exec(CREATE_PLAYLIST_TRACK_SQL)
+      @db.exec(CREATE_PLAYS_SQL)
+      @db.exec(CREATE_USERS_SQL)
+    end
 
     def genre_id(name)
       @genres[name] || create_genre(name)

@@ -11,23 +11,23 @@ module Export
 
     def update_plays!
       if Config.local('update_plays')
-        puts 'Updating local plays...'
-        @database.plays.each do |database_id|
+        @database.get_plays.each do |database_id|
+          puts @database.get_track_and_artist_name(database_id).join(' - ')
           @library.add_play(database_id)
         end
       end
 
       if Config.remote('update_plays')
-        puts 'Updating remote plays...'
         uri = URI(Config.remote('base_url') + '/plays.json')
         JSON.parse(Net::HTTP.get(uri)).each do |database_id|
+          puts @database.get_track_and_artist_name(database_id).join(' - ')
           @library.add_play(database_id)
         end
       end
     end
 
     def go!
-      @database.build_tables
+      @database.clean_and_rebuild
       track_count = @library.total_track_count
       @progress.start('Exporting tracks...', track_count)
 
