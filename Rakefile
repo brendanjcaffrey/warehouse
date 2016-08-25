@@ -1,3 +1,4 @@
+require 'rubygems'
 require 'require_all'
 require 'sinatra'
 require_relative 'shared/config.rb'
