@@ -17,15 +17,15 @@
  *      name: 'example',
  *      value: 'an example row'
  *    };
- *    
+ *
  *    table.row.add( new_row ).draw().show().draw(false);
  */
 $.fn.dataTable.Api.register('row().show()', function() {
     var page_info = this.table().page.info();
     // Get row index
     var new_row_index = this.index();
-    // Row position
-    var row_position = this.table().rows()[0].indexOf( new_row_index );
+    // Row position (note: search: applied will return all rows if there is no search)
+    var row_position = this.table().rows( { 'search': 'applied' } )[0].indexOf( new_row_index );
     // Already on right page ?
     if( row_position >= page_info.start && row_position < page_info.end ) {
         // Return row object

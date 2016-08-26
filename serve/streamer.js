@@ -131,14 +131,10 @@ Streamer.prototype.findRowForTrackId = function(trackId) {
   return ret;
 }
 
-Streamer.prototype.showRow = function(row)
-{
-  // TODO: row show plug in doesn't work when searching
-  if ($("input[type=search]").text() == "") {
-    this.skipRebuild = true;
-    this.api.row(row).show().draw(false);
-    this.skipRebuild = false;
-  }
+Streamer.prototype.showRow = function(row) {
+  this.skipRebuild = true;
+  this.api.row(row).show().draw(false);
+  this.skipRebuild = false;
 }
 
 Streamer.prototype.play = function() {
@@ -301,9 +297,10 @@ Streamer.prototype.start = function() {
   });
 }
 
+var streamer;
 $(window).load(function() {
   $.getJSON("/data.json", function(data) {
-    var streamer = new Streamer(data);
+    streamer = new Streamer(data);
     streamer.start();
     $("#tracks_filter").detach().appendTo($("#filter"));
 
