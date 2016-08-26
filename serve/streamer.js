@@ -67,7 +67,8 @@ Streamer.prototype.highlightRow = function(row) {
 Streamer.prototype.manualRowPlay = function(row) {
   this.highlightRow(row);
   this.setNowPlaying(row);
-  this.playlist.rebuild(this.stopped, this.api.row(row).data().id);
+  // we pass in false for stopped here to get the playlist to use the song we just set as playing
+  this.playlist.rebuild(false, this.api.row(row).data().id);
   this.play();
 }
 

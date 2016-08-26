@@ -14,7 +14,7 @@ Playlist.prototype.shufflePlaylist = function() {
 }
 
 Playlist.prototype.rebuild = function(stopped, nowPlayingId, api) {
-  if (api) this.api = api
+  if (api) { this.api = api }
   this.playlist = this.api.rows({search: "applied"}).data().map(function (x) { return x.id });
 
   if (nowPlayingId >= 0) {
