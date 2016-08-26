@@ -21,6 +21,7 @@ Playlist.prototype.rebuild = function(stopped, nowPlayingId, api) {
     // if the current song isn't in the results, then this will return -1,
     // which means the next song to be played will be index 0 which is what we want
     this.playlistIndex = this.playlist.indexOf(nowPlayingId);
+    if (this.playlistIndex == -1) { this.hiddenPlayingTrackId = nowPlayingId; }
   } else {
     this.playlistIndex = 0;
   }
@@ -42,7 +43,7 @@ Playlist.prototype.rebuild = function(stopped, nowPlayingId, api) {
 }
 
 Playlist.prototype.getCurrentTrackId = function() {
-  if (this.playlistIndex == -1) { return this.playlist[0]; }
+  if (this.playlistIndex == -1) { return this.hiddenPlayingTrackId; }
   return this.playlist[this.playlistIndex];
 }
 

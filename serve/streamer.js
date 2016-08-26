@@ -124,12 +124,15 @@ Streamer.prototype.clearNowPlaying = function() {
 }
 
 Streamer.prototype.findRowForTrackId = function(trackId) {
-  var ret = null;
-  this.api.rows(function(index, data, node) {
-    if (data.id == trackId) { ret = node; }
-  });
+  var self = this;
+  // rows() returns an array with one element, another array of indices
+  var rowIndices = this.api.rows({"search": "applied"})[0];
+  for (var i = 0; i < rowIndices.length; ++i) {
+    var thisRow = self.api.row(rowIndices[i], {"search": "applied"});
+    if (thisRow.data().id == trackId) { return thisRow.node(); }
+  }
 
-  return ret;
+  return null;
 }
 
 Streamer.prototype.showRow = function(row) {
@@ -140,8 +143,10 @@ Streamer.prototype.showRow = function(row) {
 
 Streamer.prototype.play = function() {
   var row = this.findRowForTrackId(this.playlist.getCurrentTrackId());
-  this.setNowPlaying(row);
-  this.showRow(row);
+  if (row != null) { // could be a track hidden by searching
+    this.setNowPlaying(row);
+    this.showRow(row);
+  }
 
   this.stopped = false;
   this.playing = true;
@@ -233,8 +238,12 @@ Streamer.prototype.onLetterPress = function(letter) {
   self.letterPressTimeoutID = window.setTimeout(function() {
     track = self.tracksArr.find(function(track) { return track.searchName.substr(0, self.letterPressString.length) >= self.letterPressString; });
     var row = self.findRowForTrackId(track.id);
-    self.highlightRow(row);
-    self.showRow(row);
+
+    // could be filtered away - ignoring this isn't great, but searching only the filtered tracks would be difficult
+    if (row != null) {
+      self.highlightRow(row);
+      self.showRow(row);
+    }
 
     self.letterPressString = "";
     self.letterPressTimeoutID = null;
