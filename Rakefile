@@ -10,7 +10,7 @@ task :export do
   database = Export::Database.new(Config['database_username'], Config['database_name'])
   library = Export::Library.new
   progress = Export::Progress.new
-  Export::Driver.new(database, library, progress).go!
+  Export::Driver.new(database, library, progress).export_itunes_library!
 end
 
 task :update_plays do

@@ -58,8 +58,7 @@ module Export
       CREATE TABLE playlists (
         id SERIAL,
         name TEXT,
-        parent_id INTEGER,
-        count INTEGER
+        parent_id INTEGER
       );
     SQL
 
@@ -95,13 +94,11 @@ module Export
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
     SQL
 
-    PLAYLIST_SQL = 'INSERT INTO playlists (id, name, parent_id, count) VALUES ($1,$2,$3,$4);'
+    PLAYLIST_SQL = 'INSERT INTO playlists (id, name, parent_id) VALUES ($1,$2,$3);'
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
     TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name AS track_name, artists.name AS artist_name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
-
-    ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
     def initialize(database_username, database_name)
       @database_username = database_username
@@ -111,7 +108,6 @@ module Export
       @genres = {}
       @artists = {}
       @albums = {}
-      @skipped_tracks = {}
     end
 
     def get_plays
@@ -141,26 +137,18 @@ module Export
     end
 
     def create_track(track)
-      ext = track.file.split('.').last.downcase
-      if ACCEPTABLE_EXTENSIONS.index(ext) == nil
-        puts "Skipping #{track.file} due to invalid extension #{ext.inspect}"
-        @skipped_tracks[track.id] = true
-        return
-      end
-
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
       album = album_id(track.album, track.sort_album, artist)
 
       @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album, genre,
         track.duration, track.start, track.finish, track.track, track.track_count, track.disc,
-        track.disc_count, track.play_count, ext, track.file])
+        track.disc_count, track.play_count, track.ext, track.file])
     end
 
     def create_playlist(playlist)
-      tracks = playlist.tracks.select { |track_id| !@skipped_tracks.has_key?(track_id.to_s) }
-      @db.exec_params(PLAYLIST_SQL, [playlist.id, playlist.name, playlist.parent_id, tracks.count])
-      tracks.each { |track_id| @db.exec_params(PLAYLIST_TRACK_SQL, [playlist.id, track_id]) }
+      @db.exec_params(PLAYLIST_SQL, [playlist.id, playlist.name, playlist.parent_id])
+      playlist.tracks.each { |track_id| @db.exec_params(PLAYLIST_TRACK_SQL, [playlist.id, track_id]) }
     end
 
     private

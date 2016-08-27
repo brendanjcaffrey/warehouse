@@ -66,6 +66,29 @@ module Export
       end tell
     SCRIPT
 
+    TOTAL_FOLDER_COUNT = 'tell application "iTunes" to get count of folder playlists'
+
+    FOLDER_INFO = <<-SCRIPT
+      tell application "iTunes"
+        set output to ""
+        set thisFolder to folder playlist %1$d
+
+        #{SET_DELIMS}
+        set output to output & id of thisFolder & "\n"
+        set output to output & name of thisFolder & "\n"
+        #{RESET_DELIMS}
+
+        try
+          get parent of thisFolder
+          set output to output & id of parent of thisFolder & "\n"
+        on error
+          set output to output & "-1" & "\n"
+        end try
+
+        output
+      end tell
+    SCRIPT
+
     INCREMENT_PLAYED_COUNT = <<-SCRIPT
       tell application "iTunes"
         set thisTrack to some file track of library playlist 1 whose database ID is %d
@@ -90,6 +113,16 @@ module Export
     def playlist_info(playlist_index)
       playlist_number = playlist_index + 1
       split = `osascript -e '#{PLAYLIST_INFO % playlist_number}'`.split("\n", 4)
+      Playlist.new(*split)
+    end
+
+    def total_folder_count
+      `osascript -e '#{TOTAL_FOLDER_COUNT}'`.to_i
+    end
+
+    def folder_info(folder_index)
+      folder_number = folder_index + 1
+      split = `osascript -e '#{FOLDER_INFO % folder_number}'`.split("\n", 4)
       Playlist.new(*split)
     end
 
