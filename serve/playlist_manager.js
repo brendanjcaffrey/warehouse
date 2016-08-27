@@ -1,4 +1,4 @@
-var Playlist = function(audio, settings, tracksHash) {
+var PlaylistManager = function(audio, settings, tracksHash) {
   this.audio = audio;
   this.settings = settings;
   this.tracksHash = tracksHash;
@@ -7,13 +7,13 @@ var Playlist = function(audio, settings, tracksHash) {
   this.playlistIndex = 0;
 }
 
-Playlist.prototype.shufflePlaylist = function() {
+PlaylistManager.prototype.shufflePlaylist = function() {
   // from http://stackoverflow.com/questions/6274339/how-can-i-shuffle-an-array-in-javascript
   for (var j, x, i = this.playlist.length; i; j = Math.floor(Math.random() * i),
     x = this.playlist[--i], this.playlist[i] = this.playlist[j], this.playlist[j] = x);
 }
 
-Playlist.prototype.rebuild = function(stopped, nowPlayingId, api) {
+PlaylistManager.prototype.rebuild = function(stopped, nowPlayingId, api) {
   if (api) { this.api = api }
   this.playlist = this.api.rows({search: "applied"}).data().map(function (x) { return x.id });
 
@@ -42,26 +42,26 @@ Playlist.prototype.rebuild = function(stopped, nowPlayingId, api) {
   this.onUpdate(nowPlayingId);
 }
 
-Playlist.prototype.getCurrentTrackId = function() {
+PlaylistManager.prototype.getCurrentTrackId = function() {
   if (this.playlistIndex == -1) { return this.hiddenPlayingTrackId; }
   return this.playlist[this.playlistIndex];
 }
 
-Playlist.prototype.moveBack = function() {
+PlaylistManager.prototype.moveBack = function() {
   this.playlistIndex--;
   if (this.playlistIndex < 0) { this.playlistIndex = this.playlist.length - 1; }
 
   this.onUpdate(-1);
 }
 
-Playlist.prototype.moveForward = function() {
+PlaylistManager.prototype.moveForward = function() {
   this.playlistIndex += 1;
   if (this.playlistIndex >= this.playlist.length) { this.playlistIndex = 0; }
 
   this.onUpdate(-1);
 }
 
-Playlist.prototype.onUpdate = function(nowPlayingId) {
+PlaylistManager.prototype.onUpdate = function(nowPlayingId) {
   var tracksToLoad = []; var i;
 
   // if we're searching, then the currently playing track won't be in the playlist and we don't want to overwrite it

@@ -43,7 +43,7 @@ var Streamer = function(data) {
 
   this.settings = new PersistentSettings();
   this.audio = new Audio(this);
-  this.playlist = new Playlist(this.audio, this.settings, this.tracksHash);
+  this.playlistManager = new PlaylistManager(this.audio, this.settings, this.tracksHash);
 
   this.stopped = true;
   this.playing = false;
@@ -68,7 +68,7 @@ Streamer.prototype.manualRowPlay = function(row) {
   this.highlightRow(row);
   this.setNowPlaying(row);
   // we pass in false for stopped here to get the playlist to use the song we just set as playing
-  this.playlist.rebuild(false, this.api.row(row).data().id);
+  this.playlistManager.rebuild(false, this.api.row(row).data().id);
   this.play();
 }
 
@@ -142,7 +142,7 @@ Streamer.prototype.showRow = function(row) {
 }
 
 Streamer.prototype.play = function() {
-  var row = this.findRowForTrackId(this.playlist.getCurrentTrackId());
+  var row = this.findRowForTrackId(this.playlistManager.getCurrentTrackId());
   if (row != null) { // could be a track hidden by searching
     this.setNowPlaying(row);
     this.showRow(row);
@@ -168,14 +168,14 @@ Streamer.prototype.pause = function() {
 Streamer.prototype.prev = function() {
   if (this.settings.getRepeat() && this.audio.tryRewind()) { return; }
 
-  this.playlist.moveBack();
+  this.playlistManager.moveBack();
   if (this.nowPlayingRow) { this.stop(); this.play(); }
 }
 
 Streamer.prototype.next = function() {
   if (this.settings.getRepeat() && this.audio.tryRewind()) { return; }
 
-  this.playlist.moveForward();
+  this.playlistManager.moveForward();
   if (this.nowPlayingRow) { this.stop(); this.play(); }
 }
 
@@ -193,7 +193,7 @@ Streamer.prototype.toggleShuffle = function() {
     $("#shuffle").removeClass("disabled");
   }
 
-  this.playlist.rebuild(this.stopped, this.audio.getNowPlayingTrackId());
+  this.playlistManager.rebuild(this.stopped, this.audio.getNowPlayingTrackId());
 }
 
 Streamer.prototype.toggleRepeat = function() {
@@ -283,7 +283,7 @@ Streamer.prototype.start = function() {
       // this drawCallback is called immediately after defining the table,
       // so there's no way to gracefully set the api variable except here
       self.api = this.api();
-      self.playlist.rebuild(self.stopped, self.audio.getNowPlayingTrackId(), self.api);
+      self.playlistManager.rebuild(self.stopped, self.audio.getNowPlayingTrackId(), self.api);
     },
     "lengthChange": false,
     "columns": [
