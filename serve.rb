@@ -2,20 +2,28 @@ require 'pg'
 require 'sinatra/base'
 require 'sinatra/json'
 
-LOG_IN_SQL = 'INSERT INTO users (token, username) VALUES ($1, $2)'
-LOGGED_IN_SQL = 'SELECT COUNT(*) FROM users WHERE token=$1'
-USERNAME_SQL = 'SELECT username FROM users WHERE token=$1'
+LOG_IN_SQL = 'INSERT INTO users (token, username) VALUES ($1, $2);'
+LOGGED_IN_SQL = 'SELECT COUNT(*) FROM users WHERE token=$1;'
+USERNAME_SQL = 'SELECT username FROM users WHERE token=$1;'
 
-GENRE_SQL = 'SELECT id, name FROM genres';
-ARTIST_SQL = 'SELECT id, name, sort_name FROM artists';
-ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums';
+GENRE_SQL = 'SELECT id, name FROM genres;'
+GENRE_INT_INDICES = [0]
+ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
+ARTIST_INT_INDICES = [0]
+ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums;'
+ALBUM_INT_INDICES = [0, 1]
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_id, genre_id, duration, start, ' +
   'finish, track, track_count, disc, disc_count, play_count, ext FROM tracks'
+TRACK_INT_INDICES = [0, 3, 4, 5]
+PLAYLIST_SQL = 'SELECT id, name, parent_id FROM playlists;'
+PLAYLIST_INT_INDICES = [0, 2]
+PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(CAST(track_id AS VARCHAR), \',\') FROM playlist_tracks GROUP BY playlist_id;'
+PLAYLIST_TRACK_INT_INDICES = [0]
 
-TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1'
-TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE id=$1'
-CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1)'
-PLAYS_SQL = 'SELECT * FROM plays'
+TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
+TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE id=$1;'
+CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
+PLAYS_SQL = 'SELECT * FROM plays;'
 
 ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
@@ -87,16 +95,29 @@ class Serve < Sinatra::Base
 
   get '/data.json' do
     if check_login
-      json genres: db.exec(GENRE_SQL).values,
-           artists: db.exec(ARTIST_SQL).values,
-           albums: db.exec(ALBUM_SQL).values,
-           tracks: db.exec(TRACK_SQL).values
+      playlist_tracks = db.exec(PLAYLIST_TRACK_SQL).values
+      playlist_tracks.each { |pt| pt[1] = pt[1].split(',').map(&:to_i) }
+
+      json genres: convert_cols_to_ints(db.exec(GENRE_SQL).values, GENRE_INT_INDICES),
+           artists: convert_cols_to_ints(db.exec(ARTIST_SQL).values, ARTIST_INT_INDICES),
+           albums: convert_cols_to_ints(db.exec(ALBUM_SQL).values, ALBUM_INT_INDICES),
+           tracks: convert_cols_to_ints(db.exec(TRACK_SQL).values, TRACK_INT_INDICES),
+           playlists: convert_cols_to_ints(db.exec(PLAYLIST_SQL).values, PLAYLIST_INT_INDICES),
+           playlist_tracks: convert_cols_to_ints(playlist_tracks, PLAYLIST_TRACK_INT_INDICES)
     else
       redirect to('/')
     end
   end
 
-  def find_track(db, music_path, id, download)
+  def convert_cols_to_ints(rows, indices)
+    rows.each do |cols|
+      indices.each { |idx| cols[idx] = cols[idx].to_i }
+    end
+
+    rows
+  end
+
+  def send_track_if_exists(db, music_path, id, download)
     name, file, ext = db.exec_params(TRACK_INFO_SQL, [id]).values.first
     if file == nil || ACCEPTABLE_EXTENSIONS.index(ext) == nil
       false
@@ -110,7 +131,7 @@ class Serve < Sinatra::Base
   get '/tracks/*' do
     if !check_login
       redirect to('/')
-    elsif !find_track(db, Config['music_path'], params['splat'][0], false)
+    elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0], false)
       raise Sinatra::NotFound
     end
   end
@@ -118,7 +139,7 @@ class Serve < Sinatra::Base
   get '/download/*' do
     if !check_login
       redirect to('/')
-    elsif !find_track(db, Config['music_path'], params['splat'][0], true)
+    elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0], true)
       raise Sinatra::NotFound
     end
   end

@@ -115,6 +115,8 @@ describe 'iTunes Streamer' do
       expect(last_response.body).to include('test_album')
       expect(last_response.body).to include('test_genre')
       expect(last_response.body).to include('mp3')
+      expect(last_response.body).to include('test_playlist')
+      expect(last_response.body).to include('[3,4,5]')
     end
   end
 
