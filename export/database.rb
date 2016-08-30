@@ -98,12 +98,12 @@ module Export
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
-    TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name AS track_name, artists.name AS artist_name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
+    TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name, artists.name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
 
     def initialize(database_username, database_name)
       @database_username = database_username
       @database_name = database_name
-      @db = PG.connect(user: @database_username, dbname: 'postgres')
+      @db = PG.connect(user: @database_username, dbname: @database_name)
 
       @genres = {}
       @artists = {}
@@ -123,14 +123,16 @@ module Export
     end
 
     def clean_and_rebuild
-      database_exists = @db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
+      @db.close
+
+      db = PG.connect(user: @database_username, dbname: 'postgres')
+      database_exists = db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
       if database_exists
-        @db.exec(DROP_DATABASE_SQL % @database_name)
+        db.exec(DROP_DATABASE_SQL % @database_name)
       end
 
-      # have to close and reopen here or PG throws some errors when creating tables
-      @db.exec(CREATE_DATABASE_SQL % [@database_name])
-      @db.close
+      db.exec(CREATE_DATABASE_SQL % [@database_name])
+      db.close
 
       @db = PG.connect(user: @database_username, dbname: @database_name)
       build_tables
