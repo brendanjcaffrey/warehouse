@@ -58,6 +58,7 @@ module Export
       CREATE TABLE playlists (
         id SERIAL,
         name TEXT,
+        is_library INTEGER,
         parent_id INTEGER
       );
     SQL
@@ -94,7 +95,7 @@ module Export
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
     SQL
 
-    PLAYLIST_SQL = 'INSERT INTO playlists (id, name, parent_id) VALUES ($1,$2,$3);'
+    PLAYLIST_SQL = 'INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4);'
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
@@ -149,7 +150,7 @@ module Export
     end
 
     def create_playlist(playlist)
-      @db.exec_params(PLAYLIST_SQL, [playlist.id, playlist.name, playlist.parent_id])
+      @db.exec_params(PLAYLIST_SQL, [playlist.id, playlist.name, playlist.is_library, playlist.parent_id])
       playlist.tracks.each { |track_id| @db.exec_params(PLAYLIST_TRACK_SQL, [playlist.id, track_id]) }
     end
 

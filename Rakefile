@@ -50,7 +50,7 @@ task :test do
   database.create_track(Export::Track.new(1, 'test_title', '', 'test_artist', '', 'test_album',
                                           '', 'test_genre', 1.23, 0.1, 1.22, 1, 10, 1, 2, 5,
                                           ':__test.mp3'))
-  database.create_playlist(Export::Playlist.new(2, 'test_playlist', -1, "3\n4\n5"))
+  database.create_playlist(Export::Playlist.new(2, 'test_playlist', 'none', -1, 3, "3\n4\n5"))
   `echo "1.mp3 contents" > spec/__test.mp3`
   puts `rspec`
   `rm spec/__test.mp3`

@@ -49,6 +49,7 @@ module Export
         #{SET_DELIMS}
         set output to output & id of thisPlaylist & "\n"
         set output to output & name of thisPlaylist & "\n"
+        set output to output & special kind of thisPlaylist & "\n"
 
         try
           get parent of thisPlaylist
@@ -57,6 +58,19 @@ module Export
           set output to output & "-1" & "\n"
         end try
 
+        set output to output & count of file tracks of thisPlaylist & "\n"
+        #{RESET_DELIMS}
+
+        output
+      end tell
+    SCRIPT
+
+    PLAYLIST_TRACKS = <<-SCRIPT
+      tell application "iTunes"
+        set output to ""
+        set thisPlaylist to user playlist %1$d
+
+        #{SET_DELIMS}
         repeat with thisTrack in file tracks of user playlist %1$d
           set output to output & database ID of thisTrack & "\n"
         end repeat
@@ -76,7 +90,7 @@ module Export
         #{SET_DELIMS}
         set output to output & id of thisFolder & "\n"
         set output to output & name of thisFolder & "\n"
-        #{RESET_DELIMS}
+        set output to output & special kind of thisFolder & "\n"
 
         try
           get parent of thisFolder
@@ -84,6 +98,7 @@ module Export
         on error
           set output to output & "-1" & "\n"
         end try
+        #{RESET_DELIMS}
 
         output
       end tell
@@ -112,8 +127,14 @@ module Export
 
     def playlist_info(playlist_index)
       playlist_number = playlist_index + 1
-      split = `osascript -e '#{PLAYLIST_INFO % playlist_number}'`.split("\n", 4)
-      Playlist.new(*split)
+      split = `osascript -e '#{PLAYLIST_INFO % playlist_number}'`.split("\n")
+      playlist = Playlist.new(*split)
+
+      if playlist.is_library == 0 # no use having a list of all tracks for the library playlist
+        playlist.track_string =  `osascript -e '#{PLAYLIST_TRACKS % playlist_number}'`
+      end
+
+      playlist
     end
 
     def total_folder_count
@@ -122,7 +143,7 @@ module Export
 
     def folder_info(folder_index)
       folder_number = folder_index + 1
-      split = `osascript -e '#{FOLDER_INFO % folder_number}'`.split("\n", 4)
+      split = `osascript -e '#{FOLDER_INFO % folder_number}'`.split("\n")
       Playlist.new(*split)
     end
 
