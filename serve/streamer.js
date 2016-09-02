@@ -359,7 +359,7 @@ Streamer.prototype.start = function() {
     "data": self.tracksArr
   });
 
-  table.page.len(50);
+  table.page.len(45);
   table.draw();
 
   $("#tracks tbody").on("dblclick", "tr", function() { self.manualRowPlay(this); })
