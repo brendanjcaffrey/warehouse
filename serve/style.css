@@ -81,3 +81,13 @@ table.dataTable tbody td {
 #contextMenu li.hover {
   background: #CCCCCC;
 }
+
+#playlists { padding-top: 15px; }
+#playlists ul.nav { margin-left: 16px; }
+#playlists ul.nav li a { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+#playlists ul.nav li a { font-size: 14px; color: black; }
+#playlists ul.nav li.active a { font-size: 14px; color: white; }
+#playlists ul.nav li a i { padding-right: 5px; }
+#playlists ul.nav li a i.spacer { color: transparent; }
+#playlists .nav>li>a { padding: 5px 5px; }
+#playlists .nav-stacked>li+li { margin-top: 0px; }

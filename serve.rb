@@ -15,8 +15,8 @@ ALBUM_INT_INDICES = [0, 1]
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_id, genre_id, duration, start, ' +
   'finish, track, track_count, disc, disc_count, play_count, ext FROM tracks'
 TRACK_INT_INDICES = [0, 3, 4, 5]
-PLAYLIST_SQL = 'SELECT id, name, parent_id FROM playlists;'
-PLAYLIST_INT_INDICES = [0, 2]
+PLAYLIST_SQL = 'SELECT id, name, parent_id, is_library FROM playlists;'
+PLAYLIST_INT_INDICES = [0, 2, 3]
 PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(CAST(track_id AS VARCHAR), \',\') FROM playlist_tracks GROUP BY playlist_id;'
 PLAYLIST_TRACK_INT_INDICES = [0]
 

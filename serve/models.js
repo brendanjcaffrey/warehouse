@@ -25,6 +25,7 @@ var AlbumIndices = ["id", "artistId", "name", "sortName"];
 var TrackIndices = ["id", "name", "sortName", "artistId", "albumId", "genreId",
                     "duration", "start", "finish", "track", "trackCount", "disc",
                     "discCount", "playCount", "ext"];
+var PlaylistIndices = ["id", "name", "parentId", "isLibrary"];
 
 var Genre = function(row) {
   for (index in GenreIndices) {
@@ -62,4 +63,28 @@ var Track = function(row, artists, albums, genres) {
 
   fixSortName(this);
   this.searchName = this.sortName.toLowerCase();
+}
+
+var Playlist = function(row) {
+  for (index in PlaylistIndices) {
+    this[PlaylistIndices[index]] = row[index]
+  }
+
+  this.children = [];
+}
+
+var ResolvePlaylistTree = function(playlists) {
+  var ResolvePlaylistTreeStep = function(playlists, tree, parentId) {
+    for (var i = 0; i < playlists.length; ++i) {
+      if (playlists[i].parentId == parentId) {
+        tree.push(playlists[i]);
+        ResolvePlaylistTreeStep(playlists, playlists[i].children, playlists[i].id);
+      }
+    }
+  }
+
+  tree = [];
+  ResolvePlaylistTreeStep(playlists, tree, -1);
+
+  return tree;
 }

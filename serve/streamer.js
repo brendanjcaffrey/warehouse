@@ -32,6 +32,11 @@ var Streamer = function(data) {
   var artists = data["artists"].map(function (row) { return new Artist(row); }).reduce(toHash, {});
   var albums = data["albums"].map(function (row) { return new Album(row); }).reduce(toHash, {});
   var genres = data["genres"].map(function (row) { return new Genre(row); }).reduce(toHash, {});
+  var playlists = data["playlists"].map(function (row) { return new Playlist(row); });
+
+  this.playlistsHash = playlists.reduce(toHash, {});
+  this.playlistTree = ResolvePlaylistTree(playlists);
+  this.buildPlaylistMenu();
 
   var sortStr = function(i1, i2) {
     if (i1.searchName == i2.searchName) { return 0; }
@@ -53,6 +58,63 @@ var Streamer = function(data) {
 
   this.letterPressString = "";
   this.letterPressTimeoutID = null;
+}
+
+Streamer.prototype.buildPlaylistMenu = function() {
+  var self = this;
+  var ulClasses = 'nav nav-pills nav-stacked';
+
+  var buildPlaylistMenuStep = function(children, parentElement) {
+    children.forEach(function(playlist, index, arr) {
+      var isFolder = playlist.children.length > 0;
+      var arrow = isFolder ? "ion-arrow-right-b" : "ion-arrow-right-b spacer";
+      var icon = isFolder ? "ion-ios-folder-outline" : "ion-ios-list-outline";
+      var isActive = false;
+      if (playlist.isLibrary) { icon = "ion-ios-musical-notes"; isActive = true; }
+      parentElement.append('<li data-playlist-id="' + playlist.id + '" data-is-folder="' + (isFolder ? '1' : '0') + '"' +
+          (isActive ? ' class="active"' : '') + '><a href="#"><i class="arrow icon ' + arrow + '" /><i class="icon ' +
+          icon + '" />' + playlist.name + "</a></li>");
+
+      var currentLi = parentElement.children("li").last();
+      currentLi.on("click", function(e) {
+        var li = $(e.delegateTarget);
+        var playlistId = parseInt(li.attr("data-playlist-id"));
+        var target = $(e.target);
+        if (target.hasClass("arrow") && li.attr("data-is-folder") == "1") {
+          self.toggleFolder(playlistId, li, target);
+        } else {
+          self.showPlaylist(playlistId, li);
+        }
+      });
+
+      if (isFolder) {
+        parentElement.append('<li class="hidden" id="childrenof' + playlist.id + '"><ul class="' + ulClasses + '"></ul></li>');
+        buildPlaylistMenuStep(playlist.children, parentElement.children("li").last().children("ul"));
+      }
+    });
+  }
+
+  $("#playlists").append('<ul class="' + ulClasses + '"></ul>');
+  buildPlaylistMenuStep(this.playlistTree, $("#playlists").children("ul"));
+}
+
+Streamer.prototype.toggleFolder = function(id, li, arrow) {
+  var closedClass = "ion-arrow-right-b";
+  var openClass = "ion-arrow-down-b";
+
+  var isClosed = arrow.hasClass(closedClass);
+  if (isClosed) {
+    arrow.removeClass(closedClass).addClass(openClass);
+    $("#childrenof" + id).removeClass("hidden");
+  } else {
+    arrow.removeClass(openClass).addClass(closedClass);
+    $("#childrenof" + id).addClass("hidden");
+  }
+}
+
+Streamer.prototype.showPlaylist = function(id, li) {
+  $("#playlists li.active").removeClass("active");
+  li.addClass("active");
 }
 
 Streamer.prototype.highlightRow = function(row) {
