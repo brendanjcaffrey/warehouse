@@ -297,8 +297,26 @@ Streamer.prototype.onLetterPress = function(letter) {
     self.letterPressTimeoutID = null;
   }
 
+  var binarySearchNameFirstOccurrence = function(searchStr) {
+    var binarySearchStep = function(lower, upper) {
+      if (lower > upper) { return lower; }
+
+      var middle = Math.floor((lower + upper) / 2.0);
+      var middleText = self.tracksArr[middle].searchName.substr(0, searchStr.length);
+      // go backwards, even if equal, to get first occurrence
+      if (middleText >= self.letterPressString) { upper = middle-1; }
+      else { lower = middle+1; }
+
+      return binarySearchStep(lower, upper);
+    }
+
+    var idx = binarySearchStep(0, self.tracksArr.length-1);
+    if (idx == null) { return null; }
+    return self.tracksArr[idx];
+  }
+
   self.letterPressTimeoutID = window.setTimeout(function() {
-    track = self.tracksArr.find(function(track) { return track.searchName.substr(0, self.letterPressString.length) >= self.letterPressString; });
+    track = binarySearchNameFirstOccurrence(self.letterPressString);
     var row = self.findRowForTrackId(track.id);
 
     // could be filtered away - ignoring this isn't great, but searching only the filtered tracks would be difficult
