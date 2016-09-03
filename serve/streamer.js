@@ -72,7 +72,7 @@ Streamer.prototype.buildPlaylistMenu = function() {
       var isActive = false;
       if (playlist.isLibrary) { icon = "ion-ios-musical-notes"; isActive = true; }
       parentElement.append('<li data-playlist-id="' + playlist.id + '" data-is-folder="' + (isFolder ? '1' : '0') + '"' +
-          (isActive ? ' class="active"' : '') + '><a href="#"><i class="arrow icon ' + arrow + '" /><i class="icon ' +
+          (isActive ? ' class="active"' : '') + '><a href="#"><i class="arrow icon ' + arrow + '" /><i class="icon marker ' +
           icon + '" />' + playlist.name + "</a></li>");
 
       var currentLi = parentElement.children("li").last();

@@ -91,3 +91,16 @@ table.dataTable tbody td {
 #playlists ul.nav li a i.spacer { color: transparent; }
 #playlists .nav>li>a { padding: 5px 5px; }
 #playlists .nav-stacked>li+li { margin-top: 0px; }
+
+/* list -> 10.5
+ * folder -> 12.25
+ * musical notes -> 8.75 */
+#playlists ul.nav li a i.marker:before { width: 12.25x !important; }
+#playlists ul.nav li a i.ion-ios-list-outline:before { padding-left: 0.875px !important; }
+/* less than it should be on purpose */
+#playlists ul.nav li a i.ion-ios-musical-notes:before { padding-left: 1.5px !important; }
+
+/* right arrow -> 5.25
+ * left arrow -> 8.75 */
+#playlists ul.nav li a i.arrow:before { width: 8.75px !important; }
+#playlists ul.nav li a i.ion-arrow-right-b:before { padding-left: 1.75px !important; }
