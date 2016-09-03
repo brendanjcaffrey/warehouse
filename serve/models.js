@@ -74,6 +74,15 @@ var Playlist = function(row) {
 }
 
 var ResolvePlaylistTree = function(playlists) {
+  var sortName = function(i1, i2) {
+    if (i1.isLibrary) { return -1; }
+    else if (i2.isLibrary) { return 1; }
+
+    if (i1.name == i2.name) { return 0; }
+    else if (i1.name > i2.name) { return 1; }
+    else { return -1; }
+  }
+
   var ResolvePlaylistTreeStep = function(playlists, tree, parentId) {
     for (var i = 0; i < playlists.length; ++i) {
       if (playlists[i].parentId == parentId) {
@@ -81,6 +90,7 @@ var ResolvePlaylistTree = function(playlists) {
         ResolvePlaylistTreeStep(playlists, playlists[i].children, playlists[i].id);
       }
     }
+    tree.sort(sortName);
   }
 
   tree = [];

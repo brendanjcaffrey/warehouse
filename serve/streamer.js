@@ -38,12 +38,12 @@ var Streamer = function(data) {
   this.playlistTree = ResolvePlaylistTree(playlists);
   this.buildPlaylistMenu();
 
-  var sortStr = function(i1, i2) {
+  var sortSearchName = function(i1, i2) {
     if (i1.searchName == i2.searchName) { return 0; }
     else if (i1.searchName > i2.searchName) { return 1; }
     else { return -1; }
   }
-  this.tracksArr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); }).sort(sortStr);
+  this.tracksArr = data["tracks"].map(function (row) { return new Track(row, artists, albums, genres); }).sort(sortSearchName);
   this.tracksHash = this.tracksArr.reduce(toHash, {});
 
   this.settings = new PersistentSettings();
