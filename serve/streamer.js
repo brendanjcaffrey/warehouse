@@ -1,28 +1,3 @@
-var PersistentSettings = function() {
-  cookies = Cookies.get();
-  // both default to false
-  this.shuffle = (Cookies.get("shuffle") == "1");
-  this.repeat  = (Cookies.get("repeat") == "1");
-}
-
-PersistentSettings.prototype.persist = function() {
-  Cookies.set("shuffle", this.shuffle ? "1" : "0", { expires: 60 });
-  Cookies.set("repeat", this.repeat ? "1" : "0", { expires: 60 });
-}
-
-PersistentSettings.prototype.getShuffle = function() { return this.shuffle; }
-PersistentSettings.prototype.setShuffle = function(shuffle) {
-  this.shuffle = shuffle;
-  this.persist();
-}
-
-PersistentSettings.prototype.getRepeat = function() { return this.repeat; }
-PersistentSettings.prototype.setRepeat = function(repeat) {
-  this.repeat = repeat;
-  this.persist();
-}
-
-
 var Streamer = function(data) {
   var toHash = function(hash, object, index, array) {
     hash[object.id] = object;
@@ -37,7 +12,6 @@ var Streamer = function(data) {
 
   this.playlistsHash = playlists.reduce(toHash, {});
   this.playlistTree = ResolvePlaylistTree(playlists);
-  this.buildPlaylistMenu();
 
   this.shownPlaylistId = this.playlistTree[0].id;
   this.playingPlaylistId = this.shownPlaylistId;
@@ -70,11 +44,18 @@ Streamer.prototype.buildPlaylistMenu = function() {
 
   var buildPlaylistMenuStep = function(children, parentElement) {
     children.forEach(function(playlist, index, arr) {
-      var isFolder = playlist.children.length > 0;
-      var arrow = isFolder ? "ion-arrow-right-b" : "ion-arrow-right-b spacer";
-      var icon = isFolder ? "ion-ios-folder-outline" : "ion-ios-list-outline";
+      var arrow = "ion-arrow-right-b spacer";
+      var icon = "ion-ios-list-outline";
       var isActive = false;
+      var isFolder = playlist.children.length > 0;
+      var folderIsOpen = isFolder && self.settings.getFolderOpen(playlist.id);
+
       if (playlist.isLibrary) { icon = "ion-ios-musical-notes"; isActive = true; }
+      if (isFolder) {
+        arrow = folderIsOpen ? "ion-arrow-down-b" : "ion-arrow-right-b";
+        icon = "ion-ios-folder-outline";
+      }
+
       parentElement.append('<li id="playlist' + playlist.id + '" data-playlist-id="' + playlist.id + '" data-is-folder="' + (isFolder ? '1' : '0') + '"' +
           (isActive ? ' class="active"' : '') + '><a href="#"><i class="arrow icon ' + arrow + '" /><i class="icon marker ' +
           icon + '" />' + playlist.name + "</a></li>");
@@ -92,7 +73,8 @@ Streamer.prototype.buildPlaylistMenu = function() {
       });
 
       if (isFolder) {
-        parentElement.append('<li class="hidden" id="childrenof' + playlist.id + '"><ul class="' + ulClasses + '"></ul></li>');
+        var hiddenIfClosed = folderIsOpen ? "" : 'class="hidden" ';
+        parentElement.append('<li ' + hiddenIfClosed + 'id="childrenof' + playlist.id + '"><ul class="' + ulClasses + '"></ul></li>');
         buildPlaylistMenuStep(playlist.children, parentElement.children("li").last().children("ul"));
       }
     });
@@ -108,9 +90,11 @@ Streamer.prototype.toggleFolder = function(id, li, arrow) {
 
   var isClosed = arrow.hasClass(closedClass);
   if (isClosed) {
+    this.settings.setFolderOpen(id);
     arrow.removeClass(closedClass).addClass(openClass);
     $("#childrenof" + id).removeClass("hidden");
   } else {
+    this.settings.setFolderClosed(id);
     arrow.removeClass(openClass).addClass(closedClass);
     $("#childrenof" + id).addClass("hidden");
   }
@@ -424,6 +408,7 @@ Streamer.prototype.start = function() {
     on("slide", function(slider) { self.volumeUpdated(slider.value); });
   self.volumeUpdated(50);
 
+  self.buildPlaylistMenu();
   this.table = $("#tracks").DataTable({
     "drawCallback": function (settings) {
       // when a track starts playing, we redraw the table to show its page
