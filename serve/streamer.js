@@ -33,10 +33,14 @@ var Streamer = function(data) {
   var albums = data["albums"].map(function (row) { return new Album(row); }).reduce(toHash, {});
   var genres = data["genres"].map(function (row) { return new Genre(row); }).reduce(toHash, {});
   var playlists = data["playlists"].map(function (row) { return new Playlist(row); });
+  this.playlistTracks = data["playlist_tracks"].map(function (row) { return new PlaylistTracks(row); }).reduce(toHash, {});
 
   this.playlistsHash = playlists.reduce(toHash, {});
   this.playlistTree = ResolvePlaylistTree(playlists);
   this.buildPlaylistMenu();
+
+  this.shownPlaylistId = this.playlistTree[0].id;
+  this.playingPlaylistId = this.shownPlaylistId;
 
   var sortSearchName = function(i1, i2) {
     if (i1.searchName == i2.searchName) { return 0; }
@@ -71,7 +75,7 @@ Streamer.prototype.buildPlaylistMenu = function() {
       var icon = isFolder ? "ion-ios-folder-outline" : "ion-ios-list-outline";
       var isActive = false;
       if (playlist.isLibrary) { icon = "ion-ios-musical-notes"; isActive = true; }
-      parentElement.append('<li data-playlist-id="' + playlist.id + '" data-is-folder="' + (isFolder ? '1' : '0') + '"' +
+      parentElement.append('<li id="playlist' + playlist.id + '" data-playlist-id="' + playlist.id + '" data-is-folder="' + (isFolder ? '1' : '0') + '"' +
           (isActive ? ' class="active"' : '') + '><a href="#"><i class="arrow icon ' + arrow + '" /><i class="icon marker ' +
           icon + '" />' + playlist.name + "</a></li>");
 
@@ -113,8 +117,63 @@ Streamer.prototype.toggleFolder = function(id, li, arrow) {
 }
 
 Streamer.prototype.showPlaylist = function(id, li) {
+  var self = this;
+
+  var accumulateFolderTracks = function(folder) {
+    var tracksHash = {};
+
+    var addTracksToHash = function(tracks) {
+      for (var i = 0; i < tracks.length; ++i) { tracksHash[tracks[i]] = 1; }
+    };
+
+    var accumulateFolderTracksStep = function(children) {
+      for (var i = 0; i < children.length; ++i) {
+        var playlist = children[i];
+        if (self.playlistTracks[playlist.id]) { addTracksToHash(self.playlistTracks[playlist.id].tracks); }
+        accumulateFolderTracksStep(playlist.children);
+      }
+    }
+
+    accumulateFolderTracksStep(folder.children);
+    return Object.keys(tracksHash);
+  }
+
+  var playlist = this.playlistsHash[id];
+  if (playlist.id == this.shownPlaylistId) { return; }
+  this.shownPlaylistId = playlist.id;
+
   $("#playlists li.active").removeClass("active");
   li.addClass("active");
+
+  var tracks = [];
+  if (playlist.isLibrary) {
+    tracks = this.tracksArr;
+  } else {
+    var playlistTracks;
+    if (playlist.children.length != 0) {
+      playlistTracks = accumulateFolderTracks(playlist);
+      console.log(playlistTracks);
+    } else {
+      playlistTracks = this.playlistTracks[playlist.id].tracks;
+    }
+
+    for (var i = 0; i < playlistTracks.length; ++i) {
+      tracks.push(this.tracksHash[parseInt(playlistTracks[i])]);
+    }
+  }
+
+  this.table.search("");
+  this.table.clear();
+  this.table.rows.add(tracks);
+
+  if (!this.stopped) { this.skipRebuild = true; }
+  this.table.draw();
+
+  var shownIsSameAsPlayingPlaylist = this.shownPlaylistId == this.playingPlaylistId;
+  if (shownIsSameAsPlayingPlaylist) { this.skipRebuild = false; }
+  if (shownIsSameAsPlayingPlaylist && !this.stopped && this.playing) {
+    this.play(); // show what's now playing
+  }
 }
 
 Streamer.prototype.highlightRow = function(row) {
@@ -127,6 +186,9 @@ Streamer.prototype.highlightRow = function(row) {
 }
 
 Streamer.prototype.manualRowPlay = function(row) {
+  this.playingPlaylistId = this.shownPlaylistId;
+  this.skipRebuild = false;
+
   this.highlightRow(row);
   this.setNowPlaying(row);
   // we pass in false for stopped here to get the playlist to use the song we just set as playing
@@ -204,8 +266,14 @@ Streamer.prototype.showRow = function(row) {
 }
 
 Streamer.prototype.play = function() {
+  // skip the hidden track from a previous playlist at start
+  if (this.stopped && this.shownPlaylistId != this.playingPlaylistId) {
+    this.playlistManager.moveForward();
+    this.playingPlaylistId = this.shownPlaylistId;
+  }
+
   var row = this.findRowForTrackId(this.playlistManager.getCurrentTrackId());
-  if (row != null) { // could be a track hidden by searching
+  if (row != null && this.playingPlaylistId == this.shownPlaylistId) {
     this.setNowPlaying(row);
     this.showRow(row);
   }
@@ -231,14 +299,14 @@ Streamer.prototype.prev = function() {
   if (this.settings.getRepeat() && this.audio.tryRewind()) { return; }
 
   this.playlistManager.moveBack();
-  if (this.nowPlayingRow) { this.stop(); this.play(); }
+  this.stop(); this.play();
 }
 
 Streamer.prototype.next = function() {
   if (this.settings.getRepeat() && this.audio.tryRewind()) { return; }
 
   this.playlistManager.moveForward();
-  if (this.nowPlayingRow) { this.stop(); this.play(); }
+  this.stop(); this.play();
 }
 
 Streamer.prototype.playPause = function() {
@@ -255,6 +323,8 @@ Streamer.prototype.toggleShuffle = function() {
     $("#shuffle").removeClass("disabled");
   }
 
+  // show the playing playlist (if it isn't already) so the playlist manager can extract the playlist from the shown tracks
+  if (this.shownPlaylistId != this.playingPlaylistId) { this.showPlaylist(this.playingPlaylistId, $("li#playlist" + this.playingPlaylistId)); }
   this.playlistManager.rebuild(this.stopped, this.audio.getNowPlayingTrackId());
 }
 
@@ -354,7 +424,7 @@ Streamer.prototype.start = function() {
     on("slide", function(slider) { self.volumeUpdated(slider.value); });
   self.volumeUpdated(50);
 
-  var table = $("#tracks").DataTable({
+  this.table = $("#tracks").DataTable({
     "drawCallback": function (settings) {
       // when a track starts playing, we redraw the table to show its page
       // this is to prevent rebuilding the playlist when that happens
@@ -377,8 +447,8 @@ Streamer.prototype.start = function() {
     "data": self.tracksArr
   });
 
-  table.page.len(45);
-  table.draw();
+  this.table.page.len(45);
+  this.table.draw();
 
   $("#tracks tbody").on("dblclick", "tr", function() { self.manualRowPlay(this); })
   $("#tracks tbody").on("click", "tr", function () { self.highlightRow(this); });

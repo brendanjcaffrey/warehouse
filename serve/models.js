@@ -10,12 +10,12 @@ function secondsToTime(seconds) {
 
 function extToType(ext) {
   switch (ext) {
-    case 'mp3': return 'audio/mpeg';
-    case 'mp4': return 'audio/mp4';
-    case 'm4a': return 'audio/mp4';
-    case 'aif': return 'audio/aif';
+    case 'mp3':  return 'audio/mpeg';
+    case 'mp4':  return 'audio/mp4';
+    case 'm4a':  return 'audio/mp4';
+    case 'aif':  return 'audio/aif';
     case 'aiff': return 'audio/aif';
-    case 'wav': return 'audio/wav';
+    case 'wav':  return 'audio/wav';
   }
 }
 
@@ -26,6 +26,7 @@ var TrackIndices = ["id", "name", "sortName", "artistId", "albumId", "genreId",
                     "duration", "start", "finish", "track", "trackCount", "disc",
                     "discCount", "playCount", "ext"];
 var PlaylistIndices = ["id", "name", "parentId", "isLibrary"];
+var PlaylistTracksIndices = ["id", "tracks"];
 
 var Genre = function(row) {
   for (index in GenreIndices) {
@@ -71,6 +72,12 @@ var Playlist = function(row) {
   }
 
   this.children = [];
+}
+
+var PlaylistTracks = function(row) {
+  for (index in PlaylistIndices) {
+    this[PlaylistTracksIndices[index]] = row[index]
+  }
 }
 
 var ResolvePlaylistTree = function(playlists) {

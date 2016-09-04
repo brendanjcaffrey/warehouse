@@ -27,13 +27,13 @@ PlaylistManager.prototype.rebuild = function(stopped, nowPlayingId, api) {
   }
 
   if (this.settings.getShuffle()) {
+    var saveFirstTrack = this.playlistIndex >= 0 && !stopped;
     // pull out the currently playing track
-    if (this.playlistIndex >= 0 && !stopped) { this.playlist.splice(this.playlistIndex, 1); }
+    if (saveFirstTrack) { this.playlist.splice(this.playlistIndex, 1); }
     this.shufflePlaylist();
 
     // and add it back at the beginning
-    if (this.playlistIndex >= 0 && !stopped)
-    {
+    if (saveFirstTrack) {
       this.playlist.unshift(nowPlayingId);
       this.playlistIndex = 0;
     }
