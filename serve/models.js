@@ -82,8 +82,15 @@ var PlaylistTracks = function(row) {
 
 var ResolvePlaylistTree = function(playlists) {
   var sortName = function(i1, i2) {
-    if (i1.isLibrary) { return -1; }
+    if (i1.isLibrary == i2.isLibrary) {} // nop
+    else if (i1.isLibrary) { return -1; }
     else if (i2.isLibrary) { return 1; }
+
+    var i1IsFolder = i1.children.length != 0;
+    var i2IsFolder = i2.children.length != 0;
+    if (i1IsFolder == i2IsFolder) {} // nop
+    else if (i1IsFolder) { return -1; }
+    else if (i2IsFolder) { return 1; }
 
     if (i1.name == i2.name) { return 0; }
     else if (i1.name > i2.name) { return 1; }
