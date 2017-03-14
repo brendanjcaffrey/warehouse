@@ -1,8 +1,8 @@
 app_dir = File.expand_path(File.dirname(__FILE__))
 working_directory app_dir
 
-worker_processes 4
-timeout 30
+worker_processes 8
+timeout 600
 
 listen File.join(app_dir, 'tmp/sockets/unicorn.sock'), :backlog => 64
 pid    File.join(app_dir, 'tmp/pids/unicorn.pid')

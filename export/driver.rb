@@ -11,17 +11,18 @@ module Export
 
     def update_plays!
       if Config.local('update_plays')
-        @database.get_plays.each do |database_id|
-          puts @database.get_track_and_artist_name(database_id).join(' - ')
-          @library.add_play(database_id)
+        @database.get_plays.each do |persistent_id|
+          puts @database.get_track_and_artist_name(persistent_id).join(' - ')
+          @library.add_play(persistent_id)
         end
       end
 
       if Config.remote('update_plays')
         uri = URI(Config.remote('base_url') + '/plays.json')
-        JSON.parse(Net::HTTP.get(uri)).each do |database_id|
-          puts @database.get_track_and_artist_name(database_id).join(' - ')
-          @library.add_play(database_id)
+        get = Net::HTTP.get(uri)
+        JSON.parse(get).each do |persistent_id|
+          puts @database.get_track_and_artist_name(persistent_id).join(' - ')
+          @library.add_play(persistent_id)
         end
       end
     end

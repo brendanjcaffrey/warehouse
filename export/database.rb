@@ -7,7 +7,7 @@ module Export
     DATABASE_EXISTS_SQL = 'SELECT datname FROM pg_database;'
     CREATE_DATABASE_SQL = 'CREATE DATABASE %s;'
     DROP_DATABASE_SQL = 'DROP DATABASE %s;'
-    GET_PLAYS_SQL = 'SELECT track_id FROM plays;'
+    GET_PLAYS_SQL = 'SELECT persistent_track_id FROM plays;'
 
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (
@@ -36,6 +36,7 @@ module Export
     CREATE_TRACKS_SQL = <<-SQL
       CREATE TABLE tracks (
         id INTEGER PRIMARY KEY,
+        persistent_id TEXT,
         name TEXT,
         sort_name TEXT,
         artist_id INTEGER,
@@ -72,7 +73,7 @@ module Export
 
     CREATE_PLAYS_SQL = <<-SQL
       CREATE TABLE plays (
-        track_id INTEGER
+        persistent_track_id TEXT
       );
     SQL
 
@@ -90,16 +91,16 @@ module Export
     ALBUM_SQL = 'INSERT INTO albums (name, sort_name, artist_id) VALUES ($1,$2,$3) RETURNING id;'
 
     TRACK_SQL = <<-SQL
-      INSERT INTO tracks (id, name, sort_name, artist_id, album_id, genre_id, duration,
+      INSERT INTO tracks (id, persistent_id, name, sort_name, artist_id, album_id, genre_id, duration,
       start, finish, track, track_count, disc, disc_count, play_count, ext, file)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17);
     SQL
 
     PLAYLIST_SQL = 'INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4);'
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
-    TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name, artists.name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
+    TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name, artists.name FROM tracks, artists WHERE tracks.persistent_id=$1 AND tracks.artist_id=artists.id;'
 
     def initialize(database_username, database_name)
       @database_username = database_username
@@ -119,8 +120,8 @@ module Export
       end
     end
 
-    def get_track_and_artist_name(id)
-      @db.exec_params(TRACK_AND_ARTIST_NAME_SQL, [id]).values.first
+    def get_track_and_artist_name(persistent_id)
+      @db.exec_params(TRACK_AND_ARTIST_NAME_SQL, [persistent_id]).values.first
     end
 
     def clean_and_rebuild
@@ -144,7 +145,7 @@ module Export
       artist = artist_id(track.artist, track.sort_artist)
       album = album_id(track.album, track.sort_album, artist)
 
-      @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album, genre,
+      @db.exec_params(TRACK_SQL, [track.id, track.persistent_id, track.name, track.sort_name, artist, album, genre,
         track.duration, track.start, track.finish, track.track, track.track_count, track.disc,
         track.disc_count, track.play_count, track.ext, track.file])
     end

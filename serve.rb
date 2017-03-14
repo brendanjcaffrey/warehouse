@@ -14,15 +14,15 @@ ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums;'
 ALBUM_INT_INDICES = [0, 1]
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_id, genre_id, duration, start, ' +
   'finish, track, track_count, disc, disc_count, play_count, ext FROM tracks'
-TRACK_INT_INDICES = [0, 3, 4, 5]
+TRACK_INT_INDICES = [0, 4, 5, 6]
 PLAYLIST_SQL = 'SELECT id, name, parent_id, is_library FROM playlists;'
 PLAYLIST_INT_INDICES = [0, 2, 3]
 PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(CAST(track_id AS VARCHAR), \',\') FROM playlist_tracks GROUP BY playlist_id;'
 PLAYLIST_TRACK_INT_INDICES = [0]
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
-TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE id=$1;'
-CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
+TRACK_PLAY_SQL = 'SELECT ext, persistent_id FROM tracks WHERE id=$1;'
+CREATE_PLAY_SQL = 'INSERT INTO plays (persistent_track_id) VALUES ($1);'
 PLAYS_SQL = 'SELECT * FROM plays;'
 
 ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
@@ -145,7 +145,7 @@ class Serve < Sinatra::Base
   end
 
   get '/plays.json' do
-    json db.exec(PLAYS_SQL).values.flatten.map(&:to_i)
+    json db.exec(PLAYS_SQL).values.flatten
   end
 
   post '/play/*' do
@@ -153,14 +153,15 @@ class Serve < Sinatra::Base
       redirect to('/')
     else
       id = params['splat'][0]
-      result = db.exec_params(TRACK_EXT_SQL, [id])
+      result = db.exec_params(TRACK_PLAY_SQL, [id])
       ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
 
       if ACCEPTABLE_EXTENSIONS.index(ext) == nil
         raise Sinatra::NotFound
       else
+        persistent_id = result.getvalue(0, 1)
         username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)
-        db.exec_params(CREATE_PLAY_SQL, [id]) if track_user_plays?(username)
+        db.exec_params(CREATE_PLAY_SQL, [persistent_id]) if track_user_plays?(username)
       end
     end
   end

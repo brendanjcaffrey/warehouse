@@ -1,7 +1,7 @@
 module Export
   ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
-  class Track < Struct.new(:id, :name, :sort_name, :artist, :sort_artist, :album, :sort_album,
+  class Track < Struct.new(:id, :persistent_id, :name, :sort_name, :artist, :sort_artist, :album, :sort_album,
     :genre, :duration, :start, :finish, :track, :track_count, :disc, :disc_count, :play_count, :location)
 
     def file

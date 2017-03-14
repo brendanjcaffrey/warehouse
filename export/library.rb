@@ -17,6 +17,7 @@ module Export
 
         #{SET_DELIMS}
         set output to database ID of thisTrack & "\n"
+        set output to output & persistent ID of thisTrack & "\n"
         set output to output & name of thisTrack & "\n"
         set output to output & sort name of thisTrack & "\n"
         set output to output & artist of thisTrack & "\n"
@@ -106,7 +107,7 @@ module Export
 
     INCREMENT_PLAYED_COUNT = <<-SCRIPT
       tell application "iTunes"
-        set thisTrack to some file track of library playlist 1 whose database ID is %d
+        set thisTrack to some file track of library playlist 1 whose persistent ID is "%s"
         set played count of thisTrack to (played count of thisTrack) + 1
       end tell
     SCRIPT
@@ -147,8 +148,8 @@ module Export
       Playlist.new(*split)
     end
 
-    def add_play(track_id)
-      `osascript -e '#{INCREMENT_PLAYED_COUNT % track_id}'`
+    def add_play(persistent_id)
+      puts `osascript -e '#{INCREMENT_PLAYED_COUNT % persistent_id}'`
     end
   end
 end
