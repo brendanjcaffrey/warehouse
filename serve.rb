@@ -25,17 +25,20 @@ TRACK_PLAY_SQL = 'SELECT ext, persistent_id FROM tracks WHERE id=$1;'
 CREATE_PLAY_SQL = 'INSERT INTO plays (persistent_track_id) VALUES ($1);'
 PLAYS_SQL = 'SELECT * FROM plays;'
 
-ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
-
+MIME_TYPES = {
+  'mp3' => 'audio/mpeg',
+  'mp4' => 'audio/mp4',
+  'm4a' => 'audio/mp4',
+  'aif' => 'audio/aif',
+  'aiff' => 'audio/aif',
+  'wav' => 'audio/wav'
+}
 
 class Serve < Sinatra::Base
   configure do
-    mime_type :mp3, 'audio/mpeg'
-    mime_type :mp4, 'audio/mp4'
-    mime_type :m4a, 'audio/mp4'
-    mime_type :aif, 'audio/aif'
-    mime_type :aiff, 'audio/aif'
-    mime_type :wav, 'audio/wav'
+    MIME_TYPES.each do |key, value|
+      mime_type key.to_sym, value
+    end
   end
 
   set :public_folder, Proc.new { File.join(root, "serve") }
@@ -119,11 +122,16 @@ class Serve < Sinatra::Base
 
   def send_track_if_exists(db, music_path, id, download)
     name, file, ext = db.exec_params(TRACK_INFO_SQL, [id]).values.first
-    if file == nil || ACCEPTABLE_EXTENSIONS.index(ext) == nil
+    if file == nil || !MIME_TYPES.has_key?(ext)
       false
     else
       headers['Content-Disposition'] = "attachment; filename=\"#{name}.#{ext}\"" if download
-      send_file(music_path + file, type: ext)
+      if Config.remote?
+        headers['X-Accel-Redirect'] = "/music/#{file}"
+        headers['Content-Type'] = MIME_TYPES[ext]
+      else
+        send_file(music_path + file, type: ext)
+      end
       true
     end
   end
@@ -156,7 +164,7 @@ class Serve < Sinatra::Base
       result = db.exec_params(TRACK_PLAY_SQL, [id])
       ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
 
-      if ACCEPTABLE_EXTENSIONS.index(ext) == nil
+      if !MIME_TYPES.has_key?(ext)
         raise Sinatra::NotFound
       else
         persistent_id = result.getvalue(0, 1)
