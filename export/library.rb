@@ -105,6 +105,13 @@ module Export
       end tell
     SCRIPT
 
+    GET_PLAYED_COUNT = <<-SCRIPT
+      tell application "iTunes"
+        set thisTrack to some file track of library playlist 1 whose persistent ID is "%s"
+        played count of thisTrack as string
+      end tell
+    SCRIPT
+
     INCREMENT_PLAYED_COUNT = <<-SCRIPT
       tell application "iTunes"
         set thisTrack to some file track of library playlist 1 whose persistent ID is "%s"
@@ -148,8 +155,15 @@ module Export
       Playlist.new(*split)
     end
 
+    def get_plays(persistent_id)
+      `osascript -e '#{GET_PLAYED_COUNT % persistent_id}'`.chomp
+    end
+
     def add_play(persistent_id)
+      start_count = get_plays(persistent_id)
       puts `osascript -e '#{INCREMENT_PLAYED_COUNT % persistent_id}'`
+      end_count = get_plays(persistent_id)
+      puts "#{start_count} -> #{end_count}"
     end
   end
 end
