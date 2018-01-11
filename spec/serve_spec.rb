@@ -160,12 +160,12 @@ describe 'iTunes Streamer' do
 
   describe 'plays.json' do
     it 'should dump all plays' do
-      @db.exec('INSERT INTO plays (track_id) VALUES (1)')
-      @db.exec('INSERT INTO plays (track_id) VALUES (2)')
-      @db.exec('INSERT INTO plays (track_id) VALUES (1)')
+      @db.exec('INSERT INTO plays (persistent_track_id) VALUES (1)')
+      @db.exec('INSERT INTO plays (persistent_track_id) VALUES (2)')
+      @db.exec('INSERT INTO plays (persistent_track_id) VALUES (1)')
 
       get '/plays.json'
-      expect(last_response.body).to eq('[1,2,1]')
+      expect(last_response.body).to eq('["1","2","1"]')
     end
   end
 
