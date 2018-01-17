@@ -14,15 +14,14 @@ ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums;'
 ALBUM_INT_INDICES = [0, 1]
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_id, genre_id, duration, start, ' +
   'finish, track, track_count, disc, disc_count, play_count, ext FROM tracks'
-TRACK_INT_INDICES = [0, 4, 5, 6]
+TRACK_INT_INDICES = [3, 4, 5]
 PLAYLIST_SQL = 'SELECT id, name, parent_id, is_library FROM playlists;'
-PLAYLIST_INT_INDICES = [0, 2, 3]
-PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(CAST(track_id AS VARCHAR), \',\') FROM playlist_tracks GROUP BY playlist_id;'
-PLAYLIST_TRACK_INT_INDICES = [0]
+PLAYLIST_INT_INDICES = [3]
+PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(track_id, \',\') FROM playlist_tracks GROUP BY playlist_id;'
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
-TRACK_PLAY_SQL = 'SELECT ext, persistent_id FROM tracks WHERE id=$1;'
-CREATE_PLAY_SQL = 'INSERT INTO plays (persistent_track_id) VALUES ($1);'
+TRACK_PLAY_SQL = 'SELECT ext, id FROM tracks WHERE id=$1;'
+CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
 PLAYS_SQL = 'SELECT * FROM plays;'
 
 MIME_TYPES = {
@@ -99,14 +98,14 @@ class Serve < Sinatra::Base
   get '/data.json' do
     if check_login
       playlist_tracks = db.exec(PLAYLIST_TRACK_SQL).values
-      playlist_tracks.each { |pt| pt[1] = pt[1].split(',').map(&:to_i) }
+      playlist_tracks.each { |pt| pt[1] = pt[1].split(',') }
 
       json genres: convert_cols_to_ints(db.exec(GENRE_SQL).values, GENRE_INT_INDICES),
            artists: convert_cols_to_ints(db.exec(ARTIST_SQL).values, ARTIST_INT_INDICES),
            albums: convert_cols_to_ints(db.exec(ALBUM_SQL).values, ALBUM_INT_INDICES),
            tracks: convert_cols_to_ints(db.exec(TRACK_SQL).values, TRACK_INT_INDICES),
            playlists: convert_cols_to_ints(db.exec(PLAYLIST_SQL).values, PLAYLIST_INT_INDICES),
-           playlist_tracks: convert_cols_to_ints(playlist_tracks, PLAYLIST_TRACK_INT_INDICES)
+           playlist_tracks: playlist_tracks
     else
       redirect to('/')
     end
@@ -120,8 +119,8 @@ class Serve < Sinatra::Base
     rows
   end
 
-  def send_track_if_exists(db, music_path, id, download)
-    name, file, ext = db.exec_params(TRACK_INFO_SQL, [id]).values.first
+  def send_track_if_exists(db, music_path, persistent_track_id, download)
+    name, file, ext = db.exec_params(TRACK_INFO_SQL, [persistent_track_id]).values.first
     if file == nil || !MIME_TYPES.has_key?(ext)
       false
     else

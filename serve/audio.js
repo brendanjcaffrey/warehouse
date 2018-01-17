@@ -86,7 +86,7 @@ Audio.prototype.rewindTrackInSlot = function(slot) {
 }
 
 Audio.prototype.getNowPlayingTrackId = function() {
-  if (!this.tracks[this.nowPlayingSlot]) { return -1; }
+  if (!this.tracks[this.nowPlayingSlot]) { return null; }
   return this.tracks[this.nowPlayingSlot].id;
 }
 

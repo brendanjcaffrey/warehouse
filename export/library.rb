@@ -16,8 +16,7 @@ module Export
         set thisTrack to file track %d
 
         #{SET_DELIMS}
-        set output to database ID of thisTrack & "\n"
-        set output to output & persistent ID of thisTrack & "\n"
+        set output to persistent ID of thisTrack & "\n"
         set output to output & name of thisTrack & "\n"
         set output to output & sort name of thisTrack & "\n"
         set output to output & artist of thisTrack & "\n"
@@ -48,15 +47,15 @@ module Export
         set thisPlaylist to user playlist %1$d
 
         #{SET_DELIMS}
-        set output to output & id of thisPlaylist & "\n"
+        set output to output & persistent ID of thisPlaylist & "\n"
         set output to output & name of thisPlaylist & "\n"
         set output to output & special kind of thisPlaylist & "\n"
 
         try
           get parent of thisPlaylist
-          set output to output & id of parent of thisPlaylist & "\n"
+          set output to output & persistent ID of parent of thisPlaylist & "\n"
         on error
-          set output to output & "-1" & "\n"
+          set output to output & "" & "\n"
         end try
 
         set output to output & count of file tracks of thisPlaylist & "\n"
@@ -73,7 +72,7 @@ module Export
 
         #{SET_DELIMS}
         repeat with thisTrack in file tracks of user playlist %1$d
-          set output to output & database ID of thisTrack & "\n"
+          set output to output & persistent ID of thisTrack & "\n"
         end repeat
         #{RESET_DELIMS}
 
@@ -89,15 +88,15 @@ module Export
         set thisFolder to folder playlist %1$d
 
         #{SET_DELIMS}
-        set output to output & id of thisFolder & "\n"
+        set output to output & persistent ID of thisFolder & "\n"
         set output to output & name of thisFolder & "\n"
         set output to output & special kind of thisFolder & "\n"
 
         try
           get parent of thisFolder
-          set output to output & id of parent of thisFolder & "\n"
+          set output to output & persistent ID of parent of thisFolder & "\n"
         on error
-          set output to output & "-1" & "\n"
+          set output to output & "" & "\n"
         end try
         #{RESET_DELIMS}
 
@@ -139,7 +138,7 @@ module Export
       playlist = Playlist.new(*split)
 
       if playlist.is_library == 0 # no use having a list of all tracks for the library playlist
-        playlist.track_string =  `osascript -e '#{PLAYLIST_TRACKS % playlist_number}'`
+        playlist.track_string = `osascript -e '#{PLAYLIST_TRACKS % playlist_number}'`
       end
 
       playlist
@@ -152,7 +151,9 @@ module Export
     def folder_info(folder_index)
       folder_number = folder_index + 1
       split = `osascript -e '#{FOLDER_INFO % folder_number}'`.split("\n")
-      Playlist.new(*split)
+      playlist = Playlist.new(*split)
+      playlist.parent_id = '' if playlist.parent_id.nil?
+      playlist
     end
 
     def get_plays(persistent_id)

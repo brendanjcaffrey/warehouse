@@ -63,7 +63,7 @@ Streamer.prototype.buildPlaylistMenu = function() {
       var currentLi = parentElement.children("li").last();
       currentLi.on("click", function(e) {
         var li = $(e.delegateTarget);
-        var playlistId = parseInt(li.attr("data-playlist-id"));
+        var playlistId = li.attr("data-playlist-id");
         var target = $(e.target);
         if (target.hasClass("arrow") && li.attr("data-is-folder") == "1") {
           self.toggleFolder(playlistId, li, target);
@@ -136,13 +136,12 @@ Streamer.prototype.showPlaylist = function(id, li) {
     var playlistTracks;
     if (playlist.children.length != 0) {
       playlistTracks = accumulateFolderTracks(playlist);
-      console.log(playlistTracks);
     } else {
       playlistTracks = this.playlistTracks[playlist.id].tracks;
     }
 
     for (var i = 0; i < playlistTracks.length; ++i) {
-      tracks.push(this.tracksHash[parseInt(playlistTracks[i])]);
+      tracks.push(this.tracksHash[playlistTracks[i]]);
     }
   }
 

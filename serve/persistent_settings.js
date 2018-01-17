@@ -6,7 +6,7 @@ var PersistentSettings = function() {
 
   var openFolders = Cookies.get("openFolders");
   if (openFolders) {
-    this.openFolders = openFolders.split(",").map(function(id) { return parseInt(id) });
+    this.openFolders = openFolders.split(",");
   } else {
     this.openFolders = [];
   }

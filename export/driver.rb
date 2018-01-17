@@ -83,7 +83,7 @@ module Export
         if @needed_folders.has_key?(folder.id)
           @database.create_playlist(folder)
         else
-          puts "Skipping folder #{playlist.name} because it has no children"
+          puts "Skipping folder #{folder.name} because it has no children"
         end
       end
     end

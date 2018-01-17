@@ -17,7 +17,7 @@ PlaylistManager.prototype.rebuild = function(stopped, nowPlayingId, api) {
   if (api) { this.api = api }
   this.playlist = this.api.rows({search: "applied"}).data().map(function (x) { return x.id });
 
-  if (nowPlayingId >= 0) {
+  if (nowPlayingId) {
     // if the current song isn't in the results, then this will return -1,
     // which means the next song to be played will be index 0 which is what we want
     this.playlistIndex = this.playlist.indexOf(nowPlayingId);

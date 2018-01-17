@@ -108,7 +108,7 @@ var ResolvePlaylistTree = function(playlists) {
   }
 
   tree = [];
-  ResolvePlaylistTreeStep(playlists, tree, -1);
+  ResolvePlaylistTreeStep(playlists, tree, "");
 
   return tree;
 }
