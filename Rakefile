@@ -47,11 +47,11 @@ task :test do
 
   database = Export::Database.new(Config['database_username'], 'test_itunes_streamer')
   database.clean_and_rebuild
-  database.create_track(Export::Track.new(1, 'PID', 'test_title', '', 'test_artist', '', 'test_album',
+  database.create_track(Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_album',
                                           '', 'test_genre', 1.23, 0.1, 1.22, 1, 10, 1, 2, 5,
                                           ':__test.mp3'))
-  database.create_playlist(Export::Playlist.new(2, 'test_playlist', 'none', -1, 3, "3\n4\n5"))
-  `echo "1.mp3 contents" > spec/__test.mp3`
+  database.create_playlist(Export::Playlist.new('BDDCB0E03D499D53', 'test_playlist', 'none', -1, 3, "5E3FA18D81E469D2\n21D8E2441A5E2204\nB7F8970B634DDEE3"))
+  `echo "fake mp3 contents" > spec/__test.mp3`
   puts `rspec`
   `rm spec/__test.mp3`
 end
