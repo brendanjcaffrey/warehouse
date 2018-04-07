@@ -4,61 +4,49 @@
   <link rel="stylesheet" href="/style.css" />
   <link rel="stylesheet" href="/bootstrap.min.css" />
   <link rel="stylesheet" href="/bootstrap-theme.min.css" />
-  <link rel="stylesheet" href="/bootstrap-slider.css" />
-  <link rel="stylesheet" href="/jquery.dataTables.min.css" />
+  <link rel="stylesheet" href="/bootstrap-slider.min.css" />
   <link rel="stylesheet" href="/ionicons.min.css" />
 </head>
 
 <body>
-  <div id="loading">Loading...</div>
+  <audio id="audio0" preload></audio>
+  <audio id="audio1" preload></audio>
+  <audio id="audio2" preload></audio>
 
   <div class="container-fluid">
-    <div id="control-row" class="hidden row">
-      <div id="control" class="col-md-8">
-        <i class="icon ion-ios-rewind" id="prev"></i>
-        <i class="icon ion-ios-play" id="playpause"></i>
-        <i class="icon ion-ios-fastforward" id="next"></i>
-        <i class="icon ion-ios-shuffle" id="shuffle"></i>
-        <i class="icon ion-ios-reload" id="repeat"></i>
-
-        <input id="volume" type="text" value="" data-slider-min="0" data-slider-max="100"
-          data-slider-step="1" data-slider-orientation="horizontal" data-slider-tooltip="hide" />
-
-        <audio id="audio1" preload></audio>
-        <audio id="audio2" preload></audio>
-        <audio id="audio3" preload></audio>
-      </div>
-      <div id="filter" class="col-md-4">
-      </div>
+    <div id="control-row" class="row">
+      <div id="controls" class="col-md-8"></div>
+      <div id="filter" class="col-md-4"></div>
     </div>
 
-    <div id="content-row" class="hidden row">
-      <div class="col-md-2" id="playlists">
-      </div>
+    <div id="content-row" class="row">
+      <div class="col-md-2" id="playlists"></div>
 
       <div class="col-md-10">
-        <table id="tracks">
-          <thead>
-            <tr><th>Name</th><th>Time</th><th>Artist</th><th>Album</th>
-                <th>Genre</th><th>Plays</th></tr>
-          </thead>
-
-          <tbody id="tracks-body"></tbody>
-        </table>
+        <table id="tracks"></table>
+        <div id="pagination"></div>
       </div>
     </div>
   </div>
 
   <script src="/js.cookie-2.1.2.min.js"></script>
   <script src="/jquery-1.11.1.min.js"></script>
-  <script src="/jquery.dataTables.min.js"></script>
-  <script src="/row.show.js"></script>
   <script src="/jquery.hotkeys.js"></script>
-  <script src="/bootstrap-slider.js"></script>
+  <script src="/bootstrap-slider.min.js"></script>
 
-  <script src="/persistent_settings.js"></script>
   <script src="/models.js"></script>
-  <script src="/playlist_manager.js"></script>
+  <script src="/persistent_settings.js"></script>
+  <script src="/track_table.js"></script>
+  <script src="/track_display_manager.js"></script>
+  <script src="/pagination.js"></script>
+  <script src="/filter_bar.js"></script>
+  <script src="/filter.js"></script>
+  <script src="/sorter.js"></script>
+  <script src="/playlist_tree.js"></script>
+  <script src="/playlist_control_manager.js"></script>
+  <script src="/playlist_display_manager.js"></script>
+  <script src="/controls.js"></script>
+  <script src="/keyboard.js"></script>
   <script src="/audio.js"></script>
   <script src="/streamer.js"></script>
 </body>

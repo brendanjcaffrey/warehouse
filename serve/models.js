@@ -29,32 +29,33 @@ var PlaylistIndices = ["id", "name", "parentId", "isLibrary"];
 var PlaylistTracksIndices = ["id", "tracks"];
 
 var Genre = function(row) {
-  for (index in GenreIndices) {
-    this[GenreIndices[index]] = row[index];
+  for (idx in GenreIndices) {
+    this[GenreIndices[idx]] = row[idx];
   }
 }
 
 var Artist = function(row) {
-  for (index in ArtistIndices) {
-    this[ArtistIndices[index]] = row[index];
+  for (idx in ArtistIndices) {
+    this[ArtistIndices[idx]] = row[idx];
   }
 
   fixSortName(this);
 }
 
 var Album = function(row) {
-  for (index in AlbumIndices) {
-    this[AlbumIndices[index]] = row[index];
+  for (idx in AlbumIndices) {
+    this[AlbumIndices[idx]] = row[idx];
   }
 
   fixSortName(this);
 }
 
 var Track = function(row, artists, albums, genres) {
-  for (index in TrackIndices) {
-    this[TrackIndices[index]] = row[index]
+  for (idx in TrackIndices) {
+    this[TrackIndices[idx]] = row[idx]
   }
 
+  this.duration = parseFloat(this.duration);
   this.time = secondsToTime(this.duration);
   this.artist = artists[this.artistId].name;
   this.sortArtist = artists[this.artistId].sortName;
@@ -63,52 +64,18 @@ var Track = function(row, artists, albums, genres) {
   this.genre = genres[this.genreId].name;
 
   fixSortName(this);
-  this.searchName = this.sortName.toLowerCase();
 }
 
 var Playlist = function(row) {
-  for (index in PlaylistIndices) {
-    this[PlaylistIndices[index]] = row[index]
+  for (idx in PlaylistIndices) {
+    this[PlaylistIndices[idx]] = row[idx]
   }
 
   this.children = [];
 }
 
 var PlaylistTracks = function(row) {
-  for (index in PlaylistIndices) {
-    this[PlaylistTracksIndices[index]] = row[index]
+  for (idx in PlaylistIndices) {
+    this[PlaylistTracksIndices[idx]] = row[idx]
   }
-}
-
-var ResolvePlaylistTree = function(playlists) {
-  var sortName = function(i1, i2) {
-    if (i1.isLibrary == i2.isLibrary) {} // nop
-    else if (i1.isLibrary) { return -1; }
-    else if (i2.isLibrary) { return 1; }
-
-    var i1IsFolder = i1.children.length != 0;
-    var i2IsFolder = i2.children.length != 0;
-    if (i1IsFolder == i2IsFolder) {} // nop
-    else if (i1IsFolder) { return -1; }
-    else if (i2IsFolder) { return 1; }
-
-    if (i1.name == i2.name) { return 0; }
-    else if (i1.name > i2.name) { return 1; }
-    else { return -1; }
-  }
-
-  var ResolvePlaylistTreeStep = function(playlists, tree, parentId) {
-    for (var i = 0; i < playlists.length; ++i) {
-      if (playlists[i].parentId == parentId) {
-        tree.push(playlists[i]);
-        ResolvePlaylistTreeStep(playlists, playlists[i].children, playlists[i].id);
-      }
-    }
-    tree.sort(sortName);
-  }
-
-  tree = [];
-  ResolvePlaylistTreeStep(playlists, tree, "");
-
-  return tree;
 }

@@ -1,5 +1,6 @@
 var PersistentSettings = function() {
   cookies = Cookies.get();
+
   // both default to false
   this.shuffle = (Cookies.get("shuffle") == "1");
   this.repeat  = (Cookies.get("repeat") == "1");
@@ -36,9 +37,10 @@ PersistentSettings.prototype.setFolderOpen = function(folderId) {
   this.openFolders.push(folderId);
   this.persist();
 }
+
 PersistentSettings.prototype.setFolderClosed = function(folderId) {
-  var index = this.openFolders.indexOf(folderId);
-  if (index == -1) { return; }
-  this.openFolders.splice(index, 1);
+  var idx = this.openFolders.indexOf(folderId);
+  if (idx == -1) { return; }
+  this.openFolders.splice(idx, 1);
   this.persist();
 }
