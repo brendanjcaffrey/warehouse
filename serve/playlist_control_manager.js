@@ -22,7 +22,7 @@ PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTrack
   this.orderedPlayingTracks = orderedTracks.slice(0);
   this.generateShuffledPlaylist();
 
-  if (this.stopped && newTrackId != null) {
+  if (newTrackId != null) {
     this.stopped = false;
     this.playing = true;
     this.isPlayingChangedCallback(this.playing);
