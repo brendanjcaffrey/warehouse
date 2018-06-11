@@ -1,0 +1,11 @@
+* run `bundle` to install dependencies
+* run `mkfifo control`
+* run `thin start -R config.ru -p 9292 -e production` to start the server
+* connect to this machine from the web interface
+* use `ruby writer.rb playpause`, `ruby writer.rb next` and `ruby writer.rb prev` to control things
+  -> note that starting playback for the first time after load from the websocket might raise an error
+
+to set up keyboard shortcuts:
+* copy .xbindkeysrc.example to ~/.xbindkeysrc, update it (path to `writer.rb`, the keyboard shortcuts)
+* run `xbindkeys`
+* use keyboard shortcuts to control

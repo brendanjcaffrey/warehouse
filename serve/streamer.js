@@ -37,6 +37,7 @@ var Streamer = function(data) {
   this.settings = new PersistentSettings();
   this.trackTable = new TrackTable("#tracks", colDescriptions, rowsPerPage);
   this.controls = new Controls("#controls", this.settings);
+  this.remoteControl = new RemoteControl("#remote-control", this.settings);
   this.pagination = new Pagination("#pagination");
   this.filterBar = new FilterBar("#filter");
   this.playlistTree = new PlaylistTree("#playlists", playlists, this.settings);
@@ -59,6 +60,9 @@ var Streamer = function(data) {
                              this.playlistControlManager.shuffleChanged.bind(this.playlistControlManager),
                              this.playlistControlManager.repeatChanged.bind(this.playlistControlManager),
                              this.audio.volumeChanged.bind(this.audio));
+  this.remoteControl.setCallbacks(this.controls.prevClick.bind(this.controls),
+                                  this.controls.playPauseClick.bind(this.controls),
+                                  this.controls.nextCallback.bind(this.controls));
   this.pagination.setCallbacks(this.trackDisplayManager.pageChanged.bind(this.trackDisplayManager));
   this.filterBar.setCallbacks(this.filter.filterChanged.bind(this.filter),
                               this.filter.filterCleared.bind(this.filter));

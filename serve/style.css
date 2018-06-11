@@ -97,9 +97,15 @@ td .icon {
   white-space: nowrap;
 }
 
+#remote-control {
+  float: left;
+  padding: 0.25em 0;
+  width: 20em;
+}
+
 #pagination {
   float: right;
-  padding-top: 0.25em;
+  padding: 0.25em 0;
 }
 
 #pagination a, span.ellipsis {

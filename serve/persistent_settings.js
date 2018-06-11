@@ -11,12 +11,16 @@ var PersistentSettings = function() {
   } else {
     this.openFolders = [];
   }
+
+  this.remoteAddress = Cookies.get("remoteAddress");
+  if (this.remoteAddress == null) { this.remoteAddress = ""; }
 }
 
 PersistentSettings.prototype.persist = function() {
   Cookies.set("shuffle", this.shuffle ? "1" : "0", { expires: 60 });
   Cookies.set("repeat", this.repeat ? "1" : "0", { expires: 60 });
   Cookies.set("openFolders", this.openFolders.join(","), { expires: 60 });
+  Cookies.set("remoteAddress", this.remoteAddress, { expires: 60 });
 }
 
 PersistentSettings.prototype.getShuffle = function() { return this.shuffle; }
@@ -42,5 +46,11 @@ PersistentSettings.prototype.setFolderClosed = function(folderId) {
   var idx = this.openFolders.indexOf(folderId);
   if (idx == -1) { return; }
   this.openFolders.splice(idx, 1);
+  this.persist();
+}
+
+PersistentSettings.prototype.getRemoteAddress = function() { return this.remoteAddress; }
+PersistentSettings.prototype.setRemoteAddress = function(remoteAddress) {
+  this.remoteAddress = remoteAddress;
   this.persist();
 }
