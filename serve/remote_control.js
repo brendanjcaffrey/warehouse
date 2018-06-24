@@ -11,6 +11,8 @@ var RemoteControl = function(id, settings) {
   var span = $("<span class=\"input-group-btn\"></span>").appendTo(id);
   this.button = $("<input type=\"button\" value=\"Connect\" class=\"btn btn-success\" />").appendTo(span);
   this.button.click(this.connectButtonClick.bind(this));
+
+  if (this.settings.getRemoteAddress() != "") { this.button.click(); }
 }
 
 RemoteControl.prototype.setCallbacks = function(prevCallback, playPauseCallback, nextCallback) {
