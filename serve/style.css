@@ -21,6 +21,10 @@
   text-align: right;
 }
 
+#filter label {
+  font-weight: normal;
+}
+
 #filter input {
   margin-left: 5px;
 }
