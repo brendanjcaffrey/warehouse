@@ -45,9 +45,9 @@ RemoteControl.prototype.connectButtonClick = function() {
 }
 
 RemoteControl.prototype.handleMessage = function(event) {
-  if (event.data == "playpause") { streamer.controls.playPauseCallback(); }
-  else if (event.data == "next") { streamer.controls.nextCallback(); }
-  else if (event.data == "prev") { streamer.controls.prevCallback(); }
+  if (event.data == "playpause") { this.playPauseCallback(); }
+  else if (event.data == "next") { this.nextCallback(); }
+  else if (event.data == "prev") { this.prevCallback(); }
   else if (event.data == "heartbeat") { /* nop */ }
   else { console.log("Unknown websocket event"); console.log(event); }
 }
