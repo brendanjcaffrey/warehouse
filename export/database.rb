@@ -39,15 +39,15 @@ module Export
         name TEXT,
         sort_name TEXT,
         artist_id INTEGER,
+        album_artist_id INTEGER,
         album_id INTEGER,
         genre_id INTEGER,
+        year INTEGER,
         duration REAL,
         start REAL,
         finish REAL,
         track INTEGER,
-        track_count INTEGER,
         disc INTEGER,
-        disc_count INTEGER,
         play_count INTEGER,
         ext TEXT,
         file TEXT
@@ -90,9 +90,8 @@ module Export
     ALBUM_SQL = 'INSERT INTO albums (name, sort_name, artist_id) VALUES ($1,$2,$3) RETURNING id;'
 
     TRACK_SQL = <<-SQL
-      INSERT INTO tracks (id, name, sort_name, artist_id, album_id, genre_id, duration,
-      start, finish, track, track_count, disc, disc_count, play_count, ext, file)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
+      INSERT INTO tracks (id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, year, duration, start, finish,
+        track, disc, play_count, ext, file) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
     SQL
 
     PLAYLIST_SQL = 'INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4);'
@@ -142,11 +141,11 @@ module Export
     def create_track(track)
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
+      album_artist = artist_id(track.album_artist, track.sort_album_artist)
       album = album_id(track.album, track.sort_album, artist)
 
-      @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album, genre,
-        track.duration, track.start, track.finish, track.track, track.track_count, track.disc,
-        track.disc_count, track.play_count, track.ext, track.file])
+      @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album_artist, album, genre, track.year,
+        track.duration, track.start, track.finish, track.track, track.disc, track.play_count, track.ext, track.file])
     end
 
     def create_playlist(playlist)

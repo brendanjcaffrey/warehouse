@@ -13,9 +13,9 @@ ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
 ARTIST_INT_INDICES = [0]
 ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums;'
 ALBUM_INT_INDICES = [0, 1]
-TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_id, genre_id, duration, start, ' +
-  'finish, track, track_count, disc, disc_count, play_count, ext FROM tracks;'
-TRACK_INT_INDICES = [3, 4, 5, 9, 11, 13]
+TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, ' +
+  'year, duration, start, finish, track, disc, play_count, ext FROM tracks;'
+TRACK_INT_INDICES = [3, 4, 5, 6, 7, 11, 12, 13]
 PLAYLIST_SQL = 'SELECT id, name, parent_id, is_library FROM playlists;'
 PLAYLIST_INT_INDICES = [3]
 PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(track_id, \',\') FROM playlist_tracks GROUP BY playlist_id;'

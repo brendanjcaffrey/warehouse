@@ -28,8 +28,9 @@ var Streamer = function(data) {
       { "name": "Name",   "data": "name", "sort": ["sortName"] },
       { "name": "Time",   "data": "time", "type": "numeric", "sort": ["duration"] , "typeToShow": false, "filter": false },
       { "name": "Artist", "data": "artist", "sort": ["sortArtist"] },
-      { "name": "Album",  "data": "album", "sort": ["sortArtist", "sortAlbum", "disc", "track"], "typeToShow": false },
+      { "name": "Album",  "data": "album", "sort": ["sortAlbumArtist", "year", "sortAlbum", "disc", "track"], "typeToShow": false },
       { "name": "Genre",  "data": "genre", "typeToShow": false },
+      { "name": "Year",   "data": "year", "typeToShow": false },
       { "name": "Plays",  "data": "playCount", "type": "numeric", "typeToShow": false, "filter": false }
   ];
 

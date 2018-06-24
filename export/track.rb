@@ -1,8 +1,8 @@
 module Export
   ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
-  class Track < Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album, :sort_album_unclean,
-    :genre, :duration, :start, :finish, :track, :track_count, :disc, :disc_count, :play_count, :location)
+  class Track < Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album_artist_unclean, :sort_album_artist_unclean,
+    :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track, :disc, :play_count, :location)
 
     def file
       # location is like "Macintosh HD:Users:Brendan:Music:iTunes:iTunes Music:artist:album:song.mp3"
@@ -18,6 +18,15 @@ module Export
     def sort_artist
       value = clean_sort_value(sort_artist_unclean || artist)
       value != album ? value : ""
+    end
+
+    def album_artist
+      album_artist_unclean == '' ? artist : album_artist_unclean
+    end
+
+    def sort_album_artist
+      value = clean_sort_value(sort_album_artist_unclean || album_artist)
+      value != album_artist ? value : ""
     end
 
     def sort_album

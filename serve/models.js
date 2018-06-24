@@ -22,9 +22,8 @@ function extToType(ext) {
 var GenreIndices = ["id", "name"];
 var ArtistIndices = ["id", "name", "sortName"];
 var AlbumIndices = ["id", "artistId", "name", "sortName"];
-var TrackIndices = ["id", "name", "sortName", "artistId", "albumId", "genreId",
-                    "duration", "start", "finish", "track", "trackCount", "disc",
-                    "discCount", "playCount", "ext"];
+var TrackIndices = ["id", "name", "sortName", "artistId", "albumArtistId", "albumId", "genreId",
+                    "year", "duration", "start", "finish", "track", "disc", "playCount", "ext"];
 var PlaylistIndices = ["id", "name", "parentId", "isLibrary"];
 var PlaylistTracksIndices = ["id", "tracks"];
 
@@ -59,6 +58,8 @@ var Track = function(row, artists, albums, genres) {
   this.time = secondsToTime(this.duration);
   this.artist = artists[this.artistId].name;
   this.sortArtist = artists[this.artistId].sortName;
+  this.albumArtist = artists[this.albumArtistId].name;
+  this.sortAlbumArtist = artists[this.albumArtistId].sortName;
   this.album = albums[this.albumId].name;
   this.sortAlbum = albums[this.albumId].sortName;
   this.genre = genres[this.genreId].name;
