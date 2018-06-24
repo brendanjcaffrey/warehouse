@@ -41,7 +41,7 @@ class Serve < Sinatra::Base
     end
   end
 
-  set :public_folder, Proc.new { File.join(root, "serve") }
+  set :public_folder, Proc.new { File.join(root, 'serve') }
   enable :sessions
   set :session_secret, Config['secret']
 
