@@ -18,11 +18,11 @@ PlaylistControlManager.prototype.setCallbacks = function(nowPlayingIdChangedCall
   this.rewindCurrentTrackCallback = rewindCurrentTrackCallback;
 }
 
-PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTracks, newTrackId) {
+PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTracks, newTrackId, isForcedPlay) {
   this.orderedPlayingTracks = orderedTracks.slice(0);
   this.generateShuffledPlaylist();
 
-  if (newTrackId != null) {
+  if (newTrackId != null && isForcedPlay) {
     this.stopped = false;
     this.playing = true;
     this.isPlayingChangedCallback(this.playing);

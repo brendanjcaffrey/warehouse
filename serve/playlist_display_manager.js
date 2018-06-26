@@ -53,7 +53,7 @@ PlaylistDisplayManager.prototype.displayChanged = function() {
   this.displayedTracksChangedCallback(this.shownTracks, this.nowPlayingPlaylistId == this.shownPlaylistId);
 
   if (this.shownPlaylistId == this.nowPlayingPlaylistId) {
-    this.nowPlayingTracksChangedCallback(this.shownTracks, this.nowPlayingTrackId);
+    this.nowPlayingTracksChangedCallback(this.shownTracks, this.nowPlayingTrackId, false);
   }
 }
 
@@ -78,5 +78,5 @@ PlaylistDisplayManager.prototype.accumulateFolderTracks = function(folderId) {
 
 PlaylistDisplayManager.prototype.playTrack = function(trackId) {
   this.nowPlayingPlaylistId = this.shownPlaylistId;
-  this.nowPlayingTracksChangedCallback(this.shownTracks, trackId);
+  this.nowPlayingTracksChangedCallback(this.shownTracks, trackId, true);
 }
