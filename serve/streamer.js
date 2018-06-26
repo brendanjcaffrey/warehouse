@@ -30,7 +30,7 @@ var Streamer = function(data) {
       { "name": "Artist", "data": "artist", "sort": ["sortArtist"] },
       { "name": "Album",  "data": "album", "sort": ["sortAlbumArtist", "year", "sortAlbum", "disc", "track"], "typeToShow": false },
       { "name": "Genre",  "data": "genre", "typeToShow": false },
-      { "name": "Year",   "data": "year", "typeToShow": false },
+      { "name": "Year",   "data": "year", "type": "numeric", "typeToShow": false },
       { "name": "Plays",  "data": "playCount", "type": "numeric", "typeToShow": false, "filter": false }
   ];
 
