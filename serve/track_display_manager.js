@@ -29,6 +29,9 @@ TrackDisplayManager.prototype.tracksChanged = function(trackIds, showNowPlayingI
   // below also resets view back to the first page
   this.numPagesChangedCallback(Math.ceil(this.trackIds.length / this.rowsPerPage));
 
+  // TODO this could (probably) be done when first key is pressed - should be finished by the time the timeout fires?
+  this.typeToShowList = this.sortForTypeToShowListCallack(this.trackIds);
+
   if (this.nowPlayingTrackId && showNowPlayingIfPossible) {
     var nowPlayingIdx = this.trackIds.indexOf(this.nowPlayingTrackId);
     if (nowPlayingIdx != -1) {
@@ -39,8 +42,6 @@ TrackDisplayManager.prototype.tracksChanged = function(trackIds, showNowPlayingI
     }
   }
 
-  // TODO this could (probably) be done when first key is pressed - should be finished by the time the timeout fires?
-  this.typeToShowList = this.sortForTypeToShowListCallack(this.trackIds);
   this.sendCurrentTracks();
 }
 
