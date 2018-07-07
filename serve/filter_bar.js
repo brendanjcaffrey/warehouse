@@ -1,4 +1,5 @@
-var FilterBar = function(id) {
+var FilterBar = function() {
+  var id = "#filter";
   $(id).append("<label>Search: <input type=\"search\" /></label>");
   this.input = $(id).find("input");
   // the "input" event fires every time the value changes, but the "change" event only fires when "committed"?

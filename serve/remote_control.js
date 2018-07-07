@@ -1,10 +1,10 @@
-var RemoteControl = function(id, settings) {
-  this.id = id;
+var RemoteControl = function(settings) {
+  this.id = "#remote-control";
   this.settings = settings;
   this.connected = false;
   this.websocket = null;
 
-  this.div = $("<div class=\"input-group input-group-sm\"></div>").appendTo(id);
+  this.div = $("<div class=\"input-group input-group-sm\"></div>").appendTo(this.id);
 
   this.address = $("<input type=\"text\" id=\"address\" class=\"form-control\" placeholder=\"localhost:9292\" />").appendTo(this.div);
   this.address.val(this.settings.getRemoteAddress());
@@ -14,8 +14,8 @@ var RemoteControl = function(id, settings) {
   this.button = $("<input type=\"button\" value=\"Connect\" class=\"btn btn-success\" />").appendTo(span);
   this.button.click(this.connectButtonClick.bind(this));
 
-  this.success = $("<span class=\"icon ion-checkmark form-control-feedback\" style=\"right: 77px; top: 4px;\"></span>").appendTo(id);
-  this.failure = $("<span class=\"icon ion-close form-control-feedback\" style=\"right: 61px; top: 2px;\"></span>").appendTo(id);
+  this.success = $("<span class=\"icon ion-checkmark form-control-feedback\" style=\"right: 77px; top: 4px;\"></span>").appendTo(this.id);
+  this.failure = $("<span class=\"icon ion-close form-control-feedback\" style=\"right: 61px; top: 2px;\"></span>").appendTo(this.id);
   this.success.hide(); this.failure.hide();
 
   if (this.settings.getRemoteAddress() != "") { this.button.click(); }

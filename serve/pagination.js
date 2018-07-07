@@ -1,5 +1,5 @@
-var Pagination = function(id) {
-  this.pagination = $(id);
+var Pagination = function() {
+  this.pagination = $("#pagination");
   this.page = 0; // 0 is invalid value, valid range is 1-pages
 
   this.prevButton = $("<a>&lt;</a>").appendTo(this.pagination);

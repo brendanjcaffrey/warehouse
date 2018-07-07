@@ -1,7 +1,7 @@
-var PlaylistTree = function(id, playlists, settings) {
+var PlaylistTree = function(playlists, settings) {
   this.settings = settings;
   this.resolveTree(playlists);
-  this.buildUI(id);
+  this.buildUI("#playlists");
 }
 
 PlaylistTree.prototype.setCallbacks = function(playlistChangedCallback) {

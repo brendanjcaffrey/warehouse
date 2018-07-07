@@ -1,4 +1,5 @@
-var Controls = function(id, settings) {
+var Controls = function(settings) {
+  var id = "#controls";
   $("<i class=\"icon ion-ios-rewind\" id=\"prev\"></i>").appendTo(id).click(this.prevClick.bind(this));
   $("<i class=\"icon ion-ios-play\" id=\"playpause\"></i>").appendTo(id).click(this.playPauseClick.bind(this));
   $("<i class=\"icon ion-ios-fastforward\" id=\"next\"></i>").appendTo(id).click(this.nextClick.bind(this));

@@ -1,6 +1,6 @@
-var TrackTable = function(tableId, contextMenuId, colDescriptions, rowsPerPage) {
-  this.table = $(tableId);
-  this.contextMenu = $(contextMenuId);
+var TrackTable = function(colDescriptions, rowsPerPage) {
+  this.table = $("#tracks");
+  this.contextMenu = $("#context-menu");
   this.contextMenuPlay = this.contextMenu.find(".play");
   this.contextMenuDownload = this.contextMenu.find(".download");
   this.colDescriptions = colDescriptions;

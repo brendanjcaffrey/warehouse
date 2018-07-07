@@ -36,12 +36,12 @@ var Streamer = function(data) {
 
   // initialize
   this.settings = new PersistentSettings();
-  this.trackTable = new TrackTable("#tracks", "#context-menu", colDescriptions, rowsPerPage);
-  this.controls = new Controls("#controls", this.settings);
-  this.remoteControl = new RemoteControl("#remote-control", this.settings);
-  this.pagination = new Pagination("#pagination");
-  this.filterBar = new FilterBar("#filter");
-  this.playlistTree = new PlaylistTree("#playlists", playlists, this.settings);
+  this.trackTable = new TrackTable(colDescriptions, rowsPerPage);
+  this.controls = new Controls(this.settings);
+  this.remoteControl = new RemoteControl(this.settings);
+  this.pagination = new Pagination();
+  this.filterBar = new FilterBar();
+  this.playlistTree = new PlaylistTree(playlists, this.settings);
   this.keyboard = new Keyboard();
   this.filter = new Filter(this.tracksHash, colDescriptions);
   this.sorter = new Sorter(this.tracksHash, colDescriptions);
