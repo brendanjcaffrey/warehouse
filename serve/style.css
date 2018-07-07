@@ -177,6 +177,19 @@ td .icon {
   background-color: #888 !important;
 }
 
+#progress .progress {
+  margin-top: 22px;
+}
+
+#progress .progress, #progress .progress-bar {
+  height: 5px;
+}
+
+#progress .progress-bar {
+  background-color: #888;
+  background-image: none;
+}
+
 #playlists { padding-top: 15px; }
 #playlists ul.nav { margin-left: 16px; }
 #playlists ul.nav li a { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }

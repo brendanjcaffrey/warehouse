@@ -1,6 +1,8 @@
 var Audio = function(numSlots) {
   this.numSlots = numSlots;
   this.audios = []; this.tracks = [];
+  this.progress = $('<div class="progress"></div>').appendTo($("#progress"));
+  this.progressBar = $('<div class="progress-bar"></div>').appendTo(this.progress);
 
   for (var i = 0; i < this.numSlots; ++i) {
     this.audios.push(document.getElementById("audio" + i));
@@ -65,6 +67,9 @@ Audio.prototype.rewindTrackInSlot = function(slot) {
 Audio.prototype.currentTimeUpdated = function() {
   var audio = this.audios[this.nowPlayingSlot];
   var track = this.tracks[this.nowPlayingSlot];
+
+  var percent = (audio.currentTime - track.start) / (track.finish - track.start);
+  this.progressBar.css("width", String(percent * 100) + "%");
 
   if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
     $.post('/play/' + track.id);
