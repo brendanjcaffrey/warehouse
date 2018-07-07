@@ -1,5 +1,8 @@
-var TrackTable = function(tableId, colDescriptions, rowsPerPage) {
+var TrackTable = function(tableId, contextMenuId, colDescriptions, rowsPerPage) {
   this.table = $(tableId);
+  this.contextMenu = $(contextMenuId);
+  this.contextMenuPlay = this.contextMenu.find(".play");
+  this.contextMenuDownload = this.contextMenu.find(".download");
   this.colDescriptions = colDescriptions;
   this.headerCells = [];
   this.rows = []
@@ -137,35 +140,38 @@ TrackTable.prototype.rowDoubleClicked = function() {
   this.table.playCallback(this.idx);
 }
 
+// https://stackoverflow.com/questions/18666601/use-bootstrap-3-dropdown-menu-as-context-menu
+TrackTable.prototype.getMenuPosition = function(mousePosition, dimension, scrollDirection) {
+  var windowSize = $(window)[dimension]();
+  var menuSize = $("#context-menu")[dimension]();
+  var position = mousePosition + $(window)[scrollDirection]();
+
+  // opening menu would pass the side of the page
+  if (mousePosition + menuSize > windowSize && menuSize < mousePosition) { position -= menuSize; }
+  return position;
+}
+
 TrackTable.prototype.rowRightClicked = function(e) {
   this.table.updateSelectedRow(this.idx);
   this.table.clickCallback(this.idx);
 
-  var menu = $('<ul id="context-menu">');
+  this.table.contextMenu.show().css({
+    position: "absolute",
+    left: this.table.getMenuPosition(e.clientX, "width", "scrollLeft"),
+    top: this.table.getMenuPosition(e.clientY, "height", "scrollTop")
+  })
 
-  var download = $("<li>Download</li>")
-      .hover(function() { $(this).addClass("hover"); },
-             function() { $(this).removeClass("hover"); })
-      .mousedown(function() { this.table.downloadCallback(this.idx); }.bind(this));
-  menu.append(download);
+  this.table.contextMenuPlay.mousedown(function() { this.table.playCallback(this.idx); }.bind(this));
+  this.table.contextMenuDownload.mousedown(function() { this.table.downloadCallback(this.idx); }.bind(this));
 
-  var play = $("<li>Play</li>")
-      .hover(function() { $(this).addClass("hover"); },
-             function() { $(this).removeClass("hover"); })
-      .mousedown(function() { this.table.playCallback(this.idx); }.bind(this));
-  menu.append(play);
-
-  var x = e.pageX - 2;
-  var y = e.pageY - 17;
-  menu.css({ "position": "absolute", "top": y, "left": x });
-
-  $("body").append(menu);
-  $("body").one("click", this.table.hideMenu);
-  $(document).one("mousedown", this.table.hideMenu);
+  $("body").one("click", this.table.hideMenu.bind(this.table));
+  $(document).one("mousedown", this.table.hideMenu.bind(this.table));
 
   return false;
 }
 
 TrackTable.prototype.hideMenu = function() {
-  $("#context-menu").remove();
+  this.contextMenu.hide();
+  this.contextMenuPlay.off("mousedown");
+  this.contextMenuDownload.off("mousedown");
 }

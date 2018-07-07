@@ -147,19 +147,7 @@ td .icon {
 }
 
 #context-menu {
-  padding: 0;
-  border: 1px solid #DDDDDD;
-  background: #FFFFFF;
-}
-
-#context-menu li {
-  list-style-type: none;
-  padding: 5px;
-  cursor: pointer;
-}
-
-#context-menu li.hover {
-  background: #CCCCCC;
+  display: none;
 }
 
 .slider {

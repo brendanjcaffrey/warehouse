@@ -36,7 +36,7 @@ var Streamer = function(data) {
 
   // initialize
   this.settings = new PersistentSettings();
-  this.trackTable = new TrackTable("#tracks", colDescriptions, rowsPerPage);
+  this.trackTable = new TrackTable("#tracks", "#context-menu", colDescriptions, rowsPerPage);
   this.controls = new Controls("#controls", this.settings);
   this.remoteControl = new RemoteControl("#remote-control", this.settings);
   this.pagination = new Pagination("#pagination");
