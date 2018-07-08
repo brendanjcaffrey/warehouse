@@ -21,8 +21,9 @@ PLAYLIST_INT_INDICES = [3]
 PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(track_id, \',\') FROM playlist_tracks GROUP BY playlist_id;'
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
-TRACK_PLAY_SQL = 'SELECT ext, id FROM tracks WHERE id=$1;'
+TRACK_PLAY_SQL = 'SELECT ext FROM tracks WHERE id=$1;'
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
+INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1';
 PLAYS_SQL = 'SELECT * FROM plays;'
 
 MIME_TYPES = {
@@ -160,6 +161,9 @@ class Serve < Sinatra::Base
     if !check_login
       redirect to('/')
     else
+      username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)
+      halt if !track_user_plays?(username)
+
       id = params['splat'][0]
       result = db.exec_params(TRACK_PLAY_SQL, [id])
       ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
@@ -167,9 +171,8 @@ class Serve < Sinatra::Base
       if !MIME_TYPES.has_key?(ext)
         raise Sinatra::NotFound
       else
-        persistent_id = result.getvalue(0, 1)
-        username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)
-        db.exec_params(CREATE_PLAY_SQL, [persistent_id]) if track_user_plays?(username)
+        db.exec_params(CREATE_PLAY_SQL, [id])
+        db.exec_params(INCREMENT_PLAY_SQL, [id])
       end
     end
   end

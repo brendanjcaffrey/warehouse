@@ -93,6 +93,7 @@ Audio.prototype.currentTimeUpdated = function() {
 
   if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
     $.post('/play/' + track.id);
+    ++track.playCount;
     this.trackFinishedCallback();
   }
 }

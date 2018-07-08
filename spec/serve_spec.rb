@@ -33,7 +33,15 @@ module Config
     }
   end
 end
+
 require_relative '../serve'
+require_relative '../export/database'
+require_relative '../export/track'
+require_relative '../export/playlist'
+module Export ; class Database
+  attr_accessor :db
+  def clear ; @genres.clear ; @artists.clear ; @albums.clear ; end
+end ; end
 
 describe 'iTunes Streamer' do
   include Rack::Test::Methods
@@ -43,12 +51,30 @@ describe 'iTunes Streamer' do
   end
 
   before :all do
-    @db = PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+    `echo "fake mp3 contents" > spec/__test.mp3`
+    @database = Export::Database.new(Config['database_username'], Config['database_name'])
+    @database.clean_and_rebuild
+    @db = @database.db
+  end
+
+  after :all do
+    `rm spec/__test.mp3`
   end
 
   before :each do
+    @db.exec('DELETE FROM genres')
+    @db.exec('DELETE FROM artists')
+    @db.exec('DELETE FROM albums')
+    @db.exec('DELETE FROM tracks')
+    @db.exec('DELETE FROM playlists')
+    @db.exec('DELETE FROM playlist_tracks')
     @db.exec('DELETE FROM plays')
     @db.exec('DELETE FROM users')
+
+    @database.clear
+    @database.create_track(Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_artist', '', 'test_album', '',
+                                            'test_genre', 2018, 1.23, 0.1, 1.22, 1, 1, 5, 100, ':__test.mp3'))
+    @database.create_playlist(Export::Playlist.new('BDDCB0E03D499D53', 'test_playlist', 'none', -1, 3, "5E3FA18D81E469D2\n21D8E2441A5E2204\nB7F8970B634DDEE3"))
   end
 
   def get_first_value(query)
@@ -182,13 +208,18 @@ describe 'iTunes Streamer' do
     end
 
     it 'should create a play if tracking this user\'s play is enabled' do
+      expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
       post '/play/21D8E2441A5E2204', {}, fake_auth('test123')
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM plays')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('6')
     end
 
     it 'should create a play if tracking this user\'s play is enabled' do
+      expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
       post '/play/21D8E2441A5E2204', {}, fake_auth('notrack')
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('0')
+      expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
     end
   end
 end
