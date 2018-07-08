@@ -49,6 +49,7 @@ module Export
         track INTEGER,
         disc INTEGER,
         play_count INTEGER,
+        rating INTEGER,
         ext TEXT,
         file TEXT
       );
@@ -91,7 +92,7 @@ module Export
 
     TRACK_SQL = <<-SQL
       INSERT INTO tracks (id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, year, duration, start, finish,
-        track, disc, play_count, ext, file) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
+        track, disc, play_count, rating, ext, file) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17);
     SQL
 
     PLAYLIST_SQL = 'INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4);'
@@ -145,7 +146,7 @@ module Export
       album = album_id(track.album, track.sort_album, artist)
 
       @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album_artist, album, genre, track.year,
-        track.duration, track.start, track.finish, track.track, track.disc, track.play_count, track.ext, track.file])
+        track.duration, track.start, track.finish, track.track, track.disc, track.play_count, track.rating, track.ext, track.file])
     end
 
     def create_playlist(playlist)

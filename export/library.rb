@@ -33,6 +33,7 @@ module Export
         set output to output & track number of thisTrack & "\n"
         set output to output & disc number of thisTrack & "\n"
         set output to output & played count of thisTrack & "\n"
+        set output to output & rating of thisTrack & "\n"
         set output to output & location of thisTrack as text
         #{RESET_DELIMS}
 
