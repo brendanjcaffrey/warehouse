@@ -55,6 +55,8 @@ var Track = function(row, artists, albums, genres) {
   }
 
   this.duration = parseFloat(this.duration);
+  this.start = parseFloat(this.start);
+  this.finish = parseFloat(this.finish);
   this.time = secondsToTime(this.duration);
   this.artist = artists[this.artistId].name;
   this.sortArtist = artists[this.artistId].sortName;

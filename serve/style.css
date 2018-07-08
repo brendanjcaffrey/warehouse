@@ -177,8 +177,42 @@ td .icon {
   background-color: #888 !important;
 }
 
+#info-container {
+  width: 80%;
+  float: left;
+  text-align: center;
+}
+
+#name, #artist {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#name {
+  color: #444;
+  padding-top: 3px;
+}
+
+#artist {
+  color: #888;
+  font-size: 12px;
+}
+
+#current-time, #remaining-time {
+  width: 10%;
+  color: #888;
+  font-size: 12px;
+  margin-top: 23px;
+  float: left;
+}
+
+#remaining-time {
+  text-align: right;
+}
+
 #progress .progress {
-  margin-top: 22px;
+  margin-top: 40px;
 }
 
 #progress .progress, #progress .progress-bar {

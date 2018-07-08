@@ -1,8 +1,15 @@
 var Audio = function(numSlots) {
   this.numSlots = numSlots;
   this.audios = []; this.tracks = [];
-  this.progress = $('<div class="progress"></div>').appendTo($("#progress"));
+  var container = $("#progress");
+  this.currentTimeDisplay = $('<div id="current-time"></div>').appendTo(container);
+  var infoContainer = $('<div id="info-container"></div>').appendTo(container);
+  this.nameDisplay = $('<div id="name"></div>').appendTo(infoContainer);
+  this.artistDisplay = $('<div id="artist"></div>').appendTo(infoContainer);
+  this.remainingTimeDisplay = $('<div id="remaining-time"></div>').appendTo(container);
+  this.progress = $('<div class="progress"></div>').appendTo(container);
   this.progressBar = $('<div class="progress-bar"></div>').appendTo(this.progress);
+  this.progress.click(this.progressBarClick.bind(this));
 
   for (var i = 0; i < this.numSlots; ++i) {
     this.audios.push(document.getElementById("audio" + i));
@@ -21,6 +28,9 @@ Audio.prototype.setCallbacks = function(trackFinishedCallback) {
 Audio.prototype.loadTracks = function(tracksArr, startPlayingFirst) {
   var returnId = (val) => val.id;
   if (tracksArr.length < 1) { return; }
+
+  this.nameDisplay.text(tracksArr[0].name);
+  this.artistDisplay.text(tracksArr[0].artist);
 
   // find the intersection of what we have and what we want
   loadedIds = this.tracks.filter((el) => el != null).map(returnId);
@@ -64,6 +74,13 @@ Audio.prototype.rewindTrackInSlot = function(slot) {
   this.audios[slot].currentTime = this.tracks[slot].start;
 }
 
+Audio.prototype.formatTime = function(seconds) {
+  var integerSeconds = Math.round(seconds);
+  var minutes = Math.floor(seconds / 60);
+  var seconds = Math.floor(integerSeconds - (minutes * 60));
+  return String(minutes) + ":" + (seconds < 10 ? "0" : "") + String(seconds);
+}
+
 Audio.prototype.currentTimeUpdated = function() {
   var audio = this.audios[this.nowPlayingSlot];
   var track = this.tracks[this.nowPlayingSlot];
@@ -71,10 +88,23 @@ Audio.prototype.currentTimeUpdated = function() {
   var percent = (audio.currentTime - track.start) / (track.finish - track.start);
   this.progressBar.css("width", String(percent * 100) + "%");
 
+  this.currentTimeDisplay.text(this.formatTime(audio.currentTime));
+  this.remainingTimeDisplay.text("-" + this.formatTime(track.finish - audio.currentTime));
+
   if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
     $.post('/play/' + track.id);
     this.trackFinishedCallback();
   }
+}
+
+Audio.prototype.progressBarClick = function(e) {
+  var audio = this.audios[this.nowPlayingSlot];
+  var track = this.tracks[this.nowPlayingSlot];
+
+  var percentage = e.offsetX / $(e.currentTarget).width();
+  var add = (track.finish - track.start) * percentage;
+  var time = track.start + add;
+  audio.currentTime = time;
 }
 
 Audio.prototype.volumeChanged = function(intVal) {
