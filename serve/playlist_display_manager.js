@@ -9,13 +9,14 @@ var PlaylistDisplayManager = function(playlistsHash, playlistTracks, tracksHash)
   this.nowPlayingTrackId = null;
 }
 
-PlaylistDisplayManager.prototype.setCallbacks = function(filterTracksCallback, sortTracksCallback, displayedTracksChangedCallback, nowPlayingIdChangedCallback, nowPlayingTracksChangedCallback, clearFilterCallback) {
+PlaylistDisplayManager.prototype.setCallbacks = function(filterTracksCallback, sortTracksCallback, displayedTracksChangedCallback, nowPlayingIdChangedCallback, nowPlayingTracksChangedCallback, clearFilterCallback, showPlaylistCallback) {
   this.filterTracksCallback = filterTracksCallback;
   this.sortTracksCallback = sortTracksCallback;
   this.displayedTracksChangedCallback = displayedTracksChangedCallback;
   this.nowPlayingIdChangedCallback = nowPlayingIdChangedCallback;
   this.nowPlayingTracksChangedCallback = nowPlayingTracksChangedCallback;
   this.clearFilterCallback = clearFilterCallback;
+  this.showPlaylistCallback = showPlaylistCallback;
 }
 
 PlaylistDisplayManager.prototype.nowPlayingIdChanged = function(trackId) {
@@ -79,4 +80,10 @@ PlaylistDisplayManager.prototype.accumulateFolderTracks = function(folderId) {
 PlaylistDisplayManager.prototype.playTrack = function(trackId) {
   this.nowPlayingPlaylistId = this.shownPlaylistId;
   this.nowPlayingTracksChangedCallback(this.shownTracks, trackId, true);
+}
+
+PlaylistDisplayManager.prototype.showNowPlayingTrack = function(trackId) {
+  this.playlistChanged(this.nowPlayingPlaylistId);
+  this.showPlaylistCallback(this.nowPlayingPlaylistId);
+  // TODO: need to update playlist tree, which needs to open any relevant folders etc
 }

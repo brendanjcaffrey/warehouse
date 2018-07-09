@@ -41,7 +41,7 @@ var Streamer = function(data) {
   this.remoteControl = new RemoteControl(this.settings);
   this.pagination = new Pagination();
   this.filterBar = new FilterBar();
-  this.playlistTree = new PlaylistTree(playlists, this.settings);
+  this.playlistTree = new PlaylistTree(playlists, this.playlistsHash, this.settings);
   this.keyboard = new Keyboard();
   this.filter = new Filter(this.tracksHash, colDescriptions);
   this.sorter = new Sorter(this.tracksHash, colDescriptions);
@@ -81,7 +81,8 @@ var Streamer = function(data) {
                                            this.trackDisplayManager.tracksChanged.bind(this.trackDisplayManager),
                                            this.trackDisplayManager.nowPlayingIdChanged.bind(this.trackDisplayManager),
                                            this.playlistControlManager.nowPlayingTracksChanged.bind(this.playlistControlManager),
-                                           this.filterBar.clearFilter.bind(this.filterBar));
+                                           this.filterBar.clearFilter.bind(this.filterBar),
+                                           this.playlistTree.showPlaylist.bind(this.playlistTree));
   this.playlistControlManager.setCallbacks(this.playlistDisplayManager.nowPlayingIdChanged.bind(this.playlistDisplayManager),
                                            this.controls.isPlayingChanged.bind(this.controls),
                                            this.audio.loadTracks.bind(this.audio),
@@ -93,7 +94,8 @@ var Streamer = function(data) {
                                         this.pagination.changedToPage.bind(this.pagination),
                                         this.sorter.sortForTypeToShowList.bind(this.sorter),
                                         this.playlistDisplayManager.playTrack.bind(this.playlistDisplayManager));
-  this.audio.setCallbacks(this.playlistControlManager.next.bind(this.playlistControlManager));
+  this.audio.setCallbacks(this.playlistControlManager.next.bind(this.playlistControlManager),
+                          this.playlistDisplayManager.showNowPlayingTrack.bind(this.playlistDisplayManager));
 
   // and off we go
   this.playlistTree.start();

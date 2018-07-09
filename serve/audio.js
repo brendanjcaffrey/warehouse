@@ -3,9 +3,11 @@ var Audio = function(numSlots) {
   this.audios = []; this.tracks = [];
   var container = $("#progress");
   this.currentTimeDisplay = $('<div id="current-time"></div>').appendTo(container);
-  var infoContainer = $('<div id="info-container"></div>').appendTo(container);
-  this.nameDisplay = $('<div id="name"></div>').appendTo(infoContainer);
-  this.artistDisplay = $('<div id="artist"></div>').appendTo(infoContainer);
+  this.infoContainer = $('<div id="info-container"></div>').appendTo(container);
+  var nameContainer = $('<div id="name"></div>').appendTo(this.infoContainer);
+  this.nameDisplay = $('<span></span>').appendTo(nameContainer);
+  this.returnButton = $("<i class=\"icon ion-ios-return-left\" id=\"return\"></i>").appendTo(nameContainer).click(this.returnClick.bind(this));
+  this.artistDisplay = $('<div id="artist"></div>').appendTo(this.infoContainer);
   this.remainingTimeDisplay = $('<div id="remaining-time"></div>').appendTo(container);
   this.progress = $('<div class="progress"></div>').appendTo(container);
   this.progressBar = $('<div class="progress-bar"></div>').appendTo(this.progress);
@@ -19,18 +21,23 @@ var Audio = function(numSlots) {
 
   this.nowPlayingSlot = 0;
   this.currentVolume = 0;
+
+  $("#return").mousedown(function() { $(this).addClass("disabled"); });
+  $("#return").mouseup(function() { $(this).removeClass("disabled"); });
+  $("#return").mouseleave(function() { $(this).removeClass("disabled"); });
 }
 
-Audio.prototype.setCallbacks = function(trackFinishedCallback) {
+Audio.prototype.setCallbacks = function(trackFinishedCallback, showNowPlayingTrackCallback) {
   this.trackFinishedCallback = trackFinishedCallback;
+  this.showNowPlayingTrackCallback = showNowPlayingTrackCallback;
 }
 
 Audio.prototype.loadTracks = function(tracksArr, startPlayingFirst) {
   var returnId = (val) => val.id;
   if (tracksArr.length < 1) { return; }
 
-  this.nameDisplay.text(tracksArr[0].name);
-  this.artistDisplay.text(tracksArr[0].artist);
+  this.updateInfoDisplay(this.nameDisplay, this.infoContainer, tracksArr[0].name);
+  this.updateInfoDisplay(this.artistDisplay, this.infoContainer, tracksArr[0].artist);
 
   // find the intersection of what we have and what we want
   loadedIds = this.tracks.filter((el) => el != null).map(returnId);
@@ -106,6 +113,23 @@ Audio.prototype.progressBarClick = function(e) {
   var add = (track.finish - track.start) * percentage;
   var time = track.start + add;
   audio.currentTime = time;
+}
+
+Audio.prototype.returnClick = function(slider) {
+  this.showNowPlayingTrackCallback();
+}
+
+Audio.prototype.updateInfoDisplay = function(out, container, value) {
+  out.text(value);
+
+  // insert an ellipsis in the middle if text is bigger than the container
+  var halfValueLength = Math.floor(value.length / 2);
+  var removeFromEachHalf = 0;
+  while (out.width() > container.width())
+  {
+    removeFromEachHalf += 1;
+    out.text(value.substring(0, halfValueLength - removeFromEachHalf) + "..." + value.substring(halfValueLength + removeFromEachHalf));
+  }
 }
 
 Audio.prototype.volumeChanged = function(intVal) {

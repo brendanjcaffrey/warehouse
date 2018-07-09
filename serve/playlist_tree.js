@@ -1,4 +1,8 @@
-var PlaylistTree = function(playlists, settings) {
+var PlaylistTree = function(playlists, playlistsHash, settings) {
+  this.openFolderIcon = "ion-md-arrow-dropdown";
+  this.closedFolderIcon = "ion-md-arrow-dropright";
+
+  this.playlistsHash = playlistsHash;
   this.settings = settings;
   this.resolveTree(playlists);
   this.buildUI("#playlists");
@@ -48,16 +52,16 @@ PlaylistTree.prototype.buildUI = function(id) {
 
   var buildPlaylistMenuStep = (children, parentElement) => {
     children.forEach((playlist, idx, arr) => {
-      var arrow = "ion-arrow-right-b spacer";
-      var icon = "ion-ios-list-outline";
+      var arrow = this.closedFolderIcon + " spacer";
+      var icon = "ion-ios-list";
       var isActive = false;
       var isFolder = playlist.children.length > 0;
       var folderIsOpen = isFolder && this.settings.getFolderOpen(playlist.id);
 
       if (playlist.isLibrary) { icon = "ion-ios-musical-notes"; isActive = true; }
       if (isFolder) {
-        arrow = folderIsOpen ? "ion-arrow-down-b" : "ion-arrow-right-b";
-        icon = "ion-ios-folder-outline";
+        arrow = folderIsOpen ? this.openFolderIcon : this.closedFolderIcon;
+        icon = "ion-md-folder-open";
       }
 
       parentElement.append('<li id="playlist' + playlist.id + '" data-playlist-id="' + playlist.id + '" data-is-folder="' + (isFolder ? '1' : '0') + '"' +
@@ -91,18 +95,27 @@ PlaylistTree.prototype.buildUI = function(id) {
   buildPlaylistMenuStep(this.tree, $(id).children("ul"));
 }
 
-PlaylistTree.prototype.toggleFolder = function(id, li, arrow) {
-  var closedClass = "ion-arrow-right-b";
-  var openClass = "ion-arrow-down-b";
+PlaylistTree.prototype.showPlaylist = function(id) {
+  $("#playlist" + id).click();
 
-  var isClosed = arrow.hasClass(closedClass);
+  var playlist = this.playlistsHash[id];
+  while (playlist.parentId != "") {
+    if ($("#playlist" + playlist.parentId + " i.arrow").hasClass(this.closedFolderIcon)) {
+      $("#playlist" + playlist.parentId + " i.arrow").click();
+    }
+    playlist = this.playlistsHash[playlist.parentId];
+  }
+}
+
+PlaylistTree.prototype.toggleFolder = function(id, li, arrow) {
+  var isClosed = arrow.hasClass(this.closedFolderIcon);
   if (isClosed) {
     this.settings.setFolderOpen(id);
-    arrow.removeClass(closedClass).addClass(openClass);
+    arrow.removeClass(this.closedFolderIcon).addClass(this.openFolderIcon);
     $("#childrenof" + id).removeClass("hidden");
   } else {
     this.settings.setFolderClosed(id);
-    arrow.removeClass(openClass).addClass(closedClass);
+    arrow.removeClass(this.openFolderIcon).addClass(this.closedFolderIcon);
     $("#childrenof" + id).addClass("hidden");
   }
 }

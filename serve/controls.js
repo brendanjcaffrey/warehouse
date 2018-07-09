@@ -4,7 +4,7 @@ var Controls = function(settings) {
   $("<i class=\"icon ion-ios-play\" id=\"playpause\"></i>").appendTo(id).click(this.playPauseClick.bind(this));
   $("<i class=\"icon ion-ios-fastforward\" id=\"next\"></i>").appendTo(id).click(this.nextClick.bind(this));
   this.shuffle = $("<i class=\"icon ion-ios-shuffle\" id=\"shuffle\"></i>").appendTo(id).click(this.shuffleClick.bind(this));
-  this.repeat = $("<i class=\"icon ion-ios-reload\" id=\"repeat\"></i>").appendTo(id).click(this.repeatClick.bind(this));
+  this.repeat = $("<i class=\"icon ion-ios-refresh\" id=\"repeat\"></i>").appendTo(id).click(this.repeatClick.bind(this));
   $("<input id=\"volume\" type=\"text\" />").appendTo(id);
   this.volume = $("#volume").slider({value: 50, max: 100}).on("slide", this.volumeChanged.bind(this));
 
