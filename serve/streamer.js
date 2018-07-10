@@ -22,7 +22,7 @@ var Streamer = function(data) {
   this.tracksHash = this.tracksArr.reduce(toHash, {});
 
   // inputs
-  var rowsPerPage = 44;
+  var rowsPerPage = 43;
   var audioSlots = 3; // go add more <audio> tags to play.html if you change this
   var colDescriptions = [
       { "name": "Name",   "data": "name", "sort": ["sortName"] },

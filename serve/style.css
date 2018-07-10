@@ -166,6 +166,7 @@ td .icon {
   background-image: none !important;
   background-color: #FFF !important;
   border: 1px solid #999 !important;
+  cursor: grab;
 }
 
 .slider-track {
@@ -200,6 +201,7 @@ td .icon {
 
 #return {
   padding-left: 4px;
+  cursor: pointer;
 }
 
 #current-time, #remaining-time {
@@ -220,11 +222,14 @@ td .icon {
 
 #progress .progress, #progress .progress-bar {
   height: 5px;
+  cursor: pointer;
 }
 
 #progress .progress-bar {
   background-color: #888;
   background-image: none;
+  -webkit-transition: none !important;
+  transition: none !important;
 }
 
 #playlists {
@@ -281,4 +286,18 @@ td .icon {
 .ion-ios-list {
   padding-left: 1px !important;
   padding-right: 6px !important;
+}
+
+#remote-control .icon {
+  font-size: 28px;
+}
+
+#remote-control .ion-ios-checkmark {
+  right: 77px;
+  top: 5px;
+}
+
+#remote-control .ion-ios-close {
+  right: 61px;
+  top: 2px;
 }

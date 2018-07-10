@@ -14,8 +14,8 @@ var RemoteControl = function(settings) {
   this.button = $("<input type=\"button\" value=\"Connect\" class=\"btn btn-success\" />").appendTo(span);
   this.button.click(this.connectButtonClick.bind(this));
 
-  this.success = $("<span class=\"icon ion-checkmark form-control-feedback\" style=\"right: 77px; top: 4px;\"></span>").appendTo(this.id);
-  this.failure = $("<span class=\"icon ion-close form-control-feedback\" style=\"right: 61px; top: 2px;\"></span>").appendTo(this.id);
+  this.success = $("<span class=\"icon ion-ios-checkmark form-control-feedback\"></span>").appendTo(this.id);
+  this.failure = $("<span class=\"icon ion-ios-close form-control-feedback\"></span>").appendTo(this.id);
   this.success.hide(); this.failure.hide();
 
   if (this.settings.getRemoteAddress() != "") { this.button.click(); }
