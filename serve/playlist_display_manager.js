@@ -26,7 +26,6 @@ PlaylistDisplayManager.prototype.nowPlayingIdChanged = function(trackId) {
 }
 
 PlaylistDisplayManager.prototype.playlistChanged = function(playlistId) {
-  if (playlistId == this.shownPlaylistId) { return; }
   this.shownPlaylistId = playlistId;
   if (this.stopped) { this.nowPlayingPlaylistId = this.shownPlaylistId; }
 
@@ -85,5 +84,4 @@ PlaylistDisplayManager.prototype.playTrack = function(trackId) {
 PlaylistDisplayManager.prototype.showNowPlayingTrack = function(trackId) {
   this.playlistChanged(this.nowPlayingPlaylistId);
   this.showPlaylistCallback(this.nowPlayingPlaylistId);
-  // TODO: need to update playlist tree, which needs to open any relevant folders etc
 }
