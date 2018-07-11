@@ -27,12 +27,25 @@
   text-align: right;
 }
 
-#filter label {
-  font-weight: normal;
+#filter div {
+  max-width: 200px;
+  display: inline-block !important;
 }
 
-#filter input {
-  margin-left: 5px;
+/* https://stackoverflow.com/questions/18838964/add-bootstrap-glyphicon-to-input-box */
+#filter .has-feedback-left .form-control.input-sm {
+  padding-right: 25px;
+  padding-left: 25px;
+}
+
+#filter .has-feedback-left .form-control-feedback {
+  left: 0;
+}
+
+#filter .input-sm + .form-control-feedback {
+  width: 30px;
+  height: 30px;
+  line-height: 30px !important;
 }
 
 #playlists {
