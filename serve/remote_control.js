@@ -8,11 +8,12 @@ var RemoteControl = function(settings) {
 
   this.address = $("<input type=\"text\" id=\"address\" class=\"form-control\" placeholder=\"localhost:9292\" />").appendTo(this.div);
   this.address.val(this.settings.getRemoteAddress());
-  this.address.on('input', this.saveAddressValue.bind(this));
+  this.address.on('input', this.addressChanged.bind(this));
 
   span = $("<span class=\"input-group-btn\"></span>").appendTo(this.div);
   this.button = $("<input type=\"button\" value=\"Connect\" class=\"btn btn-success\" />").appendTo(span);
   this.button.click(this.connectButtonClick.bind(this));
+  this.addressChanged();
 
   this.success = $("<span class=\"icon ion-ios-checkmark form-control-feedback\"></span>").appendTo(this.id);
   this.failure = $("<span class=\"icon ion-ios-close form-control-feedback\"></span>").appendTo(this.id);
@@ -27,8 +28,11 @@ RemoteControl.prototype.setCallbacks = function(prevCallback, playPauseCallback,
   this.nextCallback = nextCallback;
 }
 
-RemoteControl.prototype.saveAddressValue = function() {
+RemoteControl.prototype.addressChanged = function() {
   this.settings.setRemoteAddress(this.address.val());
+
+  if (this.address.val().length == 0) { this.button.attr("disabled", "disabled"); }
+  else { this.button.removeAttr("disabled"); }
 }
 
 RemoteControl.prototype.connectButtonClick = function() {
