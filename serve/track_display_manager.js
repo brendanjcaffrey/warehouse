@@ -65,6 +65,8 @@ TrackDisplayManager.prototype.pageChanged = function(page) {
 }
 
 TrackDisplayManager.prototype.typeToShow = function(text) {
+  if (this.typeToShowList.length == 0) { return; }
+
   var binarySearchNameFirstOccurrence = (searchStr) => {
     var binarySearchStep = (lower, upper) => {
       if (lower > upper) { return lower; }

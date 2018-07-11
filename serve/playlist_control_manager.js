@@ -72,6 +72,7 @@ PlaylistControlManager.prototype.pushNextTracks = function() {
     tracksToLoad.push(this.tracksHash[currentList[playlistIndex]]);
   }
 
+  if (tracksToLoad.length == 0) { return; }
   this.nowPlayingId = tracksToLoad[0].id;
   this.loadTracksCallback(tracksToLoad, this.playing);
   if (!this.stopped) { this.nowPlayingIdChangedCallback(this.nowPlayingId); }
@@ -94,6 +95,7 @@ PlaylistControlManager.prototype.shouldRewind = function() {
 }
 
 PlaylistControlManager.prototype.prev = function() {
+  if (this.getCurrentList().length == 0 && this.stopped) { return; }
   if (this.shouldRewind()) { return this.rewindCurrentTrackCallback(); }
 
   this.playlistIndex--;
@@ -107,13 +109,14 @@ PlaylistControlManager.prototype.playPause = function() {
   this.isPlayingChangedCallback(this.playing);
 
   if (this.stopped) { this.stopped = false; }
-  if (this.playing) { this.nowPlayingIdChangedCallback(this.getCurrentList()[this.playlistIndex]); }
+  if (this.playing && this.getCurrentList().length != 0) { this.nowPlayingIdChangedCallback(this.getCurrentList()[this.playlistIndex]); }
 
   if (this.playing) { this.playCallback(); }
   else { this.pauseCallback(); }
 }
 
 PlaylistControlManager.prototype.next = function() {
+  if (this.getCurrentList().length == 0 && this.stopped) { return; }
   if (this.shouldRewind()) { return this.rewindCurrentTrackCallback(); }
 
   this.playlistIndex += 1;
