@@ -198,7 +198,7 @@ td .icon {
   text-align: center;
 }
 
-#name, #artist {
+#name, #artist-album {
   white-space: nowrap;
 }
 
@@ -207,7 +207,7 @@ td .icon {
   padding-top: 3px;
 }
 
-#artist {
+#artist-album {
   color: #888;
   font-size: 12px;
 }

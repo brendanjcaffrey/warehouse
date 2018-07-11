@@ -7,7 +7,10 @@ var Audio = function(numSlots) {
   var nameContainer = $('<div id="name"></div>').appendTo(this.infoContainer);
   this.nameDisplay = $('<span></span>').appendTo(nameContainer);
   this.returnButton = $("<i class=\"icon ion-ios-return-left\" id=\"return\"></i>").appendTo(nameContainer).click(this.returnClick.bind(this));
-  this.artistDisplay = $('<div id="artist"></div>').appendTo(this.infoContainer);
+  var artistAlbumDisplay = $('<div id="artist-album"></div>').appendTo(this.infoContainer);
+  this.artistDisplay = $('<span></span>').appendTo(artistAlbumDisplay);
+  this.dashDisplay = $('<span> &mdash; </span>').appendTo(artistAlbumDisplay);
+  this.albumDisplay = $('<span></span>').appendTo(artistAlbumDisplay);
   this.remainingTimeDisplay = $('<div id="remaining-time"></div>').appendTo(container);
   this.progress = $('<div class="progress"></div>').appendTo(container);
   this.progressBar = $('<div class="progress-bar"></div>').appendTo(this.progress);
@@ -37,7 +40,9 @@ Audio.prototype.loadTracks = function(tracksArr, startPlayingFirst) {
   if (tracksArr.length < 1) { return; }
 
   this.updateInfoDisplay(this.nameDisplay, this.infoContainer, tracksArr[0].name);
-  this.updateInfoDisplay(this.artistDisplay, this.infoContainer, tracksArr[0].artist);
+  this.artistDisplay.text(tracksArr[0].artist);
+  this.albumDisplay.text(tracksArr[0].album);
+  if (tracksArr[0].album.length == 0) { this.dashDisplay.hide(); } else { this.dashDisplay.show(); }
 
   // find the intersection of what we have and what we want
   loadedIds = this.tracks.filter((el) => el != null).map(returnId);
