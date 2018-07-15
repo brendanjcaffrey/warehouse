@@ -12,6 +12,7 @@
   vertical-align: middle;
   font-size: 32px;
   padding: 0 5px 0 10px;
+  cursor: pointer;
 }
 
 #controls #repeat {

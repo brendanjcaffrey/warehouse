@@ -9,7 +9,7 @@ var Audio = function(numSlots) {
   this.returnButton = $("<i class=\"icon ion-ios-return-left\" id=\"return\"></i>").appendTo(nameContainer).click(this.returnClick.bind(this));
   var artistAlbumDisplay = $('<div id="artist-album"></div>').appendTo(this.infoContainer);
   this.artistDisplay = $('<span></span>').appendTo(artistAlbumDisplay);
-  this.dashDisplay = $('<span> &mdash; </span>').appendTo(artistAlbumDisplay);
+  this.dashDisplay = $('<span> &ndash; </span>').appendTo(artistAlbumDisplay);
   this.albumDisplay = $('<span></span>').appendTo(artistAlbumDisplay);
   this.remainingTimeDisplay = $('<div id="remaining-time"></div>').appendTo(container);
   this.progress = $('<div class="progress"></div>').appendTo(container);
