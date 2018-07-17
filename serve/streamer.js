@@ -31,7 +31,8 @@ var Streamer = function(data) {
       { "name": "Album",  "data": "album", "sort": ["sortAlbumArtist", "year", "sortAlbum", "disc", "track"], "typeToShow": false },
       { "name": "Genre",  "data": "genre", "typeToShow": false },
       { "name": "Year",   "data": "year", "type": "numeric", "typeToShow": false, "filter": false  },
-      { "name": "Plays",  "data": "playCount", "type": "numeric", "typeToShow": false, "filter": false }
+      { "name": "Plays",  "data": "playCount", "type": "numeric", "typeToShow": false, "filter": false },
+      { "name": "Rating", "data": "rating", "type": "numeric", "typeToShow": false, "filter": false }
   ];
 
   // initialize
