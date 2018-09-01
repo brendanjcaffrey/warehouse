@@ -62,8 +62,8 @@ var Track = function(row, artists, albums, genres) {
   this.sortArtist = artists[this.artistId].sortName;
   this.albumArtist = artists[this.albumArtistId].name;
   this.sortAlbumArtist = artists[this.albumArtistId].sortName;
-  this.album = albums[this.albumId].name;
-  this.sortAlbum = albums[this.albumId].sortName;
+  this.album = this.albumId ? albums[this.albumId].name : "";
+  this.sortAlbum = this.albumId ? albums[this.albumId].sortName : "";
   this.genre = genres[this.genreId].name;
 
   fixSortName(this);

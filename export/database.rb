@@ -186,6 +186,7 @@ module Export
     end
 
     def album_id(name, sort_name, artist_id)
+      return nil if name.empty?
       @albums[artist_id] ||= {}
       @albums[artist_id][name] || create_album(name, sort_name, artist_id)
     end
