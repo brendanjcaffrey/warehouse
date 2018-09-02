@@ -42,13 +42,69 @@
   <ul id="context-menu" class="dropdown-menu" role="menu">
     <li class="play"><a href="#">Play</a></li>
     <li class="download"><a href="#">Download</a></li>
-    <!-- <li class="divider"></li> -->
+    <li class="track-info"><a href="#">Track Info</a></li>
   </ul>
+
+  <div class="modal fade track-info" tabindex="-1" role="dialog" aria-labelledby="track-info-label" id="track-info-modal">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="track-info-label">Track Info</h4>
+        </div>
+        <div class="modal-body">
+          <form class="form-horizontal" role="form">
+            <div class="form-group">
+              <label for="track-name" class="col-sm-3 control-label">Song</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="track-name" disabled>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="track-artist" class="col-sm-3 control-label">Artist</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="track-artist" disabled>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="track-album" class="col-sm-3 control-label">Album</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="track-album" disabled>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="track-album-artist" class="col-sm-3 control-label">Album Artist</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="track-album-artist" disabled>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="track-genre" class="col-sm-3 control-label">Genre</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="track-genre" disabled>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="track-year" class="col-sm-3 control-label">Year</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="track-year" disabled>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" disabled>Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/js.cookie-2.1.2.min.js"></script>
   <script src="/jquery-1.11.1.min.js"></script>
   <script src="/jquery.hotkeys.js"></script>
   <script src="/bootstrap-slider.min.js"></script>
+  <script src="/bootstrap.min.js"></script>
 
   <script src="/ratings.js"></script>
   <script src="/models.js"></script>

@@ -57,7 +57,8 @@ var Streamer = function(data) {
   this.trackTable.setCallbacks(this.sorter.sortChanged.bind(this.sorter),
                                this.trackDisplayManager.trackClicked.bind(this.trackDisplayManager),
                                this.trackDisplayManager.playTrack.bind(this.trackDisplayManager),
-                               this.trackDisplayManager.downloadTrack.bind(this.trackDisplayManager));
+                               this.trackDisplayManager.downloadTrack.bind(this.trackDisplayManager),
+                               this.trackDisplayManager.trackInfo.bind(this.trackDisplayManager));
   this.controls.setCallbacks(this.playlistControlManager.prev.bind(this.playlistControlManager),
                              this.playlistControlManager.playPause.bind(this.playlistControlManager),
                              this.playlistControlManager.next.bind(this.playlistControlManager),

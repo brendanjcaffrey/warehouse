@@ -124,3 +124,17 @@ TrackDisplayManager.prototype.downloadTrack = function(idx) {
   var trackId = this.getDisplayedTrackId(idx);
   window.location = "/download/" + trackId;
 }
+
+TrackDisplayManager.prototype.trackInfo = function(idx) {
+  var trackId = this.getDisplayedTrackId(idx);
+  var track = this.tracksHash[trackId];
+
+  $("#track-name").val(track.name);
+  $("#track-artist").val(track.artist);
+  $("#track-album").val(track.album);
+  $("#track-album-artist").val(track.albumArtist);
+  $("#track-genre").val(track.genre);
+  $("#track-year").val(track.year);
+
+  $("#track-info-modal").modal();
+}

@@ -3,6 +3,7 @@ var TrackTable = function(colDescriptions, rowsPerPage) {
   this.contextMenu = $("#context-menu");
   this.contextMenuPlay = this.contextMenu.find(".play");
   this.contextMenuDownload = this.contextMenu.find(".download");
+  this.contextMenuInfo = this.contextMenu.find(".track-info");
   this.colDescriptions = colDescriptions;
   this.headerCells = [];
   this.rows = []
@@ -49,11 +50,12 @@ var TrackTable = function(colDescriptions, rowsPerPage) {
   }
 }
 
-TrackTable.prototype.setCallbacks = function(sortChangedCallback, clickCallback, playCallback, downloadCallback) {
+TrackTable.prototype.setCallbacks = function(sortChangedCallback, clickCallback, playCallback, downloadCallback, infoCallback) {
   this.sortChangedCallback = sortChangedCallback;
   this.clickCallback = clickCallback;
   this.playCallback = playCallback;
   this.downloadCallback = downloadCallback;
+  this.infoCallback = infoCallback;
 }
 
 TrackTable.prototype.tracksChanged = function(tracks, selectedIndex, nowPlayingIndex) {
@@ -169,6 +171,7 @@ TrackTable.prototype.rowRightClicked = function(e) {
 
   this.table.contextMenuPlay.mousedown(function() { this.table.playCallback(this.idx); }.bind(this));
   this.table.contextMenuDownload.mousedown(function() { this.table.downloadCallback(this.idx); }.bind(this));
+  this.table.contextMenuInfo.mousedown(function() { this.table.infoCallback(this.idx); }.bind(this));
 
   $("body").one("click", this.table.hideMenu.bind(this.table));
   $(document).one("mousedown", this.table.hideMenu.bind(this.table));
