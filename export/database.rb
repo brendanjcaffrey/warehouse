@@ -8,6 +8,7 @@ module Export
     CREATE_DATABASE_SQL = 'CREATE DATABASE %s;'
     DROP_DATABASE_SQL = 'DROP DATABASE %s;'
     GET_PLAYS_SQL = 'SELECT track_id FROM plays;'
+    GET_RATINGS_SQL = 'SELECT track_id, rating FROM ratings;'
 
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (
@@ -77,6 +78,13 @@ module Export
       );
     SQL
 
+    CREATE_RATINGS_SQL = <<-SQL
+      CREATE TABLE ratings (
+        track_id CHAR(16),
+        rating INTEGER
+      );
+    SQL
+
     CREATE_USERS_SQL = <<-SQL
       CREATE TABLE users (
         token TEXT,
@@ -112,11 +120,11 @@ module Export
     end
 
     def get_plays
-      begin
-        return @db.exec(GET_PLAYS_SQL).values.flatten
-      rescue
-        return []
-      end
+      return @db.exec(GET_PLAYS_SQL).values.flatten
+    end
+
+    def get_ratings
+      return @db.exec(GET_RATINGS_SQL).values
     end
 
     def get_track_and_artist_name(id)
@@ -164,6 +172,7 @@ module Export
       @db.exec(CREATE_PLAYLISTS_SQL)
       @db.exec(CREATE_PLAYLIST_TRACK_SQL)
       @db.exec(CREATE_PLAYS_SQL)
+      @db.exec(CREATE_RATINGS_SQL)
       @db.exec(CREATE_USERS_SQL)
     end
 

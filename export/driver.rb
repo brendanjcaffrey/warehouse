@@ -9,20 +9,30 @@ module Export
       @progress = progress
     end
 
-    def update_plays!
-      if Config.local('update_plays')
+    def update_library!
+      if Config.local('update_library')
         @database.get_plays.each do |persistent_id|
           puts @database.get_track_and_artist_name(persistent_id).join(' - ')
           @library.add_play(persistent_id)
         end
+
+        @database.get_ratings.each do |row|
+          puts @database.get_track_and_artist_name(row.first).join(' - ')
+          @library.update_rating(row.first, row.last)
+        end
       end
 
-      if Config.remote('update_plays')
-        uri = URI(Config.remote('base_url') + '/plays.json')
-        get = Net::HTTP.get(uri)
-        JSON.parse(get).each do |persistent_id|
+      if Config.remote('update_library')
+        json = JSON.parse(Net::HTTP.get(URI(Config.remote('base_url') + '/updates.json')))
+        puts 'Plays:'
+        json['plays'].each do |persistent_id|
           puts @database.get_track_and_artist_name(persistent_id).join(' - ')
           @library.add_play(persistent_id)
+        end
+        puts 'Ratings:'
+        json['ratings'].each do |row|
+          puts @database.get_track_and_artist_name(row.first).join(' - ')
+          @library.update_rating(row.first, row.last)
         end
       end
     end

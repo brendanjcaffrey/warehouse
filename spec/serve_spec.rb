@@ -26,9 +26,9 @@ module Config
     {
       'users' => {
         'test123' => { 'password' => 'test123',
-                       'track_plays' => true },
+                       'track_updates' => true },
         'notrack' => { 'password' => 'notrack',
-                       'track_plays' => false }
+                       'track_updates' => false }
       }
     }
   end
@@ -69,6 +69,7 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM playlists')
     @db.exec('DELETE FROM playlist_tracks')
     @db.exec('DELETE FROM plays')
+    @db.exec('DELETE FROM ratings')
     @db.exec('DELETE FROM users')
 
     @database.clear
@@ -184,14 +185,23 @@ describe 'iTunes Streamer' do
     end
   end
 
-  describe 'plays.json' do
-    it 'should dump all plays' do
+  describe 'updates.json' do
+    it 'should include all plays' do
       @db.exec('INSERT INTO plays (track_id) VALUES ($1);', ['5E3FA18D81E469D2'])
       @db.exec('INSERT INTO plays (track_id) VALUES ($1);', ['21D8E2441A5E2204'])
       @db.exec('INSERT INTO plays (track_id) VALUES ($1);', ['5E3FA18D81E469D2'])
 
-      get '/plays.json'
-      expect(last_response.body).to eq('["5E3FA18D81E469D2","21D8E2441A5E2204","5E3FA18D81E469D2"]')
+      get '/updates.json'
+      expect(last_response.body).to eq('{"plays":["5E3FA18D81E469D2","21D8E2441A5E2204","5E3FA18D81E469D2"],"ratings":[]}')
+    end
+
+    it 'should include all ratings' do
+      @db.exec('INSERT INTO ratings (track_id, rating) VALUES ($1, $2);', ['5E3FA18D81E469D2', 100])
+      @db.exec('INSERT INTO ratings (track_id, rating) VALUES ($1, $2);', ['21D8E2441A5E2204', 80])
+      @db.exec('INSERT INTO ratings (track_id, rating) VALUES ($1, $2);', ['5E3FA18D81E469D2', 60])
+
+      get '/updates.json'
+      expect(last_response.body).to eq('{"plays":[],"ratings":[["5E3FA18D81E469D2","100"],["21D8E2441A5E2204","80"],["5E3FA18D81E469D2","60"]]}')
     end
   end
 
@@ -210,16 +220,57 @@ describe 'iTunes Streamer' do
     it 'should create a play if tracking this user\'s play is enabled' do
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
       post '/play/21D8E2441A5E2204', {}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('1')
       expect(get_first_value('SELECT track_id FROM plays')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('6')
     end
 
-    it 'should create a play if tracking this user\'s play is enabled' do
+    it 'should not create a play if tracking this user\'s play is disabled' do
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
       post '/play/21D8E2441A5E2204', {}, fake_auth('notrack')
+      expect(last_response.status).to eq(200)
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('0')
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
+    end
+  end
+
+  describe '/rating/*/*' do
+    it 'should redirect if not logged in' do
+      post '/rating/21D8E2441A5E2204/80'
+      follow_redirect!
+      expect(last_request.url).to eq('http://example.org/')
+    end
+
+    it 'should 404 if the track doesn\'t exist in the database' do
+      post '/rating/AAD9E2442A6E2205/80', {}, fake_auth('test123')
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'should create a rating if tracking this user\'s rating is enabled' do
+      expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
+
+      post '/rating/21D8E2441A5E2204/80', {}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM ratings')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM ratings')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT rating FROM ratings')).to eq('80')
+      expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('80')
+
+      post '/rating/21D8E2441A5E2204/100', {}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM ratings')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM ratings')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT rating FROM ratings')).to eq('100')
+      expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
+    end
+
+    it 'should not create a rating if tracking this user\'s rating is disabled' do
+      expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
+      post '/rating/21D8E2441A5E2204/80', {}, fake_auth('notrack')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM ratings')).to eq('0')
+      expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
     end
   end
 end

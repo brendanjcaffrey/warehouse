@@ -21,6 +21,8 @@ var Streamer = function(data) {
   this.tracksArr = data["tracks"].map(row => new Track(row, artists, albums, genres)).sort(sortSearchName);
   this.tracksHash = this.tracksArr.reduce(toHash, {});
 
+  this.ratings = new Ratings(this.tracksHash);
+
   // inputs
   var rowsPerPage = 43;
   var audioSlots = 3; // go add more <audio> tags to play.html if you change this
@@ -32,7 +34,7 @@ var Streamer = function(data) {
       { "name": "Genre",  "data": "genre", "typeToShow": false },
       { "name": "Year",   "data": "year", "type": "numeric", "typeToShow": false, "filter": false  },
       { "name": "Plays",  "data": "playCount", "type": "numeric", "typeToShow": false, "filter": false },
-      { "name": "Rating", "data": "rating", "type": "numeric", "typeToShow": false, "filter": false }
+      { "name": "Rating", "data": "rating", "type": "numeric", "typeToShow": false, "filter": false, "initializer": this.ratings.initialize.bind(this.ratings), "formatter": this.ratings.format.bind(this.ratings) }
   ];
 
   // initialize

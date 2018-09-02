@@ -121,6 +121,10 @@ td .icon {
   white-space: nowrap;
 }
 
+#rating-wrapper {
+  text-align: center;
+}
+
 #remote-control {
   float: left;
   padding: 0.25em 0;

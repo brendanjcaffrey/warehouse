@@ -2,7 +2,7 @@ local:
   music_path: /Users/Brendan/Music/
   database_username: music
   database_name: itunes_streamer
-  update_plays: true
+  update_library: true
   -- generate in irb with: require 'securerandom'; puts SecureRandom.urlsafe_base64(15).tr('lIO0', 'sxyz')
   secret: [something]
 
@@ -11,10 +11,10 @@ remote:
   music_path: /home/brendan/music/
   database_username: music
   database_name: itunes_streamer
-  update_plays: false
+  update_library: false
   secret: [something]
 
 users:
   brendan:
     password: test123
-    track_plays: true
+    track_updates: true

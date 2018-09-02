@@ -21,10 +21,14 @@ PLAYLIST_INT_INDICES = [3]
 PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(track_id, \',\') FROM playlist_tracks GROUP BY playlist_id;'
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
-TRACK_PLAY_SQL = 'SELECT ext FROM tracks WHERE id=$1;'
+TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
 INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1';
+DELETE_RATING_SQL = 'DELETE FROM ratings WHERE track_id=$1';
+CREATE_RATING_UPDATE = 'INSERT INTO ratings (track_id, rating) VALUES ($1, $2);'
+UPDATE_RATING = 'UPDATE tracks SET rating=$1 WHERE id=$2';
 PLAYS_SQL = 'SELECT * FROM plays;'
+RATINGS_SQL = 'SELECT * FROM ratings;'
 
 MIME_TYPES = {
   'mp3' => 'audio/mpeg',
@@ -65,8 +69,8 @@ class Serve < Sinatra::Base
     Config.vals['users'].has_key?(username) && Config.vals['users'][username]['password'] == password
   end
 
-  def track_user_plays?(username)
-    Config.vals['users'].has_key?(username) && Config.vals['users'][username]['track_plays']
+  def track_user_changes?(username)
+    Config.vals['users'].has_key?(username) && Config.vals['users'][username]['track_updates']
   end
 
   def check_login
@@ -153,26 +157,45 @@ class Serve < Sinatra::Base
     end
   end
 
-  get '/plays.json' do
-    json db.exec(PLAYS_SQL).values.flatten
+  get '/updates.json' do
+    json :plays => db.exec(PLAYS_SQL).values.flatten,
+         :ratings => db.exec(RATINGS_SQL).values
   end
 
   post '/play/*' do
+    id = params['splat'][0]
+    check_should_persist(id) do
+      db.exec_params(CREATE_PLAY_SQL, [id])
+      db.exec_params(INCREMENT_PLAY_SQL, [id])
+    end
+  end
+
+  post '/rating/*/*' do
+    id = params['splat'][0]
+    rating = params['splat'][1].to_i
+    half if rating < 0 || rating > 100
+
+    check_should_persist(id) do
+      db.exec_params(DELETE_RATING_SQL, [id])
+      db.exec_params(CREATE_RATING_UPDATE, [id, rating])
+      db.exec_params(UPDATE_RATING, [rating, id])
+    end
+  end
+
+  def check_should_persist(track_id)
     if !check_login
       redirect to('/')
     else
       username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)
-      halt if !track_user_plays?(username)
+      halt if !track_user_changes?(username)
 
-      id = params['splat'][0]
-      result = db.exec_params(TRACK_PLAY_SQL, [id])
-      ext = result.num_tuples > 0 ? result.getvalue(0, 0) : nil
+      result = db.exec_params(TRACK_EXISTS_SQL, [track_id])
+      count = result.num_tuples > 0 ? result.getvalue(0, 0).to_i : 0
 
-      if !MIME_TYPES.has_key?(ext)
+      if count < 1
         raise Sinatra::NotFound
       else
-        db.exec_params(CREATE_PLAY_SQL, [id])
-        db.exec_params(INCREMENT_PLAY_SQL, [id])
+        yield
       end
     end
   end

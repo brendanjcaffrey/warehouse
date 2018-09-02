@@ -13,14 +13,14 @@ task :export do
   Export::Driver.new(database, library, progress).export_itunes_library!
 end
 
-task :update_plays do
+task :update_library do
   Config.set_env('local')
   require_all 'export'
 
   database = Export::Database.new(Config['database_username'], Config['database_name'])
   library = Export::Library.new
   progress = Export::Progress.new
-  Export::Driver.new(database, library, progress).update_plays!
+  Export::Driver.new(database, library, progress).update_library!
 end
 
 task :local do

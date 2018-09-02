@@ -34,7 +34,9 @@ var TrackTable = function(colDescriptions, rowsPerPage) {
     this.rows.push(tr);
 
     for (var j = 0; j < this.colDescriptions.length; ++j) {
+      var initializer = this.colDescriptions[j]["initializer"];
       tr.append("<td></td>");
+      if (initializer) { initializer(tr.find("td:last-child")); }
       if (this.colDescriptions[j]["type"] == "numeric") { tr.find("td:last").addClass("align-right"); }
       cols.push(tr.find("td:last"));
     }
@@ -61,16 +63,20 @@ TrackTable.prototype.tracksChanged = function(tracks, selectedIndex, nowPlayingI
   for (var rowIdx = 0; rowIdx < maxRow; ++rowIdx) {
     console.assert(this.colDescriptions.length == this.cellMatrix[rowIdx].length);
     for (var colIdx in this.colDescriptions) {
-      this.cellMatrix[rowIdx][colIdx].text(tracks[rowIdx][this.colDescriptions[colIdx]["data"]]);
+      var formatter = this.colDescriptions[colIdx]["formatter"];
+      if (formatter) {
+        formatter(this.cellMatrix[rowIdx][colIdx], tracks[rowIdx][this.colDescriptions[colIdx]["data"]]);
+      } else {
+        this.cellMatrix[rowIdx][colIdx].text(tracks[rowIdx][this.colDescriptions[colIdx]["data"]]);
+      }
     }
+    this.rows[rowIdx].attr('data-track-id', tracks[rowIdx]['id']);
     this.rows[rowIdx].show();
   }
 
   // if there aren't enough rows, hide the remaining
   for (; rowIdx < this.cellMatrix.length; ++rowIdx) {
-    for (var colIdx in this.colDescriptions) {
-      this.cellMatrix[rowIdx][colIdx].text("");
-    }
+    this.rows[rowIdx].removeAttr('data-track-id');
     this.rows[rowIdx].hide();
   }
 
@@ -94,7 +100,7 @@ TrackTable.prototype.updateSelectedRow = function(rowIdx) {
 
 TrackTable.prototype.updateNowPlayingRow = function(rowIdx) {
   if (this.nowPlayingRow != -1) {
-    this.rows[this.nowPlayingRow].find("td i").remove();
+    this.rows[this.nowPlayingRow].find("td:first-child i").remove();
     this.rows[this.nowPlayingRow].removeClass("now-playing");
   }
 
