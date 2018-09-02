@@ -2,6 +2,7 @@ require 'pg'
 require 'uri'
 require 'sinatra/base'
 require 'sinatra/json'
+require_relative 'export/database.rb'
 
 LOG_IN_SQL = 'INSERT INTO users (token, username) VALUES ($1, $2);'
 LOGGED_IN_SQL = 'SELECT COUNT(*) FROM users WHERE token=$1;'
@@ -22,13 +23,13 @@ PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(track_id, \',\') FROM playl
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
+
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
 INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1';
-DELETE_RATING_SQL = 'DELETE FROM ratings WHERE track_id=$1';
-CREATE_RATING_UPDATE = 'INSERT INTO ratings (track_id, rating) VALUES ($1, $2);'
+
+DELETE_RATING_UPDATE_SQL = 'DELETE FROM rating_updates WHERE track_id=$1';
+CREATE_RATING_UPDATE_SQL = 'INSERT INTO rating_updates (track_id, rating) VALUES ($1, $2);'
 UPDATE_RATING = 'UPDATE tracks SET rating=$1 WHERE id=$2';
-PLAYS_SQL = 'SELECT * FROM plays;'
-RATINGS_SQL = 'SELECT * FROM ratings;'
 
 MIME_TYPES = {
   'mp3' => 'audio/mpeg',
@@ -158,8 +159,14 @@ class Serve < Sinatra::Base
   end
 
   get '/updates.json' do
-    json :plays => db.exec(PLAYS_SQL).values.flatten,
-         :ratings => db.exec(RATINGS_SQL).values
+    json :plays => db.exec(Export::Database::GET_PLAYS_SQL).values.flatten,
+         :ratings => db.exec(Export::Database::GET_RATING_UPDATES_SQL).values,
+         :names => db.exec(Export::Database::GET_NAME_UPDATES_SQL).values,
+         :artists => db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values,
+         :album => db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
+         :album_artists => db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values,
+         :genres => db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values,
+         :years => db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values
   end
 
   post '/play/*' do
@@ -176,8 +183,8 @@ class Serve < Sinatra::Base
     half if rating < 0 || rating > 100
 
     check_should_persist(id) do
-      db.exec_params(DELETE_RATING_SQL, [id])
-      db.exec_params(CREATE_RATING_UPDATE, [id, rating])
+      db.exec_params(DELETE_RATING_UPDATE_SQL, [id])
+      db.exec_params(CREATE_RATING_UPDATE_SQL, [id, rating])
       db.exec_params(UPDATE_RATING, [rating, id])
     end
   end

@@ -7,8 +7,15 @@ module Export
     DATABASE_EXISTS_SQL = 'SELECT datname FROM pg_database;'
     CREATE_DATABASE_SQL = 'CREATE DATABASE %s;'
     DROP_DATABASE_SQL = 'DROP DATABASE %s;'
+
     GET_PLAYS_SQL = 'SELECT track_id FROM plays;'
-    GET_RATINGS_SQL = 'SELECT track_id, rating FROM ratings;'
+    GET_RATING_UPDATES_SQL = 'SELECT track_id, rating FROM rating_updates;'
+    GET_NAME_UPDATES_SQL = 'SELECT track_id, name FROM name_updates;'
+    GET_ARTIST_UPDATES_SQL = 'SELECT track_id, artist FROM artist_updates;'
+    GET_ALBUM_UPDATES_SQL = 'SELECT track_id, album FROM album_updates;'
+    GET_ALBUM_ARTIST_UPDATES_SQL = 'SELECT track_id, album_artist FROM album_artist_updates;'
+    GET_GENRE_UPDATES_SQL = 'SELECT track_id, genre FROM genre_updates;'
+    GET_YEAR_UPDATES_SQL = 'SELECT track_id, year FROM year_updates;'
 
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (
@@ -78,10 +85,52 @@ module Export
       );
     SQL
 
-    CREATE_RATINGS_SQL = <<-SQL
-      CREATE TABLE ratings (
+    CREATE_RATING_UPDATES_SQL = <<-SQL
+      CREATE TABLE rating_updates (
         track_id CHAR(16),
         rating INTEGER
+      );
+    SQL
+
+    CREATE_NAME_UPDATES_SQL = <<-SQL
+      CREATE TABLE name_updates (
+        track_id CHAR(16),
+        name TEXT
+      );
+    SQL
+
+    CREATE_ARTIST_UPDATES_SQL = <<-SQL
+      CREATE TABLE artist_updates (
+        track_id CHAR(16),
+        artist TEXT
+      );
+    SQL
+
+    CREATE_ALBUM_UPDATES_SQL = <<-SQL
+      CREATE TABLE album_updates (
+        track_id CHAR(16),
+        album TEXT
+      );
+    SQL
+
+    CREATE_ALBUM_ARTIST_UPDATES_SQL = <<-SQL
+      CREATE TABLE album_artist_updates (
+        track_id CHAR(16),
+        album_artist TEXT
+      );
+    SQL
+
+    CREATE_GENRE_UPDATES_SQL = <<-SQL
+      CREATE TABLE genre_updates (
+        track_id CHAR(16),
+        genre TEXT
+      );
+    SQL
+
+    CREATE_YEAR_UPDATES_SQL = <<-SQL
+      CREATE TABLE year_updates (
+        track_id CHAR(16),
+        year INTEGER
       );
     SQL
 
@@ -124,7 +173,7 @@ module Export
     end
 
     def get_ratings
-      return @db.exec(GET_RATINGS_SQL).values
+      return @db.exec(GET_RATING_UPDATES_SQL).values
     end
 
     def get_track_and_artist_name(id)
@@ -172,7 +221,13 @@ module Export
       @db.exec(CREATE_PLAYLISTS_SQL)
       @db.exec(CREATE_PLAYLIST_TRACK_SQL)
       @db.exec(CREATE_PLAYS_SQL)
-      @db.exec(CREATE_RATINGS_SQL)
+      @db.exec(CREATE_RATING_UPDATES_SQL)
+      @db.exec(CREATE_NAME_UPDATES_SQL)
+      @db.exec(CREATE_ARTIST_UPDATES_SQL)
+      @db.exec(CREATE_ALBUM_UPDATES_SQL)
+      @db.exec(CREATE_ALBUM_ARTIST_UPDATES_SQL)
+      @db.exec(CREATE_GENRE_UPDATES_SQL)
+      @db.exec(CREATE_YEAR_UPDATES_SQL)
       @db.exec(CREATE_USERS_SQL)
     end
 
