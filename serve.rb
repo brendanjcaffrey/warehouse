@@ -177,10 +177,10 @@ class Serve < Sinatra::Base
     end
   end
 
-  post '/rating/*/*' do
+  post '/rating/*' do
     id = params['splat'][0]
-    rating = params['splat'][1].to_i
-    half if rating < 0 || rating > 100
+    rating = params['rating'].to_i
+    halt if rating < 0 || rating > 100
 
     check_should_persist(id) do
       db.exec_params(DELETE_RATING_UPDATE_SQL, [id])

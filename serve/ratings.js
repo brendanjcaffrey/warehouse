@@ -21,7 +21,7 @@ Ratings.prototype.updateRating = function(cell, newRating) {
   var id = cell.closest("tr").attr("data-track-id")
   if (this.tracksHash[id]) {
     this.tracksHash[id].rating = newRating;
-    $.post('/rating/' + id + '/' + newRating);
+    $.post('/rating/' + id, { rating: newRating });
   }
 };
 

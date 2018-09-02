@@ -298,27 +298,27 @@ describe 'iTunes Streamer' do
 
   describe '/rating/*/*' do
     it 'should redirect if not logged in' do
-      post '/rating/21D8E2441A5E2204/80'
+      post '/rating/21D8E2441A5E2204/', { rating: '80' }
       follow_redirect!
       expect(last_request.url).to eq('http://example.org/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
-      post '/rating/AAD9E2442A6E2205/80', {}, fake_auth('test123')
+      post '/rating/AAD9E2442A6E2205', { rating: '80' }, fake_auth('test123')
       expect(last_response.status).to eq(404)
     end
 
-    it 'should create a rating if tracking this user\'s rating is enabled' do
+    it 'should create a rating update if tracking this user\'s rating is enabled' do
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
 
-      post '/rating/21D8E2441A5E2204/80', {}, fake_auth('test123')
+      post '/rating/21D8E2441A5E2204', { rating: '80' }, fake_auth('test123')
       expect(last_response.status).to eq(200)
       expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM rating_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT rating FROM rating_updates')).to eq('80')
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('80')
 
-      post '/rating/21D8E2441A5E2204/100', {}, fake_auth('test123')
+      post '/rating/21D8E2441A5E2204', { rating: '100' }, fake_auth('test123')
       expect(last_response.status).to eq(200)
       expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM rating_updates')).to eq('21D8E2441A5E2204')
@@ -326,9 +326,9 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
     end
 
-    it 'should not create a rating if tracking this user\'s rating is disabled' do
+    it 'should not create a rating update if tracking this user\'s rating is disabled' do
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
-      post '/rating/21D8E2441A5E2204/80', {}, fake_auth('notrack')
+      post '/rating/21D8E2441A5E2204', { rating: '80' }, fake_auth('notrack')
       expect(last_response.status).to eq(200)
       expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('0')
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
