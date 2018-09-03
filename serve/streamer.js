@@ -50,7 +50,7 @@ var Streamer = function(data) {
   this.sorter = new Sorter(this.tracksHash, colDescriptions);
   this.playlistDisplayManager = new PlaylistDisplayManager(this.playlistsHash, playlistTracks, this.tracksHash, colDescriptions);
   this.playlistControlManager = new PlaylistControlManager(this.tracksHash, audioSlots);
-  this.trackDisplayManager = new TrackDisplayManager(this.tracksHash, colDescriptions, rowsPerPage);
+  this.trackDisplayManager = new TrackDisplayManager(this.tracksHash, colDescriptions, rowsPerPage, genres);
   this.audio = new Audio(audioSlots);
 
   // hook up events

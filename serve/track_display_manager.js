@@ -1,4 +1,4 @@
-var TrackDisplayManager = function(tracksHash, colDescriptions, rowsPerPage) {
+var TrackDisplayManager = function(tracksHash, colDescriptions, rowsPerPage, genres) {
   this.tracksHash = tracksHash;
   this.rowsPerPage = rowsPerPage;
 
@@ -12,6 +12,13 @@ var TrackDisplayManager = function(tracksHash, colDescriptions, rowsPerPage) {
 
   this.selectedTrackId = "";
   this.nowPlayingTrackId = "";
+
+  var genreNames = []
+  for (genreId in genres) { genreNames.push(genres[genreId].name); }
+  genreNames.sort();
+  genreNames.forEach((name, index) => {
+    $("#track-genre").append("<option value=\"" + name + "\">" + name + "</option>");
+  });
 }
 
 TrackDisplayManager.prototype.setCallbacks = function(tracksChangedCallback, numPagesChangedCallback, changedToPageCallback, sortForTypeToShowListCallack, playTrackCallback) {
