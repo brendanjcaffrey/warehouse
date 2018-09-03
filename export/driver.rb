@@ -11,29 +11,26 @@ module Export
 
     def update_library!
       if Config.local('update_library')
-        @database.get_plays.each do |persistent_id|
-          puts @database.get_track_and_artist_name(persistent_id).join(' - ')
-          @library.add_play(persistent_id)
-        end
-
-        @database.get_ratings.each do |row|
-          puts @database.get_track_and_artist_name(row.first).join(' - ')
-          @library.update_rating(row.first, row.last)
-        end
+        play_updates(@database.get_plays)
+        rating_updates(@database.get_ratings)
+        name_updates(@database.get_name_updates)
+        artist_updates(@database.get_artist_updates)
+        album_updates(@database.get_album_updates)
+        album_artist_updates(@database.get_album_artist_updates)
+        genre_updates(@database.get_genre_updates)
+        year_updates(@database.get_year_updates)
       end
 
       if Config.remote('update_library')
         json = JSON.parse(Net::HTTP.get(URI(Config.remote('base_url') + '/updates.json')))
-        puts 'Plays:'
-        json['plays'].each do |persistent_id|
-          puts @database.get_track_and_artist_name(persistent_id).join(' - ')
-          @library.add_play(persistent_id)
-        end
-        puts 'Ratings:'
-        json['ratings'].each do |row|
-          puts @database.get_track_and_artist_name(row.first).join(' - ')
-          @library.update_rating(row.first, row.last)
-        end
+        play_updates(json['plays'])
+        rating_updates(json['ratings'])
+        name_updates(json['names'])
+        artist_updates(json['artists'])
+        album_updates(json['albums'])
+        album_artist_updates(json['album_artists'])
+        genre_updates(json['genres'])
+        year_updates(json['years'])
       end
     end
 
@@ -46,6 +43,70 @@ module Export
     end
 
     private
+
+    def play_updates(plays)
+      puts "\n=== Plays ==="
+      plays.each do |persistent_id|
+        puts @database.get_track_and_artist_name(persistent_id).join(' - ')
+        @library.add_play(persistent_id)
+      end
+    end
+
+    def rating_updates(ratings)
+      puts "\n=== Ratings ==="
+      ratings.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_rating(row.first, row.last)
+      end
+    end
+
+    def name_updates(names)
+      puts "\n=== Names ==="
+      names.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_name(row.first, row.last)
+      end
+    end
+
+    def artist_updates(artists)
+      puts "\n=== Artists ==="
+      artists.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_artist(row.first, row.last)
+      end
+    end
+
+    def album_updates(albums)
+      puts "\n=== Albums ==="
+      albums.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_album(row.first, row.last)
+      end
+    end
+
+    def album_artist_updates(album_artists)
+      puts "\n=== Album Artists ==="
+      album_artists.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_album_artist(row.first, row.last)
+      end
+    end
+
+    def genre_updates(genres)
+      puts "\n=== Genres ==="
+      genres.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_genre(row.first, row.last)
+      end
+    end
+
+    def year_updates(years)
+      puts "\n=== Years ==="
+      years.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_year(row.first, row.last)
+      end
+    end
 
     def export_tracks
       track_count = @library.total_track_count

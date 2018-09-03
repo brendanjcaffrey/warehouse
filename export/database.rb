@@ -175,6 +175,30 @@ module Export
       return @db.exec(GET_RATING_UPDATES_SQL).values
     end
 
+    def get_name_updates
+      return @db.exec(GET_NAME_UPDATES_SQL).values
+    end
+
+    def get_artist_updates
+      return @db.exec(GET_ARTIST_UPDATES_SQL).values
+    end
+
+    def get_album_updates
+      return @db.exec(GET_ALBUM_UPDATES_SQL).values
+    end
+
+    def get_album_artist_updates
+      return @db.exec(GET_ALBUM_ARTIST_UPDATES_SQL).values
+    end
+
+    def get_genre_updates
+      return @db.exec(GET_GENRE_UPDATES_SQL).values
+    end
+
+    def get_year_updates
+      return @db.exec(GET_YEAR_UPDATES_SQL).values
+    end
+
     def get_track_and_artist_name(id)
       @db.exec_params(TRACK_AND_ARTIST_NAME_SQL, [id]).values.first
     end

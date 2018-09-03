@@ -120,19 +120,34 @@ module Export
       end tell
     SCRIPT
 
-    GET_RATING = <<-SCRIPT
+    GET_TEMPLATE = <<-SCRIPT
       tell application "iTunes"
         set thisTrack to some file track whose persistent ID is "%s"
-        rating of thisTrack
+        %s of thisTrack
       end tell
     SCRIPT
 
-    UPDATE_RATING = <<-SCRIPT
+    UPDATE_TEMPLATE = <<-SCRIPT
       tell application "iTunes"
         set thisTrack to some file track whose persistent ID is "%s"
-        set rating of thisTrack to %s
+        set %s of thisTrack to %s
       end tell
     SCRIPT
+
+    GET_RATING = GET_TEMPLATE % ['%s', 'rating']
+    GET_NAME = GET_TEMPLATE % ['%s', 'name']
+    GET_ARTIST = GET_TEMPLATE % ['%s', 'artist']
+    GET_ALBUM = GET_TEMPLATE % ['%s', 'album']
+    GET_ALBUM_ARTIST = GET_TEMPLATE % ['%s', 'album artist']
+    GET_GENRE = GET_TEMPLATE % ['%s', 'genre']
+    GET_YEAR = GET_TEMPLATE % ['%s', 'year']
+    UPDATE_RATING = UPDATE_TEMPLATE % ['%s', 'rating', '%s']
+    UPDATE_NAME = UPDATE_TEMPLATE % ['%s', 'name', '"%s"']
+    UPDATE_ARTIST = UPDATE_TEMPLATE % ['%s', 'artist', '"%s"']
+    UPDATE_ALBUM = UPDATE_TEMPLATE % ['%s', 'album', '"%s"']
+    UPDATE_ALBUM_ARTIST = UPDATE_TEMPLATE % ['%s', 'album artist', '"%s"']
+    UPDATE_GENRE = UPDATE_TEMPLATE % ['%s', 'genre', '"%s"']
+    UPDATE_YEAR = UPDATE_TEMPLATE % ['%s', 'year', '%s']
 
     def total_track_count
       `osascript -e '#{TOTAL_TRACK_COUNT}'`.to_i
@@ -192,6 +207,72 @@ module Export
       puts `osascript -e '#{UPDATE_RATING % [persistent_id, new_rating]}'`
       end_rating = get_rating(persistent_id)
       puts "#{start_rating} -> #{end_rating}"
+    end
+
+    def get_name(persistent_id)
+      `osascript -e '#{GET_NAME % persistent_id}'`.chomp
+    end
+
+    def update_name(persistent_id, new_name)
+      start_name = get_name(persistent_id)
+      puts `osascript -e '#{UPDATE_NAME % [persistent_id, new_name]}'`
+      end_name = get_name(persistent_id)
+      puts "#{start_name} -> #{end_name}"
+    end
+
+    def get_artist(persistent_id)
+      `osascript -e '#{GET_ARTIST % persistent_id}'`.chomp
+    end
+
+    def update_artist(persistent_id, new_artist)
+      start_artist = get_artist(persistent_id)
+      puts `osascript -e '#{UPDATE_ARTIST % [persistent_id, new_artist]}'`
+      end_artist = get_artist(persistent_id)
+      puts "#{start_artist} -> #{end_artist}"
+    end
+
+    def get_album(persistent_id)
+      `osascript -e '#{GET_ALBUM % persistent_id}'`.chomp
+    end
+
+    def update_album(persistent_id, new_album)
+      start_album = get_album(persistent_id)
+      puts `osascript -e '#{UPDATE_ALBUM % [persistent_id, new_album]}'`
+      end_album = get_album(persistent_id)
+      puts "#{start_album} -> #{end_album}"
+    end
+
+    def get_album_artist(persistent_id)
+      `osascript -e '#{GET_ALBUM_ARTIST % persistent_id}'`.chomp
+    end
+
+    def update_album_artist(persistent_id, new_album_artist)
+      start_album_artist = get_album_artist(persistent_id)
+      puts `osascript -e '#{UPDATE_ALBUM_ARTIST % [persistent_id, new_album_artist]}'`
+      end_album_artist = get_album_artist(persistent_id)
+      puts "#{start_album_artist} -> #{end_album_artist}"
+    end
+
+    def get_genre(persistent_id)
+      `osascript -e '#{GET_GENRE % persistent_id}'`.chomp
+    end
+
+    def update_genre(persistent_id, new_genre)
+      start_genre = get_genre(persistent_id)
+      puts `osascript -e '#{UPDATE_GENRE % [persistent_id, new_genre]}'`
+      end_genre = get_genre(persistent_id)
+      puts "#{start_genre} -> #{end_genre}"
+    end
+
+    def get_year(persistent_id)
+      `osascript -e '#{GET_YEAR % persistent_id}'`.chomp
+    end
+
+    def update_year(persistent_id, new_year)
+      start_year = get_year(persistent_id)
+      puts `osascript -e '#{UPDATE_YEAR % [persistent_id, new_year]}'`
+      end_year = get_year(persistent_id)
+      puts "#{start_year} -> #{end_year}"
     end
   end
 end

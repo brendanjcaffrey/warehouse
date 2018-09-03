@@ -193,7 +193,7 @@ class Serve < Sinatra::Base
          :ratings => db.exec(Export::Database::GET_RATING_UPDATES_SQL).values,
          :names => db.exec(Export::Database::GET_NAME_UPDATES_SQL).values,
          :artists => db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values,
-         :album => db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
+         :albums => db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
          :album_artists => db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values,
          :genres => db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values,
          :years => db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values
