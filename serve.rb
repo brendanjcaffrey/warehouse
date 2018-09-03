@@ -222,7 +222,10 @@ class Serve < Sinatra::Base
   post '/track-info/*' do
     id = params['splat'][0]
 
-    # check name/year/artist/genre are not blank
+    halt if (params.has_key?('name') && params['name'].empty?) ||
+            (params.has_key?('year') && params['year'].empty?) ||
+            (params.has_key?('artist') && params['artist'].empty?) ||
+            (params.has_key?('genre') && params['genre'].empty?)
 
     check_should_persist(id) do
       if name = params['name']

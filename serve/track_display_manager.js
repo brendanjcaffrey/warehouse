@@ -13,12 +13,11 @@ var TrackDisplayManager = function(tracksHash, colDescriptions, rowsPerPage, gen
   this.selectedTrackId = "";
   this.nowPlayingTrackId = "";
 
-  var genreNames = []
-  for (genreId in genres) { genreNames.push(genres[genreId].name); }
+  var genreNames = Object.keys(genres).map((key, index) => { return genres[key].name; });
   genreNames.sort();
-  genreNames.forEach((name, index) => {
-    $("#track-genre").append("<option value=\"" + name + "\">" + name + "</option>");
-  });
+  genreNames.forEach((name, index) => { $("#track-genre").append("<option value=\"" + name + "\">" + name + "</option>"); });
+
+  $("#track-info-submit").click(this.trackInfoSubmit.bind(this));
 }
 
 TrackDisplayManager.prototype.setCallbacks = function(tracksChangedCallback, numPagesChangedCallback, changedToPageCallback, sortForTypeToShowListCallack, playTrackCallback) {
@@ -134,14 +133,51 @@ TrackDisplayManager.prototype.downloadTrack = function(idx) {
 
 TrackDisplayManager.prototype.trackInfo = function(idx) {
   var trackId = this.getDisplayedTrackId(idx);
-  var track = this.tracksHash[trackId];
+  this.modalTrack = this.tracksHash[trackId];
 
-  $("#track-name").val(track.name);
-  $("#track-artist").val(track.artist);
-  $("#track-album").val(track.album);
-  $("#track-album-artist").val(track.albumArtist);
-  $("#track-genre").val(track.genre);
-  $("#track-year").val(track.year);
+  $("#track-name").val(this.modalTrack.name);
+  $("#track-artist").val(this.modalTrack.artist);
+  $("#track-album").val(this.modalTrack.album);
+  $("#track-album-artist").val(this.modalTrack.albumArtist);
+  $("#track-genre").val(this.modalTrack.genre);
+  $("#track-year").val(this.modalTrack.year);
 
   $("#track-info-modal").modal();
+}
+
+TrackDisplayManager.prototype.trackInfoSubmit = function(e) {
+  if (this.validateNotNull("#track-name") || this.validateNotNull("#track-artist") || this.validateNotNull("#track-year")) { return; }
+
+  var changes = {};
+  this.addChangeIfNecessary(changes, "#track-name", "name", "name");
+  this.addChangeIfNecessary(changes, "#track-artist", "artist", "artist");
+  this.addChangeIfNecessary(changes, "#track-album", "album", "album");
+  this.addChangeIfNecessary(changes, "#track-album-artist", "albumArtist", "album_artist");
+  this.addChangeIfNecessary(changes, "#track-genre", "genre", "genre");
+  this.addChangeIfNecessary(changes, "#track-year", "year", "year");
+
+  if (Object.keys(changes).length > 0) {
+    $.post('/track-info/' + this.modalTrack.id, changes);
+    this.sendCurrentTracks();
+  }
+
+  $("#track-info-modal").modal('hide');
+}
+
+TrackDisplayManager.prototype.validateNotNull = function(id) {
+  var el = $(id);
+  if (el.val() == "") {
+    el.closest("div.form-group").addClass("has-error");
+    return true;
+  } else {
+    el.closest("div.form-group").removeClass("has-error");
+  }
+  return false;
+}
+
+TrackDisplayManager.prototype.addChangeIfNecessary = function(changes, id, modelKey, postKey) {
+  if ($(id).val() != this.modalTrack[modelKey]) {
+    changes[postKey] = $(id).val();
+    this.modalTrack[modelKey] = $(id).val();
+  }
 }
