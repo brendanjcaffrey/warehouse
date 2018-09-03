@@ -199,7 +199,7 @@ module Export
     def create_track(track)
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
-      album_artist = artist_id(track.album_artist, track.sort_album_artist)
+      album_artist = album_artist_id(track.album_artist, track.sort_album_artist)
       album = album_id(track.album, track.sort_album, artist)
 
       @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album_artist, album, genre, track.year,
@@ -241,6 +241,11 @@ module Export
     end
 
     def artist_id(name, sort_name)
+      @artists[name] || create_artist(name, sort_name)
+    end
+
+    def album_artist_id(name, sort_name)
+      return nil if name.empty?
       @artists[name] || create_artist(name, sort_name)
     end
 

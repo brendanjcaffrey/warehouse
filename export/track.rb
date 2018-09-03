@@ -1,7 +1,7 @@
 module Export
   ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
-  class Track < Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album_artist_unclean, :sort_album_artist_unclean,
+  class Track < Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album_artist, :sort_album_artist_unclean,
     :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track, :disc, :play_count, :rating, :location)
 
     def file
@@ -18,10 +18,6 @@ module Export
     def sort_artist
       value = clean_sort_value(sort_artist_unclean || artist)
       value != album ? value : ""
-    end
-
-    def album_artist
-      album_artist_unclean == '' ? artist : album_artist_unclean
     end
 
     def sort_album_artist
