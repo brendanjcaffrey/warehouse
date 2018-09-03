@@ -25,19 +25,41 @@ TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
 
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
-INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1';
+INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1;'
 
-DELETE_RATING_UPDATE_SQL = 'DELETE FROM rating_updates WHERE track_id=$1';
+DELETE_RATING_UPDATE_SQL = 'DELETE FROM rating_updates WHERE track_id=$1;'
 CREATE_RATING_UPDATE_SQL = 'INSERT INTO rating_updates (track_id, rating) VALUES ($1, $2);'
-UPDATE_RATING_SQL = 'UPDATE tracks SET rating=$1 WHERE id=$2';
+UPDATE_RATING_SQL = 'UPDATE tracks SET rating=$1 WHERE id=$2;'
 
-DELETE_NAME_UPDATE_SQL = 'DELETE FROM name_updates WHERE track_id=$1';
+DELETE_NAME_UPDATE_SQL = 'DELETE FROM name_updates WHERE track_id=$1;'
 CREATE_NAME_UPDATE_SQL = 'INSERT INTO name_updates (track_id, name) VALUES ($1, $2);'
-UPDATE_NAME_SQL = 'UPDATE tracks SET name=$1 WHERE id=$2';
+UPDATE_NAME_SQL = 'UPDATE tracks SET name=$1 WHERE id=$2;'
 
-DELETE_YEAR_UPDATE_SQL = 'DELETE FROM year_updates WHERE track_id=$1';
+DELETE_YEAR_UPDATE_SQL = 'DELETE FROM year_updates WHERE track_id=$1;'
 CREATE_YEAR_UPDATE_SQL = 'INSERT INTO year_updates (track_id, year) VALUES ($1, $2);'
-UPDATE_YEAR_SQL = 'UPDATE tracks SET year=$1 WHERE id=$2';
+UPDATE_YEAR_SQL = 'UPDATE tracks SET year=$1 WHERE id=$2;'
+
+DELETE_ARTIST_UPDATE_SQL = 'DELETE FROM artist_updates WHERE track_id=$1;'
+CREATE_ARTIST_UPDATE_SQL = 'INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);'
+ARTIST_ID_SQL = 'SELECT id FROM artists WHERE name=$1;'
+CREATE_ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1, \'\') RETURNING id;';
+UPDATE_ARTIST_SQL = 'UPDATE tracks SET artist_id=$1 WHERE id=$2;'
+
+DELETE_GENRE_UPDATE_SQL = 'DELETE FROM genre_updates WHERE track_id=$1;'
+CREATE_GENRE_UPDATE_SQL = 'INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);'
+GENRE_ID_SQL = 'SELECT id FROM genres WHERE name=$1;'
+CREATE_GENRE_SQL = 'INSERT INTO genres (name) VALUES ($1) RETURNING id;';
+UPDATE_GENRE_SQL = 'UPDATE tracks SET genre_id=$1 WHERE id=$2;'
+
+DELETE_ALBUM_ARTIST_UPDATE_SQL = 'DELETE FROM album_artist_updates WHERE track_id=$1;'
+CREATE_ALBUM_ARTIST_UPDATE_SQL = 'INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);'
+UPDATE_ALBUM_ARTIST_SQL = 'UPDATE tracks SET album_artist_id=$1 WHERE id=$2;'
+
+DELETE_ALBUM_UPDATE_SQL = 'DELETE FROM album_updates WHERE track_id=$1;'
+CREATE_ALBUM_UPDATE_SQL = 'INSERT INTO album_updates (track_id, album) VALUES ($1, $2);'
+ALBUM_ID_SQL = 'SELECT id FROM albums WHERE name=$1;'
+CREATE_ALBUM_SQL = 'INSERT INTO albums (name, sort_name) VALUES ($1, \'\') RETURNING id;';
+UPDATE_ALBUM_SQL = 'UPDATE tracks SET album_id=$1 WHERE id=$2;'
 
 MIME_TYPES = {
   'mp3' => 'audio/mpeg',
@@ -200,16 +222,68 @@ class Serve < Sinatra::Base
   post '/track-info/*' do
     id = params['splat'][0]
 
+    # check name/year/artist/genre are not blank
+
     check_should_persist(id) do
-      if (name = params['name'])
+      if name = params['name']
         db.exec_params(DELETE_NAME_UPDATE_SQL, [id])
         db.exec_params(CREATE_NAME_UPDATE_SQL, [id, name])
         db.exec_params(UPDATE_NAME_SQL, [name, id])
       end
-      if (year = params['year'])
+      if year = params['year']
         db.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
         db.exec_params(CREATE_YEAR_UPDATE_SQL, [id, year])
         db.exec_params(UPDATE_YEAR_SQL, [year, id])
+      end
+      if artist = params['artist']
+        db.exec_params(DELETE_ARTIST_UPDATE_SQL, [id])
+        db.exec_params(CREATE_ARTIST_UPDATE_SQL, [id, artist])
+        result = db.exec_params(ARTIST_ID_SQL, [artist])
+        artist_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
+        if !artist_id
+          artist_id = db.exec_params(CREATE_ARTIST_SQL, [artist]).getvalue(0,0)
+        end
+        db.exec_params(UPDATE_ARTIST_SQL, [artist_id.to_i, id])
+      end
+      if genre = params['genre']
+        db.exec_params(DELETE_GENRE_UPDATE_SQL, [id])
+        db.exec_params(CREATE_GENRE_UPDATE_SQL, [id, genre])
+        result = db.exec_params(GENRE_ID_SQL, [genre])
+        genre_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
+        if !genre_id
+          genre_id = db.exec_params(CREATE_GENRE_SQL, [genre]).getvalue(0,0)
+        end
+        db.exec_params(UPDATE_GENRE_SQL, [genre_id.to_i, id])
+      end
+      if album_artist = params['album_artist']
+        db.exec_params(DELETE_ALBUM_ARTIST_UPDATE_SQL, [id])
+        db.exec_params(CREATE_ALBUM_ARTIST_UPDATE_SQL, [id, album_artist])
+        if album_artist.empty?
+          album_artist_id = nil
+        else
+          result = db.exec_params(ARTIST_ID_SQL, [album_artist])
+          album_artist_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
+          if !album_artist_id
+            album_artist_id = db.exec_params(CREATE_ARTIST_SQL, [album_artist]).getvalue(0,0)
+          end
+          album_artist_id = album_artist_id.to_i
+        end
+        db.exec_params(UPDATE_ALBUM_ARTIST_SQL, [album_artist_id, id])
+      end
+      if album = params['album']
+        db.exec_params(DELETE_ALBUM_UPDATE_SQL, [id])
+        db.exec_params(CREATE_ALBUM_UPDATE_SQL, [id, album])
+        if album.empty?
+          album_id = nil
+        else
+          result = db.exec_params(ALBUM_ID_SQL, [album])
+          album_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
+          if !album_id
+            album_id = db.exec_params(CREATE_ALBUM_SQL, [album]).getvalue(0,0)
+          end
+          album_id = album_id.to_i
+        end
+        db.exec_params(UPDATE_ALBUM_SQL, [album_id, id])
       end
     end
   end

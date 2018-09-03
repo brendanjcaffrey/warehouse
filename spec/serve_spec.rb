@@ -390,5 +390,105 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT year FROM year_updates')).to eq('1990')
       expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1990')
     end
+
+    it 'should create an artist update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_artist')
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('1')
+
+      post '/track-info/21D8E2441A5E2204', { artist: 'new_artist' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM artist_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM artist_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT artist FROM artist_updates')).to eq('new_artist')
+      expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_artist')
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+
+      post '/track-info/21D8E2441A5E2204', { artist: 'test_artist'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM artist_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM artist_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT artist FROM artist_updates')).to eq('test_artist')
+      expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_artist')
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+    end
+
+    it 'should create an genre update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_genre')
+      expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('1')
+
+      post '/track-info/21D8E2441A5E2204', { genre: 'new_genre' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM genre_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM genre_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT genre FROM genre_updates')).to eq('new_genre')
+      expect(get_first_value('SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_genre')
+      expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('2')
+
+      post '/track-info/21D8E2441A5E2204', { genre: 'test_genre'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM genre_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM genre_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT genre FROM genre_updates')).to eq('test_genre')
+      expect(get_first_value('SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_genre')
+      expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('2')
+    end
+
+    it 'should create an album artist update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.album_artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_artist')
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('1')
+
+      post '/track-info/21D8E2441A5E2204', { album_artist: 'new_album_artist' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('new_album_artist')
+      expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.album_artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_album_artist')
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+
+      post '/track-info/21D8E2441A5E2204', { album_artist: '' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('')
+      expect(get_first_value('SELECT album_artist_id FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+
+      post '/track-info/21D8E2441A5E2204', { album_artist: 'test_artist'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('test_artist')
+      expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.album_artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_artist')
+      expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+    end
+
+    it 'should create an album album update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_album')
+      expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('1')
+
+      post '/track-info/21D8E2441A5E2204', { album: 'new_album' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM album_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT album FROM album_updates')).to eq('new_album')
+      expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_album')
+      expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+
+      post '/track-info/21D8E2441A5E2204', { album: '' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM album_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT album FROM album_updates')).to eq('')
+      expect(get_first_value('SELECT album_id FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
+      expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+
+      post '/track-info/21D8E2441A5E2204', { album: 'test_album'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM album_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT album FROM album_updates')).to eq('test_album')
+      expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_album')
+      expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+    end
   end
 end
