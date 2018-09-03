@@ -21,7 +21,7 @@ function extToType(ext) {
 
 var GenreIndices = ["id", "name"];
 var ArtistIndices = ["id", "name", "sortName"];
-var AlbumIndices = ["id", "artistId", "name", "sortName"];
+var AlbumIndices = ["id", "name", "sortName"];
 var TrackIndices = ["id", "name", "sortName", "artistId", "albumArtistId", "albumId", "genreId", "year",
                     "duration", "start", "finish", "track", "disc", "playCount", "rating", "ext"];
 var PlaylistIndices = ["id", "name", "parentId", "isLibrary"];

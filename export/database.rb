@@ -35,7 +35,6 @@ module Export
     CREATE_ALBUMS_SQL = <<-SQL
       CREATE TABLE albums (
         id SERIAL,
-        artist_id INTEGER,
         name TEXT,
         sort_name TEXT
       );
@@ -145,7 +144,7 @@ module Export
 
     ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1,$2) RETURNING id;'
 
-    ALBUM_SQL = 'INSERT INTO albums (name, sort_name, artist_id) VALUES ($1,$2,$3) RETURNING id;'
+    ALBUM_SQL = 'INSERT INTO albums (name, sort_name) VALUES ($1,$2) RETURNING id;'
 
     TRACK_SQL = <<-SQL
       INSERT INTO tracks (id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, year, duration, start, finish,
@@ -200,7 +199,7 @@ module Export
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
       album_artist = album_artist_id(track.album_artist, track.sort_album_artist)
-      album = album_id(track.album, track.sort_album, artist)
+      album = album_id(track.album, track.sort_album)
 
       @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album_artist, album, genre, track.year,
         track.duration, track.start, track.finish, track.track, track.disc, track.play_count, track.rating, track.ext, track.file])
@@ -254,15 +253,14 @@ module Export
       @artists[name] = result[0]['id']
     end
 
-    def album_id(name, sort_name, artist_id)
+    def album_id(name, sort_name)
       return nil if name.empty?
-      @albums[artist_id] ||= {}
-      @albums[artist_id][name] || create_album(name, sort_name, artist_id)
+      @albums[name] || create_album(name, sort_name)
     end
 
-    def create_album(name, sort_name, artist_id)
-      result = @db.exec_params(ALBUM_SQL, [name, sort_name, artist_id])
-      @albums[artist_id][name] = result[0]['id']
+    def create_album(name, sort_name)
+      result = @db.exec_params(ALBUM_SQL, [name, sort_name])
+      @albums[name] = result[0]['id']
     end
   end
 end

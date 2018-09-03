@@ -12,8 +12,8 @@ GENRE_SQL = 'SELECT id, name FROM genres;'
 GENRE_INT_INDICES = [0]
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
 ARTIST_INT_INDICES = [0]
-ALBUM_SQL = 'SELECT id, artist_id, name, sort_name FROM albums;'
-ALBUM_INT_INDICES = [0, 1]
+ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
+ALBUM_INT_INDICES = [0]
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, ' +
   'year, duration, start, finish, track, disc, play_count, rating, ext FROM tracks;'
 TRACK_INT_INDICES = [3, 4, 5, 6, 7, 11, 12, 13, 14]
