@@ -278,7 +278,7 @@ describe 'iTunes Streamer' do
       expect(last_response.status).to eq(404)
     end
 
-    it 'should create a play if tracking this user\'s play is enabled' do
+    it 'should create a play if tracking this user\'s changes is enabled' do
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
       post '/play/21D8E2441A5E2204', {}, fake_auth('test123')
       expect(last_response.status).to eq(200)
@@ -287,7 +287,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('6')
     end
 
-    it 'should not create a play if tracking this user\'s play is disabled' do
+    it 'should not create a play if tracking this user\'s changes is disabled' do
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
       post '/play/21D8E2441A5E2204', {}, fake_auth('notrack')
       expect(last_response.status).to eq(200)
@@ -296,7 +296,7 @@ describe 'iTunes Streamer' do
     end
   end
 
-  describe '/rating/*/*' do
+  describe '/rating/*' do
     it 'should redirect if not logged in' do
       post '/rating/21D8E2441A5E2204/', { rating: '80' }
       follow_redirect!
@@ -308,7 +308,7 @@ describe 'iTunes Streamer' do
       expect(last_response.status).to eq(404)
     end
 
-    it 'should create a rating update if tracking this user\'s rating is enabled' do
+    it 'should create a rating update if tracking this user\'s changes is enabled' do
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
 
       post '/rating/21D8E2441A5E2204', { rating: '80' }, fake_auth('test123')
@@ -326,12 +326,69 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
     end
 
-    it 'should not create a rating update if tracking this user\'s rating is disabled' do
+    it 'should not create a rating update if tracking this user\'s changes is disabled' do
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
       post '/rating/21D8E2441A5E2204', { rating: '80' }, fake_auth('notrack')
       expect(last_response.status).to eq(200)
       expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('0')
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
+    end
+  end
+
+  describe '/track-info/*' do
+    it 'should redirect if not logged in' do
+      post '/track-info/21D8E2441A5E2204', { name: 'abc' }
+      follow_redirect!
+      expect(last_request.url).to eq('http://example.org/')
+    end
+
+    it 'should 404 if the track doesn\'t exist in the database' do
+      post '/track-info/AAD9E2442A6E2205', { name: 'abc' }, fake_auth('test123')
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'should not create a name update if tracking this user\'s changes is disabled' do
+      expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('test_title')
+      post '/track-info/21D8E2441A5E2204', { name: 'abc' }, fake_auth('notrack')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM name_updates')).to eq('0')
+      expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('test_title')
+    end
+
+    it 'should create a name update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('test_title')
+
+      post '/track-info/21D8E2441A5E2204', { name: 'abc' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM name_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM name_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT name FROM name_updates')).to eq('abc')
+      expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('abc')
+
+      post '/track-info/21D8E2441A5E2204', { name: 'test_title' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM name_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM name_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT name FROM name_updates')).to eq('test_title')
+      expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('test_title')
+    end
+
+    it 'should create a year update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('2018')
+
+      post '/track-info/21D8E2441A5E2204', { year: '1970' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM year_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM year_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT year FROM year_updates')).to eq('1970')
+      expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1970')
+
+      post '/track-info/21D8E2441A5E2204', { year: '1990'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM year_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM year_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT year FROM year_updates')).to eq('1990')
+      expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1990')
     end
   end
 end

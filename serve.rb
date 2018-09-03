@@ -29,7 +29,15 @@ INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1';
 
 DELETE_RATING_UPDATE_SQL = 'DELETE FROM rating_updates WHERE track_id=$1';
 CREATE_RATING_UPDATE_SQL = 'INSERT INTO rating_updates (track_id, rating) VALUES ($1, $2);'
-UPDATE_RATING = 'UPDATE tracks SET rating=$1 WHERE id=$2';
+UPDATE_RATING_SQL = 'UPDATE tracks SET rating=$1 WHERE id=$2';
+
+DELETE_NAME_UPDATE_SQL = 'DELETE FROM name_updates WHERE track_id=$1';
+CREATE_NAME_UPDATE_SQL = 'INSERT INTO name_updates (track_id, name) VALUES ($1, $2);'
+UPDATE_NAME_SQL = 'UPDATE tracks SET name=$1 WHERE id=$2';
+
+DELETE_YEAR_UPDATE_SQL = 'DELETE FROM year_updates WHERE track_id=$1';
+CREATE_YEAR_UPDATE_SQL = 'INSERT INTO year_updates (track_id, year) VALUES ($1, $2);'
+UPDATE_YEAR_SQL = 'UPDATE tracks SET year=$1 WHERE id=$2';
 
 MIME_TYPES = {
   'mp3' => 'audio/mpeg',
@@ -185,7 +193,24 @@ class Serve < Sinatra::Base
     check_should_persist(id) do
       db.exec_params(DELETE_RATING_UPDATE_SQL, [id])
       db.exec_params(CREATE_RATING_UPDATE_SQL, [id, rating])
-      db.exec_params(UPDATE_RATING, [rating, id])
+      db.exec_params(UPDATE_RATING_SQL, [rating, id])
+    end
+  end
+
+  post '/track-info/*' do
+    id = params['splat'][0]
+
+    check_should_persist(id) do
+      if (name = params['name'])
+        db.exec_params(DELETE_NAME_UPDATE_SQL, [id])
+        db.exec_params(CREATE_NAME_UPDATE_SQL, [id, name])
+        db.exec_params(UPDATE_NAME_SQL, [name, id])
+      end
+      if (year = params['year'])
+        db.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
+        db.exec_params(CREATE_YEAR_UPDATE_SQL, [id, year])
+        db.exec_params(UPDATE_YEAR_SQL, [year, id])
+      end
     end
   end
 
