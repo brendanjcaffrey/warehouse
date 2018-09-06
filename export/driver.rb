@@ -134,12 +134,8 @@ module Export
         playlist = @library.playlist_info(playlist_index)
         playlist.tracks.reject! { |track_id| @skipped_tracks.has_key?(track_id) }
 
-        if playlist.tracks.count > 0 || (playlist.track_count != '0' && playlist.is_library == 1)
-          @database.create_playlist(playlist)
-          @needed_folders[playlist.parent_id] = true if playlist.parent_id != -1
-        else
-          puts "Skipping playlist #{playlist.name} because it has no tracks"
-        end
+        @database.create_playlist(playlist)
+        @needed_folders[playlist.parent_id] = true if playlist.parent_id != -1
       end
     end
 
