@@ -1,5 +1,6 @@
-var Ratings = function(tracksHash) {
+var Ratings = function(tracksHash, trackChanges) {
   this.tracksHash = tracksHash;
+  this.trackChanges = trackChanges;
 }
 
 Ratings.prototype.clearClick = function(e) {
@@ -8,6 +9,7 @@ Ratings.prototype.clearClick = function(e) {
 }
 
 Ratings.prototype.starClick = function(e) {
+  console.assert(this.ratings.trackChanges);
   e.stopPropagation()
   var target = $(e.currentTarget);
   var left = (e.pageX - target.offset().left) < (target.width() / 2.0);
@@ -27,12 +29,14 @@ Ratings.prototype.updateRating = function(cell, newRating) {
 
 Ratings.prototype.initialize = function(cell) {
   cell.html('<div id="rating-wrapper"><i/><i/><i/><i/><i/></div>');
-  cell.find("div").click(this.clearClick.bind({ ratings: this, cell: cell }));
-  cell.find("i:nth-child(1)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 0 }));
-  cell.find("i:nth-child(2)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 20 }));
-  cell.find("i:nth-child(3)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 40 }));
-  cell.find("i:nth-child(4)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 60 }));
-  cell.find("i:nth-child(5)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 80 }));
+  if (this.trackChanges) {
+    cell.find("div").click(this.clearClick.bind({ ratings: this, cell: cell }));
+    cell.find("i:nth-child(1)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 0 }));
+    cell.find("i:nth-child(2)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 20 }));
+    cell.find("i:nth-child(3)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 40 }));
+    cell.find("i:nth-child(4)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 60 }));
+    cell.find("i:nth-child(5)").click(this.starClick.bind({ ratings: this, cell: cell, offset: 80 }));
+  }
 };
 
 Ratings.prototype.getClass = function(actualRating, halfAmount) {

@@ -1,10 +1,12 @@
-var TrackTable = function(colDescriptions, rowsPerPage) {
+var TrackTable = function(colDescriptions, rowsPerPage, trackChanges) {
   this.table = $("#tracks");
   this.contextMenu = $("#context-menu");
   this.contextMenuPlay = this.contextMenu.find(".play");
   this.contextMenuDownload = this.contextMenu.find(".download");
   this.contextMenuInfo = this.contextMenu.find(".track-info");
+  if (!trackChanges) { this.contextMenuInfo.hide(); }
   this.colDescriptions = colDescriptions;
+  this.trackChanges = trackChanges;
   this.headerCells = [];
   this.rows = []
   this.cellMatrix = []; // multi-dimensional array - [rowsPerPage][cols.length]
@@ -176,7 +178,7 @@ TrackTable.prototype.rowRightClicked = function(e) {
 
   this.table.contextMenuPlay.mousedown(function() { this.table.playCallback(this.idx); }.bind(this));
   this.table.contextMenuDownload.mousedown(function() { this.table.downloadCallback(this.idx); }.bind(this));
-  this.table.contextMenuInfo.mousedown(function() { this.table.infoCallback(this.idx); }.bind(this));
+  this.table.contextMenuInfo.mousedown(function() { console.assert(this.table.trackChanges); this.table.infoCallback(this.idx); }.bind(this));
 
   $("body").one("click", this.table.hideMenu.bind(this.table));
   $(document).one("mousedown", this.table.hideMenu.bind(this.table));

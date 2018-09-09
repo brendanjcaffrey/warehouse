@@ -1,5 +1,6 @@
-var Audio = function(numSlots) {
+var Audio = function(numSlots, trackChanges) {
   this.numSlots = numSlots;
+  this.trackChanges = trackChanges;
   this.audios = []; this.tracks = [];
   var container = $("#progress");
   this.currentTimeDisplay = $('<div id="current-time"></div>').appendTo(container);
@@ -104,7 +105,7 @@ Audio.prototype.currentTimeUpdated = function() {
   this.remainingTimeDisplay.text("-" + this.formatTime(track.finish - audio.currentTime));
 
   if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
-    $.post('/play/' + track.id);
+    if (this.trackChanges) { $.post('/play/' + track.id); }
     ++track.playCount;
     this.trackFinishedCallback();
   }

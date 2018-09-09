@@ -152,6 +152,16 @@ describe 'iTunes Streamer' do
       expect(last_response.body).to include('test_playlist')
       expect(last_response.body).to include('["5E3FA18D81E469D2","21D8E2441A5E2204","B7F8970B634DDEE3"]')
     end
+
+    it 'should include whether to track changes or not' do
+      get '/data.json', {}, fake_auth('test123')
+      expect(last_response.body).to include('"track_user_changes":true')
+    end
+
+    it 'should include whether to track changes or not' do
+      get '/data.json', {}, fake_auth('notrack')
+      expect(last_response.body).to include('"track_user_changes":false')
+    end
   end
 
   describe '/tracks/*' do

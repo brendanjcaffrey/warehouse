@@ -13,6 +13,7 @@ var Streamer = function(data) {
     reduce((hash, object) => { hash[object.id] = object.tracks; return hash; }, {});
   playlists.forEach(playlist => playlistTracks[playlist.id] = playlistTracks[playlist.id] || []);
   this.playlistsHash = playlists.reduce(toHash, {});
+  var trackChanges = data["track_user_changes"];
 
   var sortSearchName = function(i1, i2) {
     if (i1.searchName == i2.searchName) { return 0; }
@@ -22,7 +23,7 @@ var Streamer = function(data) {
   this.tracksArr = data["tracks"].map(row => new Track(row, artists, albums, genres)).sort(sortSearchName);
   this.tracksHash = this.tracksArr.reduce(toHash, {});
 
-  this.ratings = new Ratings(this.tracksHash);
+  this.ratings = new Ratings(this.tracksHash, trackChanges);
 
   // inputs
   var rowsPerPage = 43;
@@ -40,7 +41,7 @@ var Streamer = function(data) {
 
   // initialize
   this.settings = new PersistentSettings();
-  this.trackTable = new TrackTable(colDescriptions, rowsPerPage);
+  this.trackTable = new TrackTable(colDescriptions, rowsPerPage, trackChanges);
   this.controls = new Controls(this.settings);
   this.remoteControl = new RemoteControl(this.settings);
   this.pagination = new Pagination();
@@ -52,7 +53,7 @@ var Streamer = function(data) {
   this.playlistDisplayManager = new PlaylistDisplayManager(this.playlistsHash, playlistTracks, this.tracksHash, colDescriptions);
   this.playlistControlManager = new PlaylistControlManager(this.tracksHash, audioSlots);
   this.trackDisplayManager = new TrackDisplayManager(this.tracksHash, colDescriptions, rowsPerPage, genres);
-  this.audio = new Audio(audioSlots);
+  this.audio = new Audio(audioSlots, trackChanges);
 
   // hook up events
   this.trackTable.setCallbacks(this.sorter.sortChanged.bind(this.sorter),

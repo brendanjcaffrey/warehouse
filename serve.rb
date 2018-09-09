@@ -134,6 +134,7 @@ class Serve < Sinatra::Base
 
   get '/data.json' do
     if check_login
+      username = db.exec_params(USERNAME_SQL, [session[:token]]).getvalue(0, 0)
       playlist_tracks = db.exec(PLAYLIST_TRACK_SQL).values
       playlist_tracks.each { |pt| pt[1] = pt[1].split(',') }
 
@@ -142,7 +143,8 @@ class Serve < Sinatra::Base
            albums: convert_cols_to_ints(db.exec(ALBUM_SQL).values, ALBUM_INT_INDICES),
            tracks: convert_cols_to_ints(db.exec(TRACK_SQL).values, TRACK_INT_INDICES),
            playlists: convert_cols_to_ints(db.exec(PLAYLIST_SQL).values, PLAYLIST_INT_INDICES),
-           playlist_tracks: playlist_tracks
+           playlist_tracks: playlist_tracks,
+           track_user_changes: track_user_changes?(username)
     else
       redirect to('/')
     end
