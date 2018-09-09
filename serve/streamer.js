@@ -11,6 +11,7 @@ var Streamer = function(data) {
   var playlists = data["playlists"].map(row => new Playlist(row));
   var playlistTracks = data["playlist_tracks"].map(row => new PlaylistTracks(row)).
     reduce((hash, object) => { hash[object.id] = object.tracks; return hash; }, {});
+  playlists.forEach(playlist => playlistTracks[playlist.id] = playlistTracks[playlist.id] || []);
   this.playlistsHash = playlists.reduce(toHash, {});
 
   var sortSearchName = function(i1, i2) {

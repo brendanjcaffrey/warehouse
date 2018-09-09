@@ -33,7 +33,7 @@ PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTrack
   if (this.stopped) {
     this.playlistIndex = 0;
   } else if (this.playlistIndex == -1) {
-    console.assert(newTrackId != null);
+    if (newTrackId == null) { return; } // only happens when you load the app, go to an empty playlist, press play and then go to another empty playlist
     this.hiddenPlayingTrackId = newTrackId;
   }
 
@@ -58,7 +58,7 @@ PlaylistControlManager.prototype.pushNextTracks = function() {
 
   // if we're searching, then the currently playing track won't be in the playlist and we don't want to overwrite it
   if (this.playlistIndex == -1) {
-    console.assert(this.hiddenPlayingTrackId != null);
+    if (this.hiddenPlayingTrackId == null) { return; } // only happens when you load the app, navigate to an empty playlist, click play, then click previous track
     tracksToLoad.push(this.tracksHash[this.hiddenPlayingTrackId]);
     i = 0;
     ++currentListLength;
