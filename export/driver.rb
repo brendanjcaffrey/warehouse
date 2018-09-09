@@ -132,6 +132,8 @@ module Export
       playlist_count.times do |playlist_index|
         @progress.increment!
         playlist = @library.playlist_info(playlist_index)
+        next if playlist.skip?
+
         playlist.tracks.reject! { |track_id| @skipped_tracks.has_key?(track_id) }
 
         @database.create_playlist(playlist)

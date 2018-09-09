@@ -7,5 +7,9 @@ module Export
     def is_library
       special_kind == 'Music' ? 1 : 0
     end
+
+    def skip?
+      special_kind != 'Music' && special_kind != 'none'
+    end
   end
 end
