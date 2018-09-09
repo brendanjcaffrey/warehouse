@@ -169,6 +169,11 @@ TrackTable.prototype.rowRightClicked = function(e) {
     top: this.table.getMenuPosition(e.clientY, "height", "scrollTop")
   })
 
+  // the mousedown events stack, so we have to remove the old ones before re-adding them
+  this.table.contextMenuPlay.off("mousedown");
+  this.table.contextMenuDownload.off("mousedown");
+  this.table.contextMenuInfo.off("mousedown");
+
   this.table.contextMenuPlay.mousedown(function() { this.table.playCallback(this.idx); }.bind(this));
   this.table.contextMenuDownload.mousedown(function() { this.table.downloadCallback(this.idx); }.bind(this));
   this.table.contextMenuInfo.mousedown(function() { this.table.infoCallback(this.idx); }.bind(this));
