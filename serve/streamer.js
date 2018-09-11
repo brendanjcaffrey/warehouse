@@ -59,6 +59,7 @@ var Streamer = function(data) {
   this.trackTable.setCallbacks(this.sorter.sortChanged.bind(this.sorter),
                                this.trackDisplayManager.trackClicked.bind(this.trackDisplayManager),
                                this.trackDisplayManager.playTrack.bind(this.trackDisplayManager),
+                               this.trackDisplayManager.playTrackNext.bind(this.trackDisplayManager),
                                this.trackDisplayManager.downloadTrack.bind(this.trackDisplayManager),
                                this.trackDisplayManager.trackInfo.bind(this.trackDisplayManager));
   this.controls.setCallbacks(this.playlistControlManager.prev.bind(this.playlistControlManager),
@@ -99,7 +100,8 @@ var Streamer = function(data) {
                                         this.pagination.numPagesChanged.bind(this.pagination),
                                         this.pagination.changedToPage.bind(this.pagination),
                                         this.sorter.sortForTypeToShowList.bind(this.sorter),
-                                        this.playlistDisplayManager.playTrack.bind(this.playlistDisplayManager));
+                                        this.playlistDisplayManager.playTrack.bind(this.playlistDisplayManager),
+                                        this.playlistControlManager.playTrackNext.bind(this.playlistControlManager));
   this.audio.setCallbacks(this.playlistControlManager.next.bind(this.playlistControlManager),
                           this.playlistDisplayManager.showNowPlayingTrack.bind(this.playlistDisplayManager));
 

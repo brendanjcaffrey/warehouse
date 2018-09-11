@@ -7,6 +7,8 @@ var PlaylistControlManager = function(tracksHash, numAudioSlots) {
   this.shuffle = false;
   this.repeat = false;
   this.nowPlayingTrackId = null;
+  this.inPlayNextList = false;
+  this.playNextList = [];
 }
 
 PlaylistControlManager.prototype.setCallbacks = function(nowPlayingIdChangedCallback, isPlayingChangedCallback, loadTracksCallback, playCallback, pauseCallback, rewindCurrentTrackCallback) {
@@ -26,6 +28,7 @@ PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTrack
     this.stopped = false;
     this.playing = true;
     this.isPlayingChangedCallback(this.playing);
+    this.playNextList = [];
   }
 
   this.hiddenPlayingTrackId = null;
@@ -52,30 +55,43 @@ PlaylistControlManager.prototype.generateShuffledPlaylist = function() {
 }
 
 PlaylistControlManager.prototype.pushNextTracks = function() {
-  var tracksToLoad = []; var i;
+  var tracksToLoad = [];
   var currentList = this.getCurrentList();
   var currentListLength = currentList.length;
 
   // if we're searching, then the currently playing track won't be in the playlist and we don't want to overwrite it
-  if (this.playlistIndex == -1) {
+  if (this.playlistIndex == -1 || this.inPlayNextList) {
     if (this.hiddenPlayingTrackId == null) { return; } // only happens when you load the app, navigate to an empty playlist, click play, then click previous track
-    tracksToLoad.push(this.tracksHash[this.hiddenPlayingTrackId]);
-    i = 0;
-    ++currentListLength;
-  } else {
-    i = -1;
+    tracksToLoad.push(this.hiddenPlayingTrackId);
   }
 
-  while (tracksToLoad.length < this.numAudioSlots && ++i < currentListLength)
-  {
-    var playlistIndex = (this.playlistIndex + i) % currentList.length;
-    tracksToLoad.push(this.tracksHash[currentList[playlistIndex]]);
+  var realPlaylistIndex = Math.max(0, this.playlistIndex);
+  var playlistIndexOffset = -1;
+  if (!this.inPlayNextList) {
+    tracksToLoad.push(currentList[realPlaylistIndex]);
+    ++playlistIndexOffset;
   }
+
+  var playNextLength = Math.min(this.numAudioSlots - tracksToLoad.length, this.playNextList.length);
+  tracksToLoad = tracksToLoad.concat(this.playNextList.slice(0, playNextLength));
+
+  while (tracksToLoad.length < this.numAudioSlots && ++playlistIndexOffset < currentListLength)
+  {
+    var playlistIndex = (realPlaylistIndex + playlistIndexOffset) % currentList.length;
+    tracksToLoad.push(currentList[playlistIndex]);
+  }
+
+  tracksToLoad = tracksToLoad.map(trackId => this.tracksHash[trackId]);
 
   if (tracksToLoad.length == 0) { return; }
   this.nowPlayingId = tracksToLoad[0].id;
   this.loadTracksCallback(tracksToLoad, this.playing);
   if (!this.stopped) { this.nowPlayingIdChangedCallback(this.nowPlayingId); }
+}
+
+PlaylistControlManager.prototype.playTrackNext = function(trackId) {
+  this.playNextList.push(trackId);
+  this.pushNextTracks();
 }
 
 PlaylistControlManager.prototype.shuffleChanged = function(shuffle) {
@@ -116,11 +132,20 @@ PlaylistControlManager.prototype.playPause = function() {
 }
 
 PlaylistControlManager.prototype.next = function() {
-  if (this.getCurrentList().length == 0 && this.stopped) { return; }
+  if (this.getCurrentList().length == 0 && this.playNextList.length == 0 && this.stopped) { return; }
   if (this.shouldRewind()) { return this.rewindCurrentTrackCallback(); }
 
-  this.playlistIndex += 1;
-  if (this.playlistIndex >= this.getCurrentList().length) { this.playlistIndex = 0; }
+  if (!this.inPlayNextList) {
+    this.playlistIndex += 1;
+    if (this.playlistIndex >= this.getCurrentList().length) { this.playlistIndex = 0; }
+  }
+
+  if (this.playNextList.length == 0) {
+    this.inPlayNextList = false;
+  } else {
+    this.inPlayNextList = true;
+    this.hiddenPlayingTrackId = this.playNextList.shift();
+  }
 
   this.pushNextTracks();
 }

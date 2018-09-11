@@ -20,12 +20,13 @@ var TrackDisplayManager = function(tracksHash, colDescriptions, rowsPerPage, gen
   $("#track-info-submit").click(this.trackInfoSubmit.bind(this));
 }
 
-TrackDisplayManager.prototype.setCallbacks = function(tracksChangedCallback, numPagesChangedCallback, changedToPageCallback, sortForTypeToShowListCallack, playTrackCallback) {
+TrackDisplayManager.prototype.setCallbacks = function(tracksChangedCallback, numPagesChangedCallback, changedToPageCallback, sortForTypeToShowListCallack, playTrackCallback, playTrackNextCallback) {
   this.tracksChangedCallback = tracksChangedCallback;
   this.numPagesChangedCallback = numPagesChangedCallback;
   this.changedToPageCallback = changedToPageCallback;
-  this.playTrackCallback = playTrackCallback;
   this.sortForTypeToShowListCallack = sortForTypeToShowListCallack;
+  this.playTrackCallback = playTrackCallback;
+  this.playTrackNextCallback = playTrackNextCallback;
 }
 
 TrackDisplayManager.prototype.tracksChanged = function(trackIds, showNowPlayingIfPossible) {
@@ -124,6 +125,11 @@ TrackDisplayManager.prototype.trackClicked = function(idx) {
 TrackDisplayManager.prototype.playTrack = function(idx) {
   var trackId = this.getDisplayedTrackId(idx);
   this.playTrackCallback(trackId);
+}
+
+TrackDisplayManager.prototype.playTrackNext = function(idx) {
+  var trackId = this.getDisplayedTrackId(idx);
+  this.playTrackNextCallback(trackId);
 }
 
 TrackDisplayManager.prototype.downloadTrack = function(idx) {

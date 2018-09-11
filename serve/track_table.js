@@ -2,6 +2,7 @@ var TrackTable = function(colDescriptions, rowsPerPage, trackChanges) {
   this.table = $("#tracks");
   this.contextMenu = $("#context-menu");
   this.contextMenuPlay = this.contextMenu.find(".play");
+  this.contextMenuPlayNext = this.contextMenu.find(".play-next");
   this.contextMenuDownload = this.contextMenu.find(".download");
   this.contextMenuInfo = this.contextMenu.find(".track-info");
   if (!trackChanges) { this.contextMenuInfo.hide(); }
@@ -52,10 +53,11 @@ var TrackTable = function(colDescriptions, rowsPerPage, trackChanges) {
   }
 }
 
-TrackTable.prototype.setCallbacks = function(sortChangedCallback, clickCallback, playCallback, downloadCallback, infoCallback) {
+TrackTable.prototype.setCallbacks = function(sortChangedCallback, clickCallback, playCallback, playNextCallback, downloadCallback, infoCallback) {
   this.sortChangedCallback = sortChangedCallback;
   this.clickCallback = clickCallback;
   this.playCallback = playCallback;
+  this.playNextCallback = playNextCallback;
   this.downloadCallback = downloadCallback;
   this.infoCallback = infoCallback;
 }
@@ -173,10 +175,12 @@ TrackTable.prototype.rowRightClicked = function(e) {
 
   // the mousedown events stack, so we have to remove the old ones before re-adding them
   this.table.contextMenuPlay.off("mousedown");
+  this.table.contextMenuPlayNext.off("mousedown");
   this.table.contextMenuDownload.off("mousedown");
   this.table.contextMenuInfo.off("mousedown");
 
   this.table.contextMenuPlay.mousedown(function() { this.table.playCallback(this.idx); }.bind(this));
+  this.table.contextMenuPlayNext.mousedown(function() { this.table.playNextCallback(this.idx); }.bind(this));
   this.table.contextMenuDownload.mousedown(function() { this.table.downloadCallback(this.idx); }.bind(this));
   this.table.contextMenuInfo.mousedown(function() { console.assert(this.table.trackChanges); this.table.infoCallback(this.idx); }.bind(this));
 
