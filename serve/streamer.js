@@ -89,8 +89,10 @@ var Streamer = function(data) {
                                            this.trackDisplayManager.nowPlayingIdChanged.bind(this.trackDisplayManager),
                                            this.playlistControlManager.nowPlayingTracksChanged.bind(this.playlistControlManager),
                                            this.filterBar.clearFilter.bind(this.filterBar),
-                                           this.playlistTree.showPlaylist.bind(this.playlistTree));
+                                           this.playlistTree.showPlaylist.bind(this.playlistTree),
+                                           this.playlistControlManager.shownPlaylistChanged.bind(this.playlistControlManager));
   this.playlistControlManager.setCallbacks(this.playlistDisplayManager.nowPlayingIdChanged.bind(this.playlistDisplayManager),
+                                           this.playlistDisplayManager.overrideNowPlayingPlaylistChanged.bind(this.playlistDisplayManager),
                                            this.controls.isPlayingChanged.bind(this.controls),
                                            this.audio.loadTracks.bind(this.audio),
                                            this.audio.play.bind(this.audio),

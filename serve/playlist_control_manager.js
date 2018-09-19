@@ -9,15 +9,21 @@ var PlaylistControlManager = function(tracksHash, numAudioSlots) {
   this.nowPlayingTrackId = null;
   this.inPlayNextList = false;
   this.playNextList = [];
+  this.shownPlaylistId = null;
 }
 
-PlaylistControlManager.prototype.setCallbacks = function(nowPlayingIdChangedCallback, isPlayingChangedCallback, loadTracksCallback, playCallback, pauseCallback, rewindCurrentTrackCallback) {
+PlaylistControlManager.prototype.setCallbacks = function(nowPlayingIdChangedCallback, overrideNowPlayingPlaylistChanged, isPlayingChangedCallback, loadTracksCallback, playCallback, pauseCallback, rewindCurrentTrackCallback) {
   this.nowPlayingIdChangedCallback = nowPlayingIdChangedCallback;
+  this.overrideNowPlayingPlaylistChanged = overrideNowPlayingPlaylistChanged;
   this.isPlayingChangedCallback = isPlayingChangedCallback;
   this.loadTracksCallback = loadTracksCallback;
   this.playCallback = playCallback;
   this.pauseCallback = pauseCallback;
   this.rewindCurrentTrackCallback = rewindCurrentTrackCallback;
+}
+
+PlaylistControlManager.prototype.shownPlaylistChanged = function(playlistId) {
+  this.shownPlaylistId = playlistId;
 }
 
 PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTracks, newTrackId, isForcedPlay) {
@@ -75,7 +81,7 @@ PlaylistControlManager.prototype.pushNextTracks = function() {
   }
 
   var playNextLength = Math.min(this.numAudioSlots - tracksToLoad.length, this.playNextList.length);
-  tracksToLoad = tracksToLoad.concat(this.playNextList.slice(0, playNextLength));
+  tracksToLoad = tracksToLoad.concat(this.playNextList.slice(0, playNextLength).map(obj => obj.id));
 
   while (tracksToLoad.length < this.numAudioSlots && ++playlistIndexOffset < currentListLength)
   {
@@ -92,7 +98,7 @@ PlaylistControlManager.prototype.pushNextTracks = function() {
 }
 
 PlaylistControlManager.prototype.playTrackNext = function(trackId) {
-  this.playNextList.push(trackId);
+  this.playNextList.push({ id: trackId, playlistId: this.shownPlaylistId });
   this.pushNextTracks();
 }
 
@@ -152,5 +158,6 @@ PlaylistControlManager.prototype.next = function() {
     this.inPlayNextList = true;
   }
 
+  this.overrideNowPlayingPlaylistChanged(this.inPlayNextList ? this.playNextList[0].playlistId : null);
   this.pushNextTracks();
 }

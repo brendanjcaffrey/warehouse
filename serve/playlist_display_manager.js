@@ -7,9 +7,10 @@ var PlaylistDisplayManager = function(playlistsHash, playlistTracks, tracksHash)
   this.shownPlaylistId = null;
   this.nowPlayingPlaylistId = null;
   this.nowPlayingTrackId = null;
+  this.overrideNowPlayingPlaylistId = null;
 }
 
-PlaylistDisplayManager.prototype.setCallbacks = function(filterTracksCallback, sortTracksCallback, displayedTracksChangedCallback, nowPlayingIdChangedCallback, nowPlayingTracksChangedCallback, clearFilterCallback, showPlaylistCallback) {
+PlaylistDisplayManager.prototype.setCallbacks = function(filterTracksCallback, sortTracksCallback, displayedTracksChangedCallback, nowPlayingIdChangedCallback, nowPlayingTracksChangedCallback, clearFilterCallback, showPlaylistCallback, shownPlaylistChangedCallback) {
   this.filterTracksCallback = filterTracksCallback;
   this.sortTracksCallback = sortTracksCallback;
   this.displayedTracksChangedCallback = displayedTracksChangedCallback;
@@ -17,12 +18,17 @@ PlaylistDisplayManager.prototype.setCallbacks = function(filterTracksCallback, s
   this.nowPlayingTracksChangedCallback = nowPlayingTracksChangedCallback;
   this.clearFilterCallback = clearFilterCallback;
   this.showPlaylistCallback = showPlaylistCallback;
+  this.shownPlaylistChangedCallback = shownPlaylistChangedCallback;
 }
 
 PlaylistDisplayManager.prototype.nowPlayingIdChanged = function(trackId) {
   this.stopped = false;
   this.nowPlayingTrackId = trackId;
   this.nowPlayingIdChangedCallback(trackId, this.shownPlaylistId == this.nowPlayingPlaylistId);
+}
+
+PlaylistDisplayManager.prototype.overrideNowPlayingPlaylistChanged = function(playlistId) {
+  this.overrideNowPlayingPlaylistId = playlistId;
 }
 
 PlaylistDisplayManager.prototype.playlistChanged = function(playlistId) {
@@ -46,6 +52,7 @@ PlaylistDisplayManager.prototype.playlistChanged = function(playlistId) {
   this.tracksInShownPlaylist = tracks;
   this.clearFilterCallback();
   this.displayChanged();
+  this.shownPlaylistChangedCallback(this.shownPlaylistId);
 }
 
 PlaylistDisplayManager.prototype.displayChanged = function() {
@@ -81,7 +88,8 @@ PlaylistDisplayManager.prototype.playTrack = function(trackId) {
   this.nowPlayingTracksChangedCallback(this.shownTracks, trackId, true);
 }
 
-PlaylistDisplayManager.prototype.showNowPlayingTrack = function(trackId) {
-  this.playlistChanged(this.nowPlayingPlaylistId);
-  this.showPlaylistCallback(this.nowPlayingPlaylistId);
+PlaylistDisplayManager.prototype.showNowPlayingTrack = function() {
+  var playlistId = this.overrideNowPlayingPlaylistId ? this.overrideNowPlayingPlaylistId : this.nowPlayingPlaylistId;
+  this.playlistChanged(playlistId);
+  this.showPlaylistCallback(playlistId);
 }
