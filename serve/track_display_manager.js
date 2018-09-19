@@ -20,13 +20,14 @@ var TrackDisplayManager = function(tracksHash, colDescriptions, rowsPerPage, gen
   $("#track-info-submit").click(this.trackInfoSubmit.bind(this));
 }
 
-TrackDisplayManager.prototype.setCallbacks = function(tracksChangedCallback, numPagesChangedCallback, changedToPageCallback, sortForTypeToShowListCallack, playTrackCallback, playTrackNextCallback) {
+TrackDisplayManager.prototype.setCallbacks = function(tracksChangedCallback, numPagesChangedCallback, changedToPageCallback, sortForTypeToShowListCallack, playTrackCallback, playTrackNextCallback, refreshTrackInfoDisplayCallback) {
   this.tracksChangedCallback = tracksChangedCallback;
   this.numPagesChangedCallback = numPagesChangedCallback;
   this.changedToPageCallback = changedToPageCallback;
   this.sortForTypeToShowListCallack = sortForTypeToShowListCallack;
   this.playTrackCallback = playTrackCallback;
   this.playTrackNextCallback = playTrackNextCallback;
+  this.refreshTrackInfoDisplayCallback = refreshTrackInfoDisplayCallback;
 }
 
 TrackDisplayManager.prototype.tracksChanged = function(trackIds, showNowPlayingIfPossible) {
@@ -165,6 +166,7 @@ TrackDisplayManager.prototype.trackInfoSubmit = function(e) {
   if (Object.keys(changes).length > 0) {
     $.post('/track-info/' + this.modalTrack.id, changes);
     this.sendCurrentTracks();
+    this.refreshTrackInfoDisplayCallback();
   }
 
   $("#track-info-modal").modal('hide');

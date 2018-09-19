@@ -40,11 +40,6 @@ Audio.prototype.loadTracks = function(tracksArr, startPlayingFirst) {
   var returnId = (val) => val.id;
   if (tracksArr.length < 1) { return; }
 
-  this.updateInfoDisplay(this.nameDisplay, this.infoContainer, tracksArr[0].name);
-  this.artistDisplay.text(tracksArr[0].artist);
-  this.albumDisplay.text(tracksArr[0].album);
-  if (tracksArr[0].album.length == 0) { this.dashDisplay.hide(); } else { this.dashDisplay.show(); }
-
   // find the intersection of what we have and what we want
   loadedIds = this.tracks.filter((el) => el != null).map(returnId);
   wantLoadedIds = tracksArr.map(returnId);
@@ -70,6 +65,16 @@ Audio.prototype.loadTracks = function(tracksArr, startPlayingFirst) {
       if (startPlayingFirst) { this.audios[i].play(); }
     } else { this.audios[i].pause(); this.rewindTrackInSlot(i); }
   }
+
+  this.refreshInfoDisplay();
+}
+
+Audio.prototype.refreshInfoDisplay = function() {
+  var track = this.tracks[this.nowPlayingSlot];
+  this.updateInfoDisplay(this.nameDisplay, this.infoContainer, track.name);
+  this.artistDisplay.text(track.artist);
+  this.albumDisplay.text(track.album);
+  if (track.album.length == 0) { this.dashDisplay.hide(); } else { this.dashDisplay.show(); }
 }
 
 Audio.prototype.loadIntoSlot = function(track, slot) {

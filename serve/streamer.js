@@ -103,7 +103,8 @@ var Streamer = function(data) {
                                         this.pagination.changedToPage.bind(this.pagination),
                                         this.sorter.sortForTypeToShowList.bind(this.sorter),
                                         this.playlistDisplayManager.playTrack.bind(this.playlistDisplayManager),
-                                        this.playlistControlManager.playTrackNext.bind(this.playlistControlManager));
+                                        this.playlistControlManager.playTrackNext.bind(this.playlistControlManager),
+                                        this.audio.refreshInfoDisplay.bind(this.audio));
   this.audio.setCallbacks(this.playlistControlManager.next.bind(this.playlistControlManager),
                           this.playlistDisplayManager.showNowPlayingTrack.bind(this.playlistDisplayManager));
 
