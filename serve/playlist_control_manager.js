@@ -32,12 +32,14 @@ PlaylistControlManager.prototype.nowPlayingTracksChanged = function(orderedTrack
   }
 
   this.hiddenPlayingTrackId = null;
-  this.playlistIndex = this.getCurrentList().indexOf(newTrackId);
-  if (this.stopped) {
-    this.playlistIndex = 0;
-  } else if (this.playlistIndex == -1) {
-    if (newTrackId == null) { return; } // only happens when you load the app, go to an empty playlist, press play and then go to another empty playlist
-    this.hiddenPlayingTrackId = newTrackId;
+  if (!this.inPlayNextList) {
+    this.playlistIndex = this.getCurrentList().indexOf(newTrackId);
+    if (this.stopped) {
+      this.playlistIndex = 0;
+    } else if (this.playlistIndex == -1) {
+      if (newTrackId == null) { return; } // only happens when you load the app, go to an empty playlist, press play and then go to another empty playlist
+      this.hiddenPlayingTrackId = newTrackId;
+    }
   }
 
   this.pushNextTracks();
@@ -60,7 +62,7 @@ PlaylistControlManager.prototype.pushNextTracks = function() {
   var currentListLength = currentList.length;
 
   // if we're searching, then the currently playing track won't be in the playlist and we don't want to overwrite it
-  if (this.playlistIndex == -1 || this.inPlayNextList) {
+  if (this.playlistIndex == -1 && !this.inPlayNextList) {
     if (this.hiddenPlayingTrackId == null) { return; } // only happens when you load the app, navigate to an empty playlist, click play, then click previous track
     tracksToLoad.push(this.hiddenPlayingTrackId);
   }
@@ -107,7 +109,7 @@ PlaylistControlManager.prototype.repeatChanged = function(repeat) {
 }
 
 PlaylistControlManager.prototype.shouldRewind = function() {
-  return this.repeat || (this.orderedPlayingTracks.length == 1 && this.playlistIndex == 0);
+  return this.repeat || (this.orderedPlayingTracks.length == 1 && this.playlistIndex == 0 && this.playNextList.length == 0);
 }
 
 PlaylistControlManager.prototype.prev = function() {
@@ -135,16 +137,19 @@ PlaylistControlManager.prototype.next = function() {
   if (this.getCurrentList().length == 0 && this.playNextList.length == 0 && this.stopped) { return; }
   if (this.shouldRewind()) { return this.rewindCurrentTrackCallback(); }
 
+  var oldPlayNextLength = this.playNextList.length;
   if (!this.inPlayNextList) {
     this.playlistIndex += 1;
     if (this.playlistIndex >= this.getCurrentList().length) { this.playlistIndex = 0; }
+  } else {
+    this.playNextList.shift();
   }
 
   if (this.playNextList.length == 0) {
     this.inPlayNextList = false;
+    if (oldPlayNextLength != 0) { this.hiddenPlayingTrackId = null; }
   } else {
     this.inPlayNextList = true;
-    this.hiddenPlayingTrackId = this.playNextList.shift();
   }
 
   this.pushNextTracks();
