@@ -7,5 +7,5 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 // this comes from a keyboard shortcut - just pass it along to the content script
 // since the background page can't inject javascript itself
 chrome.commands.onCommand.addListener(function(command) {
-  chrome.tabs.sendMessage(tab.id, { type: command }, function(response) {});
+  chrome.tabs.sendMessage(tab.id, { type: command });
 });
