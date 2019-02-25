@@ -45,7 +45,7 @@ http {
     }
 
     location /music/ {
-        alias /home/music/Music/;
+        alias /mnt/volume_nyc1_01/Music/;
         internal;
     }
 
