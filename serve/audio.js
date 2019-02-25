@@ -110,8 +110,11 @@ Audio.prototype.currentTimeUpdated = function() {
   this.remainingTimeDisplay.text("-" + this.formatTime(track.finish - audio.currentTime));
 
   if (audio.currentTime >= audio.duration || audio.currentTime >= track.finish) {
-    if (this.trackChanges) { $.post('/play/' + track.id); }
-    ++track.playCount;
+    if (this.trackChanges)
+    {
+      $.post('/play/' + track.id);
+      ++track.playCount;
+    }
     this.trackFinishedCallback();
   }
 }
@@ -165,4 +168,5 @@ Audio.prototype.pause = function(value) {
 Audio.prototype.rewindCurrentTrack = function(value) {
   if (!this.tracks[this.nowPlayingSlot]) return false;
   this.audios[this.nowPlayingSlot].currentTime = this.tracks[this.nowPlayingSlot].start;
+  if (this.audios[this.nowPlayingSlot].paused) { this.audios[this.nowPlayingSlot].play(); }
 }
