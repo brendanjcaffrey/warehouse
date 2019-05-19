@@ -94,7 +94,7 @@ Audio.prototype.rewindTrackInSlot = function(slot) {
 
 Audio.prototype.formatTime = function(seconds) {
   var integerSeconds = Math.round(seconds);
-  var minutes = Math.floor(seconds / 60);
+  var minutes = Math.floor(integerSeconds / 60);
   var seconds = Math.floor(integerSeconds - (minutes * 60));
   return String(minutes) + ":" + (seconds < 10 ? "0" : "") + String(seconds);
 }
