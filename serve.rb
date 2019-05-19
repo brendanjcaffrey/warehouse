@@ -39,6 +39,14 @@ DELETE_YEAR_UPDATE_SQL = 'DELETE FROM year_updates WHERE track_id=$1;'
 CREATE_YEAR_UPDATE_SQL = 'INSERT INTO year_updates (track_id, year) VALUES ($1, $2);'
 UPDATE_YEAR_SQL = 'UPDATE tracks SET year=$1 WHERE id=$2;'
 
+DELETE_START_UPDATE_SQL = 'DELETE FROM start_updates WHERE track_id=$1;'
+CREATE_START_UPDATE_SQL = 'INSERT INTO start_updates (track_id, start) VALUES ($1, $2);'
+UPDATE_START_SQL = 'UPDATE tracks SET start=$1 WHERE id=$2;'
+
+DELETE_FINISH_UPDATE_SQL = 'DELETE FROM finish_updates WHERE track_id=$1;'
+CREATE_FINISH_UPDATE_SQL = 'INSERT INTO finish_updates (track_id, finish) VALUES ($1, $2);'
+UPDATE_FINISH_SQL = 'UPDATE tracks SET finish=$1 WHERE id=$2;'
+
 DELETE_ARTIST_UPDATE_SQL = 'DELETE FROM artist_updates WHERE track_id=$1;'
 CREATE_ARTIST_UPDATE_SQL = 'INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);'
 ARTIST_ID_SQL = 'SELECT id FROM artists WHERE name=$1;'
@@ -198,7 +206,9 @@ class Serve < Sinatra::Base
          :albums => db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
          :album_artists => db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values,
          :genres => db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values,
-         :years => db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values
+         :years => db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values,
+         :starts => db.exec(Export::Database::GET_START_UPDATES_SQL).values,
+         :finishes => db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values
   end
 
   post '/play/*' do
@@ -239,6 +249,16 @@ class Serve < Sinatra::Base
         db.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
         db.exec_params(CREATE_YEAR_UPDATE_SQL, [id, year])
         db.exec_params(UPDATE_YEAR_SQL, [year, id])
+      end
+      if start = params['start']
+        db.exec_params(DELETE_START_UPDATE_SQL, [id])
+        db.exec_params(CREATE_START_UPDATE_SQL, [id, start])
+        db.exec_params(UPDATE_START_SQL, [start, id])
+      end
+      if finish = params['finish']
+        db.exec_params(DELETE_FINISH_UPDATE_SQL, [id])
+        db.exec_params(CREATE_FINISH_UPDATE_SQL, [id, finish])
+        db.exec_params(UPDATE_FINISH_SQL, [finish, id])
       end
       if artist = params['artist']
         db.exec_params(DELETE_ARTIST_UPDATE_SQL, [id])

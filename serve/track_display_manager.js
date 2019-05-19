@@ -148,6 +148,8 @@ TrackDisplayManager.prototype.trackInfo = function(idx) {
   $("#track-album-artist").val(this.modalTrack.albumArtist);
   $("#track-genre").val(this.modalTrack.genre);
   $("#track-year").val(this.modalTrack.year);
+  $("#track-start").val(this.modalTrack.start);
+  $("#track-finish").val(this.modalTrack.finish);
 
   $("#track-info-modal").modal();
 }
@@ -162,6 +164,8 @@ TrackDisplayManager.prototype.trackInfoSubmit = function(e) {
   this.addChangeIfNecessary(changes, "#track-album-artist", "albumArtist", "album_artist");
   this.addChangeIfNecessary(changes, "#track-genre", "genre", "genre");
   this.addChangeIfNecessary(changes, "#track-year", "year", "year");
+  this.addChangeIfNecessary(changes, "#track-start", "start", "start");
+  this.addChangeIfNecessary(changes, "#track-finish", "finish", "finish");
 
   if (Object.keys(changes).length > 0) {
     $.post('/track-info/' + this.modalTrack.id, changes);

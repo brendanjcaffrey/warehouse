@@ -16,6 +16,8 @@ module Export
     GET_ALBUM_ARTIST_UPDATES_SQL = 'SELECT track_id, album_artist FROM album_artist_updates;'
     GET_GENRE_UPDATES_SQL = 'SELECT track_id, genre FROM genre_updates;'
     GET_YEAR_UPDATES_SQL = 'SELECT track_id, year FROM year_updates;'
+    GET_START_UPDATES_SQL = 'SELECT track_id, start FROM start_updates;'
+    GET_FINISH_UPDATES_SQL = 'SELECT track_id, finish FROM finish_updates;'
 
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (
@@ -133,6 +135,20 @@ module Export
       );
     SQL
 
+    CREATE_START_UPDATES_SQL = <<-SQL
+      CREATE TABLE start_updates (
+        track_id CHAR(16),
+        start REAL
+      );
+    SQL
+
+    CREATE_FINISH_UPDATES_SQL = <<-SQL
+      CREATE TABLE finish_updates (
+        track_id CHAR(16),
+        finish REAL
+      );
+    SQL
+
     CREATE_USERS_SQL = <<-SQL
       CREATE TABLE users (
         token TEXT,
@@ -199,6 +215,14 @@ module Export
       return @db.exec(GET_YEAR_UPDATES_SQL).values
     end
 
+    def get_start_updates
+      return @db.exec(GET_START_UPDATES_SQL).values
+    end
+
+    def get_finish_updates
+      return @db.exec(GET_FINISH_UPDATES_SQL).values
+    end
+
     def get_track_and_artist_name(id)
       @db.exec_params(TRACK_AND_ARTIST_NAME_SQL, [id]).values.first
     end
@@ -251,6 +275,8 @@ module Export
       @db.exec(CREATE_ALBUM_ARTIST_UPDATES_SQL)
       @db.exec(CREATE_GENRE_UPDATES_SQL)
       @db.exec(CREATE_YEAR_UPDATES_SQL)
+      @db.exec(CREATE_START_UPDATES_SQL)
+      @db.exec(CREATE_FINISH_UPDATES_SQL)
       @db.exec(CREATE_USERS_SQL)
     end
 

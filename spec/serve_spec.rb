@@ -76,6 +76,8 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM album_artist_updates')
     @db.exec('DELETE FROM genre_updates')
     @db.exec('DELETE FROM year_updates')
+    @db.exec('DELETE FROM start_updates')
+    @db.exec('DELETE FROM finish_updates')
     @db.exec('DELETE FROM rating_updates')
     @db.exec('DELETE FROM users')
 
@@ -209,7 +211,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO plays (track_id) VALUES ($1);', ['5E3FA18D81E469D2'])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":["5E3FA18D81E469D2","21D8E2441A5E2204","5E3FA18D81E469D2"],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[]}')
+      expect(last_response.body).to eq('{"plays":["5E3FA18D81E469D2","21D8E2441A5E2204","5E3FA18D81E469D2"],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all ratings' do
@@ -218,7 +220,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO rating_updates (track_id, rating) VALUES ($1, $2);', ['5E3FA18D81E469D2', 60])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[["5E3FA18D81E469D2","100"],["21D8E2441A5E2204","80"],["5E3FA18D81E469D2","60"]],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[["5E3FA18D81E469D2","100"],["21D8E2441A5E2204","80"],["5E3FA18D81E469D2","60"]],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all names' do
@@ -227,7 +229,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all artists' do
@@ -236,7 +238,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"albums":[],"album_artists":[],"genres":[],"years":[]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"albums":[],"album_artists":[],"genres":[],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all albums' do
@@ -245,7 +247,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"album_artists":[],"genres":[],"years":[]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"album_artists":[],"genres":[],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all album artists' do
@@ -254,7 +256,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"genres":[],"years":[]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"genres":[],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all genres' do
@@ -263,7 +265,7 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"years":[]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[["5E3FA18D81E469D2","abc"],["21D8E2441A5E2204","def"],["5E3FA18D81E469D2","ghi"]],"years":[],"starts":[],"finishes":[]}')
     end
 
     it 'should include all years' do
@@ -272,7 +274,25 @@ describe 'iTunes Streamer' do
       @db.exec('INSERT INTO year_updates (track_id, year) VALUES ($1, $2);', ['5E3FA18D81E469D2', 300])
 
       get '/updates.json'
-      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[["5E3FA18D81E469D2","100"],["21D8E2441A5E2204","200"],["5E3FA18D81E469D2","300"]]}')
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[["5E3FA18D81E469D2","100"],["21D8E2441A5E2204","200"],["5E3FA18D81E469D2","300"]],"starts":[],"finishes":[]}')
+    end
+
+    it 'should include all starts' do
+      @db.exec('INSERT INTO start_updates (track_id, start) VALUES ($1, $2);', ['5E3FA18D81E469D2', 1.1])
+      @db.exec('INSERT INTO start_updates (track_id, start) VALUES ($1, $2);', ['21D8E2441A5E2204', 1.2])
+      @db.exec('INSERT INTO start_updates (track_id, start) VALUES ($1, $2);', ['5E3FA18D81E469D2', 1.3])
+
+      get '/updates.json'
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[],"starts":[["5E3FA18D81E469D2","1.1"],["21D8E2441A5E2204","1.2"],["5E3FA18D81E469D2","1.3"]],"finishes":[]}')
+    end
+
+    it 'should include all finishes' do
+      @db.exec('INSERT INTO finish_updates (track_id, finish) VALUES ($1, $2);', ['5E3FA18D81E469D2', 1.1])
+      @db.exec('INSERT INTO finish_updates (track_id, finish) VALUES ($1, $2);', ['21D8E2441A5E2204', 1.2])
+      @db.exec('INSERT INTO finish_updates (track_id, finish) VALUES ($1, $2);', ['5E3FA18D81E469D2', 1.3])
+
+      get '/updates.json'
+      expect(last_response.body).to eq('{"plays":[],"ratings":[],"names":[],"artists":[],"albums":[],"album_artists":[],"genres":[],"years":[],"starts":[],"finishes":[["5E3FA18D81E469D2","1.1"],["21D8E2441A5E2204","1.2"],["5E3FA18D81E469D2","1.3"]]}')
     end
   end
 
@@ -399,6 +419,42 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM year_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT year FROM year_updates')).to eq('1990')
       expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1990')
+    end
+
+    it 'should create a start update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT start FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('0.1')
+
+      post '/track-info/21D8E2441A5E2204', { start: '1.2' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM start_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM start_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT start FROM start_updates')).to eq('1.2')
+      expect(get_first_value('SELECT start FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1.2')
+
+      post '/track-info/21D8E2441A5E2204', { start: '1.3'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM start_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM start_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT start FROM start_updates')).to eq('1.3')
+      expect(get_first_value('SELECT start FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1.3')
+    end
+
+    it 'should create a finish update if tracking this user\'s changes is enabled' do
+      expect(get_first_value('SELECT finish FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1.22')
+
+      post '/track-info/21D8E2441A5E2204', { finish: '2.3' }, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM finish_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM finish_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT finish FROM finish_updates')).to eq('2.3')
+      expect(get_first_value('SELECT finish FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('2.3')
+
+      post '/track-info/21D8E2441A5E2204', { finish: '2.4'}, fake_auth('test123')
+      expect(last_response.status).to eq(200)
+      expect(get_first_value('SELECT COUNT(*) FROM finish_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM finish_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT finish FROM finish_updates')).to eq('2.4')
+      expect(get_first_value('SELECT finish FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('2.4')
     end
 
     it 'should create an artist update if tracking this user\'s changes is enabled' do

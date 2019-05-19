@@ -19,6 +19,8 @@ module Export
         album_artist_updates(@database.get_album_artist_updates)
         genre_updates(@database.get_genre_updates)
         year_updates(@database.get_year_updates)
+        start_updates(@database.get_start_updates)
+        finish_updates(@database.get_finish_updates)
       end
 
       if Config.remote('update_library')
@@ -31,6 +33,8 @@ module Export
         album_artist_updates(json['album_artists'])
         genre_updates(json['genres'])
         year_updates(json['years'])
+        start_updates(json['starts'])
+        finish_updates(json['finishes'])
       end
     end
 
@@ -105,6 +109,22 @@ module Export
       years.each do |row|
         puts @database.get_track_and_artist_name(row.first).join(' - ')
         @library.update_year(row.first, row.last)
+      end
+    end
+
+    def start_updates(starts)
+      puts "\n=== Starts ==="
+      starts.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_start(row.first, row.last)
+      end
+    end
+
+    def finish_updates(finishes)
+      puts "\n=== Finishes ==="
+      finishes.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_finish(row.first, row.last)
       end
     end
 

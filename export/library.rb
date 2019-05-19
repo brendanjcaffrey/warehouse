@@ -141,6 +141,8 @@ module Export
     GET_ALBUM_ARTIST = GET_TEMPLATE % ['%s', 'album artist']
     GET_GENRE = GET_TEMPLATE % ['%s', 'genre']
     GET_YEAR = GET_TEMPLATE % ['%s', 'year']
+    GET_START = GET_TEMPLATE % ['%s', 'start']
+    GET_FINISH = GET_TEMPLATE % ['%s', 'finish']
     UPDATE_RATING = UPDATE_TEMPLATE % ['%s', 'rating', '%s']
     UPDATE_NAME = UPDATE_TEMPLATE % ['%s', 'name', '"%s"']
     UPDATE_ARTIST = UPDATE_TEMPLATE % ['%s', 'artist', '"%s"']
@@ -148,6 +150,8 @@ module Export
     UPDATE_ALBUM_ARTIST = UPDATE_TEMPLATE % ['%s', 'album artist', '"%s"']
     UPDATE_GENRE = UPDATE_TEMPLATE % ['%s', 'genre', '"%s"']
     UPDATE_YEAR = UPDATE_TEMPLATE % ['%s', 'year', '%s']
+    UPDATE_START = UPDATE_TEMPLATE % ['%s', 'start', '%s']
+    UPDATE_FINISH = UPDATE_TEMPLATE % ['%s', 'finish', '%s']
 
     def total_track_count
       `osascript -e '#{TOTAL_TRACK_COUNT}'`.to_i
@@ -273,6 +277,28 @@ module Export
       puts `osascript -e '#{UPDATE_YEAR % [escape(persistent_id), new_year.to_i]}'`
       end_year = get_year(persistent_id)
       puts "#{start_year} -> #{end_year}"
+    end
+
+    def get_start(persistent_id)
+      `osascript -e '#{GET_START % escape(persistent_id)}'`.chomp
+    end
+
+    def update_start(persistent_id, new_start)
+      start_start = get_start(persistent_id)
+      puts `osascript -e '#{UPDATE_START % [escape(persistent_id), new_start.to_i]}'`
+      end_start = get_start(persistent_id)
+      puts "#{start_start} -> #{end_start}"
+    end
+
+    def get_finish(persistent_id)
+      `osascript -e '#{GET_FINISH % escape(persistent_id)}'`.chomp
+    end
+
+    def update_finish(persistent_id, new_finish)
+      finish_finish = get_finish(persistent_id)
+      puts `osascript -e '#{UPDATE_FINISH % [escape(persistent_id), new_finish.to_i]}'`
+      end_finish = get_finish(persistent_id)
+      puts "#{finish_finish} -> #{end_finish}"
     end
 
     def escape(str)
