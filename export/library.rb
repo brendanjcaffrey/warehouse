@@ -9,9 +9,9 @@ module Export
       set AppleScript'\"'\"'s text item delimiters to oldDelims
     SCRIPT
 
-    TOTAL_TRACK_COUNT = 'tell application "iTunes" to get count of file tracks in library playlist 1'
+    TOTAL_TRACK_COUNT = 'tell application "Music" to get count of file tracks in library playlist 1'
     TRACK_INFO = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set output to ""
         set thisTrack to file track %d
 
@@ -41,10 +41,10 @@ module Export
       end tell
     SCRIPT
 
-    TOTAL_PLAYLIST_COUNT = 'tell application "iTunes" to get count of user playlists'
+    TOTAL_PLAYLIST_COUNT = 'tell application "Music" to get count of user playlists'
 
     PLAYLIST_INFO = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set output to ""
         set thisPlaylist to user playlist %1$d
 
@@ -68,7 +68,7 @@ module Export
     SCRIPT
 
     PLAYLIST_TRACKS = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set output to ""
         set thisPlaylist to user playlist %1$d
 
@@ -82,10 +82,10 @@ module Export
       end tell
     SCRIPT
 
-    TOTAL_FOLDER_COUNT = 'tell application "iTunes" to get count of folder playlists'
+    TOTAL_FOLDER_COUNT = 'tell application "Music" to get count of folder playlists'
 
     FOLDER_INFO = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set output to ""
         set thisFolder to folder playlist %1$d
 
@@ -107,28 +107,28 @@ module Export
     SCRIPT
 
     GET_PLAYED_COUNT = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set thisTrack to some file track whose persistent ID is "%s"
         played count of thisTrack as string
       end tell
     SCRIPT
 
     INCREMENT_PLAYED_COUNT = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set thisTrack to some file track whose persistent ID is "%s"
         set played count of thisTrack to (played count of thisTrack) + 1
       end tell
     SCRIPT
 
     GET_TEMPLATE = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set thisTrack to some file track whose persistent ID is "%s"
         %s of thisTrack
       end tell
     SCRIPT
 
     UPDATE_TEMPLATE = <<-SCRIPT
-      tell application "iTunes"
+      tell application "Music"
         set thisTrack to some file track whose persistent ID is "%s"
         set %s of thisTrack to %s
       end tell
