@@ -156,6 +156,12 @@ module Export
       );
     SQL
 
+    CREATE_EXPORT_FINISHED_SQL = <<-SQL
+      CREATE TABLE export_finished (
+        finished_at TIMESTAMP
+      );
+    SQL
+
     GENRE_SQL = 'INSERT INTO genres (name) VALUES ($1) RETURNING id;'
 
     ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1,$2) RETURNING id;'
@@ -172,6 +178,8 @@ module Export
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
     TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name, artists.name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
+
+    EXPORT_FINISHED_SQL = 'INSERT INTO export_finished (finished_at) VALUES (current_timestamp)'
 
     def initialize(database_username, database_name)
       @database_username = database_username
@@ -258,6 +266,10 @@ module Export
       playlist.tracks.each { |track_id| @db.exec_params(PLAYLIST_TRACK_SQL, [playlist.id, track_id]) }
     end
 
+    def set_export_finished
+      @db.exec(EXPORT_FINISHED_SQL)
+    end
+
     private
 
     def build_tables
@@ -278,6 +290,7 @@ module Export
       @db.exec(CREATE_START_UPDATES_SQL)
       @db.exec(CREATE_FINISH_UPDATES_SQL)
       @db.exec(CREATE_USERS_SQL)
+      @db.exec(CREATE_EXPORT_FINISHED_SQL)
     end
 
     def genre_id(name)

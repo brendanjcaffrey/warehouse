@@ -44,6 +44,7 @@ module Export
       @needed_folders = {}
 
       export_tracks ; export_playlists ; export_folders
+      @database.set_export_finished
     end
 
     private
