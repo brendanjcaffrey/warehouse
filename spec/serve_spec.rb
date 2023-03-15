@@ -11,7 +11,7 @@ module Config
     return YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
     return 'test_itunes_streamer' if key == 'database_name'
     return './spec/' if key == 'music_path'
-    return 'YJ1xcuoBPTUYX_cUZzEB' if key == 'secret'
+    return '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
   end
 
   def remote?

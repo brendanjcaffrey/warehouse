@@ -3,7 +3,7 @@ local:
   database_username: music
   database_name: itunes_streamer
   update_library: true
-  -- generate in irb with: require 'securerandom'; puts SecureRandom.urlsafe_base64(15).tr('lIO0', 'sxyz')
+  -- generate with: ruby -rsecurerandom -e 'p SecureRandom.hex(32)'
   secret: [something]
 
 remote:

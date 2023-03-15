@@ -1,7 +1,6 @@
 # this file belongs in /etc/nginx
 
 worker_processes 8;
-pid /home/music/itunes-streamer/tmp/pids/nginx.pid;
 error_log /home/music/itunes-streamer/log/nginx.error.log;
 user music;
 

@@ -1,5 +1,4 @@
 require 'pg'
-require 'uri'
 require 'sinatra/base'
 require 'sinatra/json'
 require_relative 'export/database.rb'
@@ -173,7 +172,7 @@ class Serve < Sinatra::Base
     else
       headers['Content-Disposition'] = "attachment; filename=\"#{name}.#{ext}\"" if download
       if Config.remote?
-        headers['X-Accel-Redirect'] = URI::encode("/music/#{file}")
+        headers['X-Accel-Redirect'] = "/music/#{file}"
         headers['Content-Type'] = MIME_TYPES[ext]
       else
         send_file(music_path + file, type: ext)
