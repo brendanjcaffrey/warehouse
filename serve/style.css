@@ -236,6 +236,7 @@ td .icon {
 
 #progress .progress {
   margin-top: 40px;
+  width: 100%;
 }
 
 #progress .progress, #progress .progress-bar {

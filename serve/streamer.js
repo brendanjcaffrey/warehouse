@@ -26,7 +26,7 @@ var Streamer = function(data) {
   this.ratings = new Ratings(this.tracksHash, trackChanges);
 
   // inputs
-  var rowsPerPage = 43;
+  var rowsPerPage = 37;
   var audioSlots = 3; // go add more <audio> tags to play.html if you change this
   var colDescriptions = [
       { "name": "Name",   "data": "name", "sort": ["sortName"] },
