@@ -108,6 +108,11 @@ var Streamer = function(data) {
   this.audio.setCallbacks(this.playlistControlManager.next.bind(this.playlistControlManager),
                           this.playlistDisplayManager.showNowPlayingTrack.bind(this.playlistDisplayManager));
 
+  navigator.mediaSession.setActionHandler("play", this.playlistControlManager.playPause.bind(this.playlistControlManager));
+  navigator.mediaSession.setActionHandler("pause", this.playlistControlManager.playPause.bind(this.playlistControlManager));
+  navigator.mediaSession.setActionHandler("previoustrack", this.playlistControlManager.prev.bind(this.playlistControlManager));
+  navigator.mediaSession.setActionHandler("nexttrack", this.playlistControlManager.next.bind(this.playlistControlManager));
+
   // and off we go
   this.playlistTree.start();
   this.controls.start();
