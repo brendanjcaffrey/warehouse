@@ -1,3 +1,5 @@
+require_relative './runner.rb'
+
 module Export
   class Library
     SET_DELIMS = <<-SCRIPT
@@ -159,8 +161,31 @@ module Export
 
     def track_info(track_index)
       track_number = track_index + 1
-      split = `osascript -e '#{TRACK_INFO % track_number.to_i}'`.split("\n")
-      Track.new(*split)
+      seen_error = false
+
+      # this command fails every so often, but waiting and trying again usually works
+      5.times do |attempt|
+        cmd = "osascript -e '#{TRACK_INFO % track_number.to_i}'"
+        runner = Runner.run(cmd)
+        if !runner.success?
+          seen_error = true
+          puts "error running cmd '#{cmd}'"
+          puts "return code: #{runner.exit_status}"
+          puts "attempt: #{attempt+1}"
+          puts "stderr: #{runner.stderr}"
+          puts "stdout: #{runner.stdout}"
+          sleep 10
+          next
+        end
+
+        split = runner.stdout.split("\n")
+        return Track.new(*split)
+      end
+
+      jobs_webhook.execute do |builder|
+        builder.content = "Unable to get track info even after retrying (track_no: #{track_number})"
+      end
+      exit(1)
     end
 
     def total_playlist_count
