@@ -50,6 +50,10 @@ describe 'iTunes Streamer' do
     Serve
   end
 
+  def default_host
+    'localhost'
+  end
+
   before :all do
     `echo "fake mp3 contents" > spec/__test.mp3`
     @database = Export::Database.new(Config['database_username'], Config['database_name'])
@@ -109,7 +113,7 @@ describe 'iTunes Streamer' do
       post '/', { username: 'test123', password: 'test123' }
       follow_redirect!
 
-      expect(last_request.url).to eq('http://example.org/play')
+      expect(last_request.url).to eq('http://localhost/play')
       expect(get_first_value('SELECT username FROM users')).to eq('test123')
     end
 
@@ -128,7 +132,7 @@ describe 'iTunes Streamer' do
     it 'should redirect away if not logged in' do
       get '/play'
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should send the html file if logged in' do
@@ -141,7 +145,7 @@ describe 'iTunes Streamer' do
     it 'should redirect away if not logged in' do
       get '/data.json'
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should dump all genres, artists, albums and tracks' do
@@ -170,7 +174,7 @@ describe 'iTunes Streamer' do
     it 'should redirect if not logged in' do
       get '/tracks/21D8E2441A5E2204'
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
@@ -188,7 +192,7 @@ describe 'iTunes Streamer' do
     it 'should redirect if not logged in' do
       get '/download/21D8E2441A5E2204'
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
@@ -300,7 +304,7 @@ describe 'iTunes Streamer' do
     it 'should redirect if not logged in' do
       post '/play/21D8E2441A5E2204'
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
@@ -330,7 +334,7 @@ describe 'iTunes Streamer' do
     it 'should redirect if not logged in' do
       post '/rating/21D8E2441A5E2204/', { rating: '80' }
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
@@ -369,7 +373,7 @@ describe 'iTunes Streamer' do
     it 'should redirect if not logged in' do
       post '/track-info/21D8E2441A5E2204', { name: 'abc' }
       follow_redirect!
-      expect(last_request.url).to eq('http://example.org/')
+      expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do

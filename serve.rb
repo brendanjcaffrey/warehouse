@@ -1,7 +1,6 @@
 require 'pg'
 require 'rack/utils'
 require 'sinatra/base'
-require 'sinatra/json'
 require_relative 'export/database.rb'
 
 LOG_IN_SQL = 'INSERT INTO users (token, username) VALUES ($1, $2);'
@@ -91,7 +90,7 @@ class Serve < Sinatra::Base
 
   if Config.remote?
     set :environment, :production
-    set :bind, '0.0.0.0'
+    set :bind, '/tmp/itunes-streamer.sock'
   else
     set :environment, :development
   end
@@ -146,13 +145,13 @@ class Serve < Sinatra::Base
       playlist_tracks = db.exec(PLAYLIST_TRACK_SQL).values
       playlist_tracks.each { |pt| pt[1] = pt[1].split(',') }
 
-      json genres: convert_cols_to_ints(db.exec(GENRE_SQL).values, GENRE_INT_INDICES),
-           artists: convert_cols_to_ints(db.exec(ARTIST_SQL).values, ARTIST_INT_INDICES),
-           albums: convert_cols_to_ints(db.exec(ALBUM_SQL).values, ALBUM_INT_INDICES),
-           tracks: convert_cols_to_ints(db.exec(TRACK_SQL).values, TRACK_INT_INDICES),
-           playlists: convert_cols_to_ints(db.exec(PLAYLIST_SQL).values, PLAYLIST_INT_INDICES),
-           playlist_tracks: playlist_tracks,
-           track_user_changes: track_user_changes?(username)
+      { genres: convert_cols_to_ints(db.exec(GENRE_SQL).values, GENRE_INT_INDICES),
+        artists: convert_cols_to_ints(db.exec(ARTIST_SQL).values, ARTIST_INT_INDICES),
+        albums: convert_cols_to_ints(db.exec(ALBUM_SQL).values, ALBUM_INT_INDICES),
+        tracks: convert_cols_to_ints(db.exec(TRACK_SQL).values, TRACK_INT_INDICES),
+        playlists: convert_cols_to_ints(db.exec(PLAYLIST_SQL).values, PLAYLIST_INT_INDICES),
+        playlist_tracks: playlist_tracks,
+        track_user_changes: track_user_changes?(username) }.to_json
     else
       redirect to('/')
     end
@@ -199,16 +198,16 @@ class Serve < Sinatra::Base
   end
 
   get '/updates.json' do
-    json :plays => db.exec(Export::Database::GET_PLAYS_SQL).values.flatten,
-         :ratings => db.exec(Export::Database::GET_RATING_UPDATES_SQL).values,
-         :names => db.exec(Export::Database::GET_NAME_UPDATES_SQL).values,
-         :artists => db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values,
-         :albums => db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
-         :album_artists => db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values,
-         :genres => db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values,
-         :years => db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values,
-         :starts => db.exec(Export::Database::GET_START_UPDATES_SQL).values,
-         :finishes => db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values
+    { plays: db.exec(Export::Database::GET_PLAYS_SQL).values.flatten,
+      ratings: db.exec(Export::Database::GET_RATING_UPDATES_SQL).values,
+      names: db.exec(Export::Database::GET_NAME_UPDATES_SQL).values,
+      artists: db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values,
+      albums: db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
+      album_artists: db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values,
+      genres: db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values,
+      years: db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values,
+      starts: db.exec(Export::Database::GET_START_UPDATES_SQL).values,
+      finishes: db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values }.to_json
   end
 
   post '/play/*' do
