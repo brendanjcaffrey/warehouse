@@ -1,9 +1,0 @@
-"xbindkeys_show"
-  control+shift+q
-
-"ruby ~/Development/itunes-streamer/remote_control/writer.rb 'next'"
-  control+g
-"ruby ~/Development/itunes-streamer/remote_control/writer.rb 'prev'"
-  control+b
-"ruby ~/Development/itunes-streamer/remote_control/writer.rb 'playpause'"
-  control+space
