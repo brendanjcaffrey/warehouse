@@ -149,13 +149,6 @@ module Export
       );
     SQL
 
-    CREATE_USERS_SQL = <<-SQL
-      CREATE TABLE users (
-        token TEXT,
-        username TEXT
-      );
-    SQL
-
     CREATE_EXPORT_FINISHED_SQL = <<-SQL
       CREATE TABLE export_finished (
         finished_at TIMESTAMP
@@ -289,7 +282,6 @@ module Export
       @db.exec(CREATE_YEAR_UPDATES_SQL)
       @db.exec(CREATE_START_UPDATES_SQL)
       @db.exec(CREATE_FINISH_UPDATES_SQL)
-      @db.exec(CREATE_USERS_SQL)
       @db.exec(CREATE_EXPORT_FINISHED_SQL)
     end
 

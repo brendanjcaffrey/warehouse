@@ -1,5 +1,6 @@
 source 'https://rubygems.org'
 
+gem 'jwt'
 gem 'pg'
 gem 'progress_bar'
 gem 'puma'
@@ -9,3 +10,4 @@ gem 'rake'
 gem 'require_all'
 gem 'rspec'
 gem 'sinatra'
+gem 'sinatra-contrib'

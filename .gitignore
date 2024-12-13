@@ -1,7 +1,2 @@
-.DS_Store
-*.db
-config.yaml
-log/*.log
-tmp/pids/*.pid
-tmp/sockets/*.sock
-postgres_sync.sh
+/.DS_Store
+/config.yaml

@@ -25,14 +25,14 @@ end
 
 task :local do
   Config.set_env('local')
-  require_relative 'serve'
+  require_relative 'server'
 
-  Serve.run!
+  Server.run!
 end
 
 task :remote do
   Config.set_env('remote')
-  require_relative 'serve'
+  require_relative 'server'
 
-  Serve.run!
+  Server.run!
 end
