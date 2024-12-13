@@ -1,9 +1,11 @@
+import AuthWrapper from "./AuthWrapper";
+
 function App() {
   return (
-    <>
-      <h1>Music</h1>
-    </>
-  )
+    <AuthWrapper>
+      <h1>Music Streamer</h1>
+    </AuthWrapper>
+  );
 }
 
 export default App;
