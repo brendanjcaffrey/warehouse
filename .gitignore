@@ -1,2 +1,4 @@
 /.DS_Store
 /config.yaml
+/public/
+/web/node_modules/
