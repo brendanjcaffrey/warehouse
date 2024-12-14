@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+message AuthAttemptResponse {
+  oneof response {
+    string token = 1;
+    string error = 2;
+  }
+}
+
+message AuthQueryResponse {
+  bool isAuthed = 1;
+}
+
+message OperationResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+
+message Name {
+  string name = 2;
+}
+
+message SortName {
+  string name = 2;
+  string sortName = 3;
+}
+
+message Track {
+  string id = 1;
+  string name = 2;
+  string sortName = 3;
+  uint64 artistId = 4;
+  uint64 albumArtistId = 5;
+  uint64 albumId = 6;
+  uint64 genreId = 7;
+  uint32 year = 8;
+  float duration = 9;
+  float start = 10;
+  float finish = 11;
+  uint32 trackNumber = 12;
+  uint32 discNumber = 13;
+  uint64 playCount = 14;
+  int32 rating = 15;
+  string ext = 16;
+}
+
+message Playlist {
+  string id = 1;
+  string name = 2;
+  string parentId = 3;
+  bool isLibrary = 4;
+  repeated string trackIds = 5;
+}
+
+message Library {
+  map<uint64, Name> genres = 1;
+  map<uint64, SortName> artists = 2;
+  map<uint64, SortName> albums = 3;
+  repeated Track tracks = 4;
+  repeated Playlist playlists = 5;
+  bool trackUserChanges = 6;
+}
+
+message LibraryResponse {
+  oneof response {
+    Library library = 1;
+    string error = 2;
+  }
+}
+
+message IncrementUpdate {
+  string trackId = 1;
+}
+
+message IntUpdate {
+  string trackId = 1;
+  int32 value = 2;
+}
+
+message FloatUpdate {
+  string trackId = 1;
+  float value = 2;
+}
+
+message StringUpdate {
+  string trackId = 1;
+  string value = 2;
+}
+
+message Updates {
+  repeated IncrementUpdate plays = 1;
+  repeated IntUpdate ratings = 2;
+  repeated StringUpdate names = 3;
+  repeated StringUpdate artists = 4;
+  repeated StringUpdate albums = 5;
+  repeated StringUpdate albumArtists = 6;
+  repeated StringUpdate genres = 7;
+  repeated IntUpdate years = 8;
+  repeated FloatUpdate starts = 9;
+  repeated FloatUpdate finishes = 10;
+}
+
+message UpdatesResponse {
+  oneof response {
+    Updates updates = 1;
+    string error = 2;
+  }
+}

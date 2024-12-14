@@ -22,7 +22,7 @@ function AuthWrapper({ children }: AuthWrapperProps) {
       />
     );
   } else {
-    return <div>{children}</div>;
+    return <>{children}</>;
   }
 }
 

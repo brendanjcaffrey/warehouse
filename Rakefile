@@ -1,6 +1,7 @@
 require 'rubygems'
 require 'require_all'
 require 'sinatra'
+require 'tty-command'
 require_relative 'shared/config.rb'
 
 task :export do
@@ -35,4 +36,19 @@ task :remote do
   require_relative 'server'
 
   Server.run!
+end
+
+task :proto do
+  command = TTY::Command.new
+  command.run!('protoc --ruby_out=./shared messages.proto')
+  command.run!('protoc --plugin="protoc-gen-ts=./web/node_modules/.bin/protoc-gen-ts" --ts_out="./web/src/generated" ./messages.proto')
+end
+
+task :build => [:proto] do
+  command = TTY::Command.new
+  command.run!('cd web && npm run build')
+end
+
+task :vite do
+  exec('cd web && node_modules/.bin/vite')
 end

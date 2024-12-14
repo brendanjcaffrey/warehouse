@@ -11,13 +11,10 @@ import {
 import axios from "axios";
 import library from "./Library";
 import DelayedElement from "./DelayedElement";
+import { AuthAttemptResponse } from "./generated/messages";
 
 interface AuthFormProps {
   setAuthToken: (authToken: string) => void;
-}
-
-interface AuthResponse {
-  token: string | null;
 }
 
 function AuthForm({ setAuthToken }: AuthFormProps) {
@@ -39,15 +36,15 @@ function AuthForm({ setAuthToken }: AuthFormProps) {
     const formData = new FormData(event.currentTarget);
 
     try {
-      const { data: response } = await axios.postForm<AuthResponse>(
-        "/api/auth",
-        formData
-      );
+      const { data } = await axios.postForm("/api/auth", formData, {
+        responseType: "arraybuffer",
+      });
 
-      if (response.token) {
-        setAuthToken(response.token);
+      const msg = AuthAttemptResponse.deserialize(data);
+      if (msg.response === "token") {
+        setAuthToken(msg.token);
       } else {
-        setError("Invalid username or password.");
+        setError(msg.error);
       }
     } catch (error) {
       setError(

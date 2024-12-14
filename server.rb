@@ -4,30 +4,26 @@ require 'rack/utils'
 require 'sinatra/base'
 require 'sinatra/namespace'
 require_relative 'export/database.rb'
+require_relative 'shared/messages_pb.rb'
 
 JWT_ALGO = 'HS256'
 JWT_EXPIRY = 365 * 24 * 60 * 60
-SUCCESS_RESPONSE = { success: true }.to_json
-ERROR_RESPONSE = { success: false }.to_json
-NOT_AUTHED_RESPONSE = { error: 'not authenticated' }.to_json
-NOT_TRACKING_RESPONSE = { error: 'not tracking user changes' }.to_json
-INVALID_TRACK_RESPONSE = { error: 'invalid track' }.to_json
-INVALID_RATING_RESPONSE = { error: 'invalid rating' }.to_json
-TRACK_FIELD_MISSING_RESPONSE = { error: 'name/year/artist/genre cannot be empty' }.to_json
-INVALID_YEAR_RESPONSE = { error: 'invalid year' }.to_json
+INVALID_USERNAME_OR_PASSWORD_ERROR = 'invalid username or password'
+NOT_AUTHED_ERROR = 'not authenticated'
+NOT_TRACKING_ERROR = 'not tracking user changes'
+INVALID_TRACK_ERROR = 'invalid track'
+INVALID_RATING_ERROR = 'invalid rating'
+TRACK_FIELD_MISSING_ERROR = 'name/year/artist/genre cannot be empty'
+INVALID_YEAR_ERROR = 'invalid year'
 
 GENRE_SQL = 'SELECT id, name FROM genres;'
-GENRE_INT_INDICES = [0]
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
-ARTIST_INT_INDICES = [0]
 ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
-ALBUM_INT_INDICES = [0]
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, ' +
   'year, duration, start, finish, track, disc, play_count, rating, ext FROM tracks;'
-TRACK_INT_INDICES = [3, 4, 5, 6, 7, 11, 12, 13, 14]
-PLAYLIST_SQL = 'SELECT id, name, parent_id, is_library FROM playlists;'
-PLAYLIST_INT_INDICES = [3]
-PLAYLIST_TRACK_SQL = 'SELECT playlist_id, string_agg(track_id, \',\') FROM playlist_tracks GROUP BY playlist_id;'
+PLAYLIST_SQL = 'SELECT p.id, p.name, p.parent_id, p.is_library, pt.track_ids FROM playlists p ' +
+  'LEFT JOIN (SELECT playlist_id, string_agg(track_id::text, \',\') AS track_ids FROM playlist_tracks ' +
+  'GROUP BY playlist_id) pt ON p.id = pt.playlist_id;'
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
@@ -196,66 +192,126 @@ class Server < Sinatra::Base
   end
 
   namespace '/api' do
+    def proto(msg)
+      content_type 'application/octet-stream'
+      msg.to_proto
+    end
+
     post '/auth' do
+      content_type 'application/octet-stream'
       if valid_username_and_password?(params[:username], params[:password])
         headers = { exp: Time.now.to_i + JWT_EXPIRY }
         token = JWT.encode({username: params[:username]}, Config['secret'], JWT_ALGO, headers)
-        { token: token }.to_json
+        proto(AuthAttemptResponse.new(token: token))
       else
-        { token: nil }.to_json
+        proto(AuthAttemptResponse.new(error: INVALID_USERNAME_OR_PASSWORD_ERROR))
       end
     end
 
-    get '/heartbeat' do
-      { is_authed: is_authed? }.to_json
+    get '/auth' do
+      proto(AuthQueryResponse.new(isAuthed: is_authed?))
     end
 
-    get '/data' do
+    get '/library' do
       username = get_validated_username
       if !username.nil?
-        playlist_tracks = db.exec(PLAYLIST_TRACK_SQL).values
-        playlist_tracks.each { |pt| pt[1] = pt[1].split(',') }
 
-        { genres: convert_cols_to_ints(db.exec(GENRE_SQL).values, GENRE_INT_INDICES),
-          artists: convert_cols_to_ints(db.exec(ARTIST_SQL).values, ARTIST_INT_INDICES),
-          albums: convert_cols_to_ints(db.exec(ALBUM_SQL).values, ALBUM_INT_INDICES),
-          tracks: convert_cols_to_ints(db.exec(TRACK_SQL).values, TRACK_INT_INDICES),
-          playlists: convert_cols_to_ints(db.exec(PLAYLIST_SQL).values, PLAYLIST_INT_INDICES),
-          playlist_tracks: playlist_tracks,
-          track_user_changes: track_user_changes?(username) }.to_json
+        library = Library.new(trackUserChanges: track_user_changes?(username))
+        db.exec(GENRE_SQL).values.each do |genre|
+          library.genres[genre[0].to_i] = Name.new(name: genre[1])
+        end
+
+        db.exec(ARTIST_SQL).values.each do |artist|
+          library.artists[artist[0].to_i] = SortName.new(name: artist[1], sortName: artist[2])
+        end
+
+        db.exec(ALBUM_SQL).values.each do |album|
+          library.albums[album[0].to_i] = SortName.new(name: album[1], sortName: album[2])
+        end
+
+        db.exec(TRACK_SQL).values.each do |track|
+          library.tracks << Track.new(id: track[0],
+                                      name: track[1],
+                                      sortName: track[2],
+                                      artistId: track[3].to_i,
+                                      albumArtistId: track[4].to_i,
+                                      albumId: track[5].to_i,
+                                      genreId: track[6].to_i,
+                                      year: track[7].to_i,
+                                      duration: track[8].to_f,
+                                      start: track[9].to_f,
+                                      finish: track[10].to_f,
+                                      trackNumber: track[11].to_i,
+                                      discNumber: track[12].to_i,
+                                      playCount: track[13].to_i,
+                                      rating: track[14].to_i,
+                                      ext: track[15])
+        end
+
+        db.exec(PLAYLIST_SQL).values.each do |playlist|
+          library.playlists << Playlist.new(id: playlist[0],
+                                            name: playlist[1],
+                                            parentId: playlist[2],
+                                            isLibrary: playlist[3] == "1",
+                                            trackIds: (playlist[4] || '').split(','))
+        end
+
+        proto(LibraryResponse.new(library: library))
       else
-        NOT_AUTHED_RESPONSE
+        proto(LibraryResponse.new(error: NOT_AUTHED_ERROR))
       end
     end
 
     get '/updates' do
       if is_authed?
-        { plays: db.exec(Export::Database::GET_PLAYS_SQL).values.flatten,
-          ratings: db.exec(Export::Database::GET_RATING_UPDATES_SQL).values,
-          names: db.exec(Export::Database::GET_NAME_UPDATES_SQL).values,
-          artists: db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values,
-          albums: db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values,
-          album_artists: db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values,
-          genres: db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values,
-          years: db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values,
-          starts: db.exec(Export::Database::GET_START_UPDATES_SQL).values,
-          finishes: db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values }.to_json
+        updates = Updates.new
+        db.exec(Export::Database::GET_PLAYS_SQL).values.each do |play|
+          updates.plays << IncrementUpdate.new(trackId: play[0])
+        end
+        db.exec(Export::Database::GET_RATING_UPDATES_SQL).values.each do |rating|
+          updates.ratings << IntUpdate.new(trackId: rating[0], value: rating[1].to_i)
+        end
+        db.exec(Export::Database::GET_NAME_UPDATES_SQL).values.each do |name|
+          updates.names << StringUpdate.new(trackId: name[0], value: name[1])
+        end
+        db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values.each do |artist|
+          updates.artists << StringUpdate.new(trackId: artist[0], value: artist[1])
+        end
+        db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values.each do |album|
+          updates.albums << StringUpdate.new(trackId: album[0], value: album[1])
+        end
+        db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values.each do |album_artist|
+          updates.albumArtists << StringUpdate.new(trackId: album_artist[0], value: album_artist[1])
+        end
+        db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values.each do |genre|
+          updates.genres << StringUpdate.new(trackId: genre[0], value: genre[1])
+        end
+        db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values.each do |year|
+          updates.years << IntUpdate.new(trackId: year[0], value: year[1].to_i)
+        end
+        db.exec(Export::Database::GET_START_UPDATES_SQL).values.each do |start|
+          updates.starts << FloatUpdate.new(trackId: start[0], value: start[1].to_f)
+        end
+        db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values.each do |finish|
+          updates.finishes << FloatUpdate.new(trackId: finish[0], value: finish[1].to_f)
+        end
+        proto(UpdatesResponse.new(updates: updates))
       else
-        NOT_AUTHED_RESPONSE
+        proto(UpdatesResponse.new(error: NOT_AUTHED_ERROR))
       end
     end
 
     def perform_updates_if_should_track_changes(track_id, &block)
       username = get_validated_username
       if username.nil?
-        NOT_AUTHED_RESPONSE
+        proto(OperationResponse.new(success: false, error: NOT_AUTHED_ERROR))
       elsif !track_user_changes?(username)
-        NOT_TRACKING_RESPONSE
+        proto(OperationResponse.new(success: false, error: NOT_TRACKING_ERROR))
       elsif !track_exists?(track_id)
-        INVALID_TRACK_RESPONSE
+        proto(OperationResponse.new(success: false, error: INVALID_TRACK_ERROR))
       else
         block.call
-        SUCCESS_RESPONSE
+        proto(OperationResponse.new(success: true))
       end
     end
 
@@ -272,11 +328,11 @@ class Server < Sinatra::Base
       begin
         rating = Integer(params['rating'])
       rescue
-        return INVALID_RATING_RESPONSE
+        return proto(OperationResponse.new(success: false, error: INVALID_RATING_ERROR))
       end
 
       if rating < 0 || rating > 100
-        INVALID_RATING_RESPONSE
+        proto(OperationResponse.new(success: false, error: INVALID_RATING_ERROR))
       else
         perform_updates_if_should_track_changes(id) do
           db.exec_params(DELETE_RATING_UPDATE_SQL, [id])
@@ -293,14 +349,14 @@ class Server < Sinatra::Base
          (params.has_key?('year') && params['year'].empty?) ||
          (params.has_key?('artist') && params['artist'].empty?) ||
          (params.has_key?('genre') && params['genre'].empty?)
-        return TRACK_FIELD_MISSING_RESPONSE
+        return proto(OperationResponse.new(success: false, error: TRACK_FIELD_MISSING_ERROR))
       end
 
       if params.has_key?('year')
         begin
           Integer(params['year'])
         rescue
-          return INVALID_YEAR_RESPONSE
+          return proto(OperationResponse.new(success: false, error: INVALID_YEAR_ERROR))
         end
       end
 

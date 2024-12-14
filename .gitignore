@@ -2,3 +2,5 @@
 /config.yaml
 /public/
 /web/node_modules/
+/shared/messages_pb.rb
+/web/src/generated/messages.ts

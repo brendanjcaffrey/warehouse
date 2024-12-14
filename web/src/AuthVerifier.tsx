@@ -1,20 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { Alert } from "@mui/material";
 import axios from "axios";
 import DelayedElement from "./DelayedElement";
+import CenteredHalfAlert from "./CenteredHalfAlert";
+import { AuthQueryResponse } from "./generated/messages";
 
 interface AuthVerifierProps {
   authToken: string;
   setAuthToken: (authToken: string) => void;
   setAuthVerified: (authChecked: boolean) => void;
-}
-
-interface HeartbeatResponse {
-  is_authed: boolean;
-}
-
-function clearAxiosAuthHeader() {
-  delete axios.defaults.headers.common["Authorization"];
 }
 
 function AuthVerifier({
@@ -26,18 +19,18 @@ function AuthVerifier({
 
   const checkAuth = useCallback(async () => {
     try {
-      axios.defaults.headers.common["Authorization"] = "Bearer " + authToken;
-      const { data: response } = await axios.get<HeartbeatResponse>(
-        "/api/heartbeat"
-      );
-      if (response.is_authed) {
+      const { data } = await axios.get("/api/auth", {
+        responseType: "arraybuffer",
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      const msg = AuthQueryResponse.deserialize(data);
+      if (msg.isAuthed) {
         setAuthVerified(true);
       } else {
-        clearAxiosAuthHeader();
         setAuthToken("");
       }
     } catch (error) {
-      clearAxiosAuthHeader();
       console.error(error);
       setError("An error occurred while trying to verify authentication.");
     }
@@ -48,17 +41,15 @@ function AuthVerifier({
   });
 
   if (error) {
-    return (
-      <Alert severity="error" sx={{ width: "50%", marginLeft: "25%" }}>
-        {error}
-      </Alert>
-    );
+    return <CenteredHalfAlert severity="error">{error}</CenteredHalfAlert>;
   } else {
     return (
       <DelayedElement>
-        <Alert severity="info" sx={{ width: "50%", marginLeft: "25%" }}>
-          Verifying auth...
-        </Alert>
+        <>
+          <CenteredHalfAlert severity="info">
+            Verifying auth...
+          </CenteredHalfAlert>
+        </>
       </DelayedElement>
     );
   }
