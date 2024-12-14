@@ -17,6 +17,7 @@
     "axios": "^1.7.9",
     "google-protobuf": "^3.21.4",
     "idb": "^8.0.0",
+    "jotai": "^2.10.3",
     "lodash": "^4.17.21",
     "notistack": "^3.0.1",
     "protobufjs": "^7.4.0",
