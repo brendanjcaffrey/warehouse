@@ -1,9 +1,12 @@
 import AuthWrapper from "./AuthWrapper";
+import LibraryWrapper from "./LibraryWrapper";
 
 function App() {
   return (
     <AuthWrapper>
-      <h1>Music Streamer</h1>
+      <LibraryWrapper>
+        <h1>Music Streamer</h1>
+      </LibraryWrapper>
     </AuthWrapper>
   );
 }

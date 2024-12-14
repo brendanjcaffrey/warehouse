@@ -1,5 +1,4 @@
 import { ReactElement, useState, useEffect, useRef } from "react";
-import { Fade } from "@mui/material";
 
 interface DelayedElementProps {
   children: ReactElement;
@@ -17,9 +16,14 @@ export default function DelayedElement({ children }: DelayedElementProps) {
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
+        timerRef.current = undefined;
       }
     };
   }, []);
 
-  return <Fade in={showing}>{children}</Fade>;
+  if (showing) {
+    return children;
+  } else {
+    return <></>;
+  }
 }
