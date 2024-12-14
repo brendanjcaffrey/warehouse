@@ -19,8 +19,8 @@ export interface Track {
   duration: number;
   start: number;
   finish: number;
-  trackNum: number;
-  discNum: number;
+  trackNumber: number;
+  discNumber: number;
   playCount: number;
   rating: number;
   ext: string;

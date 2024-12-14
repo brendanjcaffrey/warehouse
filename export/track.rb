@@ -2,7 +2,7 @@ module Export
   ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
   class Track < Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album_artist, :sort_album_artist_unclean,
-    :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track, :disc, :play_count, :rating_raw, :location)
+    :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track_number, :disc_number, :play_count, :rating_raw, :location)
 
     def file
       # location is like "Macintosh HD:Users:Brendan:Music:iTunes:iTunes Music:artist:album:song.mp3"

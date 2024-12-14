@@ -20,7 +20,7 @@ GENRE_SQL = 'SELECT id, name FROM genres;'
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
 ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
 TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, ' +
-  'year, duration, start, finish, track, disc, play_count, rating, ext FROM tracks;'
+  'year, duration, start, finish, track_number, disc_number, play_count, rating, ext FROM tracks;'
 PLAYLIST_SQL = 'SELECT p.id, p.name, p.parent_id, p.is_library, pt.track_ids FROM playlists p ' +
   'LEFT JOIN (SELECT playlist_id, string_agg(track_id::text, \',\') AS track_ids FROM playlist_tracks ' +
   'GROUP BY playlist_id) pt ON p.id = pt.playlist_id;'

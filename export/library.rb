@@ -160,12 +160,12 @@ module Export
     end
 
     def track_info(track_index)
-      track_number = track_index + 1
+      track_offset = track_index + 1
       seen_error = false
 
       # this command fails every so often, but waiting and trying again usually works
       5.times do |attempt|
-        cmd = "osascript -e '#{TRACK_INFO % track_number.to_i}'"
+        cmd = "osascript -e '#{TRACK_INFO % track_offset.to_i}'"
         runner = Runner.run(cmd)
         if !runner.success?
           seen_error = true
@@ -183,7 +183,7 @@ module Export
       end
 
       jobs_webhook.execute do |builder|
-        builder.content = "Unable to get track info even after retrying (track_no: #{track_number})"
+        builder.content = "Unable to get track info even after retrying (track_no: #{track_offset})"
       end
       exit(1)
     end
