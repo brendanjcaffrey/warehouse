@@ -45,9 +45,7 @@ function AuthVerifier({
   } else {
     return (
       <DelayedElement>
-        <CenteredHalfAlert severity="warning">
-          Verifying auth...
-        </CenteredHalfAlert>
+        <CenteredHalfAlert severity="info">Verifying auth...</CenteredHalfAlert>
       </DelayedElement>
     );
   }

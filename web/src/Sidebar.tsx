@@ -3,11 +3,14 @@ import Artwork from "./Artwork";
 import LogOut from "./LogOut";
 
 function Sidebar() {
+  const logoutHeight = "36.5px";
+  const playlistsHeight = `calc(100% - ${logoutHeight})`;
+
   return (
     <>
-      <Playlists />
+      <Playlists height={playlistsHeight} />
       <Artwork />
-      <LogOut />
+      <LogOut height={logoutHeight} />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAtom, useSetAtom } from "jotai";
 import {
+  Box,
   List,
   ListItem,
   ListItemButton,
@@ -135,7 +136,7 @@ function PlaylistLevelList({
   );
 }
 
-function Playlists() {
+function Playlists({ height }: { height: string }) {
   const setSelectedPlaylist = useSetAtom(selectedPlaylistAtom);
   const [playlists, setPlaylists] = useState<PlaylistDisplay[]>([]);
 
@@ -177,7 +178,11 @@ function Playlists() {
     fetchPlaylists();
   }, [setPlaylists, setSelectedPlaylist]);
 
-  return <PlaylistLevelList playlists={playlists} />;
+  return (
+    <Box sx={{ height: height, overflowY: "auto" }}>
+      <PlaylistLevelList playlists={playlists} inSublist={false} />
+    </Box>
+  );
 }
 
 export default Playlists;
