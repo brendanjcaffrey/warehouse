@@ -2,9 +2,10 @@ import { useState } from "react";
 import { styled } from "@mui/material";
 import { Box, Typography, Slider } from "@mui/material";
 import { KeyboardReturnRounded } from "@mui/icons-material";
+import { lighterGrey, titleGrey, defaultGrey } from "./Colors";
 
 const DurationText = styled(Typography)({
-  color: "#888",
+  color: defaultGrey,
   fontSize: "12px",
   marginTop: "auto",
 });
@@ -41,7 +42,7 @@ function TrackDisplay() {
           <Box sx={{ textAlign: "center" }}>
             <Typography
               noWrap
-              sx={{ color: "#444", fontSize: "14px", lineHeight: "20px" }}
+              sx={{ color: titleGrey, fontSize: "14px", lineHeight: "20px" }}
             >
               Name
               <span onMouseDown={returnButtonDown} onMouseUp={returnButtonUp}>
@@ -50,13 +51,17 @@ function TrackDisplay() {
                     fontSize: "12px",
                     cursor: "pointer",
                     pl: "2px",
-                    color: returnDown ? "#ccc" : "#444",
+                    color: returnDown ? lighterGrey : titleGrey,
                   }}
                 />
               </span>
             </Typography>
             <Typography
-              sx={{ color: "#888", fontSize: "12px", lineHeight: "17.15px" }}
+              sx={{
+                color: defaultGrey,
+                fontSize: "12px",
+                lineHeight: "17.15px",
+              }}
             >
               Artist – Album
             </Typography>
@@ -71,7 +76,7 @@ function TrackDisplay() {
         max={duration}
         onChange={(_, value) => setPosition(value as number)}
         sx={() => ({
-          color: "#888",
+          color: defaultGrey,
           height: 4,
           mt: "0px",
           padding: "0",

@@ -10,6 +10,7 @@ import {
 } from "@mui/icons-material";
 import { shuffleAtom, repeatAtom, volumeAtom } from "./Settings";
 import { playingAtom } from "./Player";
+import { defaultGrey, darkerGrey, titleGrey } from "./Colors";
 
 function Controls() {
   const [playing, setPlaying] = useAtom(playingAtom);
@@ -37,7 +38,7 @@ function Controls() {
     <div>
       <Stack direction="row" sx={{ alignItems: "center" }}>
         <IconButton size="large" color="inherit">
-          <FastRewindRounded fontSize="inherit" />
+          <FastRewindRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
         <IconButton
           size="large"
@@ -46,18 +47,18 @@ function Controls() {
           color="inherit"
         >
           {playing ? (
-            <PauseRounded fontSize="inherit" />
+            <PauseRounded fontSize="inherit" sx={{ color: titleGrey }} />
           ) : (
-            <PlayArrowRounded fontSize="inherit" />
+            <PlayArrowRounded fontSize="inherit" sx={{ color: titleGrey }} />
           )}
         </IconButton>
         <IconButton size="large" edge="start" color="inherit">
-          <FastForwardRounded fontSize="inherit" />
+          <FastForwardRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
         <IconButton
           size="large"
           onClick={toggleShuffle}
-          color={shuffle ? "inherit" : "default"}
+          sx={{ color: shuffle ? titleGrey : defaultGrey }}
         >
           <ShuffleRounded fontSize="inherit" />
         </IconButton>
@@ -65,7 +66,7 @@ function Controls() {
           size="large"
           onClick={toggleRepeat}
           edge="start"
-          color={repeat ? "inherit" : "default"}
+          sx={{ color: repeat ? titleGrey : defaultGrey }}
         >
           <RepeatRounded fontSize="inherit" />
         </IconButton>
@@ -75,13 +76,13 @@ function Controls() {
           sx={() => ({
             maxWidth: "125px",
             ml: "12px",
-            color: "#888",
+            color: defaultGrey,
             "& .MuiSlider-track": {
               border: "none",
             },
             "& .MuiSlider-thumb": {
               backgroundColor: "#fff",
-              border: "1px solid #999",
+              border: `1px solid ${darkerGrey}`,
               "&::before": {
                 boxShadow: "none",
               },
