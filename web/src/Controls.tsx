@@ -75,14 +75,15 @@ function Controls() {
           sx={() => ({
             maxWidth: "125px",
             ml: "12px",
-            color: "rgba(0,0,0,0.5)",
+            color: "#888",
             "& .MuiSlider-track": {
               border: "none",
             },
             "& .MuiSlider-thumb": {
               backgroundColor: "#fff",
+              border: "1px solid #999",
               "&::before": {
-                boxShadow: "0 4px 8px rgba(0,0,0,0.4)",
+                boxShadow: "none",
               },
               "&:hover, &.Mui-focusVisible, &.Mui-active": {
                 boxShadow: "none",
