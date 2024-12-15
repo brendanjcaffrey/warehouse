@@ -24,6 +24,7 @@ export interface Track {
   playCount: number;
   rating: number;
   ext: string;
+  artworks: string[];
 }
 
 export interface Playlist {

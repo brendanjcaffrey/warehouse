@@ -139,6 +139,7 @@ module Export
 
         if track.valid_extension?
           @database.create_track(track)
+          track.artworks.each { |artwork_filename| @database.create_track_artwork(track.id, artwork_filename) }
         else
           puts "Skipping #{track.file} due to invalid extension"
           @skipped_tracks[track.id] = true

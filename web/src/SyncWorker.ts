@@ -91,6 +91,7 @@ class SyncManager {
         playCount: track.playCount,
         rating: track.rating,
         ext: track.ext,
+        artworks: track.artworks,
       };
       await library().putTrack(dto);
     }

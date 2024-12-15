@@ -64,6 +64,13 @@ module Export
       );
     SQL
 
+    CREATE_TRACK_ARTWORK_SQL = <<-SQL
+      CREATE TABLE track_artwork (
+        track_id CHAR(16),
+        filename CHAR(36)
+      );
+    SQL
+
     CREATE_PLAYLISTS_SQL = <<-SQL
       CREATE TABLE playlists (
         id CHAR(16),
@@ -166,6 +173,10 @@ module Export
         track_number, disc_number, play_count, rating, ext, file) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17);
     SQL
 
+    TRACK_ARTWORK_SQL = <<-SQL
+      INSERT INTO track_artwork (track_id, filename) VALUES ($1,$2);
+    SQL
+
     PLAYLIST_SQL = 'INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4);'
 
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
@@ -244,6 +255,10 @@ module Export
       build_tables
     end
 
+    def create_track_artwork(track_id, artwork_md5)
+      @db.exec_params(TRACK_ARTWORK_SQL, [track_id, artwork_md5])
+    end
+
     def create_track(track)
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
@@ -270,6 +285,7 @@ module Export
       @db.exec(CREATE_ARTISTS_SQL)
       @db.exec(CREATE_ALBUMS_SQL)
       @db.exec(CREATE_TRACKS_SQL)
+      @db.exec(CREATE_TRACK_ARTWORK_SQL)
       @db.exec(CREATE_PLAYLISTS_SQL)
       @db.exec(CREATE_PLAYLIST_TRACK_SQL)
       @db.exec(CREATE_PLAYS_SQL)

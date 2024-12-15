@@ -11,7 +11,7 @@ module Config
   def [](key)
     return YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
     return 'test_itunes_streamer' if key == 'database_name'
-    return './spec/' if key == 'music_path'
+    return './spec/' if key == 'music_path' || key == 'artwork_path'
     return '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
   end
 
@@ -77,6 +77,7 @@ describe 'iTunes Streamer' do
 
   before :all do
     `echo "fake mp3 contents" > spec/__test.mp3`
+    `echo "fake jpg contents" > spec/__artwork.jpg`
     @database = Export::Database.new(Config['database_username'], Config['database_name'])
     @database.clean_and_rebuild
     @db = @database.db
@@ -84,6 +85,7 @@ describe 'iTunes Streamer' do
 
   after :all do
     `rm spec/__test.mp3`
+    `rm spec/__artwork.jpg`
   end
 
   before :each do
@@ -108,8 +110,6 @@ describe 'iTunes Streamer' do
     @database.clear
     @database.create_track(Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_artist', '', 'test_album', '',
                                             'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, ':__test.mp3'))
-    @database.create_playlist(Export::Playlist.new('BDDCB0E03D499D53', 'test_playlist', 'none', '', 3, "5E3FA18D81E469D2\n21D8E2441A5E2204\nB7F8970B634DDEE3"))
-    @database.create_playlist(Export::Playlist.new('1111111111111111', 'library', 'Music', '', 100, ""))
   end
 
   describe '/' do
@@ -154,6 +154,24 @@ describe 'iTunes Streamer' do
       expect(last_response.body).to eq("fake mp3 contents\n")
       expect(last_response.headers['Content-Disposition']).to include('attachment')
       expect(last_response.headers['Content-Disposition']).to include('filename="test_title.mp3"')
+    end
+  end
+
+  describe '/artwork/*' do
+    it 'should redirect if not logged in' do
+      get '/artwork/__artwork.jpg'
+      follow_redirect!
+      expect(last_request.url).to eq('http://localhost/')
+    end
+
+    it 'should 404 if the artwork doesn\'t exist' do
+      get '/artwork/__notfound.jpg', {}, get_auth_header
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'should send the contents of the file' do
+      get '/artwork/__artwork.jpg', {}, get_auth_header
+      expect(last_response.body).to eq("fake jpg contents\n")
     end
   end
 
@@ -219,6 +237,11 @@ describe 'iTunes Streamer' do
     end
 
     it 'should dump all genres, artists, albums and tracks' do
+      @database.create_playlist(Export::Playlist.new('XXXXXXXXXXXXXXXX', 'library', 'Music', '', 100, ""))
+      @database.create_playlist(Export::Playlist.new('0000000000000000', 'test_playlist0', 'none', '', 0, ""))
+      @database.create_playlist(Export::Playlist.new('1111111111111111', 'test_playlist1', 'none', '0000000000000000', 1, "B7F8970B634DDEE3"))
+      @database.create_playlist(Export::Playlist.new('2222222222222222', 'test_playlist2', 'none', '', 2, "5E3FA18D81E469D2\n21D8E2441A5E2204"))
+
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
 
@@ -253,21 +276,36 @@ describe 'iTunes Streamer' do
       expect(track.playCount).to eq(5)
       expect(track.rating).to eq(100)
       expect(track.ext).to eq('mp3')
+      expect(track.artworks).to eq([])
 
-      expect(library.playlists.length).to eq(2)
-      playlist = library.playlists.first
-      expect(playlist.id).to eq('BDDCB0E03D499D53')
-      expect(playlist.name).to eq('test_playlist')
+      expect(library.playlists.length).to eq(4)
+      playlist = library.playlists[0]
+      expect(playlist.id).to eq('1111111111111111')
+      expect(playlist.name).to eq('test_playlist1')
+      expect(playlist.parentId).to eq('0000000000000000')
+      expect(playlist.isLibrary).to be(false)
+      expect(playlist.trackIds).to eq(%w{B7F8970B634DDEE3})
+
+      playlist = library.playlists[1]
+      expect(playlist.id).to eq('0000000000000000')
+      expect(playlist.name).to eq('test_playlist0')
       expect(playlist.parentId).to eq('')
       expect(playlist.isLibrary).to be(false)
-      expect(playlist.trackIds).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 B7F8970B634DDEE3})
+      expect(playlist.trackIds).to eq([])
 
-      playlist = library.playlists.last
-      expect(playlist.id).to eq('1111111111111111')
+      playlist = library.playlists[2]
+      expect(playlist.id).to eq('XXXXXXXXXXXXXXXX')
       expect(playlist.name).to eq('library')
       expect(playlist.parentId).to eq('')
       expect(playlist.isLibrary).to be(true)
       expect(playlist.trackIds).to eq([])
+
+      playlist = library.playlists[3]
+      expect(playlist.id).to eq('2222222222222222')
+      expect(playlist.name).to eq('test_playlist2')
+      expect(playlist.parentId).to eq('')
+      expect(playlist.isLibrary).to be(false)
+      expect(playlist.trackIds).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204})
     end
 
     it 'should include whether to track changes or not' do
@@ -278,6 +316,22 @@ describe 'iTunes Streamer' do
       get '/api/library', {}, get_auth_header('notrack')
       library = LibraryResponse.decode(last_response.body).library
       expect(library.trackUserChanges).to be false
+    end
+
+    it 'should include album artwork' do
+      get '/api/library', {}, get_auth_header
+      library = LibraryResponse.decode(last_response.body).library
+      expect(library.tracks[0].artworks).to eq([])
+
+      @database.create_track_artwork('21D8E2441A5E2204', 'test_artwork.jpg')
+      get '/api/library', {}, get_auth_header
+      library = LibraryResponse.decode(last_response.body).library
+      expect(library.tracks[0].artworks).to eq(%w{test_artwork.jpg})
+
+      @database.create_track_artwork('21D8E2441A5E2204', 'test_artwork2.jpg')
+      get '/api/library', {}, get_auth_header
+      library = LibraryResponse.decode(last_response.body).library
+      expect(library.tracks[0].artworks).to eq(%w{test_artwork.jpg test_artwork2.jpg})
     end
   end
 

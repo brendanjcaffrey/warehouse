@@ -19,11 +19,33 @@ INVALID_YEAR_ERROR = 'invalid year'
 GENRE_SQL = 'SELECT id, name FROM genres;'
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
 ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
-TRACK_SQL = 'SELECT id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, ' +
-  'year, duration, start, finish, track_number, disc_number, play_count, rating, ext FROM tracks;'
-PLAYLIST_SQL = 'SELECT p.id, p.name, p.parent_id, p.is_library, pt.track_ids FROM playlists p ' +
-  'LEFT JOIN (SELECT playlist_id, string_agg(track_id::text, \',\') AS track_ids FROM playlist_tracks ' +
-  'GROUP BY playlist_id) pt ON p.id = pt.playlist_id;'
+TRACK_SQL = <<-SQL
+SELECT
+    t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
+    t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, t.ext,
+    STRING_AGG(ta.filename, ',') AS artwork_filenames
+FROM
+    tracks t
+LEFT JOIN
+    track_artwork ta
+ON
+    t.id = ta.track_id
+GROUP BY
+    t.id;
+SQL
+PLAYLIST_SQL = <<-SQL
+SELECT
+    p.id, p.name, p.parent_id, p.is_library,
+    STRING_AGG(pt.track_id, ',') AS track_ids
+FROM
+    playlists p
+LEFT JOIN
+    playlist_tracks pt
+ON
+    p.id = pt.playlist_id
+GROUP BY
+    p.id, p.name, p.parent_id, p.is_library;
+SQL
 
 TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
@@ -79,7 +101,9 @@ MIME_TYPES = {
   'm4a' => 'audio/mp4',
   'aif' => 'audio/aif',
   'aiff' => 'audio/aif',
-  'wav' => 'audio/wav'
+  'wav' => 'audio/wav',
+  'jpg' => 'image/jpeg',
+  'png' => 'image/png',
 }
 
 def convert_cols_to_ints(rows, indices)
@@ -191,6 +215,23 @@ class Server < Sinatra::Base
     end
   end
 
+  get '/artwork/*' do
+    if !is_authed?
+      redirect to('/')
+    else
+      file = params['splat'][0]
+      full_path = File.expand_path(File.join(Config['artwork_path'], file))
+      raise Sinatra::NotFound unless File.exist?(full_path)
+
+      if Config.remote?
+        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/artwork/#{file}")
+        headers['Content-Type'] = MIME_TYPES[file.split('.').last]
+      else
+        send_file(full_path)
+      end
+    end
+  end
+
   namespace '/api' do
     def proto(msg)
       content_type 'application/octet-stream'
@@ -245,7 +286,8 @@ class Server < Sinatra::Base
                                       discNumber: track[12].to_i,
                                       playCount: track[13].to_i,
                                       rating: track[14].to_i,
-                                      ext: track[15])
+                                      ext: track[15],
+                                      artworks: (track[16] || '').split(','))
         end
 
         db.exec(PLAYLIST_SQL).values.each do |playlist|

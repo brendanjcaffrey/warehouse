@@ -2,7 +2,7 @@ module Export
   ACCEPTABLE_EXTENSIONS = ['mp3', 'mp4', 'm4a', 'aiff', 'aif', 'wav']
 
   class Track < Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album_artist, :sort_album_artist_unclean,
-    :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track_number, :disc_number, :play_count, :rating_raw, :location)
+    :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track_number, :disc_number, :play_count, :rating_raw, :location, :num_artworks)
 
     def file
       # location is like "Macintosh HD:Users:Brendan:Music:iTunes:iTunes Music:artist:album:song.mp3"
@@ -42,8 +42,16 @@ module Export
       ACCEPTABLE_EXTENSIONS.index(ext) != nil
     end
 
-    private
+    def artworks
+      @artworks || []
+    end
 
+    def add_artwork(filename)
+      @artworks ||= []
+      @artworks << filename
+    end
+
+    private
     def clean_sort_value(value)
       # remove anything that isn't alphanumeric (except 0?)
       # TODO e.g. '03 Bonnie & Clyde sorting as 3, I think it's just nat sorting if it starts with a number, but this works for now

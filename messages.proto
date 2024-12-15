@@ -43,6 +43,7 @@ message Track {
   uint64 playCount = 14;
   int32 rating = 15;
   string ext = 16;
+  repeated string artworks = 17;
 }
 
 message Playlist {
