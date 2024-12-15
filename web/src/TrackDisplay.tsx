@@ -29,12 +29,13 @@ function TrackDisplay() {
   }
 
   return (
-    <>
+    <Box>
       <Box
         sx={{
           display: "flex",
           justifyContent: "space-between",
           marginBottom: "-12px",
+          marginTop: "4px",
         }}
       >
         <DurationText>{formatDuration(position)}</DurationText>
@@ -91,7 +92,7 @@ function TrackDisplay() {
           },
         })}
       />
-    </>
+    </Box>
   );
 }
 

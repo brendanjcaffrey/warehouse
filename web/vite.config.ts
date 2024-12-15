@@ -14,6 +14,7 @@ export default defineConfig({
       "/api": "http://localhost:5567",
       "/tracks": "http://localhost:5567",
       "/download": "http://localhost:5567",
+      "/artwork": "http://localhost:5567",
     },
   },
 });

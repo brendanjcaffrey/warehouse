@@ -9,7 +9,7 @@ import {
   ShuffleRounded,
 } from "@mui/icons-material";
 import { shuffleAtom, repeatAtom, volumeAtom } from "./Settings";
-import { playingAtom } from "./Player";
+import { playingAtom } from "./State";
 import { defaultGrey, darkerGrey, titleGrey } from "./Colors";
 
 function Controls() {
@@ -37,22 +37,17 @@ function Controls() {
   return (
     <div>
       <Stack direction="row" sx={{ alignItems: "center" }}>
-        <IconButton size="large" color="inherit">
+        <IconButton size="large">
           <FastRewindRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
-        <IconButton
-          size="large"
-          onClick={togglePlaying}
-          edge="start"
-          color="inherit"
-        >
+        <IconButton size="large" onClick={togglePlaying} edge="start">
           {playing ? (
             <PauseRounded fontSize="inherit" sx={{ color: titleGrey }} />
           ) : (
             <PlayArrowRounded fontSize="inherit" sx={{ color: titleGrey }} />
           )}
         </IconButton>
-        <IconButton size="large" edge="start" color="inherit">
+        <IconButton size="large" edge="start">
           <FastForwardRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
         <IconButton

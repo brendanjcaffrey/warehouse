@@ -1,7 +1,5 @@
-import { atom } from "jotai";
-
-export const playingAtom = atom(false);
-
-function Player() {}
+function Player() {
+  return null;
+}
 
 export default Player;

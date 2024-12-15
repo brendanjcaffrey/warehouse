@@ -3,6 +3,7 @@ import { atom } from "jotai";
 const SHUFFLE_KEY = "shuffle";
 const REPEAT_KEY = "repeat";
 const VOLUME_KEY = "volume";
+const OPENED_FOLDERS_KEY = "openedFolders";
 
 function GetPersistedShuffle(): boolean {
   return localStorage.getItem(SHUFFLE_KEY) === "true";
@@ -32,6 +33,15 @@ export function SetPersistedVolume(value: number) {
   localStorage.setItem(VOLUME_KEY, value.toString());
 }
 
+function GetPersistedOpenedFolders(): Set<string> {
+  return new Set((localStorage.getItem(OPENED_FOLDERS_KEY) || "").split(","));
+}
+
+export function SetPersistedOpenedFolders(value: Set<string>) {
+  localStorage.setItem(OPENED_FOLDERS_KEY, Array.from(value).join(","));
+}
+
 export const shuffleAtom = atom(GetPersistedShuffle());
 export const repeatAtom = atom(GetPersistedRepeat());
 export const volumeAtom = atom(GetPersistedVolume());
+export const openedFoldersAtom = atom(GetPersistedOpenedFolders());

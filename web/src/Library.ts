@@ -166,6 +166,20 @@ class Library {
     }
   }
 
+  public async getAllPlaylists(): Promise<Playlist[] | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting playlists", "database is not initialized");
+      return;
+    }
+
+    const tx = this.db.transaction("playlists", "readonly");
+    const store = tx.objectStore("playlists");
+    return await store.getAll();
+  }
+
   private setError(action: string, error: Error | string | null | unknown) {
     this.validState = false;
 

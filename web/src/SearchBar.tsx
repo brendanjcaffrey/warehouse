@@ -22,7 +22,6 @@ function SearchBar() {
     >
       <FormControl sx={{ p: "12px", width: "25ch" }} variant="standard">
         <Input
-          id="standard-adornment-password"
           type="search"
           placeholder="Search"
           value={search}
