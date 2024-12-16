@@ -2,7 +2,8 @@ import axios from "axios";
 import {
   isTypedMessage,
   isSetAuthTokenMessage,
-  IsFetchArtworkMessage,
+  isFetchArtworkMessage,
+  isClearAllMessage,
   ARTWORK_FETCHED_TYPE,
 } from "./WorkerTypes";
 
@@ -79,6 +80,18 @@ class ArtworkManager {
       this.inflightRequests.delete(artworkFilename);
     }
   }
+
+  public async clearAll() {
+    try {
+      const mainDirHandle = await navigator.storage.getDirectory();
+      mainDirHandle.removeEntry("artwork", { recursive: true });
+      this.artworkDirHandle = undefined;
+      this.getArtworkDirHandle();
+      console.log("All files and directories have been deleted.");
+    } catch (error) {
+      console.error("Error deleting files:", error);
+    }
+  }
 }
 
 const artworkManager = new ArtworkManager();
@@ -93,7 +106,11 @@ onmessage = (m: MessageEvent) => {
     artworkManager.setAuthToken(data.authToken);
   }
 
-  if (IsFetchArtworkMessage(data)) {
+  if (isFetchArtworkMessage(data)) {
     artworkManager.fetchArtwork(data.artworkFilename);
+  }
+
+  if (isClearAllMessage(data)) {
+    artworkManager.clearAll();
   }
 };

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { Box } from "@mui/material";
+import { ArtworkWorker } from "./ArtworkWorkerHandle";
 import {
   isTypedMessage,
   isArtworkFetchedMessage,
@@ -10,13 +11,6 @@ import {
 
 const ARTWORK_SIZE = "40px";
 const SPACING = "4px";
-
-const ArtworkWorker = new Worker(
-  new URL("./ArtworkWorker.ts", import.meta.url),
-  {
-    type: "module",
-  }
-);
 
 const playingTrackArtworkAtom = atom<string | null>(null);
 

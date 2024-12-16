@@ -5,6 +5,7 @@ export const SYNC_SUCCEEDED_TYPE = "syncSucceeded";
 export const SET_AUTH_TOKEN_TYPE = "setAuthToken";
 export const FETCH_ARTWORK_TYPE = "fetchArtwork";
 export const ARTWORK_FETCHED_TYPE = "artworkFetched";
+export const CLEAR_ALL_TYPE = "clearAll";
 export const ERROR_TYPE = "error";
 
 export interface TypedMessage {
@@ -51,7 +52,7 @@ export function isSetAuthTokenMessage(
   );
 }
 
-export function IsFetchArtworkMessage(
+export function isFetchArtworkMessage(
   message: TypedMessage
 ): message is FetchArtworkMessage {
   return (
@@ -69,6 +70,10 @@ export function isArtworkFetchedMessage(
     message.type === ARTWORK_FETCHED_TYPE &&
     "artworkFilename" in message
   );
+}
+
+export function isClearAllMessage(message: TypedMessage) {
+  return isObject(message) && message.type === CLEAR_ALL_TYPE;
 }
 
 export function isErrorMessage(message: TypedMessage): message is ErrorMessage {
