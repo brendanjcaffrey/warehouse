@@ -14,12 +14,10 @@ class SyncManager {
   public startSync(authToken: string) {
     // this happens because react runs all effects twice in development mode
     if (this.syncInProgress) {
-      console.log("sync is already in progress, ignoring startSync request");
       return;
     }
 
     this.syncInProgress = true;
-    console.log("starting sync...");
 
     axios
       .get("/api/library", {
@@ -63,7 +61,6 @@ class SyncManager {
   }
 
   private async processSyncResponse(msg: Library) {
-    console.log("processing sync response", msg);
     library().clear();
 
     for (const track of msg.tracks) {

@@ -13,6 +13,7 @@ import {
 import {
   LibraryMusicRounded,
   FolderRounded,
+  FolderOpenRounded,
   ListRounded,
   ExpandLess,
   ExpandMore,
@@ -62,7 +63,7 @@ function PlaylistItem({ playlist }: { playlist: PlaylistDisplay }) {
     if (playlist.isLibrary) {
       return <LibraryMusicRounded />;
     } else if (isFolder) {
-      return <FolderRounded />;
+      return isOpen ? <FolderOpenRounded /> : <FolderRounded />;
     } else {
       return <ListRounded />;
     }

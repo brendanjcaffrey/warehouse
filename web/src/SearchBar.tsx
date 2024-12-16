@@ -17,7 +17,7 @@ function SearchBar() {
         alignItems: "center",
         justifyContent: "flex-end",
         width: "100%",
-        height: "52px",
+        height: "100%",
       }}
     >
       <FormControl sx={{ p: "12px", width: "25ch" }} variant="standard">

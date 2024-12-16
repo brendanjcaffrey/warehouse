@@ -8,7 +8,10 @@ interface CenteredHalfAlertProps {
 
 function CenteredHalfAlert({ severity, children }: CenteredHalfAlertProps) {
   return (
-    <Alert severity={severity} sx={{ width: "50%", marginLeft: "25%" }}>
+    <Alert
+      severity={severity}
+      sx={{ width: "50%", marginLeft: "25%", marginTop: "12px" }}
+    >
       {children}
     </Alert>
   );

@@ -1,5 +1,4 @@
 import Playlists from "./Playlists";
-import Artwork from "./Artwork";
 import LogOut from "./LogOut";
 
 function Sidebar() {
@@ -9,7 +8,6 @@ function Sidebar() {
   return (
     <>
       <Playlists height={playlistsHeight} />
-      <Artwork />
       <LogOut height={logoutHeight} />
     </>
   );

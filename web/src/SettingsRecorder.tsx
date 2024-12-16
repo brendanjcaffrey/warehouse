@@ -1,21 +1,25 @@
 import { useEffect } from "react";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import {
   shuffleAtom,
   repeatAtom,
+  showArtworkAtom,
   volumeAtom,
   openedFoldersAtom,
+  DEFAULT_VOLUME,
   SetPersistedShuffle,
   SetPersistedRepeat,
+  SetPersistedShowArtwork,
   SetPersistedVolume,
-  SetPersistedOpenedFolders as SetPersistedOpenedFolders,
+  SetPersistedOpenedFolders,
 } from "./Settings";
 import { clearSettingsFnAtom } from "./State";
 
 function SettingsRecorder() {
-  const shuffle = useAtomValue(shuffleAtom);
-  const repeat = useAtomValue(repeatAtom);
-  const volume = useAtomValue(volumeAtom);
+  const [shuffle, setShuffle] = useAtom(shuffleAtom);
+  const [repeat, setRepeat] = useAtom(repeatAtom);
+  const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
+  const [volume, setVolume] = useAtom(volumeAtom);
   const [openedFolders, setOpenedFolders] = useAtom(openedFoldersAtom);
   const setClearSettingsFn = useSetAtom(clearSettingsFnAtom);
 
@@ -28,6 +32,10 @@ function SettingsRecorder() {
   }, [repeat]);
 
   useEffect(() => {
+    SetPersistedShowArtwork(showArtwork);
+  }, [showArtwork]);
+
+  useEffect(() => {
     SetPersistedVolume(volume);
   }, [volume]);
 
@@ -38,10 +46,21 @@ function SettingsRecorder() {
   useEffect(() => {
     setClearSettingsFn({
       fn: () => {
+        setShuffle(false);
+        setRepeat(false);
+        setShowArtwork(false);
+        setVolume(DEFAULT_VOLUME);
         setOpenedFolders(new Set());
       },
     });
-  }, [setOpenedFolders, setClearSettingsFn]);
+  }, [
+    setShuffle,
+    setRepeat,
+    setShowArtwork,
+    setVolume,
+    setOpenedFolders,
+    setClearSettingsFn,
+  ]);
 
   return null;
 }

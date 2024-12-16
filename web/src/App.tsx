@@ -8,12 +8,15 @@ import SearchBar from "./SearchBar";
 import Sidebar from "./Sidebar";
 import TrackTable from "./TrackTable";
 import SettingsRecorder from "./SettingsRecorder";
-import { titleGrey } from "./Colors";
+import { titleGrey, defaultGrey } from "./Colors";
 
 const theme = createTheme({
   palette: {
     info: {
       main: titleGrey,
+    },
+    primary: {
+      main: defaultGrey,
     },
   },
 });
