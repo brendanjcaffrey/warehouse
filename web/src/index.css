@@ -1,0 +1,18 @@
+body {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+}
+
+.valign-center {
+  display: flex;
+  align-items: center;
+}
+
+.has-sort-icon svg.hover-only {
+  display: none;
+  font-weight: normal;
+}
+
+.has-sort-icon:hover svg.hover-only {
+  display: inline;
+}

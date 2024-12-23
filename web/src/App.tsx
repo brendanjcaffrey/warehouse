@@ -9,6 +9,7 @@ import Sidebar from "./Sidebar";
 import TrackTable from "./TrackTable";
 import SettingsRecorder from "./SettingsRecorder";
 import { titleGrey, defaultGrey } from "./Colors";
+import "./index.css";
 
 const theme = createTheme({
   palette: {

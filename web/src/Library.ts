@@ -81,6 +81,10 @@ class Library {
       .catch((error) => {
         this.setError("opening database", error);
       });
+
+    // navigator.storage.persist().then((granted) => {
+    //   console.log("persistent storage granted:", granted);
+    // });
   }
 
   public setErrorListener(listener: (error: string) => void) {
@@ -178,6 +182,38 @@ class Library {
     const tx = this.db.transaction("playlists", "readonly");
     const store = tx.objectStore("playlists");
     return await store.getAll();
+  }
+
+  public async getAllPlaylistTracks(
+    playlistId: string
+  ): Promise<Track[] | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting playlist tracks", "database is not initialized");
+      return;
+    }
+
+    const playlistTx = this.db.transaction("playlists", "readonly");
+    const playlistStore = playlistTx.objectStore("playlists");
+    const playlist = await playlistStore.get(playlistId);
+    console.log(playlist);
+    if (!playlist) {
+      return [];
+    }
+
+    const trackTx = this.db.transaction("tracks", "readonly");
+    const trackStore = trackTx.objectStore("tracks");
+    if (playlist.isLibrary) {
+      return trackStore.getAll();
+    } else {
+      const tracks = await Promise.all(
+        playlist.trackIds.map((trackId) => trackStore.get(trackId))
+      );
+      console.log(tracks);
+      return tracks.filter((track): track is Track => track !== undefined);
+    }
   }
 
   private setError(action: string, error: Error | string | null | unknown) {
