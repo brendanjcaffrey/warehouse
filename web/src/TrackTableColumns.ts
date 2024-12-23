@@ -4,11 +4,26 @@ import { IconWidths } from "./MeasureIconWidths";
 import { NUM_ICONS } from "./RenderRating";
 import { CELL_HORIZONTAL_PADDING_TOTAL } from "./TrackTableConstants";
 
-interface Column {
-  id: keyof Track;
+export type DisplayedTrackKeys = Pick<
+  Track,
+  | "name"
+  | "duration"
+  | "artistName"
+  | "albumName"
+  | "genre"
+  | "year"
+  | "playCount"
+  | "rating"
+>;
+
+type SortKey = keyof Track;
+
+export interface Column {
+  id: keyof DisplayedTrackKeys;
   label: string;
   render: (track: Track) => JSX.Element | string;
   calculateSizeByRendering: boolean;
+  sortKeys: SortKey[];
 }
 
 export const COLUMNS: Column[] = [
@@ -17,6 +32,7 @@ export const COLUMNS: Column[] = [
     label: "Name",
     render: (track: Track) => track.name,
     calculateSizeByRendering: true,
+    sortKeys: ["sortName"],
   },
   {
     id: "duration",
@@ -27,42 +43,55 @@ export const COLUMNS: Column[] = [
       return `${minutes}:${seconds.toFixed(0).padStart(2, "0")}`;
     },
     calculateSizeByRendering: true,
+    sortKeys: ["duration"],
   },
   {
     id: "artistName",
     label: "Artist",
     render: (track: Track) => track.artistName,
     calculateSizeByRendering: true,
+    sortKeys: ["artistSortName"],
   },
   {
     id: "albumName",
     label: "Album",
     render: (track: Track) => track.albumName,
     calculateSizeByRendering: true,
+    sortKeys: [
+      "albumArtistSortName",
+      "year",
+      "albumSortName",
+      "discNumber",
+      "trackNumber",
+    ],
   },
   {
     id: "genre",
     label: "Genre",
     render: (track: Track) => track.genre,
     calculateSizeByRendering: true,
+    sortKeys: ["genre"],
   },
   {
     id: "year",
     label: "Year",
     render: (track: Track) => (track.year !== 0 ? track.year.toString() : ""),
     calculateSizeByRendering: true,
+    sortKeys: ["year"],
   },
   {
     id: "playCount",
     label: "Plays",
     render: (track: Track) => track.playCount.toString(),
     calculateSizeByRendering: true,
+    sortKeys: ["playCount"],
   },
   {
     id: "rating",
     label: "Rating",
     render: RenderRating,
     calculateSizeByRendering: false,
+    sortKeys: ["rating"],
   },
 ];
 
@@ -72,6 +101,7 @@ export const RATING_COLUMN_INDEX = COLUMNS.findIndex(
 
 export function GetColumnWidths(
   tracks: Track[],
+  trackDisplayIndexes: number[],
   iconWidths: IconWidths
 ): number[] {
   const widths = COLUMNS.map(() => 0);
@@ -94,7 +124,8 @@ export function GetColumnWidths(
   }
 
   context.font = computedStyle.font;
-  for (const track of tracks) {
+  for (const trackIndex of trackDisplayIndexes) {
+    const track = tracks[trackIndex];
     for (const [index, column] of COLUMNS.entries()) {
       if (!column.calculateSizeByRendering) {
         continue;

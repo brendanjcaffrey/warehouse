@@ -198,7 +198,6 @@ class Library {
     const playlistTx = this.db.transaction("playlists", "readonly");
     const playlistStore = playlistTx.objectStore("playlists");
     const playlist = await playlistStore.get(playlistId);
-    console.log(playlist);
     if (!playlist) {
       return [];
     }
@@ -211,7 +210,6 @@ class Library {
       const tracks = await Promise.all(
         playlist.trackIds.map((trackId) => trackStore.get(trackId))
       );
-      console.log(tracks);
       return tracks.filter((track): track is Track => track !== undefined);
     }
   }

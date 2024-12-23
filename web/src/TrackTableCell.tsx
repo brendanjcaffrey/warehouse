@@ -17,6 +17,7 @@ function CellBackgroundColor(
 
 interface TrackTableCellProps extends GridChildComponentProps {
   tracks: Track[];
+  trackDisplayIndexes: number[];
   selectedRowIndex: number | null;
   setSelectedRowIndex: (rowIndex: number) => void;
 }
@@ -35,7 +36,9 @@ export function TrackTableCell(props: TrackTableCellProps) {
       className="valign-center"
       onClick={() => props.setSelectedRowIndex(props.rowIndex)}
     >
-      {COLUMNS[props.columnIndex].render(props.tracks[props.rowIndex])}
+      {COLUMNS[props.columnIndex].render(
+        props.tracks[props.trackDisplayIndexes[props.rowIndex]]
+      )}
     </div>
   );
 }
