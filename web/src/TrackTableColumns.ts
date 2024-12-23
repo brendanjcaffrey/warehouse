@@ -109,7 +109,6 @@ export const RATING_COLUMN_INDEX = COLUMNS.findIndex(
 
 export function GetColumnWidths(
   tracks: Track[],
-  trackDisplayIndexes: number[],
   iconWidths: IconWidths
 ): number[] {
   const widths = COLUMNS.map(() => 0);
@@ -133,8 +132,7 @@ export function GetColumnWidths(
   }
 
   context.font = computedStyle.font;
-  for (const trackIndex of trackDisplayIndexes) {
-    const track = tracks[trackIndex];
+  for (const track of tracks) {
     for (const [index, column] of COLUMNS.entries()) {
       if (!column.calculateSizeByRendering) {
         continue;

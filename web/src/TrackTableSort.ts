@@ -1,5 +1,5 @@
 import { Track } from "./Library";
-import { DisplayedTrackKeys } from "./TrackTableColumns";
+import { Column, DisplayedTrackKeys } from "./TrackTableColumns";
 
 export interface SortState {
   columnId: keyof DisplayedTrackKeys | null;
@@ -24,4 +24,28 @@ export function PrecomputeTrackSort(track: Track) {
     track.albumSortName === ""
       ? track.albumName.toLowerCase()
       : track.albumSortName.toLowerCase();
+}
+
+export function SortTracks(
+  tracks: Track[],
+  allIndexes: number[],
+  column: Column,
+  ascending: boolean
+) {
+  const sortedIndexes = allIndexes.sort((a, b) => {
+    const trackA = tracks[a];
+    const trackB = tracks[b];
+    for (const key of column.sortKeys) {
+      const valueA = trackA[key];
+      const valueB = trackB[key];
+      if (valueA !== valueB) {
+        return valueA < valueB ? -1 : 1;
+      }
+    }
+    return 0;
+  });
+  if (!ascending) {
+    sortedIndexes.reverse();
+  }
+  return sortedIndexes;
 }
