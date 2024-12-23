@@ -68,8 +68,9 @@ function HeaderCell({
         top: 0,
         left: columnLeft,
         width: columnWidth,
-        height: HEADER_HEIGHT - 1, // give a pixel back for the border
+        height: HEADER_HEIGHT,
         padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
+        boxSizing: "border-box",
         borderBottom: `1px solid ${titleGrey}`,
         fontWeight: "bold",
         cursor: "pointer",

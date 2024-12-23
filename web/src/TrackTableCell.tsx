@@ -31,6 +31,7 @@ export function TrackTableCell(props: TrackTableCellProps) {
           props.selectedRowIndex
         ),
         padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
+        boxSizing: "border-box",
         ...props.style,
       }}
       className="valign-center"

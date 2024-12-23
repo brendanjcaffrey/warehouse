@@ -57,7 +57,6 @@ function TrackTable() {
         console.error(`Invalid column id: ${sortState.columnId}`);
         return;
       }
-      const startTimestamp = performance.now();
       const sortedIndexes = allIndexes.sort((a, b) => {
         const trackA = tracks[a];
         const trackB = tracks[b];
@@ -70,8 +69,6 @@ function TrackTable() {
         }
         return 0;
       });
-      const endTimestamp = performance.now();
-      console.log("Sort time:", endTimestamp - startTimestamp);
       if (!sortState.ascending) {
         sortedIndexes.reverse();
       }

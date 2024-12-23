@@ -105,7 +105,8 @@ export function GetColumnWidths(
   iconWidths: IconWidths
 ): number[] {
   const widths = COLUMNS.map(() => 0);
-  widths[RATING_COLUMN_INDEX] = iconWidths.star * NUM_ICONS;
+  widths[RATING_COLUMN_INDEX] =
+    iconWidths.star * NUM_ICONS + CELL_HORIZONTAL_PADDING_TOTAL;
 
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
