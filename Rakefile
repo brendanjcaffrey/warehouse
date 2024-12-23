@@ -50,5 +50,7 @@ task :build => [:proto] do
 end
 
 task :vite do
-  exec('cd web && node_modules/.bin/vite')
+  Dir.chdir('web') do
+    exec('node_modules/.bin/vite')
+  end
 end
