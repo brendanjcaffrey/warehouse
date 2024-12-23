@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useAtom } from "jotai";
 import { Box, FormControl, Input, InputAdornment } from "@mui/material";
 import { SearchRounded } from "@mui/icons-material";
 import { titleGrey } from "./Colors";
+import { searchAtom } from "./State";
 
 function SearchBar() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useAtom(searchAtom);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);

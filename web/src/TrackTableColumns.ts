@@ -3,6 +3,7 @@ import { RenderRating } from "./RenderRating";
 import { IconWidths } from "./MeasureIconWidths";
 import { NUM_ICONS } from "./RenderRating";
 import { CELL_HORIZONTAL_PADDING_TOTAL } from "./TrackTableConstants";
+import { StringKeys } from "./Util";
 
 export type DisplayedTrackKeys = Pick<
   Track,
@@ -17,6 +18,13 @@ export type DisplayedTrackKeys = Pick<
 >;
 
 type SortKey = keyof Track;
+
+export const FILTER_KEYS: StringKeys<Track>[] = [
+  "name",
+  "artistName",
+  "albumName",
+  "genre",
+];
 
 export interface Column {
   id: keyof DisplayedTrackKeys;

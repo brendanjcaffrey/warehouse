@@ -6,9 +6,10 @@ import { CELL_HORIZONTAL_PADDING_SIDE } from "./TrackTableConstants";
 
 function CellBackgroundColor(
   rowIndex: number,
-  selectedRowIndex: number | null
+  trackId: string,
+  selectedTrackId: string | null
 ) {
-  if (rowIndex === selectedRowIndex) {
+  if (trackId === selectedTrackId) {
     return selectedGrey;
   } else {
     return rowIndex % 2 === 0 ? lightestGrey : white;
@@ -18,24 +19,26 @@ function CellBackgroundColor(
 interface TrackTableCellProps extends GridChildComponentProps {
   tracks: Track[];
   trackDisplayIndexes: number[];
-  selectedRowIndex: number | null;
-  setSelectedRowIndex: (rowIndex: number) => void;
+  selectedTrackId: string | null;
+  setSelectedTrackId: (trackId: string) => void;
 }
 
 export function TrackTableCell(props: TrackTableCellProps) {
+  const trackId = props.tracks[props.trackDisplayIndexes[props.rowIndex]].id;
   return (
     <div
       style={{
         backgroundColor: CellBackgroundColor(
           props.rowIndex,
-          props.selectedRowIndex
+          trackId,
+          props.selectedTrackId
         ),
         padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
         boxSizing: "border-box",
         ...props.style,
       }}
       className="valign-center"
-      onClick={() => props.setSelectedRowIndex(props.rowIndex)}
+      onClick={() => props.setSelectedTrackId(trackId)}
     >
       {COLUMNS[props.columnIndex].render(
         props.tracks[props.trackDisplayIndexes[props.rowIndex]]

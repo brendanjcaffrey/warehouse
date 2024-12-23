@@ -8,6 +8,8 @@ export default defineConfig({
     outDir: "../public",
     emptyOutDir: true,
   },
+  test: {
+  },
   server: {
     port: 5568,
     proxy: {

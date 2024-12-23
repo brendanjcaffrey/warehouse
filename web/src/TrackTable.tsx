@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { useAtomValue } from "jotai";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
+import { useDebouncedAtomValue } from "./useDebouncedAtomValue";
 import library, { Track } from "./Library";
 import { SortState, PrecomputeTrackSort } from "./TrackTableSort";
-import { selectedPlaylistAtom } from "./State";
+import { FilterTrackList } from "./TrackTableFilter";
+import { selectedPlaylistAtom, searchAtom } from "./State";
 import { COLUMNS, GetColumnWidths } from "./TrackTableColumns";
 import { TrackTableHeader } from "./TrackTableHeader";
 import { TrackTableCell } from "./TrackTableCell";
@@ -19,13 +21,14 @@ function TrackTable() {
   const gridRef = useRef<VariableSizeGrid>(null);
 
   const selectedPlaylist = useAtomValue(selectedPlaylistAtom);
-  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
-  const [sortState, setSortState] = useState<SortState>({
-    columnId: null,
-    ascending: true,
-  });
   const [tracks, setTracks] = useState<Track[]>([]);
-  const [trackDisplayIndexes, setTrackDisplayIndexes] = useState<number[]>([]);
+  const [sortedTrackDisplayIndexes, setSortedTrackDisplayIndexes] = useState<
+    number[]
+  >([]);
+  const [
+    sortedFilteredTrackDisplayIndexes,
+    setSortedFilteredTrackDisplayIndexes,
+  ] = useState<number[]>([]);
   const [iconWidths, setIconWidths] = useState<IconWidths>({
     star: 0,
     arrow: 0,
@@ -33,6 +36,13 @@ function TrackTable() {
   const [columnWidths, setColumnWidths] = useState(
     COLUMNS.map(() => DEFAULT_COLUMN_WIDTH)
   );
+
+  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [sortState, setSortState] = useState<SortState>({
+    columnId: null,
+    ascending: true,
+  });
+  const searchValue = useDebouncedAtomValue(searchAtom, 250);
 
   useEffect(() => {
     library()
@@ -42,15 +52,22 @@ function TrackTable() {
           PrecomputeTrackSort(track);
         }
         setTracks(tracks || []);
-        setTrackDisplayIndexes([]);
+        setSortedTrackDisplayIndexes([]);
       });
-    setSelectedRowIndex(null);
+    setSelectedTrackId(null);
   }, [selectedPlaylist]);
+
+  useEffect(() => {
+    setColumnWidths(
+      GetColumnWidths(tracks, sortedTrackDisplayIndexes, iconWidths)
+    );
+    gridRef.current?.resetAfterIndices({ columnIndex: 0, rowIndex: 0 });
+  }, [tracks, sortedTrackDisplayIndexes, iconWidths]);
 
   useEffect(() => {
     const allIndexes = tracks.map((_, i) => i);
     if (sortState.columnId === null) {
-      setTrackDisplayIndexes(allIndexes);
+      setSortedTrackDisplayIndexes(allIndexes);
     } else {
       const column = COLUMNS.find((column) => column.id === sortState.columnId);
       if (!column) {
@@ -72,14 +89,19 @@ function TrackTable() {
       if (!sortState.ascending) {
         sortedIndexes.reverse();
       }
-      setTrackDisplayIndexes(sortedIndexes);
+      setSortedTrackDisplayIndexes(sortedIndexes);
     }
   }, [tracks, sortState]);
 
   useEffect(() => {
-    setColumnWidths(GetColumnWidths(tracks, trackDisplayIndexes, iconWidths));
-    gridRef.current?.resetAfterIndices({ columnIndex: 0, rowIndex: 0 });
-  }, [tracks, trackDisplayIndexes, iconWidths]);
+    if (searchValue === "") {
+      setSortedFilteredTrackDisplayIndexes(sortedTrackDisplayIndexes);
+    } else {
+      setSortedFilteredTrackDisplayIndexes(
+        FilterTrackList(tracks, sortedTrackDisplayIndexes, searchValue)
+      );
+    }
+  }, [sortedTrackDisplayIndexes, searchValue, tracks]);
 
   return (
     <>
@@ -96,16 +118,16 @@ function TrackTable() {
             width={width}
             columnCount={COLUMNS.length}
             columnWidth={(i) => columnWidths[i]}
-            rowCount={trackDisplayIndexes.length}
+            rowCount={sortedFilteredTrackDisplayIndexes.length}
             rowHeight={(_) => ROW_HEIGHT} // eslint-disable-line @typescript-eslint/no-unused-vars
           >
             {(props) => (
               <TrackTableCell
                 {...props}
                 tracks={tracks}
-                trackDisplayIndexes={trackDisplayIndexes}
-                selectedRowIndex={selectedRowIndex}
-                setSelectedRowIndex={setSelectedRowIndex}
+                trackDisplayIndexes={sortedFilteredTrackDisplayIndexes}
+                selectedTrackId={selectedTrackId}
+                setSelectedTrackId={setSelectedTrackId}
               />
             )}
           </VariableSizeGrid>
