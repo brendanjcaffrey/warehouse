@@ -54,3 +54,9 @@ task :vite do
     exec('node_modules/.bin/vite')
   end
 end
+
+task :vitest do
+  Dir.chdir('web') do
+    exec('npx vitest')
+  end
+end
