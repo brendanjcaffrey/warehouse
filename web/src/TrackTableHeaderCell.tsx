@@ -1,11 +1,9 @@
+import { CSSProperties } from "react";
 import { ArrowDownwardRounded, ArrowUpwardRounded } from "@mui/icons-material";
-import { COLUMNS, Column, DisplayedTrackKeys } from "./TrackTableColumns";
+import { Column, DisplayedTrackKeys } from "./TrackTableColumns";
 import { SortState } from "./TrackTableSort";
-import { lighterGrey, titleGrey } from "./Colors";
-import {
-  HEADER_HEIGHT,
-  CELL_HORIZONTAL_PADDING_SIDE,
-} from "./TrackTableConstants";
+import { lighterGrey, titleGrey, white } from "./Colors";
+import { CELL_HORIZONTAL_PADDING_SIDE } from "./TrackTableConstants";
 
 interface SortIconProps {
   sortState: SortState;
@@ -34,21 +32,21 @@ function SortIcon({ sortState, columnId }: SortIconProps): JSX.Element {
   }
 }
 
-interface HeaderCellProps {
+interface TrackTableHeaderCellProps {
   column: Column;
-  columnWidth: number;
-  columnLeft: number;
   sortState: SortState;
   setSortState: (sortState: SortState) => void;
+  style: CSSProperties;
+  label: string;
 }
 
-function HeaderCell({
+export function TrackTableHeaderCell({
   column,
-  columnWidth,
-  columnLeft,
   sortState,
   setSortState,
-}: HeaderCellProps) {
+  style,
+  label,
+}: TrackTableHeaderCellProps) {
   const updateSortState = () => {
     if (sortState.columnId === column.id) {
       if (sortState.ascending) {
@@ -65,64 +63,20 @@ function HeaderCell({
     <div
       style={{
         position: "absolute",
-        top: 0,
-        left: columnLeft,
-        width: columnWidth,
-        height: HEADER_HEIGHT,
         padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
         boxSizing: "border-box",
         borderBottom: `1px solid ${titleGrey}`,
         fontWeight: "bold",
         cursor: "pointer",
         color: titleGrey,
+        backgroundColor: white,
+        ...style,
       }}
-      className="has-sort-icon valign-center"
+      className="has-sort-icon valign-center no-select"
       onClick={() => updateSortState()}
     >
-      {column.label}
+      {label}
       <SortIcon sortState={sortState} columnId={column.id} />
-    </div>
-  );
-}
-
-export interface TrackTableHeaderProps {
-  columnWidths: number[];
-  sortState: SortState;
-  setSortState: (sortState: SortState) => void;
-}
-
-export function TrackTableHeader({
-  columnWidths,
-  sortState,
-  setSortState,
-}: TrackTableHeaderProps) {
-  let cumSum = 0;
-  const cellLefts = columnWidths.map((width) => {
-    const result = cumSum;
-    cumSum += width;
-    return result;
-  });
-
-  return (
-    <div style={{ overflow: "visible", height: HEADER_HEIGHT, width: 0 }}>
-      <div
-        style={{
-          position: "relative",
-          height: 0,
-          width: 0,
-        }}
-      >
-        {COLUMNS.map((column, index) => (
-          <HeaderCell
-            key={column.id}
-            column={column}
-            columnWidth={columnWidths[index]}
-            columnLeft={cellLefts[index]}
-            sortState={sortState}
-            setSortState={setSortState}
-          />
-        ))}
-      </div>
     </div>
   );
 }

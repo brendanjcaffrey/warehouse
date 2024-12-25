@@ -7,17 +7,18 @@ import { useDebouncedTypedInput } from "./useDebouncedTypedInput";
 import library from "./Library";
 import { selectedPlaylistAtom, searchAtom } from "./State";
 import { IconWidths, MeasureIconWidths } from "./MeasureIconWidths";
+import { TrackTableContext } from "./TrackTableContext";
 import {
   UpdateTrackTableState,
   DEFAULT_STATE,
   UpdateType,
 } from "./TrackTableState";
+import { TrackTableStickyHeaderGrid } from "./TrackTableStickyHeader";
 import { COLUMNS } from "./TrackTableColumns";
-import { TrackTableHeader } from "./TrackTableHeader";
 import { TrackTableCell } from "./TrackTableCell";
 import { SortState, PrecomputeTrackSort } from "./TrackTableSort";
 import { BinarySearchTypeToShowList } from "./TrackTableTypeToShow";
-import { ROW_HEIGHT, HEADER_HEIGHT } from "./TrackTableConstants";
+import { ROW_HEIGHT } from "./TrackTableConstants";
 
 function TrackTable() {
   const gridRef = useRef<VariableSizeGrid>(null);
@@ -69,42 +70,46 @@ function TrackTable() {
   });
 
   return (
-    <>
-      <TrackTableHeader
-        columnWidths={state.columnWidths}
-        sortState={state.sortState}
-        setSortState={(sortState: SortState) => {
+    <TrackTableContext.Provider
+      value={{
+        sortState: state.sortState,
+        columnWidths: state.columnWidths,
+        setSortState: (sortState: SortState) => {
           dispatch({
             type: UpdateType.SortChanged,
             sortState: sortState,
           });
-        }}
-      />
+        },
+      }}
+    >
       <AutoSizer>
         {({ height, width }) => (
-          <VariableSizeGrid
-            ref={gridRef}
-            height={height - HEADER_HEIGHT - 1}
-            width={width}
-            columnCount={COLUMNS.length}
-            columnWidth={(i) => state.columnWidths[i]}
-            rowCount={state.sortFilteredIndexes.length}
-            rowHeight={(_) => ROW_HEIGHT} // eslint-disable-line @typescript-eslint/no-unused-vars
-          >
-            {(props) => (
-              <TrackTableCell
-                {...props}
-                tracks={state.tracks}
-                trackDisplayIndexes={state.sortFilteredIndexes}
-                selectedTrackId={selectedTrackId}
-                setSelectedTrackId={setSelectedTrackId}
-              />
-            )}
-          </VariableSizeGrid>
+          <>
+            <VariableSizeGrid
+              ref={gridRef}
+              height={height - 1}
+              width={width}
+              columnCount={COLUMNS.length}
+              columnWidth={(i: number) => state.columnWidths[i]}
+              rowCount={state.sortFilteredIndexes.length}
+              rowHeight={() => ROW_HEIGHT}
+              innerElementType={TrackTableStickyHeaderGrid}
+            >
+              {(props) => (
+                <TrackTableCell
+                  {...props}
+                  tracks={state.tracks}
+                  trackDisplayIndexes={state.sortFilteredIndexes}
+                  selectedTrackId={selectedTrackId}
+                  setSelectedTrackId={setSelectedTrackId}
+                />
+              )}
+            </VariableSizeGrid>
+          </>
         )}
       </AutoSizer>
       <MeasureIconWidths setIconWidths={setIconWidths} />
-    </>
+    </TrackTableContext.Provider>
   );
 }
 

@@ -24,12 +24,13 @@ interface TrackTableCellProps extends GridChildComponentProps {
 }
 
 export function TrackTableCell(props: TrackTableCellProps) {
-  const trackId = props.tracks[props.trackDisplayIndexes[props.rowIndex]].id;
+  const rowIndex = props.rowIndex;
+  const trackId = props.tracks[props.trackDisplayIndexes[rowIndex]].id;
   return (
     <div
       style={{
         backgroundColor: CellBackgroundColor(
-          props.rowIndex,
+          rowIndex,
           trackId,
           props.selectedTrackId
         ),
@@ -37,11 +38,11 @@ export function TrackTableCell(props: TrackTableCellProps) {
         boxSizing: "border-box",
         ...props.style,
       }}
-      className="valign-center"
+      className="valign-center no-select"
       onClick={() => props.setSelectedTrackId(trackId)}
     >
       {COLUMNS[props.columnIndex].render(
-        props.tracks[props.trackDisplayIndexes[props.rowIndex]]
+        props.tracks[props.trackDisplayIndexes[rowIndex]]
       )}
     </div>
   );

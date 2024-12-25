@@ -16,3 +16,7 @@ body {
 .has-sort-icon:hover svg.hover-only {
   display: inline;
 }
+
+.no-select {
+  user-select: none;
+}
