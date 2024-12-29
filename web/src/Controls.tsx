@@ -1,8 +1,8 @@
 import { useAtom } from "jotai";
 import { Stack, Slider, IconButton } from "@mui/material";
 import {
-  FastForwardRounded,
-  FastRewindRounded,
+  SkipNextRounded,
+  SkipPreviousRounded,
   PauseRounded,
   PlayArrowRounded,
   RepeatRounded,
@@ -49,7 +49,7 @@ function Controls() {
     <div>
       <Stack direction="row" sx={{ alignItems: "center" }}>
         <IconButton size="large">
-          <FastRewindRounded fontSize="inherit" sx={{ color: titleGrey }} />
+          <SkipPreviousRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
         <IconButton size="large" onClick={togglePlaying} edge="start">
           {playing ? (
@@ -59,7 +59,7 @@ function Controls() {
           )}
         </IconButton>
         <IconButton size="large" edge="start">
-          <FastForwardRounded fontSize="inherit" sx={{ color: titleGrey }} />
+          <SkipNextRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
         <IconButton
           size="large"

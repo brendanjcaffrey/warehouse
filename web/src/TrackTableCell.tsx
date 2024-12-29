@@ -21,6 +21,10 @@ interface TrackTableCellProps extends GridChildComponentProps {
   trackDisplayIndexes: number[];
   selectedTrackId: string | null;
   setSelectedTrackId: (trackId: string) => void;
+  showContextMenu: (
+    event: React.MouseEvent<HTMLDivElement>,
+    trackId: string
+  ) => void;
 }
 
 export function TrackTableCell(props: TrackTableCellProps) {
@@ -40,6 +44,7 @@ export function TrackTableCell(props: TrackTableCellProps) {
       }}
       className="valign-center no-select"
       onClick={() => props.setSelectedTrackId(trackId)}
+      onContextMenu={(event) => props.showContextMenu(event, trackId)}
     >
       {COLUMNS[props.columnIndex].render(
         props.tracks[props.trackDisplayIndexes[rowIndex]]

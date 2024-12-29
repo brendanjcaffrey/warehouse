@@ -18,6 +18,8 @@ import { COLUMNS } from "./TrackTableColumns";
 import { TrackTableCell } from "./TrackTableCell";
 import { SortState, PrecomputeTrackSort } from "./TrackTableSort";
 import { BinarySearchTypeToShowList } from "./TrackTableTypeToShow";
+import { TrackContextMenu, TrackContextMenuData } from "./TrackContextMenu";
+import { TrackContextMenuAction } from "./TrackContextMenuAction";
 import { ROW_HEIGHT } from "./TrackTableConstants";
 
 function TrackTable() {
@@ -27,6 +29,8 @@ function TrackTable() {
   const [state, dispatch] = useReducer(UpdateTrackTableState, DEFAULT_STATE);
 
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [contextMenuData, setContextMenuData] =
+    useState<TrackContextMenuData | null>(null);
 
   const filterText = useDebouncedAtomValue(searchAtom, 250);
   useEffect(() => {
@@ -69,6 +73,36 @@ function TrackTable() {
     }
   });
 
+  const showContextMenu = useCallback(
+    (event: React.MouseEvent, trackId: string) => {
+      event.preventDefault();
+      setContextMenuData({
+        trackId: trackId,
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+      });
+    },
+    [setContextMenuData]
+  );
+
+  const handleContextMenuAction = useCallback(
+    (action: TrackContextMenuAction, trackId: string | undefined) => {
+      console.log(action, trackId); // TODO
+      switch (action) {
+        case TrackContextMenuAction.PLAY:
+          break;
+        case TrackContextMenuAction.PLAY_NEXT:
+          break;
+        case TrackContextMenuAction.DOWNLOAD:
+          break;
+        case TrackContextMenuAction.EDIT:
+          break;
+      }
+      setContextMenuData(null);
+    },
+    [setContextMenuData]
+  );
+
   return (
     <TrackTableContext.Provider
       value={{
@@ -102,6 +136,7 @@ function TrackTable() {
                   trackDisplayIndexes={state.sortFilteredIndexes}
                   selectedTrackId={selectedTrackId}
                   setSelectedTrackId={setSelectedTrackId}
+                  showContextMenu={showContextMenu}
                 />
               )}
             </VariableSizeGrid>
@@ -109,6 +144,11 @@ function TrackTable() {
         )}
       </AutoSizer>
       <MeasureIconWidths setIconWidths={setIconWidths} />
+      <TrackContextMenu
+        data={contextMenuData}
+        setData={setContextMenuData}
+        handleAction={handleContextMenuAction}
+      />
     </TrackTableContext.Provider>
   );
 }
