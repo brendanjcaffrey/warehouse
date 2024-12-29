@@ -1,4 +1,4 @@
-export enum TrackContextMenuAction {
+export enum TrackAction {
   PLAY,
   PLAY_NEXT,
   DOWNLOAD,

@@ -19,7 +19,7 @@ import { TrackTableCell } from "./TrackTableCell";
 import { SortState, PrecomputeTrackSort } from "./TrackTableSort";
 import { BinarySearchTypeToShowList } from "./TrackTableTypeToShow";
 import { TrackContextMenu, TrackContextMenuData } from "./TrackContextMenu";
-import { TrackContextMenuAction } from "./TrackContextMenuAction";
+import { TrackAction } from "./TrackAction";
 import { ROW_HEIGHT } from "./TrackTableConstants";
 
 function TrackTable() {
@@ -85,17 +85,17 @@ function TrackTable() {
     [setContextMenuData]
   );
 
-  const handleContextMenuAction = useCallback(
-    (action: TrackContextMenuAction, trackId: string | undefined) => {
+  const handleTrackAction = useCallback(
+    (action: TrackAction, trackId: string | undefined) => {
       console.log(action, trackId); // TODO
       switch (action) {
-        case TrackContextMenuAction.PLAY:
+        case TrackAction.PLAY:
           break;
-        case TrackContextMenuAction.PLAY_NEXT:
+        case TrackAction.PLAY_NEXT:
           break;
-        case TrackContextMenuAction.DOWNLOAD:
+        case TrackAction.DOWNLOAD:
           break;
-        case TrackContextMenuAction.EDIT:
+        case TrackAction.EDIT:
           break;
       }
       setContextMenuData(null);
@@ -137,6 +137,7 @@ function TrackTable() {
                   selectedTrackId={selectedTrackId}
                   setSelectedTrackId={setSelectedTrackId}
                   showContextMenu={showContextMenu}
+                  handleAction={handleTrackAction}
                 />
               )}
             </VariableSizeGrid>
@@ -147,7 +148,7 @@ function TrackTable() {
       <TrackContextMenu
         data={contextMenuData}
         setData={setContextMenuData}
-        handleAction={handleContextMenuAction}
+        handleAction={handleTrackAction}
       />
     </TrackTableContext.Provider>
   );

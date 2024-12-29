@@ -1,6 +1,7 @@
 import { GridChildComponentProps } from "react-window";
 import { Track } from "./Library";
 import { COLUMNS } from "./TrackTableColumns";
+import { TrackAction } from "./TrackAction";
 import { lightestGrey, selectedGrey, white } from "./Colors";
 import { CELL_HORIZONTAL_PADDING_SIDE } from "./TrackTableConstants";
 
@@ -25,11 +26,13 @@ interface TrackTableCellProps extends GridChildComponentProps {
     event: React.MouseEvent<HTMLDivElement>,
     trackId: string
   ) => void;
+  handleAction: (action: TrackAction, trackId: string | undefined) => void;
 }
 
 export function TrackTableCell(props: TrackTableCellProps) {
   const rowIndex = props.rowIndex;
   const trackId = props.tracks[props.trackDisplayIndexes[rowIndex]].id;
+
   return (
     <div
       style={{
@@ -45,6 +48,7 @@ export function TrackTableCell(props: TrackTableCellProps) {
       className="valign-center no-select"
       onClick={() => props.setSelectedTrackId(trackId)}
       onContextMenu={(event) => props.showContextMenu(event, trackId)}
+      onDoubleClick={() => props.handleAction(TrackAction.PLAY, trackId)}
     >
       {COLUMNS[props.columnIndex].render(
         props.tracks[props.trackDisplayIndexes[rowIndex]]
