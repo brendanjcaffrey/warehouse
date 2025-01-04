@@ -1,12 +1,15 @@
 import Grid from "@mui/material/Grid2";
 import { SxProps, createTheme, ThemeProvider } from "@mui/material";
+import { Provider as JotaiProvider } from "jotai";
+import { store } from "./State";
 import AuthWrapper from "./AuthWrapper";
 import LibraryWrapper from "./LibraryWrapper";
 import Controls from "./Controls";
-import TrackDisplay from "./TrackDisplay";
+import NowPlaying from "./NowPlaying";
 import SearchBar from "./SearchBar";
 import Sidebar from "./Sidebar";
 import TrackTable from "./TrackTable";
+import Audio from "./Audio";
 import SettingsRecorder from "./SettingsRecorder";
 import { titleGrey, defaultGrey } from "./Colors";
 import "./index.css";
@@ -27,30 +30,33 @@ function App() {
   const bodySx: SxProps = { height: `calc(100% - ${topBarSx.height})` };
 
   return (
-    <ThemeProvider theme={theme}>
-      <AuthWrapper>
-        <LibraryWrapper>
-          <Grid container sx={{ height: "100vh" }}>
-            <Grid size={4} sx={topBarSx}>
-              <Controls />
+    <JotaiProvider store={store}>
+      <ThemeProvider theme={theme}>
+        <AuthWrapper>
+          <LibraryWrapper>
+            <Grid container sx={{ height: "100vh" }}>
+              <Grid size={4} sx={topBarSx}>
+                <Controls />
+              </Grid>
+              <Grid size={4} sx={topBarSx}>
+                <NowPlaying />
+              </Grid>
+              <Grid size={4} sx={topBarSx}>
+                <SearchBar />
+              </Grid>
+              <Grid size={2} sx={bodySx}>
+                <Sidebar />
+              </Grid>
+              <Grid size={10} sx={bodySx}>
+                <TrackTable />
+              </Grid>
             </Grid>
-            <Grid size={4} sx={topBarSx}>
-              <TrackDisplay />
-            </Grid>
-            <Grid size={4} sx={topBarSx}>
-              <SearchBar />
-            </Grid>
-            <Grid size={2} sx={bodySx}>
-              <Sidebar />
-            </Grid>
-            <Grid size={10} sx={bodySx}>
-              <TrackTable />
-            </Grid>
-          </Grid>
-        </LibraryWrapper>
-        <SettingsRecorder />
-      </AuthWrapper>
-    </ThemeProvider>
+          </LibraryWrapper>
+          <Audio />
+          <SettingsRecorder />
+        </AuthWrapper>
+      </ThemeProvider>
+    </JotaiProvider>
   );
 }
 

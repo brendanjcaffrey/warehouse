@@ -1,4 +1,4 @@
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { Stack, Slider, IconButton } from "@mui/material";
 import {
   SkipNextRounded,
@@ -15,19 +15,16 @@ import {
   showArtworkAtom,
   volumeAtom,
 } from "./Settings";
+import { player } from "./Player";
 import { playingAtom } from "./State";
 import { defaultGrey, darkerGrey, titleGrey } from "./Colors";
 
 function Controls() {
-  const [playing, setPlaying] = useAtom(playingAtom);
   const [shuffle, setShuffle] = useAtom(shuffleAtom);
   const [repeat, setRepeat] = useAtom(repeatAtom);
   const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
-  const [volume, setVolume] = useAtom(volumeAtom);
-
-  const togglePlaying = () => {
-    setPlaying((prev) => !prev);
-  };
+  const volume = useAtomValue(volumeAtom);
+  const playing = useAtomValue(playingAtom);
 
   const toggleShuffle = () => {
     setShuffle((prev) => !prev);
@@ -42,23 +39,27 @@ function Controls() {
   };
 
   const volumeChange = (_: Event, newValue: number | number[]) => {
-    setVolume(newValue as number);
+    player().setVolume(newValue as number);
   };
 
   return (
     <div>
       <Stack direction="row" sx={{ alignItems: "center" }}>
-        <IconButton size="large">
+        <IconButton size="large" onClick={() => player().prev()}>
           <SkipPreviousRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
-        <IconButton size="large" onClick={togglePlaying} edge="start">
+        <IconButton
+          size="large"
+          onClick={() => player().playPause()}
+          edge="start"
+        >
           {playing ? (
             <PauseRounded fontSize="inherit" sx={{ color: titleGrey }} />
           ) : (
             <PlayArrowRounded fontSize="inherit" sx={{ color: titleGrey }} />
           )}
         </IconButton>
-        <IconButton size="large" edge="start">
+        <IconButton size="large" edge="start" onClick={() => player().next()}>
           <SkipNextRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
         <IconButton

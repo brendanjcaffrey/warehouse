@@ -3,6 +3,8 @@ import { isObject } from "lodash";
 export const START_SYNC_TYPE = "startSync";
 export const SYNC_SUCCEEDED_TYPE = "syncSucceeded";
 export const SET_AUTH_TOKEN_TYPE = "setAuthToken";
+export const FETCH_TRACK_TYPE = "fetchTrack";
+export const TRACK_FETCHED_TYPE = "trackFetched";
 export const FETCH_ARTWORK_TYPE = "fetchArtwork";
 export const ARTWORK_FETCHED_TYPE = "artworkFetched";
 export const CLEAR_ALL_TYPE = "clearAll";
@@ -18,6 +20,10 @@ export interface AuthTokenMessage extends TypedMessage {
 
 export interface ErrorMessage extends TypedMessage {
   error: string;
+}
+
+export interface FetchTrackMessage extends TypedMessage {
+  trackFilename: string;
 }
 
 export interface FetchArtworkMessage extends TypedMessage {
@@ -49,6 +55,26 @@ export function isSetAuthTokenMessage(
     isObject(message) &&
     message.type === SET_AUTH_TOKEN_TYPE &&
     "authToken" in message
+  );
+}
+
+export function isFetchTrackMessage(
+  message: TypedMessage
+): message is FetchTrackMessage {
+  return (
+    isObject(message) &&
+    message.type === FETCH_TRACK_TYPE &&
+    "trackFilename" in message
+  );
+}
+
+export function isTrackFetchedMessage(
+  message: TypedMessage
+): message is FetchTrackMessage {
+  return (
+    isObject(message) &&
+    message.type === TRACK_FETCHED_TYPE &&
+    "trackFilename" in message
   );
 }
 

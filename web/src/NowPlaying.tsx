@@ -5,7 +5,9 @@ import { Box, Stack, Typography, Slider } from "@mui/material";
 import { KeyboardReturnRounded } from "@mui/icons-material";
 import Artwork from "./Artwork";
 import { lighterGrey, titleGrey, defaultGrey } from "./Colors";
+import { player } from "./Player";
 import { showArtworkAtom } from "./Settings";
+import { playingTrackAtom, currentTimeAtom } from "./State";
 
 const DurationText = styled(Typography)({
   color: defaultGrey,
@@ -13,15 +15,16 @@ const DurationText = styled(Typography)({
   marginTop: "auto",
 });
 
-function TrackDisplay() {
-  const duration = 200; // seconds
-  const [position, setPosition] = useState(32);
+function NowPlaying() {
   const [returnDown, setReturnDown] = useState(false);
   const showArtwork = useAtomValue(showArtworkAtom);
+  const playingTrack = useAtomValue(playingTrackAtom);
+  const currentTime = useAtomValue(currentTimeAtom);
+  const duration = playingTrack?.duration || 0;
 
-  function formatDuration(value: number) {
+  function formatSeconds(value: number) {
     const minute = Math.floor(value / 60);
-    const secondLeft = value - minute * 60;
+    const secondLeft = Math.floor(value - minute * 60);
     return `${minute}:${secondLeft < 10 ? `0${secondLeft}` : secondLeft}`;
   }
 
@@ -44,14 +47,14 @@ function TrackDisplay() {
             marginTop: "4px",
           }}
         >
-          <DurationText>{formatDuration(position)}</DurationText>
+          <DurationText>{formatSeconds(currentTime)}</DurationText>
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <Box sx={{ textAlign: "center" }}>
               <Typography
                 noWrap
                 sx={{ color: titleGrey, fontSize: "14px", lineHeight: "20px" }}
               >
-                Name
+                {playingTrack?.name || ""}
                 <span onMouseDown={returnButtonDown} onMouseUp={returnButtonUp}>
                   <KeyboardReturnRounded
                     sx={{
@@ -70,18 +73,20 @@ function TrackDisplay() {
                   lineHeight: "17.15px",
                 }}
               >
-                Artist – Album
+                {playingTrack?.artistName || ""}
+                {playingTrack?.albumName && " - "}
+                {playingTrack?.albumName || ""}
               </Typography>
             </Box>
           </Box>
-          <DurationText>-{formatDuration(duration - position)}</DurationText>
+          <DurationText>-{formatSeconds(duration - currentTime)}</DurationText>
         </Box>
         <Slider
           size="small"
-          value={position}
+          value={currentTime}
           min={0}
-          max={duration}
-          onChange={(_, value) => setPosition(value as number)}
+          max={playingTrack?.duration}
+          onChange={(_, value) => player().setCurrentTime(value as number)}
           sx={() => ({
             color: defaultGrey,
             height: 4,
@@ -103,4 +108,4 @@ function TrackDisplay() {
   );
 }
 
-export default TrackDisplay;
+export default NowPlaying;

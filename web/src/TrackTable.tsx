@@ -5,6 +5,7 @@ import { VariableSizeGrid } from "react-window";
 import { useDebouncedAtomValue } from "./useDebouncedAtomValue";
 import { useDebouncedTypedInput } from "./useDebouncedTypedInput";
 import library from "./Library";
+import { player } from "./Player";
 import { selectedPlaylistAtom, searchAtom } from "./State";
 import { IconWidths, MeasureIconWidths } from "./MeasureIconWidths";
 import { TrackTableContext } from "./TrackTableContext";
@@ -61,6 +62,12 @@ function TrackTable() {
       });
   }, [selectedPlaylist]);
 
+  useEffect(() => {
+    player().setDisplayedTrackIds(
+      state.sortFilteredIndexes.map((idx) => state.tracks[idx].id)
+    );
+  }, [state]);
+
   useDebouncedTypedInput((typedInput: string) => {
     const entry = BinarySearchTypeToShowList(state.typeToShowList, typedInput);
     if (entry && gridRef.current) {
@@ -87,15 +94,21 @@ function TrackTable() {
 
   const handleTrackAction = useCallback(
     (action: TrackAction, trackId: string | undefined) => {
-      console.log(action, trackId); // TODO
+      if (!trackId) {
+        return;
+      }
       switch (action) {
         case TrackAction.PLAY:
+          player().playTrack(trackId);
           break;
         case TrackAction.PLAY_NEXT:
+          player().playTrackNext(trackId);
           break;
         case TrackAction.DOWNLOAD:
+          // TODO
           break;
         case TrackAction.EDIT:
+          // TODO
           break;
       }
       setContextMenuData(null);

@@ -3,7 +3,7 @@ import { Box, Button } from "@mui/material";
 import { Logout } from "@mui/icons-material";
 import { clearAuthFnAtom, clearSettingsFnAtom } from "./State";
 import library from "./Library";
-import { ArtworkWorker } from "./ArtworkWorkerHandle";
+import { DownloadWorker } from "./DownloadWorkerHandle";
 import { CLEAR_ALL_TYPE } from "./WorkerTypes";
 
 function LogOut({ height }: { height: string }) {
@@ -14,7 +14,7 @@ function LogOut({ height }: { height: string }) {
     clearAuthFn.fn();
     clearSettingsFn.fn();
     library().clear();
-    ArtworkWorker.postMessage({ type: CLEAR_ALL_TYPE });
+    DownloadWorker.postMessage({ type: CLEAR_ALL_TYPE });
   }
 
   return (

@@ -214,6 +214,20 @@ class Library {
     }
   }
 
+  public async getTrack(trackId: string): Promise<Track | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting track", "database is not initialized");
+      return;
+    }
+
+    const tx = this.db.transaction("tracks", "readonly");
+    const store = tx.objectStore("tracks");
+    return await store.get(trackId);
+  }
+
   private setError(action: string, error: Error | string | null | unknown) {
     this.validState = false;
 

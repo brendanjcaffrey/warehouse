@@ -3,6 +3,8 @@ import { useSetAtom } from "jotai";
 import useAuthToken from "./useAuthToken";
 import AuthForm from "./AuthForm";
 import AuthVerifier from "./AuthVerifier";
+import { DownloadWorker } from "./DownloadWorkerHandle";
+import { SET_AUTH_TOKEN_TYPE } from "./WorkerTypes";
 import { clearAuthFnAtom } from "./State";
 
 interface AuthWrapperProps {
@@ -13,6 +15,13 @@ function AuthWrapper({ children }: AuthWrapperProps) {
   const [authToken, setAuthToken] = useAuthToken();
   const [authVerified, setAuthVerified] = useState(false);
   const setClearAuthFn = useSetAtom(clearAuthFnAtom);
+
+  useEffect(() => {
+    DownloadWorker.postMessage({
+      type: SET_AUTH_TOKEN_TYPE,
+      authToken,
+    });
+  }, [authToken]);
 
   useEffect(() => {
     setClearAuthFn({
