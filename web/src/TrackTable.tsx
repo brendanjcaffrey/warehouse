@@ -95,6 +95,7 @@ function TrackTable() {
   const showContextMenu = useCallback(
     (event: React.MouseEvent, trackId: string) => {
       event.preventDefault();
+      setSelectedTrackId(trackId);
       setContextMenuData({
         trackId: trackId,
         mouseX: event.clientX,

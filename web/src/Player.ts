@@ -44,6 +44,7 @@ class Player {
   // whether actively playing or paused
   playing: boolean;
 
+  // TODO timeout, show error etc
   pendingDownloads: Set<string> = new Set();
 
   constructor() {
@@ -123,19 +124,32 @@ class Player {
     this.displayedPlaylistId = displayedPlaylistId;
     this.displayedTrackIds = displayedTrackIds;
     if (this.stopped || this.displayedPlaylistId === this.playingPlaylistId) {
-      this.playingPlaylistId = this.displayedPlaylistId;
-      this.sortedPlayingTrackIds = [...this.displayedTrackIds];
-      await this.shuffleChanged();
+      this.rebuildPlayingTrackIds();
     }
   }
 
-  async shuffleChanged() {
+  async rebuildPlayingTrackIds(
+    overwritePlayingTrackId: string | undefined = undefined
+  ) {
+    this.playingPlaylistId = this.displayedPlaylistId;
+    this.sortedPlayingTrackIds = [...this.displayedTrackIds];
+    await this.shuffleChanged(overwritePlayingTrackId);
+  }
+
+  async shuffleChanged(
+    overwritePlayingTrackId: string | undefined = undefined
+  ) {
     this.playingTrackIds = [...this.sortedPlayingTrackIds];
     if (store.get(shuffleAtom)) {
       this.playingTrackIds.sort(() => Math.random() - 0.5);
     }
 
-    if (this.stopped) {
+    if (overwritePlayingTrackId) {
+      this.playingTrackIdx = this.playingTrackIds.indexOf(
+        overwritePlayingTrackId
+      );
+      await this.updatePlayingTrack();
+    } else if (this.stopped) {
       this.playingTrackIdx = 0;
       await this.updatePlayingTrack();
     } else {
@@ -198,7 +212,12 @@ class Player {
   }
 
   // actions
-  playTrack(trackId: string) {}
+  playTrack(trackId: string) {
+    this.rebuildPlayingTrackIds(trackId);
+    if (this.stopped) {
+      this.playPause();
+    }
+  }
 
   playTrackNext(trackId: string) {}
 
@@ -268,6 +287,9 @@ class Player {
   }
 
   private audioPlay() {
+    if (this.lastSetAudioSrcTrackId !== this.playingTrack?.id) {
+      return;
+    }
     this.audioRef?.play().catch(() => {
       // nop, this happens when the user pauses the audio
     });
