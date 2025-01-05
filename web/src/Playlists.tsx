@@ -20,7 +20,7 @@ import {
 } from "@mui/icons-material";
 import library from "./Library";
 import { openedFoldersAtom } from "./Settings";
-import { selectedPlaylistAtom } from "./State";
+import { selectedPlaylistIdAtom } from "./State";
 
 const ICON_WIDTH = 30;
 
@@ -54,7 +54,9 @@ function SortPlaylistTree(list: PlaylistDisplay[]) {
 
 function PlaylistItem({ playlist }: { playlist: PlaylistDisplay }) {
   const [openedFolders, setOpenedFolders] = useAtom(openedFoldersAtom);
-  const [selectedPlaylist, setSelectedPlaylist] = useAtom(selectedPlaylistAtom);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useAtom(
+    selectedPlaylistIdAtom
+  );
 
   const isOpen = openedFolders.has(playlist.id);
   const isFolder = playlist.children.length > 0;
@@ -92,7 +94,7 @@ function PlaylistItem({ playlist }: { playlist: PlaylistDisplay }) {
   };
 
   const selectPlaylist = () => {
-    setSelectedPlaylist(playlist.id);
+    setSelectedPlaylistId(playlist.id);
   };
 
   return (
@@ -103,7 +105,7 @@ function PlaylistItem({ playlist }: { playlist: PlaylistDisplay }) {
         disablePadding
       >
         <ListItemButton
-          selected={playlist.id === selectedPlaylist}
+          selected={playlist.id === selectedPlaylistId}
           onClick={selectPlaylist}
         >
           <ListItemIcon sx={{ minWidth: `${ICON_WIDTH}px` }}>
@@ -138,7 +140,7 @@ function PlaylistLevelList({
 }
 
 function Playlists({ height }: { height: string }) {
-  const setSelectedPlaylist = useSetAtom(selectedPlaylistAtom);
+  const setSelectedPlaylistId = useSetAtom(selectedPlaylistIdAtom);
   const [playlists, setPlaylists] = useState<PlaylistDisplay[]>([]);
 
   useEffect(() => {
@@ -172,12 +174,12 @@ function Playlists({ height }: { height: string }) {
       SortPlaylistTree(display);
       setPlaylists(display);
       if (display.length > 0) {
-        setSelectedPlaylist(display[0].id);
+        setSelectedPlaylistId(display[0].id);
       }
     }
 
     fetchPlaylists();
-  }, [setPlaylists, setSelectedPlaylist]);
+  }, [setPlaylists, setSelectedPlaylistId]);
 
   return (
     <Box sx={{ height: height, overflowY: "auto" }}>

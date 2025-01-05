@@ -31,6 +31,7 @@ export interface Column {
   label: string;
   render: (track: Track) => JSX.Element | string;
   calculateSizeByRendering: boolean;
+  canHaveNowPlayingIcon: boolean;
   sortKeys: SortKey[];
 }
 
@@ -40,6 +41,7 @@ export const COLUMNS: Column[] = [
     label: "Name",
     render: (track: Track) => track.name,
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: true,
     sortKeys: ["sortName"],
   },
   {
@@ -51,6 +53,7 @@ export const COLUMNS: Column[] = [
       return `${minutes}:${seconds.toFixed(0).padStart(2, "0")}`;
     },
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: false,
     sortKeys: ["duration"],
   },
   {
@@ -58,6 +61,7 @@ export const COLUMNS: Column[] = [
     label: "Artist",
     render: (track: Track) => track.artistName,
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: false,
     sortKeys: ["artistSortName"],
   },
   {
@@ -65,6 +69,7 @@ export const COLUMNS: Column[] = [
     label: "Album",
     render: (track: Track) => track.albumName,
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: false,
     sortKeys: [
       "albumArtistSortName",
       "year",
@@ -78,6 +83,7 @@ export const COLUMNS: Column[] = [
     label: "Genre",
     render: (track: Track) => track.genre,
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: false,
     sortKeys: ["genre"],
   },
   {
@@ -85,6 +91,7 @@ export const COLUMNS: Column[] = [
     label: "Year",
     render: (track: Track) => (track.year !== 0 ? track.year.toString() : ""),
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: false,
     sortKeys: ["year"],
   },
   {
@@ -92,6 +99,7 @@ export const COLUMNS: Column[] = [
     label: "Plays",
     render: (track: Track) => track.playCount.toString(),
     calculateSizeByRendering: true,
+    canHaveNowPlayingIcon: false,
     sortKeys: ["playCount"],
   },
   {
@@ -99,6 +107,7 @@ export const COLUMNS: Column[] = [
     label: "Rating",
     render: RenderRating,
     calculateSizeByRendering: false,
+    canHaveNowPlayingIcon: false,
     sortKeys: ["rating"],
   },
 ];
@@ -121,6 +130,7 @@ export function GetColumnWidths(
     return widths;
   }
 
+  // start with the header cell width with sort arrow
   const computedStyle = window.getComputedStyle(document.body);
   context.font = `bold ${computedStyle.font}`;
   for (const [index, column] of COLUMNS.entries()) {
@@ -128,7 +138,8 @@ export function GetColumnWidths(
       continue;
     }
     const width = context.measureText(column.label).width;
-    widths[index] = width + iconWidths.arrow + CELL_HORIZONTAL_PADDING_TOTAL;
+    widths[index] =
+      width + iconWidths.upwardArrow + CELL_HORIZONTAL_PADDING_TOTAL;
   }
 
   context.font = computedStyle.font;
@@ -139,8 +150,11 @@ export function GetColumnWidths(
       }
       const rendered = column.render(track);
       if (typeof rendered === "string") {
-        const width =
+        let width =
           context.measureText(rendered).width + CELL_HORIZONTAL_PADDING_TOTAL;
+        if (column.canHaveNowPlayingIcon) {
+          width += iconWidths.volumeUp;
+        }
         widths[index] = Math.max(widths[index], width);
       }
     }

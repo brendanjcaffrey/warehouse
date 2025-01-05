@@ -1,4 +1,5 @@
 import { GridChildComponentProps } from "react-window";
+import { VolumeUpRounded } from "@mui/icons-material";
 import { Track } from "./Library";
 import { COLUMNS } from "./TrackTableColumns";
 import { TrackAction } from "./TrackAction";
@@ -22,6 +23,7 @@ interface TrackTableCellProps extends GridChildComponentProps {
   trackDisplayIndexes: number[];
   selectedTrackId: string | null;
   setSelectedTrackId: (trackId: string) => void;
+  playingTrackId: string | null;
   showContextMenu: (
     event: React.MouseEvent<HTMLDivElement>,
     trackId: string
@@ -43,6 +45,9 @@ export function TrackTableCell(props: TrackTableCellProps) {
         ),
         padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
         boxSizing: "border-box",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
         ...props.style,
       }}
       className="valign-center no-select"
@@ -50,6 +55,10 @@ export function TrackTableCell(props: TrackTableCellProps) {
       onContextMenu={(event) => props.showContextMenu(event, trackId)}
       onDoubleClick={() => props.handleAction(TrackAction.PLAY, trackId)}
     >
+      {COLUMNS[props.columnIndex].canHaveNowPlayingIcon &&
+      trackId === props.playingTrackId ? (
+        <VolumeUpRounded fontSize="small" color="primary" />
+      ) : null}
       {COLUMNS[props.columnIndex].render(
         props.tracks[props.trackDisplayIndexes[rowIndex]]
       )}

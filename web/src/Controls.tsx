@@ -28,6 +28,7 @@ function Controls() {
 
   const toggleShuffle = () => {
     setShuffle((prev) => !prev);
+    player().shuffleChanged();
   };
 
   const toggleRepeat = () => {

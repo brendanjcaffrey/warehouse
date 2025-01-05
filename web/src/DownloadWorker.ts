@@ -92,14 +92,12 @@ class DownloadManager {
     msgKey: string
   ) {
     if (this.inflightRequests.has(filename)) {
-      console.log(`Request for ${filename} is already inflight`);
       return;
     }
     this.inflightRequests.add(filename);
 
     try {
       await dirHandle?.getFileHandle(filename);
-      console.log(`Already have ${filename}`);
       postMessage({ type: fetchedType, [msgKey]: filename });
       this.inflightRequests.delete(filename);
       return;
@@ -113,7 +111,6 @@ class DownloadManager {
 
     try {
       const requestPath = `/${urlPrefix}/${filename}`;
-      console.log(`Fetching ${requestPath} with ${this.authToken}`);
       const { data } = await axios.get(requestPath, {
         responseType: "arraybuffer",
         headers: { Authorization: `Bearer ${this.authToken}` },
@@ -122,8 +119,8 @@ class DownloadManager {
         create: true,
       });
       const writable = await fileHandle.createWritable();
-      writable.write(data);
-      writable.close();
+      await writable.write(data);
+      await writable.close();
       postMessage({ type: fetchedType, [msgKey]: filename });
     } catch (error) {
       console.error(error);

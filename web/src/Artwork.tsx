@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { Box } from "@mui/material";
+import { Box, CircularProgress } from "@mui/material";
+import DelayedElement from "./DelayedElement";
+import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom } from "./State";
 import { DownloadWorker } from "./DownloadWorkerHandle";
-import {
-  isTypedMessage,
-  isArtworkFetchedMessage,
-  FETCH_ARTWORK_TYPE,
-} from "./WorkerTypes";
+import { isTypedMessage, isArtworkFetchedMessage } from "./WorkerTypes";
 
 const ARTWORK_SIZE = "40px";
+const SPINNER_SIZE = "20px";
 const SPACING = "4px";
 
 function Artwork() {
+  const showArtwork = useAtomValue(showArtworkAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const [shownArtwork, setShownArtwork] = useState<string | null>(null);
   const [artworkFileURL, setArtworkFileURL] = useState<string | null>(null);
@@ -31,6 +31,10 @@ function Artwork() {
     }
   }
 
+  useEffect(() => {
+    getArtworkDirHandle();
+  }, []);
+
   const showFetchedArtwork = useCallback(
     async (artworkFilename: string) => {
       try {
@@ -43,21 +47,16 @@ function Artwork() {
         }
 
         const file = await fileHandle.getFile();
-        setShownArtwork(artworkFilename);
         setArtworkFileURL(URL.createObjectURL(file));
-      } catch (e) {
-        console.error("unable to get fetched artwork", e);
+      } catch {
+        // nop, Player handles downloading artwork, so wait for a message to come in from the worker
       }
     },
-    [artworkDirHandle, setShownArtwork, setArtworkFileURL]
+    [artworkDirHandle, setArtworkFileURL]
   );
 
-  useEffect(() => {
-    getArtworkDirHandle();
-  }, []);
-
-  useEffect(() => {
-    DownloadWorker.onmessage = (m: MessageEvent) => {
+  const handleDownloadWorkerMessage = useCallback(
+    (m: MessageEvent) => {
       const { data } = m;
       if (!isTypedMessage(data)) {
         return;
@@ -68,11 +67,19 @@ function Artwork() {
       ) {
         showFetchedArtwork(data.artworkFilename);
       }
-    };
+    },
+    [playingTrack, showFetchedArtwork]
+  );
+
+  useEffect(() => {
+    DownloadWorker.addEventListener("message", handleDownloadWorkerMessage);
     return () => {
-      DownloadWorker.onmessage = null;
+      DownloadWorker.removeEventListener(
+        "message",
+        handleDownloadWorkerMessage
+      );
     };
-  }, [playingTrack, showFetchedArtwork]);
+  }, [handleDownloadWorkerMessage]);
 
   useEffect(() => {
     if (
@@ -80,24 +87,28 @@ function Artwork() {
       artworkDirHandle &&
       playingTrack.artworks[0] !== shownArtwork
     ) {
-      const artworkFilename = playingTrack.artworks[0];
-      if (artworkFilename) {
-        DownloadWorker.postMessage({
-          type: FETCH_ARTWORK_TYPE,
-          artworkFilename: artworkFilename,
-        });
-        setShownArtwork(null);
-        if (artworkFileURL) {
-          URL.revokeObjectURL(artworkFileURL);
-          setArtworkFileURL(null);
-        }
-      } else {
+      if (artworkFileURL) {
+        URL.revokeObjectURL(artworkFileURL);
         setArtworkFileURL(null);
       }
-    }
-  }, [playingTrack, artworkFileURL, shownArtwork, artworkDirHandle]);
 
-  if (artworkFileURL) {
+      const artworkFilename = playingTrack.artworks[0];
+      if (artworkFilename) {
+        setShownArtwork(artworkFilename);
+        showFetchedArtwork(artworkFilename);
+      } else {
+        setShownArtwork(null);
+      }
+    }
+  }, [
+    playingTrack,
+    artworkFileURL,
+    shownArtwork,
+    artworkDirHandle,
+    showFetchedArtwork,
+  ]);
+
+  if (showArtwork && (playingTrack?.artworks.length ?? 0) > 0) {
     return (
       <Box
         sx={{
@@ -107,12 +118,27 @@ function Artwork() {
           paddingRight: SPACING,
         }}
       >
-        <img
-          src={artworkFileURL}
-          alt="artwork"
-          width={ARTWORK_SIZE}
-          height={ARTWORK_SIZE}
-        />
+        {artworkFileURL ? (
+          <img
+            src={artworkFileURL}
+            alt="artwork"
+            width={ARTWORK_SIZE}
+            height={ARTWORK_SIZE}
+          />
+        ) : (
+          <DelayedElement>
+            <div
+              style={{
+                width: ARTWORK_SIZE,
+                height: ARTWORK_SIZE,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <CircularProgress size={SPINNER_SIZE} />
+            </div>
+          </DelayedElement>
+        )}
       </Box>
     );
   } else {

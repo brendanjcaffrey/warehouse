@@ -6,7 +6,12 @@ import { useDebouncedAtomValue } from "./useDebouncedAtomValue";
 import { useDebouncedTypedInput } from "./useDebouncedTypedInput";
 import library from "./Library";
 import { player } from "./Player";
-import { selectedPlaylistAtom, searchAtom } from "./State";
+import {
+  selectedPlaylistIdAtom,
+  searchAtom,
+  stoppedAtom,
+  playingTrackAtom,
+} from "./State";
 import { IconWidths, MeasureIconWidths } from "./MeasureIconWidths";
 import { TrackTableContext } from "./TrackTableContext";
 import {
@@ -26,7 +31,9 @@ import { ROW_HEIGHT } from "./TrackTableConstants";
 function TrackTable() {
   const gridRef = useRef<VariableSizeGrid>(null);
 
-  const selectedPlaylist = useAtomValue(selectedPlaylistAtom);
+  const selectedPlaylistId = useAtomValue(selectedPlaylistIdAtom);
+  const stopped = useAtomValue(stoppedAtom);
+  const playingTrack = useAtomValue(playingTrackAtom);
   const [state, dispatch] = useReducer(UpdateTrackTableState, DEFAULT_STATE);
 
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
@@ -47,23 +54,28 @@ function TrackTable() {
 
   useEffect(() => {
     library()
-      .getAllPlaylistTracks(selectedPlaylist)
+      .getAllPlaylistTracks(selectedPlaylistId)
       .then((tracks) => {
         if (tracks) {
           for (const track of tracks || []) {
             PrecomputeTrackSort(track);
           }
-          dispatch({ type: UpdateType.TracksChanged, tracks });
+          dispatch({
+            type: UpdateType.TracksChanged,
+            playlistId: selectedPlaylistId,
+            tracks,
+          });
           setSelectedTrackId(null);
           if (gridRef.current) {
             gridRef.current.resetAfterIndices({ columnIndex: 0, rowIndex: 0 });
           }
         }
       });
-  }, [selectedPlaylist]);
+  }, [selectedPlaylistId]);
 
   useEffect(() => {
     player().setDisplayedTrackIds(
+      state.playlistId,
       state.sortFilteredIndexes.map((idx) => state.tracks[idx].id)
     );
   }, [state]);
@@ -149,6 +161,9 @@ function TrackTable() {
                   trackDisplayIndexes={state.sortFilteredIndexes}
                   selectedTrackId={selectedTrackId}
                   setSelectedTrackId={setSelectedTrackId}
+                  playingTrackId={
+                    !stopped && playingTrack ? playingTrack.id : null
+                  }
                   showContextMenu={showContextMenu}
                   handleAction={handleTrackAction}
                 />

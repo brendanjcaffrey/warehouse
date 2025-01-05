@@ -8,6 +8,7 @@ import { DEFAULT_COLUMN_WIDTH } from "./TrackTableConstants";
 
 export interface TrackTableState {
   iconWidths: IconWidths;
+  playlistId: string;
   tracks: Track[];
   columnWidths: number[];
 
@@ -21,7 +22,8 @@ export interface TrackTableState {
 }
 
 export const DEFAULT_STATE: TrackTableState = {
-  iconWidths: { star: 0, arrow: 0 },
+  iconWidths: { star: 0, upwardArrow: 0, volumeUp: 0 },
+  playlistId: "",
   tracks: [],
   columnWidths: COLUMNS.map(() => DEFAULT_COLUMN_WIDTH),
 
@@ -51,6 +53,7 @@ export type IconWidthsChanged = {
 
 export type TracksChanged = {
   type: UpdateType.TracksChanged;
+  playlistId: string;
   tracks: Track[];
 };
 
@@ -74,6 +77,7 @@ export function UpdateTrackTableState(
       newState.iconWidths = event.iconWidths;
       break;
     case UpdateType.TracksChanged:
+      newState.playlistId = event.playlistId;
       newState.tracks = event.tracks;
       break;
     case UpdateType.SortChanged:

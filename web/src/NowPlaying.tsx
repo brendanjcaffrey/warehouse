@@ -6,7 +6,6 @@ import { KeyboardReturnRounded } from "@mui/icons-material";
 import Artwork from "./Artwork";
 import { lighterGrey, titleGrey, defaultGrey } from "./Colors";
 import { player } from "./Player";
-import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom, currentTimeAtom } from "./State";
 
 const DurationText = styled(Typography)({
@@ -17,7 +16,6 @@ const DurationText = styled(Typography)({
 
 function NowPlaying() {
   const [returnDown, setReturnDown] = useState(false);
-  const showArtwork = useAtomValue(showArtworkAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
   const duration = playingTrack?.duration || 0;
@@ -37,7 +35,9 @@ function NowPlaying() {
 
   return (
     <Stack direction="row">
-      <Box>{showArtwork && <Artwork />}</Box>
+      <Box>
+        <Artwork />
+      </Box>
       <Box sx={{ width: "100%" }}>
         <Box
           sx={{

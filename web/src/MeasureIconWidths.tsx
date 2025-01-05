@@ -1,9 +1,14 @@
 import { useEffect, useRef } from "react";
-import { StarRounded, ArrowUpwardRounded } from "@mui/icons-material";
+import {
+  StarRounded,
+  ArrowUpwardRounded,
+  VolumeUpRounded,
+} from "@mui/icons-material";
 
 export interface IconWidths {
   star: number;
-  arrow: number;
+  upwardArrow: number;
+  volumeUp: number;
 }
 
 interface MeasureIconWidthsProps {
@@ -22,7 +27,11 @@ export const MeasureIconWidths = ({
       const childrenWidths = Array.from(container.children).map(
         (child) => child.getBoundingClientRect().width
       );
-      setIconWidths({ star: childrenWidths[0], arrow: childrenWidths[1] });
+      setIconWidths({
+        star: childrenWidths[0],
+        upwardArrow: childrenWidths[1],
+        volumeUp: childrenWidths[2],
+      });
     }
   }, [setIconWidths]);
 
@@ -38,6 +47,7 @@ export const MeasureIconWidths = ({
     >
       <StarRounded fontSize="small" />
       <ArrowUpwardRounded fontSize="small" />
+      <VolumeUpRounded fontSize="small" />
     </div>
   );
 };

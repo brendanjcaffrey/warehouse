@@ -1,12 +1,19 @@
 import { memoize, isEqual } from "lodash";
-import { volumeAtom, shuffleAtom } from "./Settings";
-import { store, currentTimeAtom, playingTrackAtom, playingAtom } from "./State";
+import { volumeAtom, shuffleAtom, repeatAtom } from "./Settings";
+import {
+  store,
+  stoppedAtom,
+  currentTimeAtom,
+  playingTrackAtom,
+  playingAtom,
+} from "./State";
 import library, { Track } from "./Library";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import {
   isTypedMessage,
-  isFetchTrackMessage,
+  isTrackFetchedMessage,
   FETCH_TRACK_TYPE,
+  FETCH_ARTWORK_TYPE,
 } from "./WorkerTypes";
 import { circularArraySlice } from "./Util";
 
@@ -15,76 +22,74 @@ const TRACKS_TO_PRELOAD = 3;
 class Player {
   trackDirHandle: FileSystemDirectoryHandle | undefined;
   audioRef: HTMLAudioElement | undefined;
+
+  // what is displayed in the track table
+  displayedPlaylistId: string | undefined;
   displayedTrackIds: string[];
+
+  // what we're playing right now - can be different from displayed
+  playingPlaylistId: string | undefined;
+  // tracks sorted in the order they are displayed in
+  sortedPlayingTrackIds: string[];
+  // tracks sorted in the order we are playing them - can be different than above if shuffle is on
   playingTrackIds: string[];
+  // index into playingTrackIds
   playingTrackIdx: number;
   playingTrack: Track | undefined;
+  // last track we set the audio src to, here to avoid setting it to the same thing
   lastSetAudioSrcTrackId: string | undefined;
-  everPlayed: boolean;
+
+  // stopped is true at load, then false forever after the first track is played
+  stopped: boolean;
+  // whether actively playing or paused
   playing: boolean;
 
   constructor() {
     this.trackDirHandle = undefined;
     this.audioRef = undefined;
+    this.displayedPlaylistId = undefined;
     this.displayedTrackIds = [];
+    this.playingPlaylistId = undefined;
+    this.sortedPlayingTrackIds = [];
     this.playingTrackIds = [];
     this.playingTrackIdx = 0;
     this.playingTrack = undefined;
     this.lastSetAudioSrcTrackId = undefined;
-    this.everPlayed = false;
+    this.stopped = true;
     this.playing = false;
 
     this.getTrackDirHandle();
-    DownloadWorker.onmessage = (m: MessageEvent) => {
+    DownloadWorker.addEventListener("message", (m: MessageEvent) => {
       const { data } = m;
       if (!isTypedMessage(data)) {
         return;
       }
       if (
-        isFetchTrackMessage(data) &&
+        isTrackFetchedMessage(data) &&
         data.trackFilename === this.playingTrack?.id
       ) {
         this.trySetPlayingTrack();
       }
-    };
-  }
-
-  async trySetPlayingTrack() {
-    if (!this.playingTrack || !this.audioRef) {
-      return;
-    }
-    try {
-      if (this.lastSetAudioSrcTrackId === this.playingTrack.id) {
-        return;
-      }
-      const fileHandle = await this.trackDirHandle?.getFileHandle(
-        this.playingTrack.id
-      );
-      const file = await fileHandle!.getFile();
-      this.audioRef.src = URL.createObjectURL(file);
-      this.audioRef.currentTime = this.playingTrack.start;
-      this.lastSetAudioSrcTrackId = this.playingTrack.id;
-    } catch {
-      // nop
-    }
-  }
-
-  async getTrackDirHandle() {
-    try {
-      const mainDir = await navigator.storage.getDirectory();
-      this.trackDirHandle = await mainDir.getDirectoryHandle("track", {
-        create: true,
-      });
-    } catch (e) {
-      console.error("unable to get tracks dir handle", e);
-    }
+    });
   }
 
   setAudioRef(audioRef: HTMLAudioElement) {
     this.audioRef = audioRef;
     this.setVolume(store.get(volumeAtom));
     this.audioRef.ontimeupdate = () => {
-      store.set(currentTimeAtom, this.audioRef!.currentTime);
+      const currentTime = this.audioRef!.currentTime;
+      store.set(currentTimeAtom, currentTime);
+
+      if (!this.playingTrack) {
+        return;
+      }
+      if (
+        currentTime >= this.playingTrack.finish ||
+        currentTime >= this.playingTrack.duration
+      ) {
+        // TODO record play
+        this.next();
+      }
     };
   }
 
@@ -102,37 +107,39 @@ class Player {
     store.set(currentTimeAtom, time);
   }
 
-  async setDisplayedTrackIds(displayedTrackIds: string[]) {
-    if (isEqual(this.displayedTrackIds, displayedTrackIds)) {
+  async setDisplayedTrackIds(
+    displayedPlaylistId: string,
+    displayedTrackIds: string[]
+  ) {
+    if (
+      displayedPlaylistId === this.displayedPlaylistId &&
+      isEqual(this.displayedTrackIds, displayedTrackIds)
+    ) {
       return;
     }
 
-    if (!this.everPlayed) {
-      if (store.get(shuffleAtom)) {
-        this.playingTrackIds = displayedTrackIds.sort(
-          () => Math.random() - 0.5
-        );
-      } else {
-        this.playingTrackIds = [...displayedTrackIds];
-      }
-      this.playingTrackIdx = 0;
-      this.playingTrack = await library().getTrack(
-        this.playingTrackIds[this.playingTrackIdx]
-      );
-      store.set(playingTrackAtom, this.playingTrack);
-      this.trySetPlayingTrack();
+    this.displayedPlaylistId = displayedPlaylistId;
+    this.displayedTrackIds = displayedTrackIds;
+    if (this.stopped || this.displayedPlaylistId === this.playingPlaylistId) {
+      this.playingPlaylistId = this.displayedPlaylistId;
+      this.sortedPlayingTrackIds = [...this.displayedTrackIds];
+      await this.shuffleChanged();
+    }
+  }
 
-      // preload the tracks
-      for (const track of circularArraySlice(
-        this.playingTrackIds,
-        this.playingTrackIdx,
-        TRACKS_TO_PRELOAD
-      )) {
-        DownloadWorker.postMessage({
-          type: FETCH_TRACK_TYPE,
-          trackFilename: track,
-        });
-      }
+  async shuffleChanged() {
+    this.playingTrackIds = [...this.sortedPlayingTrackIds];
+    if (store.get(shuffleAtom)) {
+      this.playingTrackIds.sort(() => Math.random() - 0.5);
+    }
+
+    if (this.stopped) {
+      this.playingTrackIdx = 0;
+      await this.updatePlayingTrack();
+    } else {
+      this.playingTrackIdx = this.playingTrackIds.indexOf(
+        this.playingTrack!.id
+      );
     }
   }
 
@@ -143,9 +150,11 @@ class Player {
     }
 
     if (!this.playing) {
+      this.trySetPlayingTrack();
       this.playing = true;
-      this.everPlayed = true;
-      this.audioRef.play();
+      this.stopped = false;
+      store.set(stoppedAtom, false);
+      this.audioPlay();
     } else {
       this.audioRef.pause();
       this.playing = false;
@@ -154,17 +163,133 @@ class Player {
   }
 
   prev() {
-    console.log("prev");
+    if (!this.inValidState()) {
+      return;
+    }
+
+    if (this.shouldRewind()) {
+      this.audioRef.currentTime = this.playingTrack.start;
+      this.audioPlay();
+    } else {
+      this.playingTrackIdx =
+        this.playingTrackIdx === 0
+          ? this.playingTrackIds.length - 1
+          : this.playingTrackIdx - 1;
+      this.updatePlayingTrack();
+    }
   }
 
   next() {
-    console.log("next");
+    if (!this.inValidState()) {
+      return;
+    }
+
+    // TODO check play next list
+    if (this.shouldRewind()) {
+      this.audioRef.currentTime = this.playingTrack.start;
+      this.audioPlay();
+    } else {
+      this.playingTrackIdx =
+        (this.playingTrackIdx + 1) % this.playingTrackIds.length;
+      this.updatePlayingTrack();
+    }
   }
 
   // actions
   playTrack(trackId: string) {}
 
   playTrackNext(trackId: string) {}
+
+  // helpers
+  private async getTrackDirHandle() {
+    try {
+      const mainDir = await navigator.storage.getDirectory();
+      this.trackDirHandle = await mainDir.getDirectoryHandle("track", {
+        create: true,
+      });
+    } catch (e) {
+      console.error("unable to get tracks dir handle", e);
+    }
+  }
+
+  private async trySetPlayingTrack() {
+    if (
+      !this.playingTrack ||
+      !this.audioRef ||
+      this.lastSetAudioSrcTrackId === this.playingTrack.id
+    ) {
+      return;
+    }
+
+    try {
+      const fileHandle = await this.trackDirHandle?.getFileHandle(
+        this.playingTrack.id
+      );
+      const file = await fileHandle!.getFile();
+      this.audioRef.src = URL.createObjectURL(file);
+      this.audioRef.currentTime = this.playingTrack.start;
+      this.lastSetAudioSrcTrackId = this.playingTrack.id;
+      if (this.playing) {
+        this.audioPlay();
+      }
+    } catch {
+      this.audioRef.pause();
+    }
+  }
+
+  private audioPlay() {
+    this.audioRef?.play().catch(() => {
+      // nop, this happens when the user pauses the audio
+    });
+  }
+
+  private shouldRewind() {
+    return store.get(repeatAtom) || this.playingTrackIds.length === 1;
+  }
+
+  private inValidState(): this is {
+    audioRef: HTMLAudioElement;
+    playingTrack: Track;
+    playingTrackIds: string[];
+  } {
+    return (
+      this.audioRef !== undefined &&
+      this.playingTrack !== undefined &&
+      this.playingTrackIds.length > 0
+    );
+  }
+
+  private async updatePlayingTrack() {
+    if (this.playingTrackIds.length === 0) {
+      return;
+    }
+
+    this.playingTrack = await library().getTrack(
+      this.playingTrackIds[this.playingTrackIdx]
+    );
+    store.set(playingTrackAtom, this.playingTrack);
+    this.trySetPlayingTrack();
+
+    // preload the tracks
+    for (const trackId of circularArraySlice(
+      this.playingTrackIds,
+      this.playingTrackIdx,
+      TRACKS_TO_PRELOAD
+    )) {
+      DownloadWorker.postMessage({
+        type: FETCH_TRACK_TYPE,
+        trackFilename: trackId,
+      });
+
+      const track = await library().getTrack(trackId);
+      if (track && track.artworks.length > 0) {
+        DownloadWorker.postMessage({
+          type: FETCH_ARTWORK_TYPE,
+          artworkFilename: track.artworks[0],
+        });
+      }
+    }
+  }
 }
 
 export const player = memoize(() => new Player());
