@@ -20,47 +20,36 @@ import { circularArraySlice } from "./Util";
 const TRACKS_TO_PRELOAD = 3;
 
 class Player {
-  trackDirHandle: FileSystemDirectoryHandle | undefined;
-  audioRef: HTMLAudioElement | undefined;
+  trackDirHandle: FileSystemDirectoryHandle | undefined = undefined;
+  audioRef: HTMLAudioElement | undefined = undefined;
 
   // what is displayed in the track table
-  displayedPlaylistId: string | undefined;
-  displayedTrackIds: string[];
+  displayedPlaylistId: string | undefined = undefined;
+  displayedTrackIds: string[] = [];
 
   // what we're playing right now - can be different from displayed
-  playingPlaylistId: string | undefined;
+  playingPlaylistId: string | undefined = undefined;
   // tracks sorted in the order they are displayed in
-  sortedPlayingTrackIds: string[];
+  sortedPlayingTrackIds: string[] = [];
   // tracks sorted in the order we are playing them - can be different than above if shuffle is on
-  playingTrackIds: string[];
+  playingTrackIds: string[] = [];
+  playNextTrackIds: string[] = [];
   // index into playingTrackIds
-  playingTrackIdx: number;
-  playingTrack: Track | undefined;
+  playingTrackIdx: number = 0;
+  inPlayNextList: boolean = false;
+  playingTrack: Track | undefined = undefined;
   // last track we set the audio src to, here to avoid setting it to the same thing
-  lastSetAudioSrcTrackId: string | undefined;
+  lastSetAudioSrcTrackId: string | undefined = undefined;
 
   // stopped is true at load, then false forever after the first track is played
-  stopped: boolean;
+  stopped: boolean = true;
   // whether actively playing or paused
-  playing: boolean;
+  playing: boolean = false;
 
   // TODO timeout, show error etc
   pendingDownloads: Set<string> = new Set();
 
   constructor() {
-    this.trackDirHandle = undefined;
-    this.audioRef = undefined;
-    this.displayedPlaylistId = undefined;
-    this.displayedTrackIds = [];
-    this.playingPlaylistId = undefined;
-    this.sortedPlayingTrackIds = [];
-    this.playingTrackIds = [];
-    this.playingTrackIdx = 0;
-    this.playingTrack = undefined;
-    this.lastSetAudioSrcTrackId = undefined;
-    this.stopped = true;
-    this.playing = false;
-
     this.getTrackDirHandle();
     DownloadWorker.addEventListener("message", (m: MessageEvent) => {
       const { data } = m;
@@ -68,7 +57,7 @@ class Player {
         return;
       }
       if (data.trackFilename === this.playingTrack?.id) {
-        this.trySetPlayingTrack();
+        this.trySetPlayingTrackFile();
       }
       if (this.pendingDownloads.has(data.trackFilename)) {
         this.downloadTrack(data.trackFilename);
@@ -166,7 +155,7 @@ class Player {
     }
 
     if (!this.playing) {
-      this.trySetPlayingTrack();
+      this.trySetPlayingTrackFile();
       this.playing = true;
       this.stopped = false;
       store.set(stoppedAtom, false);
@@ -183,7 +172,11 @@ class Player {
       return;
     }
 
-    if (this.shouldRewind()) {
+    if (this.inPlayNextList) {
+      this.playNextTrackIds.shift();
+      this.inPlayNextList = false;
+      this.updatePlayingTrack();
+    } else if (this.shouldRewind()) {
       this.audioRef.currentTime = this.playingTrack.start;
       this.audioPlay();
     } else {
@@ -200,8 +193,18 @@ class Player {
       return;
     }
 
-    // TODO check play next list
-    if (this.shouldRewind()) {
+    const wasInPlayNextList = this.inPlayNextList;
+    if (this.inPlayNextList) {
+      this.playNextTrackIds.shift();
+    }
+    this.inPlayNextList = this.playNextTrackIds.length > 0;
+
+    if (this.inPlayNextList) {
+      this.updatePlayingTrack();
+    } else if (this.shouldRewind()) {
+      if (wasInPlayNextList) {
+        this.updatePlayingTrack();
+      }
       this.audioRef.currentTime = this.playingTrack.start;
       this.audioPlay();
     } else {
@@ -213,13 +216,23 @@ class Player {
 
   // actions
   playTrack(trackId: string) {
+    this.inPlayNextList = false;
+    this.playingTrackIds = [];
     this.rebuildPlayingTrackIds(trackId);
     if (this.stopped) {
       this.playPause();
     }
   }
 
-  playTrackNext(trackId: string) {}
+  async playTrackNext(trackId: string) {
+    if (this.inPlayNextList) {
+      // add after the current play next track
+      this.playNextTrackIds.splice(1, 0, trackId);
+    } else {
+      this.playNextTrackIds.unshift(trackId);
+    }
+    await this.preloadTracks();
+  }
 
   async downloadTrack(trackId: string) {
     const track = await library().getTrack(trackId);
@@ -255,7 +268,7 @@ class Player {
     }
   }
 
-  private async trySetPlayingTrack() {
+  private async trySetPlayingTrackFile() {
     if (
       !this.playingTrack ||
       !this.audioRef ||
@@ -312,22 +325,35 @@ class Player {
   }
 
   private async updatePlayingTrack() {
-    if (this.playingTrackIds.length === 0) {
+    if (
+      this.playingTrackIds.length === 0 &&
+      this.playNextTrackIds.length === 0
+    ) {
       return;
     }
 
-    this.playingTrack = await library().getTrack(
-      this.playingTrackIds[this.playingTrackIdx]
-    );
+    if (this.inPlayNextList) {
+      this.playingTrack = await library().getTrack(this.playNextTrackIds[0]);
+    } else {
+      this.playingTrack = await library().getTrack(
+        this.playingTrackIds[this.playingTrackIdx]
+      );
+    }
     store.set(playingTrackAtom, this.playingTrack);
-    this.trySetPlayingTrack();
+    this.trySetPlayingTrackFile();
+    await this.preloadTracks();
+  }
 
-    // preload the tracks
-    for (const trackId of circularArraySlice(
+  private async preloadTracks() {
+    let trackIds = circularArraySlice(
       this.playingTrackIds,
       this.playingTrackIdx,
       TRACKS_TO_PRELOAD
-    )) {
+    );
+    trackIds = [...trackIds, ...this.playNextTrackIds];
+
+    // preload the tracks
+    for (const trackId of trackIds) {
       DownloadWorker.postMessage({
         type: FETCH_TRACK_TYPE,
         trackFilename: trackId,
