@@ -10,7 +10,7 @@ module Config
 
   def [](key)
     return YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
-    return 'test_itunes_streamer' if key == 'database_name'
+    return 'streamer_test' if key == 'database_name'
     return './spec/' if key == 'music_path' || key == 'artwork_path'
     return '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
   end
@@ -134,26 +134,6 @@ describe 'iTunes Streamer' do
     it 'should send the contents of the file' do
       get '/tracks/21D8E2441A5E2204', {}, get_auth_header
       expect(last_response.body).to eq("fake mp3 contents\n")
-    end
-  end
-
-  describe '/download/*' do
-    it 'should redirect if not logged in' do
-      get '/download/21D8E2441A5E2204'
-      follow_redirect!
-      expect(last_request.url).to eq('http://localhost/')
-    end
-
-    it 'should 404 if the track doesn\'t exist in the database' do
-      get '/download/A2D9E2441A6E2204', {}, get_auth_header
-      expect(last_response.status).to eq(404)
-    end
-
-    it 'should send the contents of the file with a header' do
-      get '/download/21D8E2441A5E2204', {}, get_auth_header
-      expect(last_response.body).to eq("fake mp3 contents\n")
-      expect(last_response.headers['Content-Disposition']).to include('attachment')
-      expect(last_response.headers['Content-Disposition']).to include('filename="test_title.mp3"')
     end
   end
 

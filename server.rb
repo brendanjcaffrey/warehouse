@@ -47,7 +47,7 @@ GROUP BY
     p.id, p.name, p.parent_id, p.is_library;
 SQL
 
-TRACK_INFO_SQL = 'SELECT name, file, ext FROM tracks WHERE id=$1;'
+TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
 
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
@@ -178,12 +178,11 @@ class Server < Sinatra::Base
     count > 0
   end
 
-  def send_track_if_exists(db, music_path, persistent_track_id, download)
-    name, file, ext = db.exec_params(TRACK_INFO_SQL, [persistent_track_id]).values.first
+  def send_track_if_exists(db, music_path, persistent_track_id)
+    file, ext = db.exec_params(TRACK_INFO_SQL, [persistent_track_id]).values.first
     if file == nil || !MIME_TYPES.has_key?(ext)
       false
     else
-      headers['Content-Disposition'] = "attachment; filename=\"#{name}.#{ext}\"" if download
       if Config.remote?
         headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/music/#{file}")
         headers['Content-Type'] = MIME_TYPES[ext]
@@ -202,15 +201,7 @@ class Server < Sinatra::Base
   get '/tracks/*' do
     if !is_authed?
       redirect to('/')
-    elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0], false)
-      raise Sinatra::NotFound
-    end
-  end
-
-  get '/download/*' do
-    if !is_authed?
-      redirect to('/')
-    elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0], true)
+    elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0])
       raise Sinatra::NotFound
     end
   end

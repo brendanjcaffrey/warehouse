@@ -44,6 +44,8 @@ class Player {
   // whether actively playing or paused
   playing: boolean;
 
+  pendingDownloads: Set<string> = new Set();
+
   constructor() {
     this.trackDirHandle = undefined;
     this.audioRef = undefined;
@@ -61,14 +63,14 @@ class Player {
     this.getTrackDirHandle();
     DownloadWorker.addEventListener("message", (m: MessageEvent) => {
       const { data } = m;
-      if (!isTypedMessage(data)) {
+      if (!isTypedMessage(data) || !isTrackFetchedMessage(data)) {
         return;
       }
-      if (
-        isTrackFetchedMessage(data) &&
-        data.trackFilename === this.playingTrack?.id
-      ) {
+      if (data.trackFilename === this.playingTrack?.id) {
         this.trySetPlayingTrack();
+      }
+      if (this.pendingDownloads.has(data.trackFilename)) {
+        this.downloadTrack(data.trackFilename);
       }
     });
   }
@@ -200,6 +202,28 @@ class Player {
 
   playTrackNext(trackId: string) {}
 
+  async downloadTrack(trackId: string) {
+    const track = await library().getTrack(trackId);
+    if (!track) {
+      return;
+    }
+
+    const file = await this.tryGetTrackFile(trackId);
+    if (file) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(file);
+      a.download = `${track.artistName} - ${track.name}.${track.ext}`;
+      a.click();
+      this.pendingDownloads.delete(trackId);
+    } else {
+      this.pendingDownloads.add(trackId);
+      DownloadWorker.postMessage({
+        type: FETCH_TRACK_TYPE,
+        trackFilename: trackId,
+      });
+    }
+  }
+
   // helpers
   private async getTrackDirHandle() {
     try {
@@ -222,11 +246,8 @@ class Player {
     }
 
     try {
-      const fileHandle = await this.trackDirHandle?.getFileHandle(
-        this.playingTrack.id
-      );
-      const file = await fileHandle!.getFile();
-      this.audioRef.src = URL.createObjectURL(file);
+      const file = await this.tryGetTrackFile(this.playingTrack.id);
+      this.audioRef.src = URL.createObjectURL(file!);
       this.audioRef.currentTime = this.playingTrack.start;
       this.lastSetAudioSrcTrackId = this.playingTrack.id;
       if (this.playing) {
@@ -234,6 +255,15 @@ class Player {
       }
     } catch {
       this.audioRef.pause();
+    }
+  }
+
+  private async tryGetTrackFile(trackId: string) {
+    try {
+      const fileHandle = await this.trackDirHandle!.getFileHandle(trackId);
+      return await fileHandle.getFile();
+    } catch {
+      return null;
     }
   }
 
