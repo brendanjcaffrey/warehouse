@@ -6,6 +6,7 @@ import AuthVerifier from "./AuthVerifier";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { SET_AUTH_TOKEN_TYPE } from "./WorkerTypes";
 import { clearAuthFnAtom } from "./State";
+import { updatePersister } from "./UpdatePersister";
 
 interface AuthWrapperProps {
   children: ReactNode;
@@ -21,6 +22,7 @@ function AuthWrapper({ children }: AuthWrapperProps) {
       type: SET_AUTH_TOKEN_TYPE,
       authToken,
     });
+    updatePersister().setAuthToken(authToken);
   }, [authToken]);
 
   useEffect(() => {

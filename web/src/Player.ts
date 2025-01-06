@@ -9,6 +9,7 @@ import {
 } from "./State";
 import library, { Track } from "./Library";
 import { DownloadWorker } from "./DownloadWorkerHandle";
+import { updatePersister } from "./UpdatePersister";
 import {
   isTypedMessage,
   isTrackFetchedMessage,
@@ -48,6 +49,7 @@ class Player {
 
   // TODO timeout, show error etc
   pendingDownloads: Set<string> = new Set();
+  addingPlay: string | undefined = undefined;
 
   constructor() {
     this.getTrackDirHandle();
@@ -66,8 +68,12 @@ class Player {
   }
 
   setAudioRef(audioRef: HTMLAudioElement) {
-    this.audioRef = audioRef;
     this.setVolume(store.get(volumeAtom));
+
+    this.audioRef = audioRef;
+    this.audioRef.onended = () => {
+      this.trackFinished();
+    };
     this.audioRef.ontimeupdate = () => {
       const currentTime = this.audioRef!.currentTime;
       store.set(currentTimeAtom, currentTime);
@@ -79,10 +85,28 @@ class Player {
         currentTime >= this.playingTrack.finish ||
         currentTime >= this.playingTrack.duration
       ) {
-        // TODO record play
-        this.next();
+        this.trackFinished();
       }
     };
+  }
+
+  private async trackFinished() {
+    if (!this.playingTrack) {
+      return;
+    }
+    // make sure two ontimeupdate events don't trigger two next() calls
+    if (this.addingPlay === this.playingTrack.id) {
+      return;
+    }
+
+    this.addingPlay = this.playingTrack.id;
+    try {
+      this.audioRef!.pause();
+      updatePersister().addPlay(this.playingTrack.id);
+      await this.next();
+    } finally {
+      this.addingPlay = undefined;
+    }
   }
 
   setVolume(volume: number) {
@@ -188,7 +212,7 @@ class Player {
     }
   }
 
-  next() {
+  async next() {
     if (!this.inValidState()) {
       return;
     }
@@ -200,17 +224,17 @@ class Player {
     this.inPlayNextList = this.playNextTrackIds.length > 0;
 
     if (this.inPlayNextList) {
-      this.updatePlayingTrack();
+      await this.updatePlayingTrack();
     } else if (this.shouldRewind()) {
       if (wasInPlayNextList) {
-        this.updatePlayingTrack();
+        await this.updatePlayingTrack();
       }
       this.audioRef.currentTime = this.playingTrack.start;
       this.audioPlay();
     } else {
       this.playingTrackIdx =
         (this.playingTrackIdx + 1) % this.playingTrackIds.length;
-      this.updatePlayingTrack();
+      await this.updatePlayingTrack();
     }
   }
 
