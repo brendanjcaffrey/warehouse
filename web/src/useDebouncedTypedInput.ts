@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { player } from "./Player";
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.()- '".split("");
 
@@ -31,6 +32,13 @@ export function useDebouncedTypedInput(
 
   useEffect(() => {
     if (typedInput === "") return;
+
+    // this feels kind of shoe horned in here but whatever
+    if (typedInput === " ") {
+      player().playPause();
+      setTypedInput("");
+      return;
+    }
 
     const timeoutId = setTimeout(() => {
       callback(typedInput);
