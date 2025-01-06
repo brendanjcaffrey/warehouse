@@ -4,145 +4,106 @@ import {
   isSetAuthTokenMessage,
   isFetchTrackMessage,
   isFetchArtworkMessage,
-  isClearAllMessage,
+  isClearedAllMessage,
   TRACK_FETCHED_TYPE,
   ARTWORK_FETCHED_TYPE,
 } from "./WorkerTypes";
+import { files } from "./Files";
 
 class DownloadManager {
   private authToken: string = "";
   private inflightRequests = new Set<string>();
-  private trackDirHandle: FileSystemDirectoryHandle | undefined = undefined;
-  private artworkDirHandle: FileSystemDirectoryHandle | undefined = undefined;
 
   public constructor() {
-    this.getTrackDirHandle();
-    this.getArtworkDirHandle();
-  }
-
-  private async getTrackDirHandle() {
-    const mainDirHandle = await navigator.storage.getDirectory();
-    const trackDirHandle = await mainDirHandle.getDirectoryHandle("track", {
-      create: true,
-    });
-    this.trackDirHandle = trackDirHandle;
-  }
-
-  private async getArtworkDirHandle() {
-    const mainDirHandle = await navigator.storage.getDirectory();
-    const artworkDirHandle = await mainDirHandle.getDirectoryHandle("artwork", {
-      create: true,
-    });
-    this.artworkDirHandle = artworkDirHandle;
+    // NB: purposefully don't initialize the Files instance here, could be race condition-y?
   }
 
   public setAuthToken(authToken: string) {
     this.authToken = authToken;
   }
 
-  public async fetchTrack(trackFilename: string, attemptsLeft = 3) {
-    if (!this.trackDirHandle) {
+  public async fetchTrack(trackId: string, attemptsLeft = 3) {
+    if (!files().tracksInitialized()) {
       if (attemptsLeft <= 0) {
         console.error(
           "trackDirHandle is not initialized and still isn't after 3 attempts, giving up"
         );
         return;
       }
-      setTimeout(() => this.fetchTrack(trackFilename, attemptsLeft - 1), 100);
+      setTimeout(() => this.fetchTrack(trackId, attemptsLeft - 1), 100);
       return;
     }
+
     await this.fetchFile(
-      this.trackDirHandle,
-      trackFilename,
+      trackId,
       TRACK_FETCHED_TYPE,
       "tracks",
-      "trackFilename"
+      "trackId",
+      files().trackExists.bind(files()),
+      files().tryWriteTrack.bind(files())
     );
   }
 
-  public async fetchArtwork(artworkFilename: string, attemptsLeft = 3) {
-    if (!this.artworkDirHandle) {
+  public async fetchArtwork(artworkId: string, attemptsLeft = 3) {
+    if (!files().artworkInitialized()) {
       if (attemptsLeft <= 0) {
         console.error(
           "artworkDirHandle is not initialized and still isn't after 3 attempts, giving up"
         );
         return;
       }
-      setTimeout(
-        () => this.fetchArtwork(artworkFilename, attemptsLeft - 1),
-        100
-      );
+      setTimeout(() => this.fetchArtwork(artworkId, attemptsLeft - 1), 100);
       return;
     }
 
-    this.fetchFile(
-      this.artworkDirHandle,
-      artworkFilename,
+    await this.fetchFile(
+      artworkId,
       ARTWORK_FETCHED_TYPE,
       "artwork",
-      "artworkFilename"
+      "artworkId",
+      files().artworkExists.bind(files()),
+      files().tryWriteArtwork.bind(files())
     );
   }
 
   private async fetchFile(
-    dirHandle: FileSystemDirectoryHandle,
-    filename: string,
+    id: string,
     fetchedType: string,
     urlPrefix: string,
-    msgKey: string
+    msgKey: string,
+    existsFn: (id: string) => Promise<boolean>,
+    writeFn: (id: string, data: FileSystemWriteChunkType) => Promise<boolean>
   ) {
-    if (this.inflightRequests.has(filename)) {
+    if (this.inflightRequests.has(id)) {
       return;
     }
-    this.inflightRequests.add(filename);
+    this.inflightRequests.add(id);
 
-    try {
-      await dirHandle?.getFileHandle(filename);
-      postMessage({ type: fetchedType, [msgKey]: filename });
-      this.inflightRequests.delete(filename);
+    if (await existsFn(id)) {
+      postMessage({ type: fetchedType, [msgKey]: id });
+      this.inflightRequests.delete(id);
       return;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "NotFoundError") {
-        // nop
-      } else {
-        console.error(error);
-      }
     }
 
+    // TODO retry logic?
     try {
-      const requestPath = `/${urlPrefix}/${filename}`;
+      const requestPath = `/${urlPrefix}/${id}`;
       const { data } = await axios.get(requestPath, {
         responseType: "arraybuffer",
         headers: { Authorization: `Bearer ${this.authToken}` },
       });
-      const fileHandle = await dirHandle?.getFileHandle(filename, {
-        create: true,
-      });
-      const writable = await fileHandle.createWritable();
-      await writable.write(data);
-      await writable.close();
-      postMessage({ type: fetchedType, [msgKey]: filename });
+      if (await writeFn(id, data)) {
+        postMessage({ type: fetchedType, [msgKey]: id });
+      }
     } catch (error) {
       console.error(error);
     } finally {
-      this.inflightRequests.delete(filename);
+      this.inflightRequests.delete(id);
     }
   }
 
-  public async clearAll() {
-    try {
-      const mainDirHandle = await navigator.storage.getDirectory();
-      mainDirHandle.removeEntry("tracks", { recursive: true });
-      this.trackDirHandle = undefined;
-      this.getTrackDirHandle();
-
-      mainDirHandle.removeEntry("artwork", { recursive: true });
-      this.artworkDirHandle = undefined;
-      this.getArtworkDirHandle();
-      console.log("All files and directories have been deleted.");
-    } catch (error) {
-      console.error("Error deleting files:", error);
-    }
+  public async clearedAll() {
+    files().reset();
   }
 }
 
@@ -159,14 +120,14 @@ onmessage = (m: MessageEvent) => {
   }
 
   if (isFetchTrackMessage(data)) {
-    downloadManager.fetchTrack(data.trackFilename);
+    downloadManager.fetchTrack(data.trackId);
   }
 
   if (isFetchArtworkMessage(data)) {
-    downloadManager.fetchArtwork(data.artworkFilename);
+    downloadManager.fetchArtwork(data.artworkId);
   }
 
-  if (isClearAllMessage(data)) {
-    downloadManager.clearAll();
+  if (isClearedAllMessage(data)) {
+    downloadManager.clearedAll();
   }
 };

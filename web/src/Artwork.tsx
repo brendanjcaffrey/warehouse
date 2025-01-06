@@ -5,6 +5,7 @@ import DelayedElement from "./DelayedElement";
 import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom } from "./State";
 import { DownloadWorker } from "./DownloadWorkerHandle";
+import { files } from "./Files";
 import { isTypedMessage, isArtworkFetchedMessage } from "./WorkerTypes";
 
 const ARTWORK_SIZE = "40px";
@@ -16,43 +17,21 @@ function Artwork() {
   const playingTrack = useAtomValue(playingTrackAtom);
   const [shownArtwork, setShownArtwork] = useState<string | null>(null);
   const [artworkFileURL, setArtworkFileURL] = useState<string | null>(null);
-  const [artworkDirHandle, setArtworkDirHandle] =
-    useState<FileSystemDirectoryHandle | null>(null);
-
-  async function getArtworkDirHandle() {
-    try {
-      const mainDir = await navigator.storage.getDirectory();
-      const artworkDirHandle = await mainDir.getDirectoryHandle("artwork", {
-        create: true,
-      });
-      setArtworkDirHandle(artworkDirHandle);
-    } catch (e) {
-      console.error("unable to get artwork dir handle", e);
-    }
-  }
 
   useEffect(() => {
-    getArtworkDirHandle();
+    files(); // initialize it
   }, []);
 
   const showFetchedArtwork = useCallback(
-    async (artworkFilename: string) => {
-      try {
-        const fileHandle = await artworkDirHandle?.getFileHandle(
-          artworkFilename
-        );
-        if (!fileHandle) {
-          console.error("getFileHandle returned null");
-          return;
-        }
-
-        const file = await fileHandle.getFile();
-        setArtworkFileURL(URL.createObjectURL(file));
-      } catch {
+    async (artworkId: string) => {
+      const url = await files().tryGetArtworkURL(artworkId);
+      if (url) {
+        setArtworkFileURL(url);
+      } else {
         // nop, Player handles downloading artwork, so wait for a message to come in from the worker
       }
     },
-    [artworkDirHandle, setArtworkFileURL]
+    [setArtworkFileURL]
   );
 
   const handleDownloadWorkerMessage = useCallback(
@@ -63,9 +42,9 @@ function Artwork() {
       }
       if (
         isArtworkFetchedMessage(data) &&
-        data.artworkFilename === playingTrack?.artworks[0]
+        data.artworkId === playingTrack?.artworks[0]
       ) {
-        showFetchedArtwork(data.artworkFilename);
+        showFetchedArtwork(data.artworkId);
       }
     },
     [playingTrack, showFetchedArtwork]
@@ -82,31 +61,21 @@ function Artwork() {
   }, [handleDownloadWorkerMessage]);
 
   useEffect(() => {
-    if (
-      playingTrack &&
-      artworkDirHandle &&
-      playingTrack.artworks[0] !== shownArtwork
-    ) {
+    if (playingTrack && playingTrack.artworks[0] !== shownArtwork) {
       if (artworkFileURL) {
         URL.revokeObjectURL(artworkFileURL);
         setArtworkFileURL(null);
       }
 
-      const artworkFilename = playingTrack.artworks[0];
-      if (artworkFilename) {
-        setShownArtwork(artworkFilename);
-        showFetchedArtwork(artworkFilename);
+      const artworkId = playingTrack.artworks[0];
+      if (artworkId) {
+        setShownArtwork(artworkId);
+        showFetchedArtwork(artworkId);
       } else {
         setShownArtwork(null);
       }
     }
-  }, [
-    playingTrack,
-    artworkFileURL,
-    shownArtwork,
-    artworkDirHandle,
-    showFetchedArtwork,
-  ]);
+  }, [playingTrack, artworkFileURL, shownArtwork, showFetchedArtwork]);
 
   if (showArtwork && (playingTrack?.artworks.length ?? 0) > 0) {
     return (

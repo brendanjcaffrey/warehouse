@@ -4,17 +4,21 @@ import { Logout } from "@mui/icons-material";
 import { clearAuthFnAtom, clearSettingsFnAtom } from "./State";
 import library from "./Library";
 import { DownloadWorker } from "./DownloadWorkerHandle";
-import { CLEAR_ALL_TYPE } from "./WorkerTypes";
+import { player } from "./Player";
+import { files } from "./Files";
+import { CLEARED_ALL_TYPE } from "./WorkerTypes";
 
 function LogOut({ height }: { height: string }) {
   const clearAuthFn = useAtomValue(clearAuthFnAtom);
   const clearSettingsFn = useAtomValue(clearSettingsFnAtom);
 
-  function clearAllState() {
+  async function clearAllState() {
     clearAuthFn.fn();
     clearSettingsFn.fn();
     library().clear();
-    DownloadWorker.postMessage({ type: CLEAR_ALL_TYPE });
+    await player().reset();
+    await files().clearAll();
+    DownloadWorker.postMessage({ type: CLEARED_ALL_TYPE });
   }
 
   return (

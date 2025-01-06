@@ -7,7 +7,7 @@ export const FETCH_TRACK_TYPE = "fetchTrack";
 export const TRACK_FETCHED_TYPE = "trackFetched";
 export const FETCH_ARTWORK_TYPE = "fetchArtwork";
 export const ARTWORK_FETCHED_TYPE = "artworkFetched";
-export const CLEAR_ALL_TYPE = "clearAll";
+export const CLEARED_ALL_TYPE = "clearedAll";
 export const ERROR_TYPE = "error";
 
 export interface TypedMessage {
@@ -23,12 +23,16 @@ export interface ErrorMessage extends TypedMessage {
 }
 
 export interface FetchTrackMessage extends TypedMessage {
-  trackFilename: string;
+  trackId: string;
 }
 
+export type TrackFetchedMessage = FetchTrackMessage;
+
 export interface FetchArtworkMessage extends TypedMessage {
-  artworkFilename: string;
+  artworkId: string;
 }
+
+export type ArtworkFetchedMessage = FetchArtworkMessage;
 
 export function isTypedMessage(message: object): message is TypedMessage {
   return isObject(message) && "type" in message;
@@ -64,17 +68,17 @@ export function isFetchTrackMessage(
   return (
     isObject(message) &&
     message.type === FETCH_TRACK_TYPE &&
-    "trackFilename" in message
+    "trackId" in message
   );
 }
 
 export function isTrackFetchedMessage(
   message: TypedMessage
-): message is FetchTrackMessage {
+): message is TrackFetchedMessage {
   return (
     isObject(message) &&
     message.type === TRACK_FETCHED_TYPE &&
-    "trackFilename" in message
+    "trackId" in message
   );
 }
 
@@ -84,22 +88,22 @@ export function isFetchArtworkMessage(
   return (
     isObject(message) &&
     message.type === FETCH_ARTWORK_TYPE &&
-    "artworkFilename" in message
+    "artworkId" in message
   );
 }
 
 export function isArtworkFetchedMessage(
   message: TypedMessage
-): message is FetchArtworkMessage {
+): message is ArtworkFetchedMessage {
   return (
     isObject(message) &&
     message.type === ARTWORK_FETCHED_TYPE &&
-    "artworkFilename" in message
+    "artworkId" in message
   );
 }
 
-export function isClearAllMessage(message: TypedMessage) {
-  return isObject(message) && message.type === CLEAR_ALL_TYPE;
+export function isClearedAllMessage(message: TypedMessage) {
+  return isObject(message) && message.type === CLEARED_ALL_TYPE;
 }
 
 export function isErrorMessage(message: TypedMessage): message is ErrorMessage {

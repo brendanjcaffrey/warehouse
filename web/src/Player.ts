@@ -6,6 +6,7 @@ import {
   currentTimeAtom,
   playingTrackAtom,
   playingAtom,
+  resetAllState,
 } from "./State";
 import library, { Track } from "./Library";
 import { DownloadWorker } from "./DownloadWorkerHandle";
@@ -13,15 +14,18 @@ import { updatePersister } from "./UpdatePersister";
 import {
   isTypedMessage,
   isTrackFetchedMessage,
+  isArtworkFetchedMessage,
   FETCH_TRACK_TYPE,
   FETCH_ARTWORK_TYPE,
+  ArtworkFetchedMessage,
+  TrackFetchedMessage,
 } from "./WorkerTypes";
+import { files } from "./Files";
 import { circularArraySlice } from "./Util";
 
 const TRACKS_TO_PRELOAD = 3;
 
 class Player {
-  trackDirHandle: FileSystemDirectoryHandle | undefined = undefined;
   audioRef: HTMLAudioElement | undefined = undefined;
 
   // what is displayed in the track table
@@ -34,6 +38,7 @@ class Player {
   sortedPlayingTrackIds: string[] = [];
   // tracks sorted in the order we are playing them - can be different than above if shuffle is on
   playingTrackIds: string[] = [];
+  // a list of songs to play next, distinct from the main playlist
   playNextTrackIds: string[] = [];
   // index into playingTrackIds
   playingTrackIdx: number = 0;
@@ -52,19 +57,45 @@ class Player {
   addingPlay: string | undefined = undefined;
 
   constructor() {
-    this.getTrackDirHandle();
+    files(); // initialize it
     DownloadWorker.addEventListener("message", (m: MessageEvent) => {
       const { data } = m;
-      if (!isTypedMessage(data) || !isTrackFetchedMessage(data)) {
+      if (!isTypedMessage(data)) {
         return;
       }
-      if (data.trackFilename === this.playingTrack?.id) {
-        this.trySetPlayingTrackFile();
+      if (isTrackFetchedMessage(data)) {
+        this.handleTrackFetched(data);
       }
-      if (this.pendingDownloads.has(data.trackFilename)) {
-        this.downloadTrack(data.trackFilename);
+      if (isArtworkFetchedMessage(data)) {
+        this.handleArtworkFetched(data);
       }
     });
+
+    if (navigator.mediaSession) {
+      navigator.mediaSession.setActionHandler("play", () => this.playPause());
+      navigator.mediaSession.setActionHandler("pause", () => this.playPause());
+      navigator.mediaSession.setActionHandler("nexttrack", () => this.next());
+      navigator.mediaSession.setActionHandler("previoustrack", () =>
+        this.prev()
+      );
+    }
+  }
+
+  async reset() {
+    this.audioRef = undefined;
+    this.displayedPlaylistId = undefined;
+    this.displayedTrackIds = [];
+    this.playingPlaylistId = undefined;
+    this.sortedPlayingTrackIds = [];
+    this.playingTrackIds = [];
+    this.playNextTrackIds = [];
+    this.playingTrackIdx = 0;
+    this.inPlayNextList = false;
+    this.playingTrack = undefined;
+    this.lastSetAudioSrcTrackId = undefined;
+    this.stopped = true;
+    this.playing = false;
+    resetAllState();
   }
 
   setAudioRef(audioRef: HTMLAudioElement) {
@@ -264,10 +295,10 @@ class Player {
       return;
     }
 
-    const file = await this.tryGetTrackFile(trackId);
-    if (file) {
+    const url = await files().tryGetTrackURL(trackId); // TODO release?
+    if (url) {
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(file);
+      a.href = url;
       a.download = `${track.artistName} - ${track.name}.${track.ext}`;
       a.click();
       this.pendingDownloads.delete(trackId);
@@ -275,23 +306,29 @@ class Player {
       this.pendingDownloads.add(trackId);
       DownloadWorker.postMessage({
         type: FETCH_TRACK_TYPE,
-        trackFilename: trackId,
+        trackId: trackId,
       });
     }
   }
 
   // helpers
-  private async getTrackDirHandle() {
-    try {
-      const mainDir = await navigator.storage.getDirectory();
-      this.trackDirHandle = await mainDir.getDirectoryHandle("track", {
-        create: true,
-      });
-    } catch (e) {
-      console.error("unable to get tracks dir handle", e);
+  private handleTrackFetched(data: TrackFetchedMessage) {
+    if (data.trackId === this.playingTrack?.id) {
+      this.trySetPlayingTrackFile();
+    }
+    if (this.pendingDownloads.has(data.trackId)) {
+      this.downloadTrack(data.trackId);
     }
   }
 
+  private handleArtworkFetched(data: ArtworkFetchedMessage) {
+    if (
+      this.playingTrack &&
+      this.playingTrack.artworks.includes(data.artworkId)
+    ) {
+      this.trySetMediaMetadata();
+    }
+  }
   private async trySetPlayingTrackFile() {
     if (
       !this.playingTrack ||
@@ -301,25 +338,16 @@ class Player {
       return;
     }
 
-    try {
-      const file = await this.tryGetTrackFile(this.playingTrack.id);
-      this.audioRef.src = URL.createObjectURL(file!);
+    const url = await files().tryGetTrackURL(this.playingTrack.id); // TODO release?
+    if (url) {
+      this.audioRef.src = url;
       this.audioRef.currentTime = this.playingTrack.start;
       this.lastSetAudioSrcTrackId = this.playingTrack.id;
       if (this.playing) {
         this.audioPlay();
       }
-    } catch {
+    } else {
       this.audioRef.pause();
-    }
-  }
-
-  private async tryGetTrackFile(trackId: string) {
-    try {
-      const fileHandle = await this.trackDirHandle!.getFileHandle(trackId);
-      return await fileHandle.getFile();
-    } catch {
-      return null;
     }
   }
 
@@ -364,8 +392,41 @@ class Player {
       );
     }
     store.set(playingTrackAtom, this.playingTrack);
+    this.trySetMediaMetadata();
     this.trySetPlayingTrackFile();
     await this.preloadTracks();
+  }
+
+  private async trySetMediaMetadata() {
+    if (!navigator.mediaSession || !this.playingTrack) {
+      return;
+    }
+
+    const metadata = new MediaMetadata({
+      title: this.playingTrack.name,
+      artist: this.playingTrack.artistName,
+      album: this.playingTrack.albumName,
+      artwork: [],
+    });
+
+    // NB: media metadata artwork not working in Firefox but does in Chrome
+    const url =
+      this.playingTrack.artworks.length > 0
+        ? await files().tryGetArtworkURL(this.playingTrack.artworks[0])
+        : null; // TODO release?
+    if (url) {
+      // XXX if you update this, update the type detection in library.rb
+      const ext = this.playingTrack.artworks[0].split(".").pop();
+      switch (ext) {
+        case "jpg":
+          metadata.artwork = [{ src: url, type: "image/jpeg" }];
+          break;
+        case "png":
+          metadata.artwork = [{ src: url, type: "image/png" }];
+          break;
+      }
+    }
+    navigator.mediaSession.metadata = metadata;
   }
 
   private async preloadTracks() {
@@ -380,14 +441,14 @@ class Player {
     for (const trackId of trackIds) {
       DownloadWorker.postMessage({
         type: FETCH_TRACK_TYPE,
-        trackFilename: trackId,
+        trackId,
       });
 
       const track = await library().getTrack(trackId);
       if (track && track.artworks.length > 0) {
         DownloadWorker.postMessage({
           type: FETCH_ARTWORK_TYPE,
-          artworkFilename: track.artworks[0],
+          artworkId: track.artworks[0],
         });
       }
     }

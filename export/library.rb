@@ -212,6 +212,7 @@ module Export
             type = 'jpg' if out.include?('JPEG image data')
             type = 'png' if out.include?('PNG image data')
 
+            # XXX if you update this, update the type detection in Player.ts
             if type.nil?
               puts 'Unable to determine album artwork image type'
               puts "file output: #{out}"
