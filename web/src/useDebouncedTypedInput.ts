@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.()-'".split("");
+const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.()- '".split("");
 
 export function useDebouncedTypedInput(
   callback: (typedInput: string) => void,

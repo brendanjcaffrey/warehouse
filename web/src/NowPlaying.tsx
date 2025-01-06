@@ -18,7 +18,7 @@ function NowPlaying() {
   const [returnDown, setReturnDown] = useState(false);
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
-  const duration = playingTrack?.duration || 0;
+  const remaining = playingTrack ? playingTrack.finish - currentTime : 0;
 
   function formatSeconds(value: number) {
     const minute = Math.floor(value / 60);
@@ -79,13 +79,13 @@ function NowPlaying() {
               </Typography>
             </Box>
           </Box>
-          <DurationText>-{formatSeconds(duration - currentTime)}</DurationText>
+          <DurationText>-{formatSeconds(remaining)}</DurationText>
         </Box>
         <Slider
           size="small"
           value={currentTime}
-          min={0}
-          max={playingTrack?.duration}
+          min={playingTrack?.start}
+          max={playingTrack?.finish}
           onChange={(_, value) => player().setCurrentTime(value as number)}
           sx={() => ({
             color: defaultGrey,
