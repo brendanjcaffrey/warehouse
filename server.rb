@@ -1,13 +1,11 @@
-require 'jwt'
 require 'pg'
 require 'rack/utils'
 require 'sinatra/base'
 require 'sinatra/namespace'
 require_relative 'export/database.rb'
 require_relative 'shared/messages_pb.rb'
+require_relative 'shared/jwt.rb'
 
-JWT_ALGO = 'HS256'
-JWT_EXPIRY = 365 * 24 * 60 * 60
 INVALID_USERNAME_OR_PASSWORD_ERROR = 'invalid username or password'
 NOT_AUTHED_ERROR = 'not authenticated'
 NOT_TRACKING_ERROR = 'not tracking user changes'
@@ -145,13 +143,13 @@ class Server < Sinatra::Base
     Config.vals['users'].has_key?(username) && Config.vals['users'][username]['password'] == password
   end
 
-  def get_validated_username
+  def get_validated_username(allow_export_user = false)
     auth_header = request.env['HTTP_AUTHORIZATION']
     return nil if auth_header.nil? || !auth_header.start_with?('Bearer ')
 
     token = auth_header.gsub('Bearer ', '')
     begin
-      payload, header = JWT.decode(token, Config['secret'], true, { algorithm: JWT_ALGO } )
+      payload, header = decode_jwt(token, Config['secret'])
     rescue
       return nil
     end
@@ -160,12 +158,13 @@ class Server < Sinatra::Base
     return nil if exp.nil? || Time.now > Time.at(exp.to_i)
 
     username = payload['username']
-    return nil unless Config.vals['users'].has_key?(username)
+    valid = Config.vals['users'].has_key?(username) || (allow_export_user && username == 'export_driver_update_library')
+    return nil unless valid
     username
   end
 
-  def is_authed?
-    !get_validated_username.nil?
+  def is_authed?(allow_export_user = false)
+    !get_validated_username(allow_export_user).nil?
   end
 
   def track_user_changes?(username)
@@ -232,8 +231,7 @@ class Server < Sinatra::Base
     post '/auth' do
       content_type 'application/octet-stream'
       if valid_username_and_password?(params[:username], params[:password])
-        headers = { exp: Time.now.to_i + JWT_EXPIRY }
-        token = JWT.encode({username: params[:username]}, Config['secret'], JWT_ALGO, headers)
+        token = build_jwt(params[:username], Config['secret'])
         proto(AuthAttemptResponse.new(token: token))
       else
         proto(AuthAttemptResponse.new(error: INVALID_USERNAME_OR_PASSWORD_ERROR))
@@ -247,7 +245,6 @@ class Server < Sinatra::Base
     get '/library' do
       username = get_validated_username
       if !username.nil?
-
         library = Library.new(trackUserChanges: track_user_changes?(username))
         db.exec(GENRE_SQL).values.each do |genre|
           library.genres[genre[0].to_i] = Name.new(name: genre[1])
@@ -296,7 +293,7 @@ class Server < Sinatra::Base
     end
 
     get '/updates' do
-      if is_authed?
+      if is_authed?(true)
         updates = Updates.new
         db.exec(Export::Database::GET_PLAYS_SQL).values.each do |play|
           updates.plays << IncrementUpdate.new(trackId: play[0])

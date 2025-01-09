@@ -1,5 +1,7 @@
 require 'net/http'
 require 'json'
+require_relative '../shared/jwt.rb'
+require_relative '../shared/messages_pb.rb'
 
 module Export
   class Driver
@@ -24,17 +26,42 @@ module Export
       end
 
       if Config.remote('update_library')
-        json = JSON.parse(Net::HTTP.get(URI(Config.remote('base_url') + '/updates.json')))
-        play_updates(json['plays'])
-        rating_updates(json['ratings'])
-        name_updates(json['names'])
-        artist_updates(json['artists'])
-        album_updates(json['albums'])
-        album_artist_updates(json['album_artists'])
-        genre_updates(json['genres'])
-        year_updates(json['years'])
-        start_updates(json['starts'])
-        finish_updates(json['finishes'])
+        uri = URI("#{Config.remote('base_url')}/api/updates")
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == 'https'
+
+        request = Net::HTTP::Get.new(uri)
+        request['Authorization'] = "Bearer #{build_jwt('export_driver_update_library', Config.remote('secret'))}"
+        response = http.request(request)
+        updates = nil
+
+        if response.is_a?(Net::HTTPSuccess)
+          begin
+            updates = UpdatesResponse.decode(response.body)
+            if updates.response == :error
+              puts "failed to fetch updates: #{updates.error}"
+              exit(1)
+            end
+          rescue Google::Protobuf::ParseError => e
+            puts "failed to parse protobuf: #{e.message}"
+            exit(1)
+          end
+        else
+          puts "HTTP request failed with status: #{response.code} #{response.message}"
+          exit(1)
+        end
+
+        updates = updates.updates
+        play_updates(updates.plays.map(&:trackId))
+        rating_updates(flatten_updates(updates.ratings))
+        name_updates(flatten_updates(updates.names))
+        artist_updates(flatten_updates(updates.artists))
+        album_updates(flatten_updates(updates.albums))
+        album_artist_updates(flatten_updates(updates.albumArtists))
+        genre_updates(flatten_updates(updates.genres))
+        year_updates(flatten_updates(updates.years))
+        start_updates(flatten_updates(updates.starts))
+        finish_updates(flatten_updates(updates.finishes))
       end
     end
 
@@ -48,6 +75,10 @@ module Export
     end
 
     private
+
+    def flatten_updates(updates)
+      updates.map { [_1.trackId, _1.value] }
+    end
 
     def play_updates(plays)
       puts "\n=== Plays ==="
