@@ -93,6 +93,7 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM artists')
     @db.exec('DELETE FROM albums')
     @db.exec('DELETE FROM tracks')
+    @db.exec('DELETE FROM track_artwork')
     @db.exec('DELETE FROM playlists')
     @db.exec('DELETE FROM playlist_tracks')
     @db.exec('DELETE FROM plays')
@@ -149,7 +150,13 @@ describe 'iTunes Streamer' do
       expect(last_response.status).to eq(404)
     end
 
-    it 'should send the contents of the file' do
+    it 'should 404 if the file exists but isn\'t in the database' do
+      get '/artwork/__artwork.jpg', {}, get_auth_header
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'should send the contents of the file if it is in the database' do
+      @database.create_track_artwork('21D8E2441A5E2204', '__artwork.jpg')
       get '/artwork/__artwork.jpg', {}, get_auth_header
       expect(last_response.body).to eq("fake jpg contents\n")
     end

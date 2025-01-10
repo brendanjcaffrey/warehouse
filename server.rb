@@ -47,6 +47,7 @@ SQL
 
 TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
+ARTWORK_EXISTS_SQL = 'SELECT EXISTS(SELECT 1 FROM track_artwork WHERE filename=$1);'
 
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
 INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1;'
@@ -211,7 +212,8 @@ class Server < Sinatra::Base
     else
       file = params['splat'][0]
       full_path = File.expand_path(File.join(Config['artwork_path'], file))
-      raise Sinatra::NotFound unless File.exist?(full_path)
+      valid_artwork = db.exec_params(ARTWORK_EXISTS_SQL, [file]).values.first.first == 't'
+      raise Sinatra::NotFound unless valid_artwork && File.exist?(full_path)
 
       if Config.remote?
         headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/artwork/#{file}")

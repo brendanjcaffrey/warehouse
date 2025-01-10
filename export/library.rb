@@ -181,10 +181,7 @@ module Export
       @tmpdir = Dir.mktmpdir('music-artwork')
       at_exit { FileUtils.remove_entry(@tmpdir) }
 
-      @artwork_dir = File.expand_path(File.join(File.dirname(__FILE__), '..', 'artwork'))
-      Dir.glob("#{@artwork_dir}/*") do |file|
-        File.delete(file)
-      end
+      @artwork_dir = File.expand_path(Config['artwork_path'])
     end
 
     def total_track_count
@@ -221,7 +218,7 @@ module Export
 
             out_filename = "#{md5}.#{type}"
             @artwork_files[md5] = out_filename
-            FileUtils.mv(in_filename, "#{Config['artwork_path']}/#{out_filename}")
+            FileUtils.mv(in_filename, "#{@artwork_dir}/#{out_filename}")
           end
           track.add_artwork(@artwork_files[md5])
         end
