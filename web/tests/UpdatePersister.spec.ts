@@ -1,14 +1,33 @@
 import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
 import axios from "axios";
 import { UpdatePersister, Update } from "../src/UpdatePersister";
+import { OperationResponse } from "../src/generated/messages";
 
 vi.mock("axios");
 
 function expectPlayPostRequest(id: string) {
   expect(axios.post).toHaveBeenCalledWith(
     `/api/play/${id}`,
-    undefined,
-    expect.objectContaining({ headers: { Authorization: "Bearer mock-token" } })
+    "",
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        Authorization: "Bearer mock-token",
+        "Content-Type": "application/x-www-form-urlencoded",
+      }),
+    })
+  );
+}
+
+function expectRatingPostRequest(id: string, value: number) {
+  expect(axios.post).toHaveBeenCalledWith(
+    `/api/rating/${id}`,
+    `rating=${value}`,
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        Authorization: "Bearer mock-token",
+        "Content-Type": "application/x-www-form-urlencoded",
+      }),
+    })
   );
 }
 
@@ -26,12 +45,32 @@ async function waitForUpdatesToFinish(persister: UpdatePersister) {
 
 describe("UpdatePersister", () => {
   const LOCAL_STORAGE_KEY = "updates";
+
+  const OPERATION_SUCCEEDED = {
+    data: new OperationResponse({
+      success: true,
+    }).serialize(),
+  };
+  const OPERATION_FAILED = {
+    data: new OperationResponse({
+      success: false,
+      error: "error",
+    }).serialize(),
+  };
+
   const PLAY_UPDATE: Update = {
     type: "play",
     trackId: "123",
     params: undefined,
   };
   const PLAY_UPDATE_ARR_STR = JSON.stringify([PLAY_UPDATE]);
+
+  const RATING_UPDATE: Update = {
+    type: "rating",
+    trackId: "123",
+    params: { rating: 60 },
+  };
+  const RATING_UPDATE_ARR_STR = JSON.stringify([RATING_UPDATE]);
 
   beforeEach(() => {
     localStorage.clear();
@@ -46,80 +85,156 @@ describe("UpdatePersister", () => {
     expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBeNull();
   });
 
-  it("should initialize with pending updates from local storage if they exist", () => {
-    localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
-    const persister = new UpdatePersister();
-    expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
-  });
-
   it("should do nothing on auth token set if there's nothing pending", () => {
     const persister = new UpdatePersister();
     persister.setAuthToken("mock-token");
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it("should attempt any pending updates when the auth token is set", async () => {
-    localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
+  describe("plays", () => {
+    it("should initialize with pending play updates from local storage if they exist", () => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
+      const persister = new UpdatePersister();
+      expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
+    });
 
-    const persister = new UpdatePersister();
-    persister.setAuthToken("mock-token");
-    expectPlayPostRequest("123");
+    it("should attempt any pending updates when the auth token is set", async () => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      expectPlayPostRequest("123");
+    });
+
+    it("should add a play update to pending updates & persist if not authenticated", async () => {
+      const persister = new UpdatePersister();
+      await persister.addPlay("123");
+
+      expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
+    });
+
+    it("should add a play update and immediately attempt it if authenticated", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+
+      await persister.addPlay("123");
+      expectPlayPostRequest("123");
+      expect(persister.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
+    });
+
+    it("should retry sending pending updates on a timer", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+
+      // fails on first attempt
+      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      await persister.addPlay("123");
+      expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
+      expectPlayPostRequest("123");
+      clearPostMock();
+
+      // fails on second attempt
+      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.runOnlyPendingTimers();
+      await waitForUpdatesToFinish(persister);
+      expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
+      expectPlayPostRequest("123");
+      clearPostMock();
+
+      // succeeds on third attempt
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.runOnlyPendingTimers();
+      await waitForUpdatesToFinish(persister);
+
+      expectPlayPostRequest("123");
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
+      expect(persister.pendingUpdates).toEqual([]);
+    });
   });
 
-  it("should add a play update to pending updates & persist if not authenticated", async () => {
-    const persister = new UpdatePersister();
-    await persister.addPlay("123");
+  describe("ratings", () => {
+    it("should initialize with pending rating updates from local storage if they exist", () => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, RATING_UPDATE_ARR_STR);
+      const persister = new UpdatePersister();
+      expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
+    });
 
-    expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
-    expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
-  });
+    it("should attempt any pending updates when the auth token is set", async () => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, RATING_UPDATE_ARR_STR);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
-  it("should add a play update and immediately attempt it if authenticated", async () => {
-    const persister = new UpdatePersister();
-    persister.setAuthToken("mock-token");
-    (axios.post as Mock).mockResolvedValueOnce({});
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      expectRatingPostRequest("123", 60);
+    });
 
-    await persister.addPlay("123");
-    expectPlayPostRequest("123");
-    expect(persister.pendingUpdates).toEqual([]);
-    expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
-  });
+    it("should add a rating update to pending updates & persist if not authenticated", async () => {
+      const persister = new UpdatePersister();
+      await persister.updateRating("123", 60);
 
-  it("should retry sending pending updates on a timer", async () => {
-    const persister = new UpdatePersister();
-    persister.setAuthToken("mock-token");
+      expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        RATING_UPDATE_ARR_STR
+      );
+    });
 
-    // fails on first attempt
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    await persister.addPlay("123");
-    expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
-    expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
-    expectPlayPostRequest("123");
-    clearPostMock();
+    it("should add a rating update and immediately attempt it if authenticated", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
-    // fails on second attempt
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    vi.runOnlyPendingTimers();
-    await waitForUpdatesToFinish(persister);
-    expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
-    expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
-    expectPlayPostRequest("123");
-    clearPostMock();
+      await persister.updateRating("123", 60);
+      expectRatingPostRequest("123", 60);
+      expect(persister.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
+    });
 
-    // succeeds on third attempt
-    (axios.post as Mock).mockResolvedValueOnce({});
-    vi.runOnlyPendingTimers();
-    await waitForUpdatesToFinish(persister);
+    it("should retry sending pending updates on a timer", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
 
-    expectPlayPostRequest("123");
-    expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
-    expect(persister.pendingUpdates).toEqual([]);
+      // fails on first attempt
+      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      await persister.updateRating("123", 60);
+      expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        RATING_UPDATE_ARR_STR
+      );
+      expectRatingPostRequest("123", 60);
+      clearPostMock();
+
+      // fails on second attempt
+      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.runOnlyPendingTimers();
+      await waitForUpdatesToFinish(persister);
+      expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        RATING_UPDATE_ARR_STR
+      );
+      expectRatingPostRequest("123", 60);
+      clearPostMock();
+
+      // succeeds on third attempt
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.runOnlyPendingTimers();
+      await waitForUpdatesToFinish(persister);
+
+      expectRatingPostRequest("123", 60);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
+      expect(persister.pendingUpdates).toEqual([]);
+    });
   });
 
   it("should support intermittent failing requests and adding while attempting updates", async () => {
     const updates: Update[] = [
       { type: "play", trackId: "123", params: undefined },
-      { type: "play", trackId: "456", params: undefined },
+      { type: "rating", trackId: "456", params: { rating: 60 } },
       { type: "play", trackId: "789", params: undefined },
     ];
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updates));
@@ -128,14 +243,14 @@ describe("UpdatePersister", () => {
 
     // first attempt: only 456 succeeds
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockResolvedValueOnce({});
+    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
     persister.setAuthToken("mock-token");
     persister.addPlay("abc"); // add another one, why not
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
-    expectPlayPostRequest("456");
+    expectRatingPostRequest("456", 60);
     expectPlayPostRequest("789");
     expectPlayPostRequest("abc");
     clearPostMock();
@@ -150,8 +265,8 @@ describe("UpdatePersister", () => {
 
     // second attempt: only abc succeeds
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockResolvedValueOnce({});
+    (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
@@ -164,7 +279,7 @@ describe("UpdatePersister", () => {
     expect(persister.pendingUpdates).toEqual([updates[0], updates[2]]);
 
     // third attempt: only 123 succeeds
-    (axios.post as Mock).mockResolvedValueOnce({});
+    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
@@ -177,7 +292,7 @@ describe("UpdatePersister", () => {
     expect(persister.pendingUpdates).toEqual([updates[2]]);
 
     // fourth attempt: 789 succeeds
-    (axios.post as Mock).mockResolvedValueOnce({});
+    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("789");

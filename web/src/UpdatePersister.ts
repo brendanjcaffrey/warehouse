@@ -1,5 +1,7 @@
 import axios from "axios";
+import qs from "qs";
 import { memoize } from "lodash";
+import { OperationResponse } from "./generated/messages";
 
 const LOCAL_STORAGE_KEY = "updates";
 const RETRY_MILLIS = 30000;
@@ -50,6 +52,20 @@ export class UpdatePersister {
     }
   }
 
+  async updateRating(trackId: string, rating: number) {
+    const update = { type: "rating", trackId, params: { rating } };
+    if (this.authToken && !this.attemptingBulkUpdates) {
+      try {
+        await this.attemptUpdate(update);
+      } catch (e) {
+        console.error("unable to update rating", e);
+        this.addPendingUpdate(update);
+      }
+    } else {
+      this.addPendingUpdate(update);
+    }
+  }
+
   private addPendingUpdate(update: Update) {
     if (!isUpdate(update)) {
       console.error("invalid update", update);
@@ -66,9 +82,21 @@ export class UpdatePersister {
       return;
     }
     const requestPath = `/api/${update.type}/${update.trackId}`;
-    await axios.post(requestPath, update.params, {
-      headers: { Authorization: `Bearer ${this.authToken}` },
-    });
+    const { data } = await axios.post(
+      requestPath,
+      qs.stringify(update.params),
+      {
+        responseType: "arraybuffer",
+        headers: {
+          Authorization: `Bearer ${this.authToken}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
+    const resp = OperationResponse.deserialize(data);
+    if (!resp.success) {
+      throw new Error(resp.error);
+    }
   }
 
   private async attemptUpdates() {

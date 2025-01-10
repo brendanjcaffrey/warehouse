@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import { Track } from "../src/Library";
 import { FilterTrackList } from "../src/TrackTableFilter";
 import { expect, test } from "vitest";

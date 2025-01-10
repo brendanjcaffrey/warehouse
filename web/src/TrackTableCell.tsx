@@ -34,6 +34,7 @@ interface TrackTableCellProps extends GridChildComponentProps {
 export function TrackTableCell(props: TrackTableCellProps) {
   const rowIndex = props.rowIndex;
   const trackId = props.tracks[props.trackDisplayIndexes[rowIndex]].id;
+  const column = COLUMNS[props.columnIndex];
 
   return (
     <div
@@ -43,7 +44,9 @@ export function TrackTableCell(props: TrackTableCellProps) {
           trackId,
           props.selectedTrackId
         ),
-        padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
+        padding: `0 ${
+          column.childAppliesPadding ? 0 : CELL_HORIZONTAL_PADDING_SIDE
+        }px`,
         boxSizing: "border-box",
         whiteSpace: "nowrap",
         overflow: "hidden",
@@ -55,13 +58,10 @@ export function TrackTableCell(props: TrackTableCellProps) {
       onContextMenu={(event) => props.showContextMenu(event, trackId)}
       onDoubleClick={() => props.handleAction(TrackAction.PLAY, trackId)}
     >
-      {COLUMNS[props.columnIndex].canHaveNowPlayingIcon &&
-      trackId === props.playingTrackId ? (
+      {column.canHaveNowPlayingIcon && trackId === props.playingTrackId ? (
         <VolumeUpRounded fontSize="small" color="primary" />
       ) : null}
-      {COLUMNS[props.columnIndex].render(
-        props.tracks[props.trackDisplayIndexes[rowIndex]]
-      )}
+      {column.render(props.tracks[props.trackDisplayIndexes[rowIndex]])}
     </div>
   );
 }
