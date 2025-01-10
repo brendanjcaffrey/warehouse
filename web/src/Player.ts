@@ -2,6 +2,7 @@ import { memoize, isEqual } from "lodash";
 import { volumeAtom, shuffleAtom, repeatAtom } from "./Settings";
 import {
   store,
+  trackUpdatedFnAtom,
   stoppedAtom,
   currentTimeAtom,
   playingTrackAtom,
@@ -134,6 +135,14 @@ class Player {
     try {
       this.audioRef!.pause();
       updatePersister().addPlay(this.playingTrack.id);
+      // always get the latest version of the track just in case it was updated
+      const track = await library().getTrack(this.playingTrack.id);
+      if (track) {
+        track.playCount++;
+        await library().putTrack(track);
+        store.get(trackUpdatedFnAtom).fn(track);
+        this.playingTrack = track;
+      }
       await this.next();
     } finally {
       this.addingPlay = undefined;

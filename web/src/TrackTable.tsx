@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useReducer, useCallback } from "react";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
 import { useDebouncedAtomValue } from "./useDebouncedAtomValue";
 import { useDebouncedTypedInput } from "./useDebouncedTypedInput";
-import library from "./Library";
+import library, { Track } from "./Library";
 import { player } from "./Player";
 import {
+  trackUpdatedFnAtom,
   selectedPlaylistIdAtom,
   searchAtom,
   stoppedAtom,
@@ -31,6 +32,7 @@ import { ROW_HEIGHT } from "./TrackTableConstants";
 function TrackTable() {
   const gridRef = useRef<VariableSizeGrid>(null);
 
+  const setTrackUpdatedFn = useSetAtom(trackUpdatedFnAtom);
   const selectedPlaylistId = useAtomValue(selectedPlaylistIdAtom);
   const stopped = useAtomValue(stoppedAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
@@ -79,6 +81,14 @@ function TrackTable() {
       state.sortFilteredIndexes.map((idx) => state.tracks[idx].id)
     );
   }, [state]);
+
+  const trackUpdated = useCallback((track: Track) => {
+    dispatch({ type: UpdateType.TrackUpdated, track });
+  }, []);
+
+  useEffect(() => {
+    setTrackUpdatedFn({ fn: trackUpdated });
+  }, [setTrackUpdatedFn, trackUpdated]);
 
   useDebouncedTypedInput((typedInput: string) => {
     const entry = BinarySearchTypeToShowList(state.typeToShowList, typedInput);

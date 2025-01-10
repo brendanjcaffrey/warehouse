@@ -44,6 +44,7 @@ export enum UpdateType {
   TracksChanged,
   SortChanged,
   FilterChanged,
+  TrackUpdated,
 }
 
 export type IconWidthsChanged = {
@@ -67,9 +68,19 @@ export type FilterChanged = {
   filterText: string;
 };
 
+export type TrackUpdated = {
+  type: UpdateType.TrackUpdated;
+  track: Track;
+};
+
 export function UpdateTrackTableState(
   oldState: TrackTableState,
-  event: IconWidthsChanged | TracksChanged | SortChanged | FilterChanged
+  event:
+    | IconWidthsChanged
+    | TracksChanged
+    | SortChanged
+    | FilterChanged
+    | TrackUpdated
 ): TrackTableState {
   const newState = { ...oldState };
   switch (event.type) {
@@ -86,11 +97,21 @@ export function UpdateTrackTableState(
     case UpdateType.FilterChanged:
       newState.filterText = event.filterText;
       break;
+    case UpdateType.TrackUpdated: {
+      const trackIndex = newState.tracks.findIndex(
+        (track) => track.id === event.track.id
+      );
+      if (trackIndex !== -1) {
+        newState.tracks[trackIndex] = event.track;
+      }
+      break;
+    }
   }
 
   if (
     event.type === UpdateType.IconWidthsChanged ||
-    event.type === UpdateType.TracksChanged
+    event.type === UpdateType.TracksChanged ||
+    event.type === UpdateType.TrackUpdated
   ) {
     newState.columnWidths = GetColumnWidths(
       newState.tracks,
@@ -103,8 +124,13 @@ export function UpdateTrackTableState(
     return newState;
   }
 
-  // if it's not just a filter change, sort the tracks
-  if (event.type !== UpdateType.FilterChanged) {
+  // on a filter change, we don't need to re-sort the list. when a single track is updated,
+  // we deliberately don't re-sort the list to maintain the current order so the row doesn't
+  // jump around if there's a typo etc
+  if (
+    event.type !== UpdateType.FilterChanged &&
+    event.type !== UpdateType.TrackUpdated
+  ) {
     const allIndexes = newState.tracks.map((_, i) => i);
     if (newState.sortState.columnId === null) {
       newState.sortIndexes = allIndexes;
@@ -122,7 +148,8 @@ export function UpdateTrackTableState(
     }
   }
 
-  if (newState.filterText === "") {
+  // we don't re-filter on a single track edit either
+  if (newState.filterText === "" || event.type === UpdateType.TracksChanged) {
     newState.sortFilteredIndexes = newState.sortIndexes.slice();
   } else {
     newState.sortFilteredIndexes = FilterTrackList(
