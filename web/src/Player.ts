@@ -3,6 +3,7 @@ import { volumeAtom, shuffleAtom, repeatAtom } from "./Settings";
 import {
   store,
   trackUpdatedFnAtom,
+  showTrackFnAtom,
   stoppedAtom,
   currentTimeAtom,
   playingTrackAtom,
@@ -224,6 +225,7 @@ class Player {
       this.stopped = false;
       store.set(stoppedAtom, false);
       this.audioPlay();
+      this.showPlayingTrackIfInPlaylist();
     } else {
       this.audioRef.pause();
       this.playing = false;
@@ -231,7 +233,7 @@ class Player {
     store.set(playingAtom, this.playing);
   }
 
-  prev() {
+  async prev() {
     if (!this.inValidState()) {
       return;
     }
@@ -239,7 +241,7 @@ class Player {
     if (this.inPlayNextList) {
       this.playNextTrackIds.shift();
       this.inPlayNextList = false;
-      this.updatePlayingTrack();
+      await this.updatePlayingTrack();
     } else if (this.shouldRewind()) {
       this.audioRef.currentTime = this.playingTrack.start;
       this.audioPlay();
@@ -248,8 +250,10 @@ class Player {
         this.playingTrackIdx === 0
           ? this.playingTrackIds.length - 1
           : this.playingTrackIdx - 1;
-      this.updatePlayingTrack();
+      await this.updatePlayingTrack();
     }
+
+    this.showPlayingTrackIfInPlaylist();
   }
 
   async next() {
@@ -276,13 +280,14 @@ class Player {
         (this.playingTrackIdx + 1) % this.playingTrackIds.length;
       await this.updatePlayingTrack();
     }
+    this.showPlayingTrackIfInPlaylist();
   }
 
   // actions
-  playTrack(trackId: string) {
+  async playTrack(trackId: string) {
     this.inPlayNextList = false;
     this.playingTrackIds = [];
-    this.rebuildPlayingTrackIds(trackId);
+    await this.rebuildPlayingTrackIds(trackId);
     if (this.stopped) {
       this.playPause();
     }
@@ -460,6 +465,14 @@ class Player {
           artworkId: track.artworks[0],
         });
       }
+    }
+  }
+
+  private async showPlayingTrackIfInPlaylist() {
+    if (this.playingPlaylistId === this.displayedPlaylistId) {
+      store
+        .get(showTrackFnAtom)
+        .fn(this.playingTrackIds[this.playingTrackIdx], true);
     }
   }
 }

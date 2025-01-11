@@ -93,6 +93,13 @@ function TrackTable() {
           if (gridRef.current) {
             gridRef.current.resetAfterIndices({ columnIndex: 0, rowIndex: 0 });
           }
+          if (
+            player().playingPlaylistId === selectedPlaylistId &&
+            player().playingTrack
+          ) {
+            trackToShowAfterPlaylistSwitch.current =
+              player().playingTrack?.id || "";
+          }
         }
       });
   }, [selectedPlaylistId]);
