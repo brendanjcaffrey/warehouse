@@ -1,0 +1,81 @@
+name: test
+
+on:
+  push:
+    branches: [ "master" ]
+  schedule:
+    - cron: '45 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: start postgres
+      run: |
+        sudo systemctl start postgresql.service
+        pg_isready
+        sudo -u postgres psql --command="CREATE USER ci PASSWORD 'ci' SUPERUSER" --command="\du"
+        sudo -u postgres psql --command="CREATE DATABASE streamer_test WITH OWNER=ci" --command="\du"
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: 3.3.4
+
+    - name: bundle
+      id: bundle
+      run: |
+        gem install bundler
+        bundle install --jobs 4 --retry 3
+
+    - uses: arduino/setup-protoc@v2
+
+    - name: npm install
+      run: cd web && npm install
+
+    - name: compile protobufs & build
+      run: bundle exec rake build
+
+    - name: discord prerequisites
+      id: discord_prerequisites
+      if: failure()
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.WEBHOOK_ID }}
+        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
+        username: "github"
+        message: "Prerequisites failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/itunes-streamer/actions/runs/${{ github.run_id }}"
+
+    - name: rspec
+      id: rspec
+      timeout-minutes: 1
+      run: bundle exec rspec
+
+    - name: discord rspec
+      id: discord_rspec
+      if: ${{ failure() && steps.rspec.conclusion == 'failure' }}
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.WEBHOOK_ID }}
+        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
+        username: "github"
+        message: "Rspec tests failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/itunes-streamer/actions/runs/${{ github.run_id }}"
+
+    - name: vitest
+      id: vitest
+      timeout-minutes: 1
+      run: cd web && npx vitest run
+
+    - name: discord vitest
+      id: discord_vitest
+      if: ${{ failure() && steps.vitest.conclusion == 'failure' }}
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.WEBHOOK_ID }}
+        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
+        username: "github"
+        message: "Vitest tests failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/itunes-streamer/actions/runs/${{ github.run_id }}"

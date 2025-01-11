@@ -186,9 +186,18 @@ module Export
     EXPORT_FINISHED_SQL = 'INSERT INTO export_finished (finished_at) VALUES (current_timestamp)'
 
     def initialize(database_username, database_name)
-      @database_username = database_username
       @database_name = database_name
-      @db = PG.connect(user: @database_username, dbname: @database_name)
+
+      @db_connection_options = { user: database_username, dbname: @database_name }
+      @postgres_connection_options = { user: database_username, dbname: 'postgres' }
+      if ENV['CI']
+        @db_connection_options[:host] = 'localhost'
+        @postgres_connection_options[:host] = 'localhost'
+        @db_connection_options[:password] = 'ci'
+        @postgres_connection_options[:password] = 'ci'
+      end
+
+      @db = PG.connect(@db_connection_options)
 
       @genres = {}
       @artists = {}
@@ -242,7 +251,7 @@ module Export
     def clean_and_rebuild
       @db.close
 
-      db = PG.connect(user: @database_username, dbname: 'postgres')
+      db = PG.connect(@postgres_connection_options)
       database_exists = db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
       if database_exists
         db.exec(DROP_DATABASE_SQL % @database_name)
@@ -251,7 +260,7 @@ module Export
       db.exec(CREATE_DATABASE_SQL % [@database_name])
       db.close
 
-      @db = PG.connect(user: @database_username, dbname: @database_name)
+      @db = PG.connect(@db_connection_options)
       build_tables
     end
 

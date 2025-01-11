@@ -133,10 +133,16 @@ class Server < Sinatra::Base
   end
 
   def db
+    db_connection_options = { user: Config['database_username'], dbname: Config['database_name'] }
+    if ENV['CI']
+      db_connection_options[:host] = 'localhost'
+      db_connection_options[:password] = 'ci'
+    end
+
     if Config.use_persistent_db?
-      @@db ||= PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+      @@db ||= PG.connect(db_connection_options)
     else
-      @db ||= PG.connect(user: Config['database_username'], dbname: Config['database_name'])
+      @db ||= PG.connect(db_connection_options)
     end
   end
 

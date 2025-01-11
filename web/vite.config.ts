@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
+import type { InlineConfig } from 'vitest';
+import type { UserConfig } from 'vite';
 import react from "@vitejs/plugin-react-swc";
 
 // https://vite.dev/config/
-export default defineConfig({
+type ViteConfig = UserConfig & { test: InlineConfig };
+const config: ViteConfig = {
   plugins: [react()],
   build: {
     outDir: "../public",
@@ -20,4 +23,6 @@ export default defineConfig({
       "/artwork": "http://localhost:5567",
     },
   },
-});
+};
+
+export default defineConfig(config);

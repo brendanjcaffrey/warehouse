@@ -9,7 +9,7 @@ module Config
   module_function
 
   def [](key)
-    return YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
+    return ENV['CI'] ? 'ci' : YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
     return 'streamer_test' if key == 'database_name'
     return './spec/' if key == 'music_path' || key == 'artwork_path'
     return '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
