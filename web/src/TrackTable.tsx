@@ -8,6 +8,7 @@ import library, { Track } from "./Library";
 import { player } from "./Player";
 import {
   trackUpdatedFnAtom,
+  showTrackFnAtom,
   selectedPlaylistIdAtom,
   searchAtom,
   stoppedAtom,
@@ -29,14 +30,34 @@ import { TrackContextMenu, TrackContextMenuData } from "./TrackContextMenu";
 import { TrackAction } from "./TrackAction";
 import { ROW_HEIGHT } from "./TrackTableConstants";
 
+function showTrackInGrid(
+  gridRef: React.RefObject<VariableSizeGrid>,
+  tracks: Track[],
+  sortFilteredIndexes: number[],
+  trackId: string
+) {
+  const trackIndex = sortFilteredIndexes.findIndex(
+    (i) => tracks[i].id === trackId
+  );
+  if (trackIndex !== -1 && gridRef.current) {
+    gridRef.current.scrollToItem({
+      align: "center",
+      rowIndex: trackIndex,
+      columnIndex: 0,
+    });
+  }
+}
+
 function TrackTable() {
   const gridRef = useRef<VariableSizeGrid>(null);
 
   const setTrackUpdatedFn = useSetAtom(trackUpdatedFnAtom);
+  const setShowTrackFn = useSetAtom(showTrackFnAtom);
   const selectedPlaylistId = useAtomValue(selectedPlaylistIdAtom);
   const stopped = useAtomValue(stoppedAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const [state, dispatch] = useReducer(UpdateTrackTableState, DEFAULT_STATE);
+  const trackToShowAfterPlaylistSwitch = useRef("");
 
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [contextMenuData, setContextMenuData] =
@@ -68,6 +89,7 @@ function TrackTable() {
             tracks,
           });
           setSelectedTrackId(null);
+          // have to reset the column widths
           if (gridRef.current) {
             gridRef.current.resetAfterIndices({ columnIndex: 0, rowIndex: 0 });
           }
@@ -80,6 +102,18 @@ function TrackTable() {
       state.playlistId,
       state.sortFilteredIndexes.map((idx) => state.tracks[idx].id)
     );
+
+    const trackId = trackToShowAfterPlaylistSwitch.current;
+    if (trackId) {
+      trackToShowAfterPlaylistSwitch.current = "";
+      setSelectedTrackId(trackId);
+      showTrackInGrid(
+        gridRef,
+        state.tracks,
+        state.sortFilteredIndexes,
+        trackId
+      );
+    }
   }, [state]);
 
   const trackUpdated = useCallback((track: Track) => {
@@ -89,6 +123,30 @@ function TrackTable() {
   useEffect(() => {
     setTrackUpdatedFn({ fn: trackUpdated });
   }, [setTrackUpdatedFn, trackUpdated]);
+
+  // because the update tracks effect is async, if we want to change the playlist and show a track,
+  // we need to wait for the async effect to finish before showing the track. there's no clean way
+  // to do this really, so we just use a ref to store the track id to show after the async effect
+  const showTrack = useCallback(
+    (trackId: string, immediate: boolean) => {
+      if (!immediate) {
+        trackToShowAfterPlaylistSwitch.current = trackId;
+        return;
+      }
+      setSelectedTrackId(trackId);
+      showTrackInGrid(
+        gridRef,
+        state.tracks,
+        state.sortFilteredIndexes,
+        trackId
+      );
+    },
+    [state, setSelectedTrackId]
+  );
+
+  useEffect(() => {
+    setShowTrackFn({ fn: showTrack });
+  }, [setShowTrackFn, showTrack]);
 
   useDebouncedTypedInput((typedInput: string) => {
     const entry = BinarySearchTypeToShowList(state.typeToShowList, typedInput);

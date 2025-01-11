@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { styled } from "@mui/material";
 import { Box, Stack, Typography, Slider } from "@mui/material";
 import { KeyboardReturnRounded } from "@mui/icons-material";
 import Artwork from "./Artwork";
 import { lighterGrey, titleGrey, defaultGrey } from "./Colors";
 import { player } from "./Player";
-import { playingTrackAtom, currentTimeAtom } from "./State";
+import {
+  showTrackFnAtom,
+  playingTrackAtom,
+  currentTimeAtom,
+  selectedPlaylistIdAtom,
+} from "./State";
 
 const DurationText = styled(Typography)({
   color: defaultGrey,
@@ -16,6 +21,10 @@ const DurationText = styled(Typography)({
 
 function NowPlaying() {
   const [returnDown, setReturnDown] = useState(false);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useAtom(
+    selectedPlaylistIdAtom
+  );
+  const showTrackFn = useAtomValue(showTrackFnAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
   const remaining = playingTrack ? playingTrack.finish - currentTime : 0;
@@ -31,6 +40,17 @@ function NowPlaying() {
   }
   function returnButtonUp() {
     setReturnDown(false);
+    const playingPlaylistId = player().playingPlaylistId;
+    if (
+      playingPlaylistId &&
+      playingTrack &&
+      selectedPlaylistId !== player().playingPlaylistId
+    ) {
+      showTrackFn.fn(playingTrack?.id || "", false);
+      setSelectedPlaylistId(playingPlaylistId);
+    } else {
+      showTrackFn.fn(playingTrack?.id || "", true);
+    }
   }
 
   return (
