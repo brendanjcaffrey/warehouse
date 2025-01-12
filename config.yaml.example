@@ -6,6 +6,7 @@ local:
   update_library: true
   -- generate with: ruby -rsecurerandom -e 'p SecureRandom.hex(32)'
   secret: [something]
+  port: 4567
 
 remote:
   base_url: http://example.com/
@@ -15,6 +16,7 @@ remote:
   database_name: itunes_streamer
   update_library: false
   secret: [something]
+  socket_path: /tmp/itunes-streamer.sock
 
 users:
   brendan:

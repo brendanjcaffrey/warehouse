@@ -126,10 +126,10 @@ class Server < Sinatra::Base
 
   if Config.remote?
     set :environment, :production
-    set :bind, '/tmp/itunes-streamer.sock'
+    set :bind, Config['socket_path']
   else
     set :environment, :development
-    set :port, 5567
+    set :port, Config['port']
   end
 
   def db
@@ -190,7 +190,7 @@ class Server < Sinatra::Base
       false
     else
       if Config.remote?
-        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/music/#{file}")
+        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{file}")
         headers['Content-Type'] = MIME_TYPES[ext]
       else
         send_file(music_path + file, type: ext)
@@ -222,7 +222,7 @@ class Server < Sinatra::Base
       raise Sinatra::NotFound unless valid_artwork && File.exist?(full_path)
 
       if Config.remote?
-        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/artwork/#{file}")
+        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/artwork/#{file}")
         headers['Content-Type'] = MIME_TYPES[file.split('.').last]
       else
         send_file(full_path)
