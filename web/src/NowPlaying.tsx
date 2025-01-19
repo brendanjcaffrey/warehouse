@@ -68,11 +68,15 @@ function NowPlaying() {
           }}
         >
           <DurationText>{formatSeconds(currentTime)}</DurationText>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Box sx={{ textAlign: "center" }}>
+          <Box sx={{ display: "flex", alignItems: "center", maxWidth: "85%" }}>
+            <Box sx={{ textAlign: "center", maxWidth: "100%" }}>
               <Typography
                 noWrap
-                sx={{ color: titleGrey, fontSize: "14px", lineHeight: "20px" }}
+                sx={{
+                  color: titleGrey,
+                  fontSize: "14px",
+                  lineHeight: "20px",
+                }}
               >
                 {playingTrack?.name || ""}
                 <span onMouseDown={returnButtonDown} onMouseUp={returnButtonUp}>
@@ -87,6 +91,7 @@ function NowPlaying() {
                 </span>
               </Typography>
               <Typography
+                noWrap
                 sx={{
                   color: defaultGrey,
                   fontSize: "12px",
