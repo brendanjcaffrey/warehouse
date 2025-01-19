@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { Box, CircularProgress } from "@mui/material";
+import { Box, CircularProgress, Modal } from "@mui/material";
 import DelayedElement from "./DelayedElement";
 import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom } from "./State";
@@ -15,8 +15,11 @@ const SPACING = "4px";
 function Artwork() {
   const showArtwork = useAtomValue(showArtworkAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
+  const [showModal, setShowModal] = useState(false);
   const [shownArtwork, setShownArtwork] = useState<string | null>(null);
   const [artworkFileURL, setArtworkFileURL] = useState<string | null>(null);
+  const [modalWidth, setModalWidth] = useState(0);
+  const [modalHeight, setModalHeight] = useState(0);
 
   useEffect(() => {
     files(); // initialize it
@@ -62,6 +65,7 @@ function Artwork() {
 
   useEffect(() => {
     if (playingTrack && playingTrack.artworks[0] !== shownArtwork) {
+      setShowModal(false);
       if (artworkFileURL) {
         URL.revokeObjectURL(artworkFileURL);
         setArtworkFileURL(null);
@@ -88,12 +92,38 @@ function Artwork() {
         }}
       >
         {artworkFileURL ? (
-          <img
-            src={artworkFileURL}
-            alt="artwork"
-            width={ARTWORK_SIZE}
-            height={ARTWORK_SIZE}
-          />
+          <>
+            <img
+              src={artworkFileURL}
+              alt="artwork"
+              width={ARTWORK_SIZE}
+              height={ARTWORK_SIZE}
+              onClick={() => {
+                const i = new Image();
+                i.onload = () => {
+                  setModalWidth(i.width);
+                  setModalHeight(i.height);
+                  setShowModal(true);
+                };
+                i.src = artworkFileURL;
+              }}
+            />
+            <Modal open={showModal} onClose={() => setShowModal(false)}>
+              <Box
+                sx={{
+                  outline: 0,
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  width: `${modalWidth}px`,
+                  height: `${modalHeight}px`,
+                }}
+              >
+                <img src={artworkFileURL} alt="artwork" />
+              </Box>
+            </Modal>
+          </>
         ) : (
           <DelayedElement>
             <div
