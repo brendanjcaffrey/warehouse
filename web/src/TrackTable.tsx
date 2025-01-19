@@ -32,6 +32,7 @@ import { ROW_HEIGHT } from "./TrackTableConstants";
 
 function showTrackInGrid(
   gridRef: React.RefObject<VariableSizeGrid>,
+  displayedRowIdxs: React.RefObject<[number, number]>,
   tracks: Track[],
   sortFilteredIndexes: number[],
   trackId: string
@@ -40,6 +41,15 @@ function showTrackInGrid(
     (i) => tracks[i].id === trackId
   );
   if (trackIndex !== -1 && gridRef.current) {
+    // if the track is already displayed, don't scroll
+    if (
+      displayedRowIdxs.current &&
+      // the row #s seem to be off slightly? just move the range in by 1 on each side
+      displayedRowIdxs.current[0] + 1 <= trackIndex &&
+      displayedRowIdxs.current[1] - 1 >= trackIndex
+    ) {
+      return;
+    }
     gridRef.current.scrollToItem({
       align: "center",
       rowIndex: trackIndex,
@@ -58,6 +68,7 @@ function TrackTable() {
   const playingTrack = useAtomValue(playingTrackAtom);
   const [state, dispatch] = useReducer(UpdateTrackTableState, DEFAULT_STATE);
   const trackToShowAfterPlaylistSwitch = useRef("");
+  const displayedRowIdxs = useRef<[number, number]>([-1, -1]);
 
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [contextMenuData, setContextMenuData] =
@@ -116,6 +127,7 @@ function TrackTable() {
       setSelectedTrackId(trackId);
       showTrackInGrid(
         gridRef,
+        displayedRowIdxs,
         state.tracks,
         state.sortFilteredIndexes,
         trackId
@@ -143,6 +155,7 @@ function TrackTable() {
       setSelectedTrackId(trackId);
       showTrackInGrid(
         gridRef,
+        displayedRowIdxs,
         state.tracks,
         state.sortFilteredIndexes,
         trackId
@@ -229,6 +242,15 @@ function TrackTable() {
               rowCount={state.sortFilteredIndexes.length}
               rowHeight={() => ROW_HEIGHT}
               innerElementType={TrackTableStickyHeaderGrid}
+              onItemsRendered={({
+                visibleRowStartIndex,
+                visibleRowStopIndex,
+              }) => {
+                displayedRowIdxs.current = [
+                  visibleRowStartIndex,
+                  visibleRowStopIndex,
+                ];
+              }}
             >
               {(props) => (
                 <TrackTableCell
