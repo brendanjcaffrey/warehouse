@@ -1,5 +1,5 @@
 import { useAtom, useAtomValue } from "jotai";
-import { Stack, Slider, IconButton } from "@mui/material";
+import { Stack, Slider, IconButton, Tooltip } from "@mui/material";
 import {
   SkipNextRounded,
   SkipPreviousRounded,
@@ -63,29 +63,35 @@ function Controls() {
         <IconButton size="large" edge="start" onClick={() => player().next()}>
           <SkipNextRounded fontSize="inherit" sx={{ color: titleGrey }} />
         </IconButton>
-        <IconButton
-          size="large"
-          onClick={toggleShuffle}
-          sx={{ color: shuffle ? titleGrey : defaultGrey }}
-        >
-          <ShuffleRounded fontSize="inherit" />
-        </IconButton>
-        <IconButton
-          size="large"
-          onClick={toggleRepeat}
-          edge="start"
-          sx={{ color: repeat ? titleGrey : defaultGrey }}
-        >
-          <RepeatRounded fontSize="inherit" />
-        </IconButton>
-        <IconButton
-          size="large"
-          onClick={toggleShowArtwork}
-          edge="start"
-          sx={{ color: showArtwork ? titleGrey : defaultGrey }}
-        >
-          <ImageRounded fontSize="inherit" />
-        </IconButton>
+        <Tooltip title="Shuffle Playlist">
+          <IconButton
+            size="large"
+            onClick={toggleShuffle}
+            sx={{ color: shuffle ? titleGrey : defaultGrey }}
+          >
+            <ShuffleRounded fontSize="inherit" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Repeat Track">
+          <IconButton
+            size="large"
+            onClick={toggleRepeat}
+            edge="start"
+            sx={{ color: repeat ? titleGrey : defaultGrey }}
+          >
+            <RepeatRounded fontSize="inherit" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Show Artwork">
+          <IconButton
+            size="large"
+            onClick={toggleShowArtwork}
+            edge="start"
+            sx={{ color: showArtwork ? titleGrey : defaultGrey }}
+          >
+            <ImageRounded fontSize="inherit" />
+          </IconButton>
+        </Tooltip>
         <Slider
           value={volume}
           onChange={volumeChange}

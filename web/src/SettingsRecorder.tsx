@@ -1,12 +1,15 @@
 import { useEffect } from "react";
 import { useAtom, useSetAtom } from "jotai";
 import {
+  keepModeAtom,
   shuffleAtom,
   repeatAtom,
   showArtworkAtom,
   volumeAtom,
   openedFoldersAtom,
   DEFAULT_VOLUME,
+  GetDefaultKeepMode,
+  SetPersistedKeepMode,
   SetPersistedShuffle,
   SetPersistedRepeat,
   SetPersistedShowArtwork,
@@ -16,12 +19,17 @@ import {
 import { clearSettingsFnAtom } from "./State";
 
 function SettingsRecorder() {
+  const [keepMode, setKeepMode] = useAtom(keepModeAtom);
   const [shuffle, setShuffle] = useAtom(shuffleAtom);
   const [repeat, setRepeat] = useAtom(repeatAtom);
   const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
   const [volume, setVolume] = useAtom(volumeAtom);
   const [openedFolders, setOpenedFolders] = useAtom(openedFoldersAtom);
   const setClearSettingsFn = useSetAtom(clearSettingsFnAtom);
+
+  useEffect(() => {
+    SetPersistedKeepMode(keepMode);
+  }, [keepMode]);
 
   useEffect(() => {
     SetPersistedShuffle(shuffle);
@@ -46,6 +54,7 @@ function SettingsRecorder() {
   useEffect(() => {
     setClearSettingsFn({
       fn: () => {
+        setKeepMode(GetDefaultKeepMode());
         setShuffle(false);
         setRepeat(false);
         setShowArtwork(false);
@@ -54,6 +63,7 @@ function SettingsRecorder() {
       },
     });
   }, [
+    setKeepMode,
     setShuffle,
     setRepeat,
     setShowArtwork,

@@ -1,14 +1,29 @@
+import { useState } from "react";
 import { useAtom } from "jotai";
-import { Box, FormControl, Input, InputAdornment } from "@mui/material";
+import {
+  Box,
+  FormControl,
+  Input,
+  InputAdornment,
+  Tooltip,
+  IconButton,
+} from "@mui/material";
+import { SettingsRounded } from "@mui/icons-material";
 import { SearchRounded } from "@mui/icons-material";
 import { titleGrey } from "./Colors";
 import { searchAtom } from "./State";
+import SettingsPanel from "./SettingsPanel";
 
 function SearchBar() {
   const [search, setSearch] = useAtom(searchAtom);
+  const [showSettings, setShowSettings] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
+  };
+
+  const toggleShowSettings = () => {
+    setShowSettings((prev) => !prev);
   };
 
   return (
@@ -35,6 +50,20 @@ function SearchBar() {
           sx={{ fontSize: "12px", color: titleGrey }}
         />
       </FormControl>
+      <Tooltip title="Settings">
+        <IconButton
+          size="large"
+          onClick={toggleShowSettings}
+          edge="start"
+          sx={{ color: titleGrey }}
+        >
+          <SettingsRounded fontSize="inherit" />
+        </IconButton>
+      </Tooltip>
+      <SettingsPanel
+        showSettings={showSettings}
+        toggleShowSettings={toggleShowSettings}
+      />
     </Box>
   );
 }
