@@ -1,7 +1,7 @@
 import axios from "axios";
 import {
-  isStartSyncMessage,
-  isTypedMessage,
+  IsStartSyncMessage,
+  IsTypedMessage,
   SYNC_SUCCEEDED_TYPE,
   ERROR_TYPE,
 } from "./WorkerTypes";
@@ -110,11 +110,11 @@ const syncManager = new SyncManager();
 
 onmessage = (m: MessageEvent) => {
   const { data } = m;
-  if (!isTypedMessage(data)) {
+  if (!IsTypedMessage(data)) {
     return;
   }
 
-  if (isStartSyncMessage(data)) {
+  if (IsStartSyncMessage(data)) {
     syncManager.startSync(data.authToken);
   }
 };

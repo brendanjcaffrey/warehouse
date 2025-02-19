@@ -3,12 +3,22 @@ import { isObject } from "lodash";
 export const START_SYNC_TYPE = "startSync";
 export const SYNC_SUCCEEDED_TYPE = "syncSucceeded";
 export const SET_AUTH_TOKEN_TYPE = "setAuthToken";
-export const FETCH_TRACK_TYPE = "fetchTrack";
-export const TRACK_FETCHED_TYPE = "trackFetched";
-export const FETCH_ARTWORK_TYPE = "fetchArtwork";
-export const ARTWORK_FETCHED_TYPE = "artworkFetched";
+export const KEEP_MODE_CHANGED_TYPE = "keepModeChanged";
+export const SET_SOURCE_REQUESTED_FILES_TYPE = "setSourceRequestedFiles";
+export const FILE_FETCHED_TYPE = "fileFetched";
 export const CLEARED_ALL_TYPE = "clearedAll";
 export const ERROR_TYPE = "error";
+
+export enum FileType {
+  TRACK,
+  ARTWORK,
+}
+
+export enum FileRequestSource {
+  TRACK_DOWNLOAD,
+  TRACK_PRELOAD,
+  ARTWORK_PRELOAD,
+}
 
 export interface TypedMessage {
   type: string;
@@ -22,23 +32,26 @@ export interface ErrorMessage extends TypedMessage {
   error: string;
 }
 
-export interface FetchTrackMessage extends TypedMessage {
-  trackId: string;
+export interface KeepModeChangedMessage extends TypedMessage {
+  keepMode: boolean;
 }
 
-export type TrackFetchedMessage = FetchTrackMessage;
-
-export interface FetchArtworkMessage extends TypedMessage {
-  artworkId: string;
+export interface SetSourceRequestedFilesMessage extends TypedMessage {
+  source: FileRequestSource;
+  fileType: FileType;
+  ids: string[];
 }
 
-export type ArtworkFetchedMessage = FetchArtworkMessage;
+export interface FileFetchedMessage extends TypedMessage {
+  fileType: FileType;
+  id: string;
+}
 
-export function isTypedMessage(message: object): message is TypedMessage {
+export function IsTypedMessage(message: object): message is TypedMessage {
   return isObject(message) && "type" in message;
 }
 
-export function isStartSyncMessage(
+export function IsStartSyncMessage(
   message: TypedMessage
 ): message is AuthTokenMessage {
   return (
@@ -48,11 +61,11 @@ export function isStartSyncMessage(
   );
 }
 
-export function isSyncSucceededMessage(message: TypedMessage) {
+export function IsSyncSucceededMessage(message: TypedMessage) {
   return isObject(message) && message.type === SYNC_SUCCEEDED_TYPE;
 }
 
-export function isSetAuthTokenMessage(
+export function IsSetAuthTokenMessage(
   message: TypedMessage
 ): message is AuthTokenMessage {
   return (
@@ -62,50 +75,40 @@ export function isSetAuthTokenMessage(
   );
 }
 
-export function isFetchTrackMessage(
+export function IsKeepModeChangedMessage(
   message: TypedMessage
-): message is FetchTrackMessage {
+): message is KeepModeChangedMessage {
   return (
     isObject(message) &&
-    message.type === FETCH_TRACK_TYPE &&
-    "trackId" in message
+    message.type === KEEP_MODE_CHANGED_TYPE &&
+    "keepMode" in message
   );
 }
 
-export function isTrackFetchedMessage(
+export function IsSetSourceRequestedFilesMessage(
   message: TypedMessage
-): message is TrackFetchedMessage {
+): message is SetSourceRequestedFilesMessage {
   return (
     isObject(message) &&
-    message.type === TRACK_FETCHED_TYPE &&
-    "trackId" in message
+    message.type === SET_SOURCE_REQUESTED_FILES_TYPE &&
+    "source" in message &&
+    "fileType" in message &&
+    "ids" in message
   );
 }
 
-export function isFetchArtworkMessage(
+export function IsFileFetchedMessage(
   message: TypedMessage
-): message is FetchArtworkMessage {
+): message is FileFetchedMessage {
   return (
-    isObject(message) &&
-    message.type === FETCH_ARTWORK_TYPE &&
-    "artworkId" in message
+    isObject(message) && message.type === FILE_FETCHED_TYPE && "id" in message
   );
 }
 
-export function isArtworkFetchedMessage(
-  message: TypedMessage
-): message is ArtworkFetchedMessage {
-  return (
-    isObject(message) &&
-    message.type === ARTWORK_FETCHED_TYPE &&
-    "artworkId" in message
-  );
-}
-
-export function isClearedAllMessage(message: TypedMessage) {
+export function IsClearedAllMessage(message: TypedMessage) {
   return isObject(message) && message.type === CLEARED_ALL_TYPE;
 }
 
-export function isErrorMessage(message: TypedMessage): message is ErrorMessage {
+export function IsErrorMessage(message: TypedMessage): message is ErrorMessage {
   return isObject(message) && message.type === ERROR_TYPE && "error" in message;
 }

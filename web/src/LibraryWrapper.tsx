@@ -3,11 +3,13 @@ import DelayedElement from "./DelayedElement";
 import CenteredHalfAlert from "./CenteredHalfAlert";
 import library from "./Library";
 import {
-  isTypedMessage,
-  isErrorMessage,
-  isSyncSucceededMessage,
+  IsTypedMessage,
+  IsErrorMessage,
+  IsSyncSucceededMessage,
   START_SYNC_TYPE,
+  SYNC_SUCCEEDED_TYPE,
 } from "./WorkerTypes";
+import { DownloadWorker } from "./DownloadWorkerHandle";
 
 const SyncWorker = new Worker(new URL("./SyncWorker.ts", import.meta.url), {
   type: "module",
@@ -29,16 +31,17 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
 
     SyncWorker.onmessage = (m: MessageEvent) => {
       const { data } = m;
-      if (!isTypedMessage(data)) {
+      if (!IsTypedMessage(data)) {
         return;
       }
 
-      if (isErrorMessage(data)) {
+      if (IsErrorMessage(data)) {
         setError(`worker error: ${data.error}`);
       }
 
-      if (isSyncSucceededMessage(data)) {
+      if (IsSyncSucceededMessage(data)) {
         setSyncFinished(true);
+        DownloadWorker.postMessage({ type: SYNC_SUCCEEDED_TYPE });
       }
     };
 

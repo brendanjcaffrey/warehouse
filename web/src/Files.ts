@@ -1,80 +1,50 @@
+import { FileType } from "./WorkerTypes";
 import { memoize } from "lodash";
 
-class Files {
-  artworkDirHandle: FileSystemDirectoryHandle | null = null;
-  trackDirHandle: FileSystemDirectoryHandle | null = null;
+class FileTypeManager {
+  type: FileType;
+  dirName: string;
+  handle: FileSystemDirectoryHandle | null = null;
 
-  constructor() {
+  constructor(type: FileType, dirName: string) {
+    this.type = type;
+    this.dirName = dirName;
     this.reset();
   }
 
   reset() {
-    this.trackDirHandle = null;
-    this.artworkDirHandle = null;
-    this.getTrackDirHandle();
-    this.getArtworkDirHandle();
+    this.handle = null;
+    this.fetchHandle();
   }
 
-  async clearAll() {
-    const mainDirHandle = await navigator.storage.getDirectory();
-    await mainDirHandle.removeEntry("tracks", { recursive: true });
-    await mainDirHandle.removeEntry("artwork", { recursive: true });
-    this.reset();
+  isInitialized() {
+    return this.handle !== null;
   }
 
-  artworkInitialized() {
-    return this.artworkDirHandle !== null;
-  }
-
-  tracksInitialized() {
-    return this.trackDirHandle !== null;
-  }
-
-  async getArtworkDirHandle() {
+  async fetchHandle() {
     try {
       const mainDir = await navigator.storage.getDirectory();
-      const artworkDirHandle = await mainDir.getDirectoryHandle("artwork", {
+      const handle = await mainDir.getDirectoryHandle(this.dirName, {
         create: true,
       });
-      this.artworkDirHandle = artworkDirHandle;
+      this.handle = handle;
     } catch (e) {
-      console.error("unable to get artwork dir handle", e);
+      console.error(`unable to get ${this.dirName} dir handle`, e);
     }
   }
 
-  async getTrackDirHandle() {
+  async fileExists(id: string): Promise<boolean> {
     try {
-      const mainDir = await navigator.storage.getDirectory();
-      const trackDirHandle = await mainDir.getDirectoryHandle("tracks", {
-        create: true,
-      });
-      this.trackDirHandle = trackDirHandle;
-    } catch (e) {
-      console.error("unable to get track dir handle", e);
-    }
-  }
-
-  async artworkExists(artworkId: string): Promise<boolean> {
-    try {
-      await this.artworkDirHandle!.getFileHandle(artworkId);
+      await this.handle!.getFileHandle(id);
       return true;
     } catch {
       return false;
     }
   }
 
-  async trackExists(trackId: string): Promise<boolean> {
+  async tryGetFileURL(id: string): Promise<string | null> {
     try {
-      await this.trackDirHandle!.getFileHandle(trackId);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async tryGetArtworkURL(artworkId: string): Promise<string | null> {
-    try {
-      const fileHandle = await this.artworkDirHandle!.getFileHandle(artworkId);
+      const fileHandle = await this.handle!.getFileHandle(id);
       const file = await fileHandle.getFile();
       return URL.createObjectURL(file);
     } catch {
@@ -82,22 +52,12 @@ class Files {
     }
   }
 
-  async tryGetTrackURL(trackId: string): Promise<string | null> {
-    try {
-      const fileHandle = await this.trackDirHandle!.getFileHandle(trackId);
-      const file = await fileHandle.getFile();
-      return URL.createObjectURL(file);
-    } catch {
-      return null;
-    }
-  }
-
-  async tryWriteArtwork(
-    artworkId: string,
+  async tryWriteFile(
+    id: string,
     data: FileSystemWriteChunkType
   ): Promise<boolean> {
     try {
-      const fileHandle = await this.artworkDirHandle!.getFileHandle(artworkId, {
+      const fileHandle = await this.handle!.getFileHandle(id, {
         create: true,
       });
       const writable = await fileHandle.createWritable();
@@ -110,21 +70,87 @@ class Files {
     }
   }
 
-  async tryWriteTrack(
-    trackId: string,
-    data: FileSystemWriteChunkType
-  ): Promise<boolean> {
+  async tryDeleteFile(id: string): Promise<boolean> {
     try {
-      const fileHandle = await this.trackDirHandle!.getFileHandle(trackId, {
-        create: true,
-      });
-      const writable = await fileHandle.createWritable();
-      await writable.write(data);
-      await writable.close();
+      await this.handle!.removeEntry(id);
       return true;
     } catch {
       return false;
     }
+  }
+
+  async getAll(): Promise<Set<string> | undefined> {
+    if (!this.handle) { return undefined; }
+    const set = new Set<string>();
+    for await (const i of this.handle!.keys()) {
+      set.add(i);
+    }
+    return set;
+  }
+}
+
+export class Files {
+  managers: Map<FileType, FileTypeManager> = new Map();
+
+  constructor() {
+    this.managers.set(
+      FileType.TRACK,
+      new FileTypeManager(FileType.TRACK, "track")
+    );
+    this.managers.set(
+      FileType.ARTWORK,
+      new FileTypeManager(FileType.ARTWORK, "artwork")
+    );
+    this.reset();
+  }
+
+  reset() {
+    for (const manager of this.managers.values()) {
+      manager.reset();
+    }
+  }
+
+  async clearAll() {
+    const mainDirHandle = await navigator.storage.getDirectory();
+    for (const manager of this.managers.values()) {
+      await mainDirHandle.removeEntry(manager.dirName, { recursive: true });
+    }
+    for (const manager of this.managers.values()) {
+      manager.reset();
+    }
+  }
+
+  typeIsInitialized(type: FileType): boolean {
+    return this.managers.get(type)?.isInitialized() ?? false;
+  }
+
+  async fileExists(type: FileType, id: string): Promise<boolean> {
+    return (await this.managers.get(type)?.fileExists(id)) ?? false;
+  }
+
+  async tryGetFileURL(type: FileType, id: string): Promise<string | null> {
+    return (await this.managers.get(type)?.tryGetFileURL(id)) ?? null;
+  }
+
+  async tryWriteFile(
+    type: FileType,
+    id: string,
+    data: FileSystemWriteChunkType
+  ): Promise<boolean> {
+    return (await this.managers.get(type)?.tryWriteFile(id, data)) ?? false;
+  }
+
+  async tryDeleteFile(type: FileType, id: string): Promise<boolean> {
+    return await this.managers.get(type)!.tryDeleteFile(id);
+  }
+
+  async getAllOfType(type: FileType): Promise<Set<string>| undefined> {
+    const manager = this.managers.get(type);
+    if (!manager) {
+      return new Set();
+    }
+
+    return manager.getAll();
   }
 }
 

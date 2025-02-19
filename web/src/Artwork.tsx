@@ -6,7 +6,7 @@ import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom } from "./State";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { files } from "./Files";
-import { isTypedMessage, isArtworkFetchedMessage } from "./WorkerTypes";
+import { FileType, IsTypedMessage, IsFileFetchedMessage } from "./WorkerTypes";
 
 const ARTWORK_SIZE = "40px";
 const SPINNER_SIZE = "20px";
@@ -27,7 +27,7 @@ function Artwork() {
 
   const showFetchedArtwork = useCallback(
     async (artworkId: string) => {
-      const url = await files().tryGetArtworkURL(artworkId);
+      const url = await files().tryGetFileURL(FileType.ARTWORK, artworkId);
       if (url) {
         setArtworkFileURL(url);
       } else {
@@ -40,14 +40,15 @@ function Artwork() {
   const handleDownloadWorkerMessage = useCallback(
     (m: MessageEvent) => {
       const { data } = m;
-      if (!isTypedMessage(data)) {
+      if (!IsTypedMessage(data)) {
         return;
       }
       if (
-        isArtworkFetchedMessage(data) &&
-        data.artworkId === playingTrack?.artworks[0]
+        IsFileFetchedMessage(data) &&
+        data.fileType === FileType.ARTWORK &&
+        data.id === playingTrack?.artworks[0]
       ) {
-        showFetchedArtwork(data.artworkId);
+        showFetchedArtwork(data.id);
       }
     },
     [playingTrack, showFetchedArtwork]

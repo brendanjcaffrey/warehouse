@@ -28,6 +28,9 @@ const formatBytes = (bytes: number, decimals = 2) => {
   }`;
 };
 
+const CONFIRM_MSG =
+  "Are you sure you want to disable Keep Mode? This will delete all downloaded tracks and artwork.";
+
 function SettingsPanel({
   showSettings,
   toggleShowSettings,
@@ -36,7 +39,10 @@ function SettingsPanel({
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const helpOpen = Boolean(anchorEl);
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleKeepModeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.checked && !window.confirm(CONFIRM_MSG)) {
+      return;
+    }
     setKeepMode(event.target.checked);
   };
 
@@ -84,7 +90,9 @@ function SettingsPanel({
         }}
       >
         <FormControlLabel
-          control={<Switch checked={keepMode} onChange={handleChange} />}
+          control={
+            <Switch checked={keepMode} onChange={handleKeepModeChange} />
+          }
           label="Keep Mode"
         />
         <IconButton onClick={openHelp}>

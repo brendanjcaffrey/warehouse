@@ -214,6 +214,37 @@ class Library {
     }
   }
 
+  public async getTrackIds(): Promise<Set<string> | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting track ids", "database is not initialized");
+      return;
+    }
+
+    const tx = this.db.transaction("tracks", "readonly");
+    const store = tx.objectStore("tracks");
+    return new Set(await store.getAllKeys());
+  }
+
+  public async getArtworkIds(): Promise<Set<string> | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting track ids", "database is not initialized");
+      return;
+    }
+
+    const tx = this.db.transaction("tracks", "readonly");
+    const store = tx.objectStore("tracks");
+    const tracks = await store.getAll();
+    return new Set(
+      tracks.filter((t) => t.artworks.length > 0).flatMap((t) => t.artworks)
+    );
+  }
+
   public async getTrack(trackId: string): Promise<Track | undefined> {
     if (!this.validState) {
       return;

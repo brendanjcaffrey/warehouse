@@ -14,13 +14,12 @@ import library, { Track } from "./Library";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { updatePersister } from "./UpdatePersister";
 import {
-  isTypedMessage,
-  isTrackFetchedMessage,
-  isArtworkFetchedMessage,
-  FETCH_TRACK_TYPE,
-  FETCH_ARTWORK_TYPE,
-  ArtworkFetchedMessage,
-  TrackFetchedMessage,
+  SET_SOURCE_REQUESTED_FILES_TYPE,
+  FileRequestSource,
+  FileType,
+  IsTypedMessage,
+  IsFileFetchedMessage,
+  FileFetchedMessage,
 } from "./WorkerTypes";
 import { files } from "./Files";
 import { circularArraySlice } from "./Util";
@@ -62,14 +61,15 @@ class Player {
     files(); // initialize it
     DownloadWorker.addEventListener("message", (m: MessageEvent) => {
       const { data } = m;
-      if (!isTypedMessage(data)) {
+      if (!IsTypedMessage(data)) {
         return;
       }
-      if (isTrackFetchedMessage(data)) {
-        this.handleTrackFetched(data);
-      }
-      if (isArtworkFetchedMessage(data)) {
-        this.handleArtworkFetched(data);
+      if (IsFileFetchedMessage(data)) {
+        if (data.fileType === FileType.TRACK) {
+          this.handleTrackFetched(data);
+        } else {
+          this.handleArtworkFetched(data);
+        }
       }
     });
 
@@ -309,7 +309,7 @@ class Player {
       return;
     }
 
-    const url = await files().tryGetTrackURL(trackId); // TODO release?
+    const url = await files().tryGetFileURL(FileType.TRACK, trackId); // TODO release?
     if (url) {
       const a = document.createElement("a");
       a.href = url;
@@ -319,27 +319,26 @@ class Player {
     } else {
       this.pendingDownloads.add(trackId);
       DownloadWorker.postMessage({
-        type: FETCH_TRACK_TYPE,
-        trackId: trackId,
+        type: SET_SOURCE_REQUESTED_FILES_TYPE,
+        source: FileRequestSource.TRACK_DOWNLOAD,
+        fileType: FileType.TRACK,
+        ids: this.pendingDownloads.values().toArray(), // TODO?
       });
     }
   }
 
   // helpers
-  private handleTrackFetched(data: TrackFetchedMessage) {
-    if (data.trackId === this.playingTrack?.id) {
+  private handleTrackFetched(data: FileFetchedMessage) {
+    if (data.id === this.playingTrack?.id) {
       this.trySetPlayingTrackFile();
     }
-    if (this.pendingDownloads.has(data.trackId)) {
-      this.downloadTrack(data.trackId);
+    if (this.pendingDownloads.has(data.id)) {
+      this.downloadTrack(data.id);
     }
   }
 
-  private handleArtworkFetched(data: ArtworkFetchedMessage) {
-    if (
-      this.playingTrack &&
-      this.playingTrack.artworks.includes(data.artworkId)
-    ) {
+  private handleArtworkFetched(data: FileFetchedMessage) {
+    if (this.playingTrack && this.playingTrack.artworks.includes(data.id)) {
       this.trySetMediaMetadata();
     }
   }
@@ -352,7 +351,10 @@ class Player {
       return;
     }
 
-    const url = await files().tryGetTrackURL(this.playingTrack.id); // TODO release?
+    const url = await files().tryGetFileURL(
+      FileType.TRACK,
+      this.playingTrack.id
+    ); // TODO release?
     if (url) {
       this.audioRef.src = url;
       this.audioRef.currentTime = this.playingTrack.start;
@@ -426,7 +428,10 @@ class Player {
     // NB: media metadata artwork not working in Firefox but does in Chrome
     const url =
       this.playingTrack.artworks.length > 0
-        ? await files().tryGetArtworkURL(this.playingTrack.artworks[0])
+        ? await files().tryGetFileURL(
+            FileType.ARTWORK,
+            this.playingTrack.artworks[0]
+          )
         : null; // TODO release?
     if (url) {
       // XXX if you update this, update the type detection in library.rb
@@ -451,21 +456,26 @@ class Player {
     );
     trackIds = [...trackIds, ...this.playNextTrackIds];
 
-    // preload the tracks
-    for (const trackId of trackIds) {
-      DownloadWorker.postMessage({
-        type: FETCH_TRACK_TYPE,
-        trackId,
-      });
+    DownloadWorker.postMessage({
+      type: SET_SOURCE_REQUESTED_FILES_TYPE,
+      source: FileRequestSource.TRACK_PRELOAD,
+      fileType: FileType.TRACK,
+      ids: trackIds,
+    });
 
+    const artworkIds = [];
+    for (const trackId of trackIds) {
       const track = await library().getTrack(trackId);
       if (track && track.artworks.length > 0) {
-        DownloadWorker.postMessage({
-          type: FETCH_ARTWORK_TYPE,
-          artworkId: track.artworks[0],
-        });
+        artworkIds.push(track.artworks[0]);
       }
     }
+    DownloadWorker.postMessage({
+      type: SET_SOURCE_REQUESTED_FILES_TYPE,
+      source: FileRequestSource.ARTWORK_PRELOAD,
+      fileType: FileType.ARTWORK,
+      ids: artworkIds,
+    });
   }
 
   private async showPlayingTrackIfInPlaylist() {
