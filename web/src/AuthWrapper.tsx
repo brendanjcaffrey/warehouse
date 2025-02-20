@@ -32,7 +32,7 @@ function AuthWrapper({ children }: AuthWrapperProps) {
         setAuthVerified(false);
       },
     });
-  }, [setAuthToken, setAuthVerified, setClearAuthFn]);
+  }, [authToken, setAuthToken, setAuthVerified, setClearAuthFn]);
 
   if (!authToken) {
     return <AuthForm setAuthToken={setAuthToken} />;
