@@ -14,6 +14,7 @@ import { HelpOutlineRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";
 import { keepModeAtom } from "./Settings";
 import { defaultGrey } from "./Colors";
+import library from "./Library";
 
 interface StickyHeaderProps {
   showSettings: boolean;
@@ -32,16 +33,21 @@ const formatBytes = (bytes: number, decimals = 2) => {
 
 const CONFIRM_MSG =
   "Are you sure you want to disable Keep Mode? This will delete all downloaded tracks and artwork.";
+const FILE_OVERHEAD_ESTIMATE = 1.5;
 
 function SettingsPanel({
   showSettings,
   toggleShowSettings,
 }: StickyHeaderProps) {
   const [persisted, setPersisted] = useState(false);
+  const [haveEnoughStorageForKeepMode, setHaveEnoughStorageForKeepMode] =
+    useState(false);
   const [keepMode, setKeepMode] = useAtom(keepModeAtom);
+
   const [persistStorageHelpAnchorEl, setPersistStorageHelpAnchorEl] =
     useState<HTMLButtonElement | null>(null);
   const persistStorageHelpOpen = Boolean(persistStorageHelpAnchorEl);
+
   const [keepModeHelpAnchorEl, setKeepModeHelpAnchorEl] =
     useState<HTMLButtonElement | null>(null);
   const keepModeHelpOpen = Boolean(keepModeHelpAnchorEl);
@@ -94,13 +100,25 @@ function SettingsPanel({
 
   useEffect(() => {
     const fetchStorageInfo = async () => {
+      const totalSize = library().getTotalFileSize();
       if (navigator.storage && navigator.storage.estimate) {
         const { usage, quota } = await navigator.storage.estimate();
         setUsage(usage || 0);
         setQuota(quota || 1);
+
+        if (quota && usage) {
+          setHaveEnoughStorageForKeepMode(
+            totalSize * FILE_OVERHEAD_ESTIMATE < quota - usage
+          );
+        } else {
+          setHaveEnoughStorageForKeepMode(false);
+        }
       }
+
       if (navigator.storage && (await navigator.storage.persisted())) {
         setPersisted(true);
+      } else {
+        setPersisted(false);
       }
     };
 
@@ -151,7 +169,7 @@ function SettingsPanel({
                 <Switch
                   checked={keepMode}
                   onChange={handleKeepModeChange}
-                  disabled={!persisted}
+                  disabled={!persisted || !haveEnoughStorageForKeepMode}
                 />
               }
               label="Keep Mode"
@@ -166,6 +184,10 @@ function SettingsPanel({
             <Tooltip title={`${formatBytes(usage)} / ${formatBytes(quota)}`}>
               <p>Storage Used: {percentageUsed}%</p>
             </Tooltip>
+
+            <p>
+              Library Total Size: {formatBytes(library().getTotalFileSize())}
+            </p>
           </Grid>
         </Grid>
         <Popover
@@ -196,8 +218,8 @@ function SettingsPanel({
           <div style={{ padding: "10px", maxWidth: "300px" }}>
             Keep mode will retain all track and artwork downloads in the browser
             cache. This can be useful for offline listening, but may consume a
-            lot of storage space. It is only available when storage is
-            persisted.
+            lot of storage space. It is only available when storage is persisted
+            and enough space is available for the entire library plus overhead.
           </div>
         </Popover>
       </Box>
