@@ -81,10 +81,6 @@ class Library {
       .catch((error) => {
         this.setError("opening database", error);
       });
-
-    // navigator.storage.persist().then((granted) => {
-    //   console.log("persistent storage granted:", granted);
-    // });
   }
 
   public setErrorListener(listener: (error: string) => void) {

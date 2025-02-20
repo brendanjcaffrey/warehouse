@@ -2,6 +2,7 @@ import Grid from "@mui/material/Grid2";
 import { SxProps, createTheme, ThemeProvider } from "@mui/material";
 import { Provider as JotaiProvider } from "jotai";
 import { store } from "./State";
+import { SnackbarProvider } from "notistack";
 import AuthWrapper from "./AuthWrapper";
 import LibraryWrapper from "./LibraryWrapper";
 import Controls from "./Controls";
@@ -32,6 +33,7 @@ function App() {
   return (
     <JotaiProvider store={store}>
       <ThemeProvider theme={theme}>
+        <SnackbarProvider maxSnack={3} />
         <AuthWrapper>
           <LibraryWrapper>
             <Grid container sx={{ height: "100vh" }}>

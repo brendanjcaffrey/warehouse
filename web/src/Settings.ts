@@ -9,15 +9,10 @@ const OPENED_FOLDERS_KEY = "openedFolders";
 
 export const DEFAULT_VOLUME = 50;
 
-export function GetDefaultKeepMode(): boolean {
-  // default keep mode to false when running on localhost, true otherwise
-  return !origin.includes("http://localhost");
-}
-
 function GetPersistedKeepMode(): boolean {
   const value = localStorage.getItem(KEEP_MODE_KEY);
   if (value === null) {
-    return GetDefaultKeepMode();
+    return false;
   } else {
     return value === "true";
   }

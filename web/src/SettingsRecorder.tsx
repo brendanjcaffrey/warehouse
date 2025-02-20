@@ -8,7 +8,6 @@ import {
   volumeAtom,
   openedFoldersAtom,
   DEFAULT_VOLUME,
-  GetDefaultKeepMode,
   SetPersistedKeepMode,
   SetPersistedShuffle,
   SetPersistedRepeat,
@@ -60,7 +59,7 @@ function SettingsRecorder() {
   useEffect(() => {
     setClearSettingsFn({
       fn: () => {
-        setKeepMode(GetDefaultKeepMode());
+        setKeepMode(false);
         setShuffle(false);
         setRepeat(false);
         setShowArtwork(false);
