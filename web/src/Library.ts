@@ -50,6 +50,7 @@ class Library {
   private db?: IDBPDatabase<LibraryDB>;
   private validState: boolean = true;
   private lastError: string = "";
+  private initializedListener?: () => void = undefined;
   private errorListener?: (error: string) => void = undefined;
 
   public constructor() {
@@ -77,10 +78,20 @@ class Library {
     })
       .then((db) => {
         this.db = db;
+        if (this.initializedListener) {
+          this.initializedListener();
+        }
       })
       .catch((error) => {
         this.setError("opening database", error);
       });
+  }
+
+  public setInitializedListener(listener: () => void) {
+    this.initializedListener = listener;
+    if (this.db) {
+      listener();
+    }
   }
 
   public setErrorListener(listener: (error: string) => void) {

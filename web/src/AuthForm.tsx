@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Alert,
   CircularProgress,
@@ -9,7 +9,6 @@ import {
   Container,
 } from "@mui/material";
 import axios from "axios";
-import library from "./Library";
 import DelayedElement from "./DelayedElement";
 import { AuthAttemptResponse } from "./generated/messages";
 
@@ -22,11 +21,6 @@ function AuthForm({ setAuthToken }: AuthFormProps) {
   const [password, setPassword] = useState("");
   const [inflight, setInflight] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    // if we're ever showing the login form, clear the library
-    library().clear();
-  });
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -21,10 +21,21 @@ interface LibraryWrapperProps {
 
 function LibraryWrapper({ children }: LibraryWrapperProps) {
   const [error, setError] = useState("");
+  const [databaseInitialized, setDatabaseInitialized] = useState(false);
   const [hasLibrary, setHasLibrary] = useState(false);
   const [syncFinished, setSyncFinished] = useState(false);
 
   useEffect(() => {
+    library().setInitializedListener(() => {
+      setDatabaseInitialized(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!databaseInitialized) {
+      return;
+    }
+
     library().setErrorListener((error) => {
       setError(error);
     });
@@ -53,7 +64,7 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
     return () => {
       SyncWorker.onmessage = null;
     };
-  }, []);
+  }, [databaseInitialized]);
 
   useEffect(() => {
     library()
