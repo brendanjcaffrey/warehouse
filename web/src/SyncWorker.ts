@@ -4,6 +4,7 @@ import {
   IsTypedMessage,
   SYNC_SUCCEEDED_TYPE,
   ERROR_TYPE,
+  LIBRARY_METADATA_TYPE,
 } from "./WorkerTypes";
 import library, { Track, Playlist } from "./Library";
 import { LibraryResponse, Library, Name, SortName } from "./generated/messages";
@@ -62,6 +63,12 @@ class SyncManager {
 
   private async processSyncResponse(msg: Library) {
     library().clear();
+
+    postMessage({
+      type: LIBRARY_METADATA_TYPE,
+      trackUserChanges: msg.trackUserChanges,
+      totalFileSize: msg.totalFileSize,
+    });
 
     for (const track of msg.tracks) {
       const artist = msg.artists.get(track.artistId);

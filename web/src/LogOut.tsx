@@ -3,6 +3,7 @@ import { Box, Button } from "@mui/material";
 import { Logout } from "@mui/icons-material";
 import { clearAuthFnAtom, clearSettingsFnAtom } from "./State";
 import library from "./Library";
+import { updatePersister } from "./UpdatePersister";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { player } from "./Player";
 import { files } from "./Files";
@@ -19,6 +20,8 @@ function LogOut({ height }: { height: string }) {
     await player().reset();
     await files().clearAll();
     DownloadWorker.postMessage({ type: CLEARED_ALL_TYPE });
+    updatePersister().setHasLibraryMetadata(false);
+    updatePersister().clearPending();
   }
 
   return (

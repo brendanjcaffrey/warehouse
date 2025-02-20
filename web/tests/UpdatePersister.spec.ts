@@ -1,9 +1,20 @@
-import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
 import axios from "axios";
+import library from "../src/Library";
 import { UpdatePersister, Update } from "../src/UpdatePersister";
 import { OperationResponse } from "../src/generated/messages";
 
 vi.mock("axios");
+
+vi.mock("../src/Library", () => {
+  const MockLibrary = vi.fn();
+  MockLibrary.prototype.getTrackUserChanges = vi.fn();
+
+  const mockLibrary = new MockLibrary();
+  return {
+    default: vi.fn(() => mockLibrary),
+  };
+});
 
 function expectPlayPostRequest(id: string) {
   expect(axios.post).toHaveBeenCalledWith(
@@ -79,16 +90,35 @@ describe("UpdatePersister", () => {
     vi.clearAllTimers();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllTimers();
+  });
+
   it("should initialize with no pending updates if local storage key doesn't exist", () => {
     const persister = new UpdatePersister();
     expect(persister.pendingUpdates).toEqual([]);
     expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBeNull();
   });
 
-  it("should do nothing on auth token set if there's nothing pending", () => {
+  it("should do nothing on auth token set & library metadata set if there's nothing pending", () => {
     const persister = new UpdatePersister();
     persister.setAuthToken("mock-token");
+    persister.setHasLibraryMetadata(true);
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it("should drop any pending updates if track user changes is false", () => {
+    localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
+    const persister = new UpdatePersister();
+    expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
+
+    (library().getTrackUserChanges as Mock).mockReturnValue(false);
+    persister.setAuthToken("mock-token");
+    persister.setHasLibraryMetadata(true);
+
+    expect(persister.pendingUpdates).toEqual([]);
+    expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
   });
 
   describe("plays", () => {
@@ -98,17 +128,30 @@ describe("UpdatePersister", () => {
       expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
     });
 
-    it("should attempt any pending updates when the auth token is set", async () => {
+    it("should attempt any pending updates when the auth token & library metadata is set", async () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
       (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       const persister = new UpdatePersister();
       persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
       expectPlayPostRequest("123");
     });
 
     it("should add a play update to pending updates & persist if not authenticated", async () => {
       const persister = new UpdatePersister();
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      persister.setHasLibraryMetadata(true);
+      await persister.addPlay("123");
+
+      expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
+    });
+
+    it("should add a play update to pending updates & persist if no library metadata", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("hi");
       await persister.addPlay("123");
 
       expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
@@ -118,6 +161,8 @@ describe("UpdatePersister", () => {
     it("should add a play update and immediately attempt it if authenticated", async () => {
       const persister = new UpdatePersister();
       persister.setAuthToken("mock-token");
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      persister.setHasLibraryMetadata(true);
       (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       await persister.addPlay("123");
@@ -126,9 +171,24 @@ describe("UpdatePersister", () => {
       expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
     });
 
+    it("should do nothing if track user changes is false", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      persister.setHasLibraryMetadata(true);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+
+      await persister.addPlay("123");
+      expect(axios.post).toHaveBeenCalledTimes(0);
+      expect(persister.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
+    });
+
     it("should retry sending pending updates on a timer", async () => {
       const persister = new UpdatePersister();
       persister.setAuthToken("mock-token");
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      persister.setHasLibraryMetadata(true);
 
       // fails on first attempt
       (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
@@ -165,17 +225,32 @@ describe("UpdatePersister", () => {
       expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
     });
 
-    it("should attempt any pending updates when the auth token is set", async () => {
+    it("should attempt any pending updates when the auth token & library metadata is set", async () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, RATING_UPDATE_ARR_STR);
       (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
 
       const persister = new UpdatePersister();
       persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
       expectRatingPostRequest("123", 60);
     });
 
     it("should add a rating update to pending updates & persist if not authenticated", async () => {
       const persister = new UpdatePersister();
+      persister.setHasLibraryMetadata(true);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      await persister.updateRating("123", 60);
+
+      expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        RATING_UPDATE_ARR_STR
+      );
+    });
+
+    it("should add a rating update to pending updates & persist if no library metadata", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("hi");
       await persister.updateRating("123", 60);
 
       expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
@@ -187,7 +262,9 @@ describe("UpdatePersister", () => {
     it("should add a rating update and immediately attempt it if authenticated", async () => {
       const persister = new UpdatePersister();
       persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
       (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
 
       await persister.updateRating("123", 60);
       expectRatingPostRequest("123", 60);
@@ -195,9 +272,24 @@ describe("UpdatePersister", () => {
       expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
     });
 
+    it("should do nothing if track user changes is false", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      persister.setHasLibraryMetadata(true);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+
+      await persister.updateRating("123", 60);
+      expect(axios.post).toHaveBeenCalledTimes(0);
+      expect(persister.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
+    });
+
     it("should retry sending pending updates on a timer", async () => {
       const persister = new UpdatePersister();
       persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
 
       // fails on first attempt
       (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
@@ -240,6 +332,7 @@ describe("UpdatePersister", () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updates));
     updates.push({ type: "play", trackId: "abc", params: undefined });
     const persister = new UpdatePersister();
+    (library().getTrackUserChanges as Mock).mockReturnValue(true);
 
     // first attempt: only 456 succeeds
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
@@ -247,6 +340,7 @@ describe("UpdatePersister", () => {
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
     (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
     persister.setAuthToken("mock-token");
+    persister.setHasLibraryMetadata(true);
     persister.addPlay("abc"); // add another one, why not
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");

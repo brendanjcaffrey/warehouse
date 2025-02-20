@@ -139,9 +139,11 @@ class Player {
       // always get the latest version of the track just in case it was updated
       const track = await library().getTrack(this.playingTrack.id);
       if (track) {
-        track.playCount++;
-        await library().putTrack(track);
-        store.get(trackUpdatedFnAtom).fn(track);
+        if (library().getTrackUserChanges()) {
+          track.playCount++;
+          await library().putTrack(track);
+          store.get(trackUpdatedFnAtom).fn(track);
+        }
         this.playingTrack = track;
       }
       await this.next();

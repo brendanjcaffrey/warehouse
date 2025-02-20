@@ -3,6 +3,7 @@ import { isObject } from "lodash";
 export const START_SYNC_TYPE = "startSync";
 export const SYNC_SUCCEEDED_TYPE = "syncSucceeded";
 export const SET_AUTH_TOKEN_TYPE = "setAuthToken";
+export const LIBRARY_METADATA_TYPE = "libraryMetadata";
 export const KEEP_MODE_CHANGED_TYPE = "keepModeChanged";
 export const SET_SOURCE_REQUESTED_FILES_TYPE = "setSourceRequestedFiles";
 export const FILE_FETCHED_TYPE = "fileFetched";
@@ -30,6 +31,11 @@ export interface AuthTokenMessage extends TypedMessage {
 
 export interface ErrorMessage extends TypedMessage {
   error: string;
+}
+
+export interface LibraryMetadataMessage extends TypedMessage {
+  trackUserChanges: boolean;
+  totalFileSize: number;
 }
 
 export interface KeepModeChangedMessage extends TypedMessage {
@@ -72,6 +78,17 @@ export function IsSetAuthTokenMessage(
     isObject(message) &&
     message.type === SET_AUTH_TOKEN_TYPE &&
     "authToken" in message
+  );
+}
+
+export function IsLibraryMetadataMessage(
+  message: TypedMessage
+): message is LibraryMetadataMessage {
+  return (
+    isObject(message) &&
+    message.type === LIBRARY_METADATA_TYPE &&
+    "trackUserChanges" in message &&
+    "totalFileSize" in message
   );
 }
 

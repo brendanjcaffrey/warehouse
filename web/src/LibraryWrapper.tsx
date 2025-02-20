@@ -5,11 +5,13 @@ import library from "./Library";
 import {
   IsTypedMessage,
   IsErrorMessage,
+  IsLibraryMetadataMessage,
   IsSyncSucceededMessage,
   START_SYNC_TYPE,
   SYNC_SUCCEEDED_TYPE,
 } from "./WorkerTypes";
 import { DownloadWorker } from "./DownloadWorkerHandle";
+import { updatePersister } from "./UpdatePersister";
 
 const SyncWorker = new Worker(new URL("./SyncWorker.ts", import.meta.url), {
   type: "module",
@@ -48,6 +50,11 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
 
       if (IsErrorMessage(data)) {
         setError(`worker error: ${data.error}`);
+      }
+
+      if (IsLibraryMetadataMessage(data)) {
+        library().putMetadata(data);
+        updatePersister().setHasLibraryMetadata(true);
       }
 
       if (IsSyncSucceededMessage(data)) {

@@ -69,7 +69,7 @@ export function RenderRating(track: Track): JSX.Element {
 
   return (
     <div
-      onClick={updateRating}
+      onClick={library().getTrackUserChanges() ? updateRating : () => {}}
       style={{ padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px` }}
     >
       {icons.map((Icon, index) => (

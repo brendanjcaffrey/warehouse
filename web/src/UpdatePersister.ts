@@ -2,6 +2,7 @@ import axios from "axios";
 import qs from "qs";
 import { memoize } from "lodash";
 import { OperationResponse } from "./generated/messages";
+import library from "./Library";
 
 const LOCAL_STORAGE_KEY = "updates";
 const RETRY_MILLIS = 30000;
@@ -26,6 +27,7 @@ export class UpdatePersister {
   authToken: string | null = null;
   pendingUpdates: Update[] = [];
   attemptingBulkUpdates: boolean = false;
+  hasLibraryMetadata: boolean = false;
 
   constructor() {
     this.pendingUpdates = JSON.parse(
@@ -38,8 +40,35 @@ export class UpdatePersister {
     this.attemptUpdates();
   }
 
+  setHasLibraryMetadata(value: boolean) {
+    this.hasLibraryMetadata = value;
+    this.attemptUpdates();
+  }
+
+  clearPending() {
+    this.pendingUpdates = [];
+    this.persistUpdates();
+  }
+
+  private shouldAttemptUpdate(update: Update): boolean {
+    if (!this.hasLibraryMetadata) {
+      this.addPendingUpdate(update);
+      return false;
+    }
+
+    if (!library().getTrackUserChanges()) {
+      return false;
+    }
+
+    return true;
+  }
+
   async addPlay(trackId: string) {
     const update = { type: "play", trackId, params: undefined };
+    if (!this.shouldAttemptUpdate(update)) {
+      return;
+    }
+
     if (this.authToken && !this.attemptingBulkUpdates) {
       try {
         await this.attemptUpdate(update);
@@ -54,6 +83,10 @@ export class UpdatePersister {
 
   async updateRating(trackId: string, rating: number) {
     const update = { type: "rating", trackId, params: { rating } };
+    if (!this.shouldAttemptUpdate(update)) {
+      return;
+    }
+
     if (this.authToken && !this.attemptingBulkUpdates) {
       try {
         await this.attemptUpdate(update);
@@ -107,9 +140,15 @@ export class UpdatePersister {
 
     if (
       !this.authToken ||
+      !this.hasLibraryMetadata ||
       this.attemptingBulkUpdates ||
       this.pendingUpdates.length === 0
     ) {
+      return;
+    }
+
+    if (!library().getTrackUserChanges()) {
+      this.clearPending();
       return;
     }
 

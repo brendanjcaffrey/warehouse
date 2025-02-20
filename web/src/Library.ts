@@ -1,8 +1,11 @@
 import { memoize } from "lodash";
 import { openDB, DBSchema, IDBPDatabase } from "idb";
+import { LibraryMetadataMessage } from "./WorkerTypes";
 
 const DATABASE_NAME = "library";
 const DATABASE_VERSION = 1;
+const TRACK_USER_CHANGES_KEY = "trackUserChanges";
+const TOTAL_FILE_SIZE_KEY = "totalFileSize";
 
 export interface Track {
   id: string;
@@ -160,6 +163,18 @@ class Library {
     }
   }
 
+  // we store these in local storage, so we can't access them from the worker
+  public async putMetadata(metadata: LibraryMetadataMessage) {
+    localStorage.setItem(
+      TRACK_USER_CHANGES_KEY,
+      metadata.trackUserChanges.toString()
+    );
+    localStorage.setItem(
+      TOTAL_FILE_SIZE_KEY,
+      metadata.totalFileSize.toString()
+    );
+  }
+
   public clear() {
     if (!this.validState) {
       return;
@@ -264,6 +279,14 @@ class Library {
     const tx = this.db.transaction("tracks", "readonly");
     const store = tx.objectStore("tracks");
     return await store.get(trackId);
+  }
+
+  public getTrackUserChanges(): boolean {
+    return localStorage.getItem(TRACK_USER_CHANGES_KEY) === "true";
+  }
+
+  public getTotalFileSize(): number {
+    return parseInt(localStorage.getItem(TOTAL_FILE_SIZE_KEY) || "0");
   }
 
   private setError(action: string, error: Error | string | null | unknown) {
