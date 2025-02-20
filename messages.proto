@@ -61,6 +61,7 @@ message Library {
   repeated Track tracks = 4;
   repeated Playlist playlists = 5;
   bool trackUserChanges = 6;
+  uint64 totalFileSize = 7;
 }
 
 message LibraryResponse {

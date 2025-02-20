@@ -156,6 +156,12 @@ module Export
       );
     SQL
 
+    CREATE_LIBRARY_METADATA_SQL = <<-SQL
+      CREATE TABLE library_metadata (
+        total_file_size BIGINT
+      );
+    SQL
+
     CREATE_EXPORT_FINISHED_SQL = <<-SQL
       CREATE TABLE export_finished (
         finished_at TIMESTAMP
@@ -182,6 +188,8 @@ module Export
     PLAYLIST_TRACK_SQL = 'INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2);'
 
     TRACK_AND_ARTIST_NAME_SQL = 'SELECT tracks.name, artists.name FROM tracks, artists WHERE tracks.id=$1 AND tracks.artist_id=artists.id;'
+
+    LIBRARY_METADATA_SQL = 'INSERT INTO library_metadata (total_file_size) VALUES ($1)'
 
     EXPORT_FINISHED_SQL = 'INSERT INTO export_finished (finished_at) VALUES (current_timestamp)'
 
@@ -283,6 +291,10 @@ module Export
       playlist.tracks.each { |track_id| @db.exec_params(PLAYLIST_TRACK_SQL, [playlist.id, track_id]) }
     end
 
+    def set_library_metadata(total_size)
+      @db.exec_params(LIBRARY_METADATA_SQL, [total_size])
+    end
+
     def set_export_finished
       @db.exec(EXPORT_FINISHED_SQL)
     end
@@ -307,6 +319,7 @@ module Export
       @db.exec(CREATE_YEAR_UPDATES_SQL)
       @db.exec(CREATE_START_UPDATES_SQL)
       @db.exec(CREATE_FINISH_UPDATES_SQL)
+      @db.exec(CREATE_LIBRARY_METADATA_SQL)
       @db.exec(CREATE_EXPORT_FINISHED_SQL)
     end
 

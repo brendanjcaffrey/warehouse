@@ -10,6 +10,10 @@ module Export
       location.gsub(':', '/').gsub(/^.+?\//, '/').gsub(Config['music_path'], '')
     end
 
+    def track_file_size
+      File.size(location.gsub(':', '/').gsub(/^.+?\//, '/'))
+    end
+
     def sort_name
       value = clean_sort_value(sort_name_unclean.empty? ? name : sort_name_unclean)
       value != name ? value : ""

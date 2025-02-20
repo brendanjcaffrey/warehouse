@@ -70,7 +70,10 @@ module Export
       @skipped_tracks = {}
       @needed_folders = {}
 
-      export_tracks ; export_playlists ; export_folders
+      export_tracks
+      export_playlists
+      export_folders
+      @database.set_library_metadata(@library.total_file_size)
       @database.set_export_finished
     end
 

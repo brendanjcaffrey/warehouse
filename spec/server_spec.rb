@@ -228,6 +228,7 @@ describe 'iTunes Streamer' do
       @database.create_playlist(Export::Playlist.new('0000000000000000', 'test_playlist0', 'none', '', 0, ""))
       @database.create_playlist(Export::Playlist.new('1111111111111111', 'test_playlist1', 'none', '0000000000000000', 1, "B7F8970B634DDEE3"))
       @database.create_playlist(Export::Playlist.new('2222222222222222', 'test_playlist2', 'none', '', 2, "5E3FA18D81E469D2\n21D8E2441A5E2204"))
+      @database.set_library_metadata(1001)
 
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
@@ -293,6 +294,8 @@ describe 'iTunes Streamer' do
       expect(playlist.parentId).to eq('')
       expect(playlist.isLibrary).to be(false)
       expect(playlist.trackIds).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204})
+
+      expect(library.totalFileSize).to eq(1001)
     end
 
     it 'should include whether to track changes or not' do

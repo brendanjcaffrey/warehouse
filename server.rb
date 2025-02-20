@@ -44,6 +44,7 @@ ON
 GROUP BY
     p.id, p.name, p.parent_id, p.is_library;
 SQL
+LIBRARY_METADATA_SQL = 'SELECT total_file_size FROM library_metadata;'
 
 TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE id=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
@@ -254,6 +255,7 @@ class Server < Sinatra::Base
       username = get_validated_username
       if !username.nil?
         library = Library.new(trackUserChanges: track_user_changes?(username))
+
         db.exec(GENRE_SQL).values.each do |genre|
           library.genres[genre[0].to_i] = Name.new(name: genre[1])
         end
@@ -293,6 +295,8 @@ class Server < Sinatra::Base
                                             isLibrary: playlist[3] == "1",
                                             trackIds: (playlist[4] || '').split(','))
         end
+
+        library.totalFileSize = db.exec(LIBRARY_METADATA_SQL).getvalue(0, 0).to_i
 
         proto(LibraryResponse.new(library: library))
       else
@@ -432,6 +436,7 @@ class Server < Sinatra::Base
         if genre = params['genre']
           db.exec_params(DELETE_GENRE_UPDATE_SQL, [id])
           db.exec_params(CREATE_GENRE_UPDATE_SQL, [id, genre])
+
           result = db.exec_params(GENRE_ID_SQL, [genre])
           genre_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
           if !genre_id

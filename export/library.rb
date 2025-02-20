@@ -182,6 +182,8 @@ module Export
       at_exit { FileUtils.remove_entry(@tmpdir) }
 
       @artwork_dir = File.expand_path(Config['artwork_path'])
+      @artwork_total_file_size = 0
+      @track_total_file_size = 0
     end
 
     def total_track_count
@@ -219,14 +221,20 @@ module Export
             out_filename = "#{md5}.#{type}"
             @artwork_files[md5] = out_filename
             FileUtils.mv(in_filename, "#{@artwork_dir}/#{out_filename}")
+            @artwork_total_file_size += File.size("#{@artwork_dir}/#{out_filename}")
           end
           track.add_artwork(@artwork_files[md5])
         end
+        @track_total_file_size += track.track_file_size
         return track
       end
 
       puts "Unable to get track info even after retrying (track_no: #{track_offset})"
       exit(1)
+    end
+
+    def total_file_size
+      @artwork_total_file_size + @track_total_file_size
     end
 
     def total_playlist_count
