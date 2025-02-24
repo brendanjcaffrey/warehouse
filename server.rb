@@ -21,7 +21,7 @@ TRACK_SQL = <<-SQL
 SELECT
     t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
     t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, t.ext,
-    STRING_AGG(ta.filename, ',') AS artwork_filenames
+    t.file_md5, STRING_AGG(ta.filename, ',') AS artwork_filenames
 FROM
     tracks t
 LEFT JOIN
@@ -285,7 +285,8 @@ class Server < Sinatra::Base
                                       playCount: track[13].to_i,
                                       rating: track[14].to_i,
                                       ext: track[15],
-                                      artworks: (track[16] || '').split(','))
+                                      fileMd5: track[16].strip,
+                                      artworks: (track[17] || '').split(','))
         end
 
         db.exec(PLAYLIST_SQL).values.each do |playlist|

@@ -11,7 +11,7 @@ module Config
   def [](key)
     return ENV['CI'] ? 'ci' : YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
     return 'streamer_test' if key == 'database_name'
-    return './spec/' if key == 'music_path' || key == 'artwork_path'
+    return "#{Dir.pwd}/spec" if key == 'music_path' || key == 'artwork_path'
     return '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
   end
 
@@ -109,8 +109,9 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM rating_updates')
 
     @database.clear
+    file_path = "HD:#{Dir.pwd}/spec/__test.mp3"
     @database.create_track(Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_artist', '', 'test_album', '',
-                                            'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, ':__test.mp3'))
+                                            'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, file_path))
   end
 
   describe '/' do
@@ -265,6 +266,7 @@ describe 'iTunes Streamer' do
       expect(track.rating).to eq(100)
       expect(track.ext).to eq('mp3')
       expect(track.artworks).to eq([])
+      expect(track.fileMd5).to eq('06dbe92c2a5dab2f7911e20a9e157521')
 
       expect(library.playlists.length).to eq(4)
       playlist = library.playlists[0]

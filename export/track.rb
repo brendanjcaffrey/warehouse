@@ -10,8 +10,16 @@ module Export
       location.gsub(':', '/').gsub(/^.+?\//, '/').gsub(Config['music_path'], '')
     end
 
+    def track_file_path
+      location.gsub(':', '/').gsub(/^.+?\//, '/')
+    end
+
     def track_file_size
-      File.size(location.gsub(':', '/').gsub(/^.+?\//, '/'))
+      File.size(track_file_path)
+    end
+
+    def track_file_md5
+      Digest::MD5.file(track_file_path).hexdigest
     end
 
     def sort_name

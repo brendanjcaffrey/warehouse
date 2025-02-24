@@ -27,6 +27,7 @@ export interface Track {
   playCount: number;
   rating: number;
   ext: string;
+  fileMd5: string;
   artworks: string[];
 }
 

@@ -44,6 +44,7 @@ message Track {
   int32 rating = 15;
   string ext = 16;
   repeated string artworks = 17;
+  string fileMd5 = 18;
 }
 
 message Playlist {
