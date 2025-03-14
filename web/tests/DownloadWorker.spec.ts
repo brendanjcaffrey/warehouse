@@ -27,7 +27,7 @@ vi.mock("../src/Files", () => {
 
 vi.mock("../src/Library", () => {
   const MockLibrary = vi.fn();
-  MockLibrary.prototype.getTrackIds = vi.fn();
+  MockLibrary.prototype.getTrackFileIds = vi.fn();
   MockLibrary.prototype.getArtworkIds = vi.fn();
 
   const mockLibrary = new MockLibrary();
@@ -484,7 +484,9 @@ describe("DownloadManager", () => {
         return new Set();
       }
     });
-    (library().getTrackIds as Mock).mockReturnValue(new Set(["123", "789"]));
+    (library().getTrackFileIds as Mock).mockReturnValue(
+      new Set(["123", "789"])
+    );
     (library().getArtworkIds as Mock).mockReturnValue(new Set(["abc", "ghi"]));
     await downloadManager.syncSucceeded();
 

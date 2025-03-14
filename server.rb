@@ -46,7 +46,7 @@ GROUP BY
 SQL
 LIBRARY_METADATA_SQL = 'SELECT total_file_size FROM library_metadata;'
 
-TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE id=$1;'
+TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE file_md5=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
 ARTWORK_EXISTS_SQL = 'SELECT EXISTS(SELECT 1 FROM track_artwork WHERE filename=$1);'
 
@@ -185,8 +185,8 @@ class Server < Sinatra::Base
     count > 0
   end
 
-  def send_track_if_exists(db, music_path, persistent_track_id)
-    file, ext = db.exec_params(TRACK_INFO_SQL, [persistent_track_id]).values.first
+  def send_track_if_exists(db, music_path, track_file_id)
+    file, ext = db.exec_params(TRACK_INFO_SQL, [track_file_id]).values.first
     if file == nil || !MIME_TYPES.has_key?(ext)
       false
     else

@@ -311,27 +311,27 @@ class Player {
       return;
     }
 
-    const url = await files().tryGetFileURL(FileType.TRACK, trackId); // TODO release?
+    const url = await files().tryGetFileURL(FileType.TRACK, track.fileMd5); // TODO release?
     if (url) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `${track.artistName} - ${track.name}.${track.ext}`;
       a.click();
-      this.pendingDownloads.delete(trackId);
+      this.pendingDownloads.delete(track.fileMd5);
     } else {
-      this.pendingDownloads.add(trackId);
+      this.pendingDownloads.add(track.fileMd5);
       DownloadWorker.postMessage({
         type: SET_SOURCE_REQUESTED_FILES_TYPE,
         source: FileRequestSource.TRACK_DOWNLOAD,
         fileType: FileType.TRACK,
-        ids: this.pendingDownloads.values().toArray(), // TODO?
+        ids: this.pendingDownloads.values(),
       });
     }
   }
 
   // helpers
   private handleTrackFetched(data: FileFetchedMessage) {
-    if (data.id === this.playingTrack?.id) {
+    if (data.id === this.playingTrack?.fileMd5) {
       this.trySetPlayingTrackFile();
     }
     if (this.pendingDownloads.has(data.id)) {
@@ -355,7 +355,7 @@ class Player {
 
     const url = await files().tryGetFileURL(
       FileType.TRACK,
-      this.playingTrack.id
+      this.playingTrack.fileMd5
     ); // TODO release?
     if (url) {
       this.audioRef.src = url;
@@ -458,20 +458,23 @@ class Player {
     );
     trackIds = [...trackIds, ...this.playNextTrackIds];
 
+    const trackFileIds = [];
+    const artworkIds = [];
+    for (const trackId of trackIds) {
+      const track = await library().getTrack(trackId);
+      if (track) {
+        trackFileIds.push(track.fileMd5);
+        if (track.artworks.length > 0) {
+          artworkIds.push(track.artworks[0]);
+        }
+      }
+    }
     DownloadWorker.postMessage({
       type: SET_SOURCE_REQUESTED_FILES_TYPE,
       source: FileRequestSource.TRACK_PRELOAD,
       fileType: FileType.TRACK,
-      ids: trackIds,
+      ids: trackFileIds,
     });
-
-    const artworkIds = [];
-    for (const trackId of trackIds) {
-      const track = await library().getTrack(trackId);
-      if (track && track.artworks.length > 0) {
-        artworkIds.push(track.artworks[0]);
-      }
-    }
     DownloadWorker.postMessage({
       type: SET_SOURCE_REQUESTED_FILES_TYPE,
       source: FileRequestSource.ARTWORK_PRELOAD,

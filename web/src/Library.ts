@@ -237,7 +237,7 @@ class Library {
     }
   }
 
-  public async getTrackIds(): Promise<Set<string> | undefined> {
+  public async getTrackFileIds(): Promise<Set<string> | undefined> {
     if (!this.validState) {
       return;
     }
@@ -248,7 +248,8 @@ class Library {
 
     const tx = this.db.transaction("tracks", "readonly");
     const store = tx.objectStore("tracks");
-    return new Set(await store.getAllKeys());
+    const tracks = await store.getAll();
+    return new Set(tracks.flatMap((t) => t.fileMd5));
   }
 
   public async getArtworkIds(): Promise<Set<string> | undefined> {

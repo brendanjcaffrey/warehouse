@@ -56,7 +56,7 @@ export class DownloadManager {
   }
 
   public async syncSucceeded() {
-    const trackIds = await library().getTrackIds();
+    const trackIds = await library().getTrackFileIds();
     if (trackIds) {
       await this.removeTrackFilesExcept(trackIds);
     }

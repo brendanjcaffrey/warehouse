@@ -123,18 +123,18 @@ describe 'iTunes Streamer' do
 
   describe '/tracks/*' do
     it 'should redirect if not logged in' do
-      get '/tracks/21D8E2441A5E2204'
+      get '/tracks/06dbe92c2a5dab2f7911e20a9e157521'
       follow_redirect!
       expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'should 404 if the track doesn\'t exist in the database' do
-      get '/tracks/A2D9E2441A6E2204', {}, get_auth_header
+      get '/tracks/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ', {}, get_auth_header
       expect(last_response.status).to eq(404)
     end
 
     it 'should send the contents of the file' do
-      get '/tracks/21D8E2441A5E2204', {}, get_auth_header
+      get '/tracks/06dbe92c2a5dab2f7911e20a9e157521', {}, get_auth_header
       expect(last_response.body).to eq("fake mp3 contents\n")
     end
   end
