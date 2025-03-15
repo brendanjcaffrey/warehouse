@@ -7,6 +7,7 @@ export const LIBRARY_METADATA_TYPE = "libraryMetadata";
 export const KEEP_MODE_CHANGED_TYPE = "keepModeChanged";
 export const SET_SOURCE_REQUESTED_FILES_TYPE = "setSourceRequestedFiles";
 export const FILE_FETCHED_TYPE = "fileFetched";
+export const FILE_DOWNLOAD_STATUS_TYPE = "fileDownloadStatus";
 export const CLEARED_ALL_TYPE = "clearedAll";
 export const ERROR_TYPE = "error";
 
@@ -19,6 +20,13 @@ export enum FileRequestSource {
   MUSIC_DOWNLOAD,
   MUSIC_PRELOAD,
   ARTWORK_PRELOAD,
+}
+
+export enum DownloadStatus {
+  IN_PROGRESS,
+  DONE,
+  ERROR,
+  CANCELED,
 }
 
 export interface TypedMessage {
@@ -59,6 +67,14 @@ export interface SetSourceRequestedFilesMessage extends TypedMessage {
 export interface FileFetchedMessage extends TypedMessage {
   fileType: FileType;
   ids: TrackFileIds;
+}
+
+export interface FileDownloadStatusMessage extends TypedMessage {
+  ids: TrackFileIds;
+  fileType: FileType;
+  status: DownloadStatus;
+  receivedBytes: number;
+  totalBytes: number;
 }
 
 export function IsTypedMessage(message: object): message is TypedMessage {
@@ -127,6 +143,20 @@ export function IsFileFetchedMessage(
 ): message is FileFetchedMessage {
   return (
     isObject(message) && message.type === FILE_FETCHED_TYPE && "ids" in message
+  );
+}
+
+export function IsFileDownloadStatusMessage(
+  message: TypedMessage
+): message is FileDownloadStatusMessage {
+  return (
+    isObject(message) &&
+    message.type === FILE_DOWNLOAD_STATUS_TYPE &&
+    "ids" in message &&
+    "fileType" in message &&
+    "status" in message &&
+    "receivedBytes" in message &&
+    "totalBytes" in message
   );
 }
 

@@ -12,7 +12,10 @@ import {
   IsSyncSucceededMessage,
   TrackFileIds,
   FileFetchedMessage,
+  FileDownloadStatusMessage,
+  DownloadStatus,
   FILE_FETCHED_TYPE,
+  FILE_DOWNLOAD_STATUS_TYPE,
 } from "./WorkerTypes";
 import { files } from "./Files";
 import library from "./Library";
@@ -137,19 +140,36 @@ export class DownloadManager {
   }
 
   private cancelUnneededRequests() {
-    const allInFlightRequests = new Set<string>();
+    const allRequestedFiles = new Set<string>();
     for (const source of this.sources.values()) {
       for (const file of source) {
-        allInFlightRequests.add(RequestedFileToString(file));
+        allRequestedFiles.add(RequestedFileToString(file));
       }
     }
     for (const request of this.inflightRequests) {
       const requestStr = RequestedFileToString(request);
-      if (!allInFlightRequests.has(requestStr)) {
+      if (!allRequestedFiles.has(requestStr)) {
         request.abort();
+        this.postStatus(request, DownloadStatus.CANCELED);
       }
     }
     this.inflightRequests = this.inflightRequests.filter((r) => !r.canceled);
+  }
+
+  private async postStatus(
+    request: RequestedFile,
+    status: DownloadStatus,
+    receivedBytes = 0,
+    totalBytes = 0
+  ) {
+    postMessage({
+      type: FILE_DOWNLOAD_STATUS_TYPE,
+      ids: request.ids,
+      fileType: request.type,
+      status: status,
+      receivedBytes: receivedBytes,
+      totalBytes: totalBytes,
+    } as FileDownloadStatusMessage);
   }
 
   private async fetchFile(request: RequestedFile) {
@@ -165,6 +185,7 @@ export class DownloadManager {
 
     const inflightRequest = new InFlightRequest(request.type, request.ids);
     this.inflightRequests.push(inflightRequest);
+    this.postStatus(request, DownloadStatus.IN_PROGRESS);
 
     try {
       const urlPrefix = request.type === FileType.MUSIC ? "tracks" : "artwork";
@@ -173,6 +194,14 @@ export class DownloadManager {
         signal: inflightRequest.abortController.signal,
         responseType: "arraybuffer",
         headers: { Authorization: `Bearer ${this.authToken}` },
+        onDownloadProgress: (e) => {
+          this.postStatus(
+            request,
+            DownloadStatus.IN_PROGRESS,
+            e.loaded,
+            e.total
+          );
+        },
       });
       if (await files().tryWriteFile(request.type, request.ids.fileId, data)) {
         postMessage({
@@ -180,11 +209,18 @@ export class DownloadManager {
           fileType: request.type,
           ids: request.ids,
         } as FileFetchedMessage);
+        this.postStatus(
+          request,
+          DownloadStatus.DONE,
+          data.byteLength,
+          data.byteLength
+        );
       }
     } catch (error) {
       if (!inflightRequest.canceled) {
         console.error(error);
         this.lastFailedRequest.set(request.type, request.ids.fileId);
+        this.postStatus(request, DownloadStatus.ERROR);
       }
     } finally {
       this.inflightRequests = this.inflightRequests.filter(

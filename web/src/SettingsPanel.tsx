@@ -14,22 +14,13 @@ import { HelpOutlineRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";
 import { showArtworkAtom, keepModeAtom } from "./Settings";
 import { defaultGrey } from "./Colors";
+import { formatBytes } from "./Util";
 import library from "./Library";
 
-interface StickyHeaderProps {
+interface SettingsPanelProps {
   showSettings: boolean;
   toggleShowSettings: () => void;
 }
-
-const formatBytes = (bytes: number, decimals = 2) => {
-  if (!bytes) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["b", "kb", "mb", "gb", "tb"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${
-    sizes[i]
-  }`;
-};
 
 const CONFIRM_MSG =
   "Are you sure you want to disable Keep Mode? This will delete all downloaded tracks and artwork.";
@@ -38,7 +29,7 @@ const FILE_OVERHEAD_ESTIMATE = 1.5;
 function SettingsPanel({
   showSettings,
   toggleShowSettings,
-}: StickyHeaderProps) {
+}: SettingsPanelProps) {
   const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
   const [persisted, setPersisted] = useState(false);
   const [haveEnoughStorageForKeepMode, setHaveEnoughStorageForKeepMode] =

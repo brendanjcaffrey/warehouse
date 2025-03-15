@@ -7,7 +7,10 @@ import {
   FileRequestSource,
   TrackFileIds,
   FileFetchedMessage,
+  FileDownloadStatusMessage,
+  DownloadStatus,
   FILE_FETCHED_TYPE,
+  FILE_DOWNLOAD_STATUS_TYPE,
 } from "../src/WorkerTypes";
 import axios from "axios";
 
@@ -148,13 +151,119 @@ describe("DownloadManager", () => {
     (axios.get as Mock).mockClear();
   }
 
-  function expectOnePostMessageCall(fileType: FileType, ids: TrackFileIds) {
-    expect(postMessage).toHaveBeenCalledTimes(1);
+  // don't call this directly, use the more specific ones below
+  function _expectFileInProgressPostMessageCalls(
+    fileType: FileType,
+    ids: TrackFileIds
+  ) {
+    expect(postMessage).toHaveBeenCalledWith({
+      type: FILE_DOWNLOAD_STATUS_TYPE,
+      ids: ids,
+      fileType: fileType,
+      status: DownloadStatus.IN_PROGRESS,
+      receivedBytes: 0,
+      totalBytes: 0,
+    } as FileDownloadStatusMessage);
+  }
+
+  // don't call this directly, use the more specific ones below
+  function _expectFileDonePostMessageCalls(
+    fileType: FileType,
+    ids: TrackFileIds
+  ) {
     expect(postMessage).toHaveBeenCalledWith({
       type: FILE_FETCHED_TYPE,
       fileType: fileType,
       ids: ids,
     } as FileFetchedMessage);
+    expect(postMessage).toHaveBeenCalledWith({
+      type: FILE_DOWNLOAD_STATUS_TYPE,
+      ids: ids,
+      fileType: fileType,
+      status: DownloadStatus.DONE,
+      receivedBytes: 0,
+      totalBytes: 0,
+    } as FileDownloadStatusMessage);
+  }
+
+  function expectOnlyFileInProgressPostMessageCalls(
+    fileType: FileType,
+    ids: TrackFileIds
+  ) {
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    _expectFileInProgressPostMessageCalls(fileType, ids);
+    (postMessage as Mock).mockClear();
+  }
+
+  function expectOnlyFileDonePostMessageCalls(
+    fileType: FileType,
+    ids: TrackFileIds
+  ) {
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    _expectFileDonePostMessageCalls(fileType, ids);
+    (postMessage as Mock).mockClear();
+  }
+
+  function expectFileDoneAndFileInProgressPostMessageCalls(
+    fileType: FileType,
+    doneIds: TrackFileIds,
+    inProgressIds: TrackFileIds
+  ) {
+    expect(postMessage).toHaveBeenCalledTimes(3);
+    _expectFileDonePostMessageCalls(fileType, doneIds);
+    _expectFileInProgressPostMessageCalls(fileType, inProgressIds);
+    (postMessage as Mock).mockClear();
+  }
+
+  function expectFileCanceledAndInProgressPostMessageCalls(
+    fileType: FileType,
+    canceledIds: TrackFileIds,
+    inProgressIds: TrackFileIds
+  ) {
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenCalledWith({
+      type: FILE_DOWNLOAD_STATUS_TYPE,
+      ids: canceledIds,
+      fileType: fileType,
+      status: DownloadStatus.CANCELED,
+      receivedBytes: 0,
+      totalBytes: 0,
+    } as FileDownloadStatusMessage);
+    _expectFileInProgressPostMessageCalls(fileType, inProgressIds);
+    (postMessage as Mock).mockClear();
+  }
+
+  function expectOnlyFileErrorPostMessageCalls(
+    fileType: FileType,
+    ids: TrackFileIds
+  ) {
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledWith({
+      type: FILE_DOWNLOAD_STATUS_TYPE,
+      ids: ids,
+      fileType: fileType,
+      status: DownloadStatus.ERROR,
+      receivedBytes: 0,
+      totalBytes: 0,
+    } as FileDownloadStatusMessage);
+    (postMessage as Mock).mockClear();
+  }
+
+  function expectOnlyDownloadProgressPostMessageCalls(
+    fileType: FileType,
+    ids: TrackFileIds,
+    loaded: number,
+    total: number
+  ) {
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledWith({
+      type: FILE_DOWNLOAD_STATUS_TYPE,
+      ids: ids,
+      fileType: fileType,
+      status: DownloadStatus.IN_PROGRESS,
+      receivedBytes: loaded,
+      totalBytes: total,
+    } as FileDownloadStatusMessage);
     (postMessage as Mock).mockClear();
   }
 
@@ -241,6 +350,7 @@ describe("DownloadManager", () => {
       fileType: FileType.MUSIC,
       ids: [FILE_123, FILE_456, FILE_789],
     });
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_456);
 
     // on setting source, should start fetching the first file, but the request hasn't resolved yet
     expectOneAxiosGetCall("/tracks/456");
@@ -253,7 +363,11 @@ describe("DownloadManager", () => {
     // run the timer to resolve the first request, so we write the file and start the next request
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_456,
+      FILE_789
+    );
     expectOneAxiosGetCall("/tracks/789");
 
     // make sure we don't start another request until the first one resolves
@@ -265,7 +379,7 @@ describe("DownloadManager", () => {
     await vi.advanceTimersToNextTimerAsync();
     expect(axios.get).toHaveBeenCalledTimes(0);
     expectOneTryWriteFileCall(FileType.MUSIC, "789");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_789);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_789);
   });
 
   it("should fetch files 1 at a time for multiple sources", async () => {
@@ -277,6 +391,7 @@ describe("DownloadManager", () => {
     mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 300);
     mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 400);
 
+    expect(postMessage).toHaveBeenCalledTimes(0);
     await downloadManager.setSourceRequestedFiles({
       type: "",
       source: FileRequestSource.MUSIC_PRELOAD,
@@ -285,12 +400,14 @@ describe("DownloadManager", () => {
     });
 
     // on setting source, should start fetching the first file, but the request hasn't resolved yet
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
     expectOneAxiosGetCall("/tracks/123");
 
     // make sure we don't start another request until the first one resolves
     await downloadManager.update();
     expect(axios.get).toHaveBeenCalledTimes(0);
     expect(files().tryWriteFile).toHaveBeenCalledTimes(0);
+    expect(postMessage).toHaveBeenCalledTimes(0);
 
     // set a second source, which should start a new request
     await downloadManager.setSourceRequestedFiles({
@@ -299,12 +416,17 @@ describe("DownloadManager", () => {
       fileType: FileType.ARTWORK,
       ids: [FILE_ABC, FILE_DEF],
     });
+    expectOnlyFileInProgressPostMessageCalls(FileType.ARTWORK, FILE_ABC);
     expectOneAxiosGetCall("/artwork/abc");
 
     // run the timer to resolve the first track request, so we write the file and start the next track request
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "123");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_123);
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      FILE_456
+    );
     expectOneAxiosGetCall("/tracks/456");
 
     // make sure we don't start another request until the first one resolves
@@ -315,20 +437,24 @@ describe("DownloadManager", () => {
     // resolve the first artwork request - make sure we write the file and start another request
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.ARTWORK, "abc");
-    expectOnePostMessageCall(FileType.ARTWORK, FILE_ABC);
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.ARTWORK,
+      FILE_ABC,
+      FILE_DEF
+    );
     expectOneAxiosGetCall("/artwork/def");
 
     // resolve the second track request - make sure we write the file and start another request
     await vi.advanceTimersToNextTimerAsync();
     expect(axios.get).toHaveBeenCalledTimes(0);
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
 
     // resolve the second artwork request - make sure we write the file and start another request
     await vi.advanceTimersToNextTimerAsync();
     expect(axios.get).toHaveBeenCalledTimes(0);
     expectOneTryWriteFileCall(FileType.ARTWORK, "def");
-    expectOnePostMessageCall(FileType.ARTWORK, FILE_DEF);
+    expectOnlyFileDonePostMessageCalls(FileType.ARTWORK, FILE_DEF);
   });
 
   it("should leave the old request if the source changes with keep mode on", async () => {
@@ -344,6 +470,7 @@ describe("DownloadManager", () => {
       ids: [FILE_123],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
@@ -353,15 +480,16 @@ describe("DownloadManager", () => {
       ids: [FILE_456],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_456);
     expectOneAxiosGetCall("/tracks/456");
 
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "123");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_123);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_123);
 
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
   });
 
   it("should cancel the old request if the source changes with keep mode off", async () => {
@@ -380,6 +508,7 @@ describe("DownloadManager", () => {
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
     const signal: AbortSignal = (axios.get as Mock).mock.calls[0][1].signal;
     expect(signal.aborted).toBe(false);
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
@@ -389,6 +518,11 @@ describe("DownloadManager", () => {
       ids: [FILE_456],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
+    expectFileCanceledAndInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      FILE_456
+    );
     expectOneAxiosGetCall("/tracks/456");
     expect(signal.aborted).toBe(true);
 
@@ -397,7 +531,7 @@ describe("DownloadManager", () => {
 
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
   });
 
   it("should cancel any old requests if keep mode is turned off", async () => {
@@ -416,6 +550,7 @@ describe("DownloadManager", () => {
     const signal: AbortSignal = (axios.get as Mock).mock.calls[0][1].signal;
     expect(signal.aborted).toBe(false);
     expectOneAxiosGetCall("/tracks/123");
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
@@ -428,6 +563,11 @@ describe("DownloadManager", () => {
     expect(signal.aborted).toBe(false);
 
     await downloadManager.setKeepMode(false);
+    expectFileCanceledAndInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      FILE_456
+    );
     expect(signal.aborted).toBe(true);
 
     await vi.advanceTimersToNextTimerAsync();
@@ -435,7 +575,7 @@ describe("DownloadManager", () => {
 
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
   });
 
   it("should retry on request failures with backoff", async () => {
@@ -452,6 +592,7 @@ describe("DownloadManager", () => {
       ids: [FILE_123, FILE_456],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
@@ -461,25 +602,68 @@ describe("DownloadManager", () => {
       ids: [FILE_456],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_456);
     expectOneAxiosGetCall("/tracks/456");
 
     // 123 reqquest failed, don't retry
     await vi.advanceTimersToNextTimerAsync();
     expect(files().tryWriteFile).toHaveBeenCalledTimes(0);
     expect(axios.get).toHaveBeenCalledTimes(0);
+    console.log((postMessage as Mock).mock.calls);
+    expectOnlyFileErrorPostMessageCalls(FileType.MUSIC, FILE_123);
 
     // 456 request failed, don't retry right away
     await vi.advanceTimersToNextTimerAsync();
     expect(files().tryWriteFile).toHaveBeenCalledTimes(0);
     expect(axios.get).toHaveBeenCalledTimes(0);
+    expectOnlyFileErrorPostMessageCalls(FileType.MUSIC, FILE_456);
 
     // on timer, retry 456 request
     await vi.advanceTimersToNextTimerAsync();
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_456);
     expectOneAxiosGetCall("/tracks/456");
 
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
-    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
+  });
+
+  it("should post progress messages while the request is running", async () => {
+    mockFilesExistsAndWriteMethods();
+    downloadManager.setAuthToken("test-token");
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 100);
+
+    await downloadManager.setSourceRequestedFiles({
+      type: "",
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
+    });
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
+    const onDownloadProgress = (axios.get as Mock).mock.calls[0][1]
+      .onDownloadProgress;
+    expectOneAxiosGetCall("/tracks/123");
+
+    onDownloadProgress({ loaded: 10, total: 100 });
+    expectOnlyDownloadProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      10,
+      100
+    );
+
+    onDownloadProgress({ loaded: 20, total: 100 });
+    expectOnlyDownloadProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      20,
+      100
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "123");
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_123);
   });
 
   it("should delete any unneeded files when a library sync finishes", async () => {
