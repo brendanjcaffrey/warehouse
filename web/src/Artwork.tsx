@@ -103,8 +103,14 @@ function Artwork() {
               onClick={() => {
                 const i = new Image();
                 i.onload = () => {
-                  setModalWidth(i.width);
-                  setModalHeight(i.height);
+                  const scale = Math.min(
+                    (window.innerWidth * 0.8) / i.width,
+                    (window.innerHeight * 0.8) / i.height,
+                    1
+                  );
+
+                  setModalWidth(i.width * scale);
+                  setModalHeight(i.height * scale);
                   setShowModal(true);
                 };
                 i.src = artworkFileURL;
@@ -122,7 +128,14 @@ function Artwork() {
                   height: `${modalHeight}px`,
                 }}
               >
-                <img src={artworkFileURL} alt="artwork" />
+                <img
+                  src={artworkFileURL}
+                  alt="artwork"
+                  style={{
+                    width: `${modalWidth}px`,
+                    height: `${modalHeight}px`,
+                  }}
+                />
               </Box>
             </Modal>
           </>
