@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import { HelpOutlineRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";
-import { keepModeAtom } from "./Settings";
+import { showArtworkAtom, keepModeAtom } from "./Settings";
 import { defaultGrey } from "./Colors";
 import library from "./Library";
 
@@ -39,6 +39,7 @@ function SettingsPanel({
   showSettings,
   toggleShowSettings,
 }: StickyHeaderProps) {
+  const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
   const [persisted, setPersisted] = useState(false);
   const [haveEnoughStorageForKeepMode, setHaveEnoughStorageForKeepMode] =
     useState(false);
@@ -52,6 +53,11 @@ function SettingsPanel({
     useState<HTMLButtonElement | null>(null);
   const keepModeHelpOpen = Boolean(keepModeHelpAnchorEl);
 
+  const handleShowArtworkChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setShowArtwork(event.target.checked);
+  };
   const handlePersistStorageChange = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -145,6 +151,17 @@ function SettingsPanel({
         }}
       >
         <Grid container spacing={0} sx={{ width: "300px" }}>
+          <Grid size={10}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={showArtwork}
+                  onChange={handleShowArtworkChange}
+                />
+              }
+              label="Show Artwork"
+            />
+          </Grid>
           <Grid size={10}>
             <FormControlLabel
               control={

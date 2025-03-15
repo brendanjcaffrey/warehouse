@@ -7,14 +7,8 @@ import {
   PlayArrowRounded,
   RepeatRounded,
   ShuffleRounded,
-  ImageRounded,
 } from "@mui/icons-material";
-import {
-  shuffleAtom,
-  repeatAtom,
-  showArtworkAtom,
-  volumeAtom,
-} from "./Settings";
+import { shuffleAtom, repeatAtom, volumeAtom } from "./Settings";
 import { player } from "./Player";
 import { playingAtom } from "./State";
 import { defaultGrey, darkerGrey, titleGrey } from "./Colors";
@@ -22,7 +16,6 @@ import { defaultGrey, darkerGrey, titleGrey } from "./Colors";
 function Controls() {
   const [shuffle, setShuffle] = useAtom(shuffleAtom);
   const [repeat, setRepeat] = useAtom(repeatAtom);
-  const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
   const volume = useAtomValue(volumeAtom);
   const playing = useAtomValue(playingAtom);
 
@@ -33,10 +26,6 @@ function Controls() {
 
   const toggleRepeat = () => {
     setRepeat((prev) => !prev);
-  };
-
-  const toggleShowArtwork = () => {
-    setShowArtwork((prev) => !prev);
   };
 
   const volumeChange = (_: Event, newValue: number | number[]) => {
@@ -80,16 +69,6 @@ function Controls() {
             sx={{ color: repeat ? titleGrey : defaultGrey }}
           >
             <RepeatRounded fontSize="inherit" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Show Artwork">
-          <IconButton
-            size="large"
-            onClick={toggleShowArtwork}
-            edge="start"
-            sx={{ color: showArtwork ? titleGrey : defaultGrey }}
-          >
-            <ImageRounded fontSize="inherit" />
           </IconButton>
         </Tooltip>
         <Slider
