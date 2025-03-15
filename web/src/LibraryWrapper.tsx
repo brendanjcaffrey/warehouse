@@ -7,6 +7,8 @@ import {
   IsErrorMessage,
   IsLibraryMetadataMessage,
   IsSyncSucceededMessage,
+  StartSyncMessage,
+  TypedMessage,
   START_SYNC_TYPE,
   SYNC_SUCCEEDED_TYPE,
 } from "./WorkerTypes";
@@ -59,14 +61,16 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
 
       if (IsSyncSucceededMessage(data)) {
         setSyncFinished(true);
-        DownloadWorker.postMessage({ type: SYNC_SUCCEEDED_TYPE });
+        DownloadWorker.postMessage({
+          type: SYNC_SUCCEEDED_TYPE,
+        } as TypedMessage);
       }
     };
 
     SyncWorker.postMessage({
       type: START_SYNC_TYPE,
       authToken: localStorage.getItem("authToken"),
-    });
+    } as StartSyncMessage);
 
     return () => {
       SyncWorker.onmessage = null;

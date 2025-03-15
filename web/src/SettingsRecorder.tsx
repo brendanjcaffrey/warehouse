@@ -17,7 +17,7 @@ import {
 } from "./Settings";
 import { clearSettingsFnAtom } from "./State";
 import { DownloadWorker } from "./DownloadWorkerHandle";
-import { KEEP_MODE_CHANGED_TYPE } from "./WorkerTypes";
+import { KEEP_MODE_CHANGED_TYPE, KeepModeChangedMessage } from "./WorkerTypes";
 
 function SettingsRecorder() {
   const [keepMode, setKeepMode] = useAtom(keepModeAtom);
@@ -33,7 +33,7 @@ function SettingsRecorder() {
     DownloadWorker.postMessage({
       type: KEEP_MODE_CHANGED_TYPE,
       keepMode: keepMode,
-    });
+    } as KeepModeChangedMessage);
   }, [keepMode]);
 
   useEffect(() => {

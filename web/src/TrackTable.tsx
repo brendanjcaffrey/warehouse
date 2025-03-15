@@ -206,7 +206,7 @@ function TrackTable() {
           player().playTrackNext(trackId);
           break;
         case TrackAction.DOWNLOAD:
-          player().downloadTrack(trackId);
+          player().downloadMusic(trackId);
           break;
         case TrackAction.EDIT:
           // TODO

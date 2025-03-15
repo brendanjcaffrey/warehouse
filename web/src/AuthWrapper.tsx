@@ -4,7 +4,7 @@ import useAuthToken from "./useAuthToken";
 import AuthForm from "./AuthForm";
 import AuthVerifier from "./AuthVerifier";
 import { DownloadWorker } from "./DownloadWorkerHandle";
-import { SET_AUTH_TOKEN_TYPE } from "./WorkerTypes";
+import { AuthTokenMessage, SET_AUTH_TOKEN_TYPE } from "./WorkerTypes";
 import { clearAuthFnAtom } from "./State";
 import { updatePersister } from "./UpdatePersister";
 
@@ -21,7 +21,7 @@ function AuthWrapper({ children }: AuthWrapperProps) {
     DownloadWorker.postMessage({
       type: SET_AUTH_TOKEN_TYPE,
       authToken,
-    });
+    } as AuthTokenMessage);
     updatePersister().setAuthToken(authToken);
   }, [authToken]);
 

@@ -237,7 +237,7 @@ class Library {
     }
   }
 
-  public async getTrackFileIds(): Promise<Set<string> | undefined> {
+  public async getMusicIds(): Promise<Set<string> | undefined> {
     if (!this.validState) {
       return;
     }

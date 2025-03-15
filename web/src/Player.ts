@@ -20,9 +20,12 @@ import {
   IsTypedMessage,
   IsFileFetchedMessage,
   FileFetchedMessage,
+  SetSourceRequestedFilesMessage,
+  TrackFileIds,
 } from "./WorkerTypes";
 import { files } from "./Files";
 import { circularArraySlice } from "./Util";
+import { TrackFileSet } from "./TrackFileSet";
 
 const TRACKS_TO_PRELOAD = 3;
 
@@ -54,7 +57,7 @@ class Player {
   playing: boolean = false;
 
   // TODO timeout, show error etc
-  pendingDownloads: Set<string> = new Set();
+  pendingDownloads: TrackFileSet = new TrackFileSet();
   addingPlay: string | undefined = undefined;
 
   constructor() {
@@ -65,8 +68,8 @@ class Player {
         return;
       }
       if (IsFileFetchedMessage(data)) {
-        if (data.fileType === FileType.TRACK) {
-          this.handleTrackFetched(data);
+        if (data.fileType === FileType.MUSIC) {
+          this.handleMusicFetched(data);
         } else {
           this.handleArtworkFetched(data);
         }
@@ -222,7 +225,7 @@ class Player {
     }
 
     if (!this.playing) {
-      this.trySetPlayingTrackFile();
+      this.trySetPlayingMusicFile();
       this.playing = true;
       this.stopped = false;
       store.set(stoppedAtom, false);
@@ -305,46 +308,53 @@ class Player {
     await this.preloadTracks();
   }
 
-  async downloadTrack(trackId: string) {
+  async downloadMusic(trackId: string) {
     const track = await library().getTrack(trackId);
     if (!track) {
       return;
     }
+    const ids: TrackFileIds = {
+      trackId: track.id,
+      fileId: track.fileMd5,
+    };
 
-    const url = await files().tryGetFileURL(FileType.TRACK, track.fileMd5); // TODO release?
+    const url = await files().tryGetFileURL(FileType.MUSIC, track.fileMd5); // TODO release?
     if (url) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `${track.artistName} - ${track.name}.${track.ext}`;
       a.click();
-      this.pendingDownloads.delete(track.fileMd5);
+      this.pendingDownloads.delete(ids);
     } else {
-      this.pendingDownloads.add(track.fileMd5);
+      this.pendingDownloads.insert(ids);
       DownloadWorker.postMessage({
         type: SET_SOURCE_REQUESTED_FILES_TYPE,
-        source: FileRequestSource.TRACK_DOWNLOAD,
-        fileType: FileType.TRACK,
-        ids: this.pendingDownloads.values(),
-      });
+        source: FileRequestSource.MUSIC_DOWNLOAD,
+        fileType: FileType.MUSIC,
+        ids: Array.from(this.pendingDownloads.values()),
+      } as SetSourceRequestedFilesMessage);
     }
   }
 
   // helpers
-  private handleTrackFetched(data: FileFetchedMessage) {
-    if (data.id === this.playingTrack?.fileMd5) {
-      this.trySetPlayingTrackFile();
+  private handleMusicFetched(data: FileFetchedMessage) {
+    if (data.ids.fileId === this.playingTrack?.fileMd5) {
+      this.trySetPlayingMusicFile();
     }
-    if (this.pendingDownloads.has(data.id)) {
-      this.downloadTrack(data.id);
+    if (this.pendingDownloads.has(data.ids)) {
+      this.downloadMusic(data.ids.trackId);
     }
   }
 
   private handleArtworkFetched(data: FileFetchedMessage) {
-    if (this.playingTrack && this.playingTrack.artworks.includes(data.id)) {
+    if (
+      this.playingTrack &&
+      this.playingTrack.artworks.includes(data.ids.fileId)
+    ) {
       this.trySetMediaMetadata();
     }
   }
-  private async trySetPlayingTrackFile() {
+  private async trySetPlayingMusicFile() {
     if (
       !this.playingTrack ||
       !this.audioRef ||
@@ -354,7 +364,7 @@ class Player {
     }
 
     const url = await files().tryGetFileURL(
-      FileType.TRACK,
+      FileType.MUSIC,
       this.playingTrack.fileMd5
     ); // TODO release?
     if (url) {
@@ -411,7 +421,7 @@ class Player {
     }
     store.set(playingTrackAtom, this.playingTrack);
     this.trySetMediaMetadata();
-    this.trySetPlayingTrackFile();
+    this.trySetPlayingMusicFile();
     await this.preloadTracks();
   }
 
@@ -458,29 +468,29 @@ class Player {
     );
     trackIds = [...trackIds, ...this.playNextTrackIds];
 
-    const trackFileIds = [];
-    const artworkIds = [];
+    const musicIds: TrackFileIds[] = [];
+    const artworkIds: TrackFileIds[] = [];
     for (const trackId of trackIds) {
       const track = await library().getTrack(trackId);
       if (track) {
-        trackFileIds.push(track.fileMd5);
+        musicIds.push({ trackId: track.id, fileId: track.fileMd5 });
         if (track.artworks.length > 0) {
-          artworkIds.push(track.artworks[0]);
+          artworkIds.push({ trackId: track.id, fileId: track.artworks[0] });
         }
       }
     }
     DownloadWorker.postMessage({
       type: SET_SOURCE_REQUESTED_FILES_TYPE,
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: trackFileIds,
-    });
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: musicIds,
+    } as SetSourceRequestedFilesMessage);
     DownloadWorker.postMessage({
       type: SET_SOURCE_REQUESTED_FILES_TYPE,
       source: FileRequestSource.ARTWORK_PRELOAD,
       fileType: FileType.ARTWORK,
       ids: artworkIds,
-    });
+    } as SetSourceRequestedFilesMessage);
   }
 
   private async showPlayingTrackIfInPlaylist() {

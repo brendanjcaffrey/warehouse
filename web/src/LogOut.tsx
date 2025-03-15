@@ -7,7 +7,7 @@ import { updatePersister } from "./UpdatePersister";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { player } from "./Player";
 import { files } from "./Files";
-import { CLEARED_ALL_TYPE } from "./WorkerTypes";
+import { CLEARED_ALL_TYPE, TypedMessage } from "./WorkerTypes";
 
 function LogOut({ height }: { height: string }) {
   const clearAuthFn = useAtomValue(clearAuthFnAtom);
@@ -19,7 +19,7 @@ function LogOut({ height }: { height: string }) {
     library().clear();
     await player().reset();
     await files().clearAll();
-    DownloadWorker.postMessage({ type: CLEARED_ALL_TYPE });
+    DownloadWorker.postMessage({ type: CLEARED_ALL_TYPE } as TypedMessage);
     updatePersister().setHasLibraryMetadata(false);
     updatePersister().clearPending();
   }

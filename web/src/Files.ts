@@ -80,7 +80,9 @@ class FileTypeManager {
   }
 
   async getAll(): Promise<Set<string> | undefined> {
-    if (!this.handle) { return undefined; }
+    if (!this.handle) {
+      return undefined;
+    }
     const set = new Set<string>();
     for await (const i of this.handle!.keys()) {
       set.add(i);
@@ -94,8 +96,8 @@ export class Files {
 
   constructor() {
     this.managers.set(
-      FileType.TRACK,
-      new FileTypeManager(FileType.TRACK, "track")
+      FileType.MUSIC,
+      new FileTypeManager(FileType.MUSIC, "music")
     );
     this.managers.set(
       FileType.ARTWORK,
@@ -144,7 +146,7 @@ export class Files {
     return await this.managers.get(type)!.tryDeleteFile(id);
   }
 
-  async getAllOfType(type: FileType): Promise<Set<string>| undefined> {
+  async getAllOfType(type: FileType): Promise<Set<string> | undefined> {
     const manager = this.managers.get(type);
     if (!manager) {
       return new Set();

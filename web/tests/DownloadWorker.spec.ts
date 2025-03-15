@@ -5,6 +5,8 @@ import library from "../src/Library";
 import {
   FileType,
   FileRequestSource,
+  TrackFileIds,
+  FileFetchedMessage,
   FILE_FETCHED_TYPE,
 } from "../src/WorkerTypes";
 import axios from "axios";
@@ -27,7 +29,7 @@ vi.mock("../src/Files", () => {
 
 vi.mock("../src/Library", () => {
   const MockLibrary = vi.fn();
-  MockLibrary.prototype.getTrackFileIds = vi.fn();
+  MockLibrary.prototype.getMusicIds = vi.fn();
   MockLibrary.prototype.getArtworkIds = vi.fn();
 
   const mockLibrary = new MockLibrary();
@@ -41,6 +43,12 @@ vi.stubGlobal("postMessage", vi.fn());
 const TEST_FILE_DATA = {
   data: "hi",
 };
+
+const FILE_123: TrackFileIds = { trackId: "t1", fileId: "123" };
+const FILE_456: TrackFileIds = { trackId: "t2", fileId: "456" };
+const FILE_789: TrackFileIds = { trackId: "t3", fileId: "789" };
+const FILE_ABC: TrackFileIds = { trackId: "t4", fileId: "abc" };
+const FILE_DEF: TrackFileIds = { trackId: "t5", fileId: "def" };
 
 function mockAxiosGetResolveAfterDelay<T>(data: T, delayMs: number) {
   (axios.get as Mock).mockImplementationOnce(() => {
@@ -84,7 +92,7 @@ describe("DownloadManager", () => {
     (files().typeIsInitialized as Mock).mockReturnValue(true);
     (files().fileExists as Mock).mockImplementation(
       (type: FileType, id: string) => {
-        if (type === FileType.TRACK) {
+        if (type === FileType.MUSIC) {
           return tracksExist.get(id) || false;
         } else if (type === FileType.ARTWORK) {
           return artworksExist.get(id) || false;
@@ -95,7 +103,7 @@ describe("DownloadManager", () => {
     );
     (files().tryWriteFile as Mock).mockImplementation(
       (type: FileType, id: string) => {
-        if (type === FileType.TRACK) {
+        if (type === FileType.MUSIC) {
           tracksExist.set(id, true);
         } else if (type === FileType.ARTWORK) {
           artworksExist.set(id, true);
@@ -105,7 +113,7 @@ describe("DownloadManager", () => {
     );
     (files().tryDeleteFile as Mock).mockImplementation(
       (type: FileType, id: string) => {
-        if (type === FileType.TRACK) {
+        if (type === FileType.MUSIC) {
           tracksExist.set(id, false);
         } else if (type === FileType.ARTWORK) {
           artworksExist.set(id, false);
@@ -114,7 +122,7 @@ describe("DownloadManager", () => {
       }
     );
     (files().getAllOfType as Mock).mockImplementation((type: FileType) => {
-      if (type === FileType.TRACK) {
+      if (type === FileType.MUSIC) {
         return [...tracksExist.entries()].filter(([, v]) => v).map(([k]) => k);
       } else if (type === FileType.ARTWORK) {
         return [...artworksExist.entries()]
@@ -140,13 +148,13 @@ describe("DownloadManager", () => {
     (axios.get as Mock).mockClear();
   }
 
-  function expectOnePostMessageCall(fileType: FileType, id: string) {
+  function expectOnePostMessageCall(fileType: FileType, ids: TrackFileIds) {
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledWith({
       type: FILE_FETCHED_TYPE,
       fileType: fileType,
-      id: id,
-    });
+      ids: ids,
+    } as FileFetchedMessage);
     (postMessage as Mock).mockClear();
   }
 
@@ -188,7 +196,7 @@ describe("DownloadManager", () => {
       }
     });
 
-    expect(files().typeIsInitialized).toHaveBeenCalledWith(FileType.TRACK);
+    expect(files().typeIsInitialized).toHaveBeenCalledWith(FileType.MUSIC);
     expect(files().typeIsInitialized).toHaveBeenCalledWith(FileType.ARTWORK);
   });
 
@@ -211,11 +219,11 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "123");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
   });
 
   it("should fetch files 1 at a time for one source", async () => {
@@ -229,9 +237,9 @@ describe("DownloadManager", () => {
     tracksExist.set("123", true);
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123", "456", "789"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123, FILE_456, FILE_789],
     });
 
     // on setting source, should start fetching the first file, but the request hasn't resolved yet
@@ -244,8 +252,8 @@ describe("DownloadManager", () => {
 
     // run the timer to resolve the first request, so we write the file and start the next request
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "456");
-    expectOnePostMessageCall(FileType.TRACK, "456");
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
     expectOneAxiosGetCall("/tracks/789");
 
     // make sure we don't start another request until the first one resolves
@@ -256,8 +264,8 @@ describe("DownloadManager", () => {
     // resolve the second request - make sure we write the file and don't start another request
     await vi.advanceTimersToNextTimerAsync();
     expect(axios.get).toHaveBeenCalledTimes(0);
-    expectOneTryWriteFileCall(FileType.TRACK, "789");
-    expectOnePostMessageCall(FileType.TRACK, "789");
+    expectOneTryWriteFileCall(FileType.MUSIC, "789");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_789);
   });
 
   it("should fetch files 1 at a time for multiple sources", async () => {
@@ -271,9 +279,9 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123", "456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123, FILE_456],
     });
 
     // on setting source, should start fetching the first file, but the request hasn't resolved yet
@@ -289,14 +297,14 @@ describe("DownloadManager", () => {
       type: "",
       source: FileRequestSource.ARTWORK_PRELOAD,
       fileType: FileType.ARTWORK,
-      ids: ["abc", "def"],
+      ids: [FILE_ABC, FILE_DEF],
     });
     expectOneAxiosGetCall("/artwork/abc");
 
     // run the timer to resolve the first track request, so we write the file and start the next track request
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "123");
-    expectOnePostMessageCall(FileType.TRACK, "123");
+    expectOneTryWriteFileCall(FileType.MUSIC, "123");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_123);
     expectOneAxiosGetCall("/tracks/456");
 
     // make sure we don't start another request until the first one resolves
@@ -307,20 +315,20 @@ describe("DownloadManager", () => {
     // resolve the first artwork request - make sure we write the file and start another request
     await vi.advanceTimersToNextTimerAsync();
     expectOneTryWriteFileCall(FileType.ARTWORK, "abc");
-    expectOnePostMessageCall(FileType.ARTWORK, "abc");
+    expectOnePostMessageCall(FileType.ARTWORK, FILE_ABC);
     expectOneAxiosGetCall("/artwork/def");
 
     // resolve the second track request - make sure we write the file and start another request
     await vi.advanceTimersToNextTimerAsync();
     expect(axios.get).toHaveBeenCalledTimes(0);
-    expectOneTryWriteFileCall(FileType.TRACK, "456");
-    expectOnePostMessageCall(FileType.TRACK, "456");
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
 
     // resolve the second artwork request - make sure we write the file and start another request
     await vi.advanceTimersToNextTimerAsync();
     expect(axios.get).toHaveBeenCalledTimes(0);
     expectOneTryWriteFileCall(FileType.ARTWORK, "def");
-    expectOnePostMessageCall(FileType.ARTWORK, "def");
+    expectOnePostMessageCall(FileType.ARTWORK, FILE_DEF);
   });
 
   it("should leave the old request if the source changes with keep mode on", async () => {
@@ -331,29 +339,29 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "123");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_456],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "456");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
     expectOneAxiosGetCall("/tracks/456");
 
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "123");
-    expectOnePostMessageCall(FileType.TRACK, "123");
+    expectOneTryWriteFileCall(FileType.MUSIC, "123");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_123);
 
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "456");
-    expectOnePostMessageCall(FileType.TRACK, "456");
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
   });
 
   it("should cancel the old request if the source changes with keep mode off", async () => {
@@ -365,22 +373,22 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "123");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
     const signal: AbortSignal = (axios.get as Mock).mock.calls[0][1].signal;
     expect(signal.aborted).toBe(false);
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_456],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "456");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
     expectOneAxiosGetCall("/tracks/456");
     expect(signal.aborted).toBe(true);
 
@@ -388,8 +396,8 @@ describe("DownloadManager", () => {
     expect(files().tryWriteFile).toHaveBeenCalledTimes(0);
 
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "456");
-    expectOnePostMessageCall(FileType.TRACK, "456");
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
   });
 
   it("should cancel any old requests if keep mode is turned off", async () => {
@@ -400,22 +408,22 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "123");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
     const signal: AbortSignal = (axios.get as Mock).mock.calls[0][1].signal;
     expect(signal.aborted).toBe(false);
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_456],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "456");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
     expectOneAxiosGetCall("/tracks/456");
     expect(signal.aborted).toBe(false);
 
@@ -426,8 +434,8 @@ describe("DownloadManager", () => {
     expect(files().tryWriteFile).toHaveBeenCalledTimes(0);
 
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "456");
-    expectOnePostMessageCall(FileType.TRACK, "456");
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
   });
 
   it("should retry on request failures with backoff", async () => {
@@ -439,20 +447,20 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123", "456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123, FILE_456],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "123");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
     expectOneAxiosGetCall("/tracks/123");
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_456],
     });
-    expect(files().fileExists).toHaveBeenCalledWith(FileType.TRACK, "456");
+    expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "456");
     expectOneAxiosGetCall("/tracks/456");
 
     // 123 reqquest failed, don't retry
@@ -470,13 +478,13 @@ describe("DownloadManager", () => {
     expectOneAxiosGetCall("/tracks/456");
 
     await vi.advanceTimersToNextTimerAsync();
-    expectOneTryWriteFileCall(FileType.TRACK, "456");
-    expectOnePostMessageCall(FileType.TRACK, "456");
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnePostMessageCall(FileType.MUSIC, FILE_456);
   });
 
   it("should delete any unneeded files when a library sync finishes", async () => {
     (files().getAllOfType as Mock).mockImplementation((type: FileType) => {
-      if (type === FileType.TRACK) {
+      if (type === FileType.MUSIC) {
         return new Set(["123", "456", "789"]);
       } else if (type === FileType.ARTWORK) {
         return new Set(["abc", "def", "ghi"]);
@@ -484,14 +492,12 @@ describe("DownloadManager", () => {
         return new Set();
       }
     });
-    (library().getTrackFileIds as Mock).mockReturnValue(
-      new Set(["123", "789"])
-    );
+    (library().getMusicIds as Mock).mockReturnValue(new Set(["123", "789"]));
     (library().getArtworkIds as Mock).mockReturnValue(new Set(["abc", "ghi"]));
     await downloadManager.syncSucceeded();
 
     expect(files().tryDeleteFile).toHaveBeenCalledTimes(2);
-    expect(files().tryDeleteFile).toHaveBeenCalledWith(FileType.TRACK, "456");
+    expect(files().tryDeleteFile).toHaveBeenCalledWith(FileType.MUSIC, "456");
     expect(files().tryDeleteFile).toHaveBeenCalledWith(FileType.ARTWORK, "def");
   });
 
@@ -504,23 +510,23 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
     });
     await vi.advanceTimersToNextTimerAsync();
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_456],
     });
     await vi.advanceTimersToNextTimerAsync();
     expect(files().tryDeleteFile).toHaveBeenCalledTimes(0);
 
     await downloadManager.setKeepMode(false);
-    expectOneTryDeleteFileCall(FileType.TRACK, "123");
+    expectOneTryDeleteFileCall(FileType.MUSIC, "123");
   });
 
   it("should delete any unneeded files when keep mode is off and a source changes", async () => {
@@ -535,9 +541,9 @@ describe("DownloadManager", () => {
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["123"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123],
     });
     await vi.advanceTimersToNextTimerAsync();
 
@@ -545,24 +551,24 @@ describe("DownloadManager", () => {
       type: "",
       source: FileRequestSource.ARTWORK_PRELOAD,
       fileType: FileType.ARTWORK,
-      ids: ["abc"],
+      ids: [FILE_ABC],
     });
     await vi.advanceTimersToNextTimerAsync();
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
-      source: FileRequestSource.TRACK_PRELOAD,
-      fileType: FileType.TRACK,
-      ids: ["456"],
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_456],
     });
-    expectOneTryDeleteFileCall(FileType.TRACK, "123");
+    expectOneTryDeleteFileCall(FileType.MUSIC, "123");
     await vi.advanceTimersToNextTimerAsync();
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
       source: FileRequestSource.ARTWORK_PRELOAD,
       fileType: FileType.ARTWORK,
-      ids: ["def"],
+      ids: [FILE_DEF],
     });
     expectOneTryDeleteFileCall(FileType.ARTWORK, "abc");
     await vi.advanceTimersToNextTimerAsync();

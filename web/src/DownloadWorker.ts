@@ -10,6 +10,8 @@ import {
   IsSetSourceRequestedFilesMessage,
   SetSourceRequestedFilesMessage,
   IsSyncSucceededMessage,
+  TrackFileIds,
+  FileFetchedMessage,
   FILE_FETCHED_TYPE,
 } from "./WorkerTypes";
 import { files } from "./Files";
@@ -17,22 +19,22 @@ import library from "./Library";
 
 interface RequestedFile {
   type: FileType;
-  id: string;
+  ids: TrackFileIds;
 }
 
 function RequestedFileToString(file: RequestedFile) {
-  return `${file.type}/${file.id}`;
+  return `${file.type}/${file.ids.fileId}`;
 }
 
 class InFlightRequest {
   type: FileType;
-  id: string;
+  ids: TrackFileIds;
   canceled: boolean;
   abortController: AbortController;
 
-  constructor(type: FileType, id: string) {
+  constructor(type: FileType, ids: TrackFileIds) {
     this.type = type;
-    this.id = id;
+    this.ids = ids;
     this.canceled = false;
     this.abortController = new AbortController();
   }
@@ -56,9 +58,9 @@ export class DownloadManager {
   }
 
   public async syncSucceeded() {
-    const trackIds = await library().getTrackFileIds();
-    if (trackIds) {
-      await this.removeTrackFilesExcept(trackIds);
+    const musicIds = await library().getMusicIds();
+    if (musicIds) {
+      await this.removeMusicFilesExcept(musicIds);
     }
     const artworkIds = await library().getArtworkIds();
     if (artworkIds) {
@@ -82,7 +84,7 @@ export class DownloadManager {
   public async setSourceRequestedFiles(data: SetSourceRequestedFilesMessage) {
     this.sources.set(
       data.source,
-      data.ids.map((id) => ({ type: data.fileType, id }))
+      data.ids.map((ids) => ({ type: data.fileType, ids }))
     );
     await this.update();
   }
@@ -96,7 +98,7 @@ export class DownloadManager {
 
     if (
       !this.authToken ||
-      !files().typeIsInitialized(FileType.TRACK) ||
+      !files().typeIsInitialized(FileType.MUSIC) ||
       !files().typeIsInitialized(FileType.ARTWORK)
     ) {
       setTimeout(async () => await this.update(), 100);
@@ -113,7 +115,7 @@ export class DownloadManager {
   private async startNewRequests() {
     for (const requestedFiles of this.sources.values()) {
       for (const file of requestedFiles) {
-        if (await files().fileExists(file.type, file.id)) {
+        if (await files().fileExists(file.type, file.ids.fileId)) {
           continue;
         }
         if (this.hasMatchingInFlightRequest(file)) {
@@ -127,7 +129,10 @@ export class DownloadManager {
 
   private hasMatchingInFlightRequest(request: RequestedFile) {
     return this.inflightRequests.some(
-      (r) => r.type === request.type && r.id === request.id
+      (r) =>
+        r.type === request.type &&
+        r.ids.trackId === request.ids.trackId &&
+        r.ids.fileId === request.ids.fileId
     );
   }
 
@@ -148,9 +153,9 @@ export class DownloadManager {
   }
 
   private async fetchFile(request: RequestedFile) {
-    if (this.lastFailedRequest.get(request.type) === request.id) {
+    if (this.lastFailedRequest.get(request.type) === request.ids.fileId) {
       setTimeout(() => {
-        if (this.lastFailedRequest.get(request.type) === request.id) {
+        if (this.lastFailedRequest.get(request.type) === request.ids.fileId) {
           this.lastFailedRequest.delete(request.type);
         }
         this.update();
@@ -158,28 +163,28 @@ export class DownloadManager {
       return;
     }
 
-    const inflightRequest = new InFlightRequest(request.type, request.id);
+    const inflightRequest = new InFlightRequest(request.type, request.ids);
     this.inflightRequests.push(inflightRequest);
 
     try {
-      const urlPrefix = request.type === FileType.TRACK ? "tracks" : "artwork";
-      const requestPath = `/${urlPrefix}/${request.id}`;
+      const urlPrefix = request.type === FileType.MUSIC ? "tracks" : "artwork";
+      const requestPath = `/${urlPrefix}/${request.ids.fileId}`;
       const { data } = await axios.get(requestPath, {
         signal: inflightRequest.abortController.signal,
         responseType: "arraybuffer",
         headers: { Authorization: `Bearer ${this.authToken}` },
       });
-      if (await files().tryWriteFile(request.type, request.id, data)) {
+      if (await files().tryWriteFile(request.type, request.ids.fileId, data)) {
         postMessage({
           type: FILE_FETCHED_TYPE,
           fileType: request.type,
-          id: request.id,
-        });
+          ids: request.ids,
+        } as FileFetchedMessage);
       }
     } catch (error) {
       if (!inflightRequest.canceled) {
         console.error(error);
-        this.lastFailedRequest.set(request.type, request.id);
+        this.lastFailedRequest.set(request.type, request.ids.fileId);
       }
     } finally {
       this.inflightRequests = this.inflightRequests.filter(
@@ -197,28 +202,28 @@ export class DownloadManager {
     const artworkIds = new Set<string>();
     for (const requestedFiles of this.sources.values()) {
       for (const file of requestedFiles) {
-        if (file.type === FileType.TRACK) {
-          trackIds.add(file.id);
+        if (file.type === FileType.MUSIC) {
+          trackIds.add(file.ids.fileId);
         } else {
-          artworkIds.add(file.id);
+          artworkIds.add(file.ids.fileId);
         }
       }
     }
-    this.removeTrackFilesExcept(trackIds);
+    this.removeMusicFilesExcept(trackIds);
     this.removeArtworkFilesExcept(artworkIds);
   }
 
-  private async removeTrackFilesExcept(trackIds: Set<string>) {
-    const trackFiles = await files().getAllOfType(FileType.TRACK);
-    if (!trackFiles) {
+  private async removeMusicFilesExcept(musicIds: Set<string>) {
+    const musicFiles = await files().getAllOfType(FileType.MUSIC);
+    if (!musicFiles) {
       return;
     }
 
     const tracksToDelete = new Set(
-      [...trackFiles].filter((x) => !trackIds.has(x))
+      [...musicFiles].filter((x) => !musicIds.has(x))
     );
     for (const file of tracksToDelete) {
-      await files().tryDeleteFile(FileType.TRACK, file);
+      await files().tryDeleteFile(FileType.MUSIC, file);
     }
   }
 

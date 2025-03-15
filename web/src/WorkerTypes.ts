@@ -11,13 +11,13 @@ export const CLEARED_ALL_TYPE = "clearedAll";
 export const ERROR_TYPE = "error";
 
 export enum FileType {
-  TRACK,
+  MUSIC,
   ARTWORK,
 }
 
 export enum FileRequestSource {
-  TRACK_DOWNLOAD,
-  TRACK_PRELOAD,
+  MUSIC_DOWNLOAD,
+  MUSIC_PRELOAD,
   ARTWORK_PRELOAD,
 }
 
@@ -28,6 +28,9 @@ export interface TypedMessage {
 export interface AuthTokenMessage extends TypedMessage {
   authToken: string;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface StartSyncMessage extends AuthTokenMessage {}
 
 export interface ErrorMessage extends TypedMessage {
   error: string;
@@ -42,15 +45,20 @@ export interface KeepModeChangedMessage extends TypedMessage {
   keepMode: boolean;
 }
 
+export interface TrackFileIds {
+  trackId: string;
+  fileId: string;
+}
+
 export interface SetSourceRequestedFilesMessage extends TypedMessage {
   source: FileRequestSource;
   fileType: FileType;
-  ids: string[];
+  ids: TrackFileIds[];
 }
 
 export interface FileFetchedMessage extends TypedMessage {
   fileType: FileType;
-  id: string;
+  ids: TrackFileIds;
 }
 
 export function IsTypedMessage(message: object): message is TypedMessage {
@@ -59,7 +67,7 @@ export function IsTypedMessage(message: object): message is TypedMessage {
 
 export function IsStartSyncMessage(
   message: TypedMessage
-): message is AuthTokenMessage {
+): message is StartSyncMessage {
   return (
     isObject(message) &&
     message.type === START_SYNC_TYPE &&
@@ -118,7 +126,7 @@ export function IsFileFetchedMessage(
   message: TypedMessage
 ): message is FileFetchedMessage {
   return (
-    isObject(message) && message.type === FILE_FETCHED_TYPE && "id" in message
+    isObject(message) && message.type === FILE_FETCHED_TYPE && "ids" in message
   );
 }
 

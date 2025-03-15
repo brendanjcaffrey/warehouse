@@ -2,6 +2,9 @@ import axios from "axios";
 import {
   IsStartSyncMessage,
   IsTypedMessage,
+  TypedMessage,
+  ErrorMessage,
+  LibraryMetadataMessage,
   SYNC_SUCCEEDED_TYPE,
   ERROR_TYPE,
   LIBRARY_METADATA_TYPE,
@@ -34,16 +37,19 @@ class SyncManager {
 
         this.processSyncResponse(msg.library)
           .then(() => {
-            postMessage({ type: SYNC_SUCCEEDED_TYPE });
+            postMessage({ type: SYNC_SUCCEEDED_TYPE } as TypedMessage);
           })
           .catch((error) => {
             console.error(error);
-            postMessage({ type: ERROR_TYPE, error: error.message });
+            postMessage({
+              type: ERROR_TYPE,
+              error: error.message,
+            } as ErrorMessage);
           });
       })
       .catch((error) => {
         console.error(error);
-        postMessage({ type: ERROR_TYPE, error: error.message });
+        postMessage({ type: ERROR_TYPE, error: error.message } as ErrorMessage);
       })
       .finally(() => {
         this.syncInProgress = false;
@@ -68,7 +74,7 @@ class SyncManager {
       type: LIBRARY_METADATA_TYPE,
       trackUserChanges: msg.trackUserChanges,
       totalFileSize: msg.totalFileSize,
-    });
+    } as LibraryMetadataMessage);
 
     for (const track of msg.tracks) {
       const artist = msg.artists.get(track.artistId);

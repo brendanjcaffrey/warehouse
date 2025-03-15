@@ -46,9 +46,9 @@ function Artwork() {
       if (
         IsFileFetchedMessage(data) &&
         data.fileType === FileType.ARTWORK &&
-        data.id === playingTrack?.artworks[0]
+        data.ids.fileId === playingTrack?.artworks[0]
       ) {
-        showFetchedArtwork(data.id);
+        showFetchedArtwork(data.ids.fileId);
       }
     },
     [playingTrack, showFetchedArtwork]
