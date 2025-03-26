@@ -38,13 +38,19 @@ task :remote do
   Server.run!
 end
 
+task :install do
+  command = TTY::Command.new
+  command.run!('bundle')
+  command.run!('cd web && npm install')
+end
+
 task :proto do
   command = TTY::Command.new
   command.run!('protoc --ruby_out=./shared messages.proto')
   command.run!('protoc --plugin="protoc-gen-ts=./web/node_modules/.bin/protoc-gen-ts" --ts_out="./web/src/generated" ./messages.proto')
 end
 
-task :build => [:proto] do
+task :build => [:install, :proto] do
   command = TTY::Command.new
   command.run!('cd web && npm run build')
 end
