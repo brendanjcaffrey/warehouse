@@ -77,8 +77,8 @@ class Player {
     });
 
     if (navigator.mediaSession) {
-      navigator.mediaSession.setActionHandler("play", () => this.playPause());
-      navigator.mediaSession.setActionHandler("pause", () => this.playPause());
+      navigator.mediaSession.setActionHandler("play", () => this.play());
+      navigator.mediaSession.setActionHandler("pause", () => this.pause());
       navigator.mediaSession.setActionHandler("nexttrack", () => this.next());
       navigator.mediaSession.setActionHandler("previoustrack", () =>
         this.prev()
@@ -219,6 +219,18 @@ class Player {
   }
 
   // controls
+  play() {
+    if (this.playing) {
+      return;
+    }
+    this.playPause();
+  }
+  pause() {
+    if (!this.playing) {
+      return;
+    }
+    this.playPause();
+  }
   playPause() {
     if (!this.audioRef || this.playingTrackIds.length === 0) {
       return;
