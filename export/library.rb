@@ -1,4 +1,5 @@
 require 'tmpdir'
+require 'set'
 require_relative './pretty_on_failure'
 
 module Export
@@ -182,8 +183,22 @@ module Export
       at_exit { FileUtils.remove_entry(@tmpdir) }
 
       @artwork_dir = File.expand_path(Config['artwork_path'])
+      FileUtils.mkdir_p(@artwork_dir)
       @artwork_total_file_size = 0
       @track_total_file_size = 0
+      @existing_artwork_files = Set.new(Dir.entries(@artwork_dir).select { |f| f =~ /^[0-9a-f]{32}\.(jpg|png)$/ })
+    end
+
+    def cleanup_artwork
+      # remove any files that are no longer in the library
+      new_artwork_files = Set.new(@artwork_files.values)
+      missing_artwork_files = @existing_artwork_files - new_artwork_files
+      if !missing_artwork_files.empty?
+        puts "Cleaning up old artwork files: #{missing_artwork_files.to_a}"
+        missing_artwork_files.each do |filename|
+          FileUtils.rm_f(File.join(@artwork_dir, filename))
+        end
+      end
     end
 
     def total_track_count
@@ -220,8 +235,13 @@ module Export
 
             out_filename = "#{md5}.#{type}"
             @artwork_files[md5] = out_filename
-            FileUtils.mv(in_filename, "#{@artwork_dir}/#{out_filename}")
-            @artwork_total_file_size += File.size("#{@artwork_dir}/#{out_filename}")
+            @artwork_total_file_size += File.size(in_filename)
+            # leave existing files in place so they don't get updated mod times and get re-rsynced
+            if @existing_artwork_files.include?(out_filename)
+              FileUtils.rm(in_filename)
+            else
+              FileUtils.mv(in_filename, "#{@artwork_dir}/#{out_filename}")
+            end
           end
           track.add_artwork(@artwork_files[md5])
         end

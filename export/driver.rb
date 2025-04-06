@@ -179,6 +179,8 @@ module Export
           @skipped_tracks[track.id] = true
         end
       end
+
+      @library.cleanup_artwork
     end
 
     def export_playlists
