@@ -14,6 +14,7 @@ import {
 } from "./WorkerTypes";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { updatePersister } from "./UpdatePersister";
+import { AUTH_TOKEN_KEY } from "./useAuthToken";
 
 const SyncWorker = new Worker(new URL("./SyncWorker.ts", import.meta.url), {
   type: "module",
@@ -69,7 +70,8 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
 
     SyncWorker.postMessage({
       type: START_SYNC_TYPE,
-      authToken: localStorage.getItem("authToken"),
+      authToken: localStorage.getItem(AUTH_TOKEN_KEY),
+      updateTimeNs: library().getUpdateTimeNs(),
     } as StartSyncMessage);
 
     return () => {

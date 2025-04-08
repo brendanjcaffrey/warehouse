@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const AUTH_TOKEN_KEY = "authToken";
+export const AUTH_TOKEN_KEY = "authToken";
 
 function useAuthToken() {
   const [token, setToken] = useState<string | null>(() =>

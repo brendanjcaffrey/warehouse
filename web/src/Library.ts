@@ -6,6 +6,7 @@ const DATABASE_NAME = "library";
 const DATABASE_VERSION = 1;
 const TRACK_USER_CHANGES_KEY = "trackUserChanges";
 const TOTAL_FILE_SIZE_KEY = "totalFileSize";
+const UPDATE_TIME_NS_KEY = "updatedTimeNs";
 
 export interface Track {
   id: string;
@@ -174,6 +175,7 @@ class Library {
       TOTAL_FILE_SIZE_KEY,
       metadata.totalFileSize.toString()
     );
+    localStorage.setItem(UPDATE_TIME_NS_KEY, metadata.updateTimeNs.toString());
   }
 
   public clear() {
@@ -289,6 +291,10 @@ class Library {
 
   public getTotalFileSize(): number {
     return parseInt(localStorage.getItem(TOTAL_FILE_SIZE_KEY) || "0");
+  }
+
+  public getUpdateTimeNs(): number {
+    return parseInt(localStorage.getItem(UPDATE_TIME_NS_KEY) || "0");
   }
 
   private setError(action: string, error: Error | string | null | unknown) {

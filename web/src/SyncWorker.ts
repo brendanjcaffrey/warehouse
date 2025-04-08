@@ -10,19 +10,58 @@ import {
   LIBRARY_METADATA_TYPE,
 } from "./WorkerTypes";
 import library, { Track, Playlist } from "./Library";
-import { LibraryResponse, Library, Name, SortName } from "./generated/messages";
+import {
+  VersionResponse,
+  LibraryResponse,
+  Library,
+  Name,
+  SortName,
+} from "./generated/messages";
 
 class SyncManager {
   private syncInProgress: boolean = false;
 
-  public startSync(authToken: string) {
+  public startSync(authToken: string, updateTimeNs: number) {
     // this happens because react runs all effects twice in development mode
     if (this.syncInProgress) {
       return;
     }
-
     this.syncInProgress = true;
 
+    // check if we have the most update to date version of the library, if so don't sync
+    if (updateTimeNs > 0) {
+      axios
+        .get("/api/version", {
+          responseType: "arraybuffer",
+          headers: { Authorization: `Bearer ${authToken}` },
+        })
+        .then((response) => {
+          const { data } = response;
+          const msg = VersionResponse.deserialize(data);
+          if (msg.response === "error") {
+            throw new Error(msg.error);
+          }
+
+          if (msg.updateTimeNs === updateTimeNs) {
+            postMessage({ type: SYNC_SUCCEEDED_TYPE } as TypedMessage);
+          } else {
+            this.syncLibrary(authToken);
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+          postMessage({
+            type: ERROR_TYPE,
+            error: error.message,
+          } as ErrorMessage);
+          this.syncInProgress = false;
+        });
+    } else {
+      this.syncLibrary(authToken);
+    }
+  }
+
+  private syncLibrary(authToken: string) {
     axios
       .get("/api/library", {
         responseType: "arraybuffer",
@@ -74,6 +113,7 @@ class SyncManager {
       type: LIBRARY_METADATA_TYPE,
       trackUserChanges: msg.trackUserChanges,
       totalFileSize: msg.totalFileSize,
+      updateTimeNs: msg.updateTimeNs,
     } as LibraryMetadataMessage);
 
     for (const track of msg.tracks) {
@@ -129,6 +169,6 @@ onmessage = (m: MessageEvent) => {
   }
 
   if (IsStartSyncMessage(data)) {
-    syncManager.startSync(data.authToken);
+    syncManager.startSync(data.authToken, data.updateTimeNs);
   }
 };

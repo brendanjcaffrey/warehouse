@@ -16,6 +16,13 @@ message OperationResponse {
   string error = 2;
 }
 
+message VersionResponse {
+  oneof response {
+    int64 updateTimeNs = 1;
+    string error = 2;
+  }
+}
+
 
 message Name {
   string name = 2;
@@ -63,6 +70,7 @@ message Library {
   repeated Playlist playlists = 5;
   bool trackUserChanges = 6;
   uint64 totalFileSize = 7;
+  int64 updateTimeNs = 8;
 }
 
 message LibraryResponse {

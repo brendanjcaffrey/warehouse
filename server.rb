@@ -45,6 +45,7 @@ GROUP BY
     p.id, p.name, p.parent_id, p.is_library;
 SQL
 LIBRARY_METADATA_SQL = 'SELECT total_file_size FROM library_metadata;'
+EXPORT_FINISHED_SQL = 'SELECT finished_at FROM export_finished;'
 
 TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE file_md5=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
@@ -112,6 +113,11 @@ def convert_cols_to_ints(rows, indices)
   end
 
   rows
+end
+
+def timestamp_to_ns(time_str)
+  time = Time.strptime(time_str, "%Y-%m-%d %H:%M:%S.%N")
+  time.to_i * 1_000_000_000 + time.nsec
 end
 
 class Server < Sinatra::Base
@@ -251,6 +257,16 @@ class Server < Sinatra::Base
       proto(AuthQueryResponse.new(isAuthed: is_authed?))
     end
 
+    get '/version' do
+      username = get_validated_username
+      if !username.nil?
+        update_time_str = db.exec(EXPORT_FINISHED_SQL).getvalue(0, 0)
+        proto(VersionResponse.new(updateTimeNs: timestamp_to_ns(update_time_str)))
+      else
+        proto(VersionResponse.new(error: NOT_AUTHED_ERROR))
+      end
+    end
+
     get '/library' do
       username = get_validated_username
       if !username.nil?
@@ -298,6 +314,7 @@ class Server < Sinatra::Base
         end
 
         library.totalFileSize = db.exec(LIBRARY_METADATA_SQL).getvalue(0, 0).to_i
+        library.updateTimeNs = timestamp_to_ns(db.exec(EXPORT_FINISHED_SQL).getvalue(0, 0))
 
         proto(LibraryResponse.new(library: library))
       else

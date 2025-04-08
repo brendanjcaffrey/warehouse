@@ -37,8 +37,9 @@ export interface AuthTokenMessage extends TypedMessage {
   authToken: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface StartSyncMessage extends AuthTokenMessage {}
+export interface StartSyncMessage extends AuthTokenMessage {
+  updateTimeNs: number;
+}
 
 export interface ErrorMessage extends TypedMessage {
   error: string;
@@ -47,6 +48,7 @@ export interface ErrorMessage extends TypedMessage {
 export interface LibraryMetadataMessage extends TypedMessage {
   trackUserChanges: boolean;
   totalFileSize: number;
+  updateTimeNs: number;
 }
 
 export interface KeepModeChangedMessage extends TypedMessage {
@@ -87,7 +89,8 @@ export function IsStartSyncMessage(
   return (
     isObject(message) &&
     message.type === START_SYNC_TYPE &&
-    "authToken" in message
+    "authToken" in message &&
+    "updateTimeNs" in message
   );
 }
 

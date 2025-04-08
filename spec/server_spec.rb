@@ -89,6 +89,10 @@ describe 'iTunes Streamer' do
   end
 
   before :each do
+    Server.set :environment, :test
+    Server.set :raise_errors, true
+    Server.set :show_exceptions, false
+
     @db.exec('DELETE FROM genres')
     @db.exec('DELETE FROM artists')
     @db.exec('DELETE FROM albums')
@@ -107,6 +111,7 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM start_updates')
     @db.exec('DELETE FROM finish_updates')
     @db.exec('DELETE FROM rating_updates')
+    @db.exec('DELETE FROM export_finished')
 
     @database.clear
     file_path = "HD:#{Dir.pwd}/spec/__test.mp3"
@@ -208,6 +213,35 @@ describe 'iTunes Streamer' do
     end
   end
 
+  describe 'get /api/version' do
+    it 'should return an error if no jwt' do
+      get '/api/version'
+      expect(VersionResponse.decode(last_response.body).response).to eq(:error)
+    end
+
+    it 'should return an error if invalid jwt' do
+      get '/api/version', {}, get_invalid_auth_header
+      expect(VersionResponse.decode(last_response.body).response).to eq(:error)
+    end
+
+    it 'should return an error if expired jwt' do
+      get '/api/version', {}, get_expired_auth_header
+      expect(VersionResponse.decode(last_response.body).response).to eq(:error)
+    end
+
+    it 'should throw an exception if the export didn\'t finish' do
+      expect { get '/api/version', {}, get_auth_header }.to raise_error(ArgumentError)
+    end
+
+    it 'should return the time if the export did finish' do
+      @database.set_export_finished
+      get '/api/version', {}, get_auth_header
+      version = VersionResponse.decode(last_response.body)
+      expect(version.response).to eq(:updateTimeNs)
+      expect(version.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+  end
+
   describe 'get /api/library' do
     it 'should return an error if no jwt' do
       get '/api/library'
@@ -224,7 +258,12 @@ describe 'iTunes Streamer' do
       expect(LibraryResponse.decode(last_response.body).response).to eq(:error)
     end
 
+    it 'should return a 500 if the export did not finish' do
+      expect { get '/api/library', {}, get_auth_header }.to raise_error(ArgumentError)
+    end
+
     it 'should dump all genres, artists, albums and tracks' do
+      @database.set_export_finished
       @database.create_playlist(Export::Playlist.new('XXXXXXXXXXXXXXXX', 'library', 'Music', '', 100, ""))
       @database.create_playlist(Export::Playlist.new('0000000000000000', 'test_playlist0', 'none', '', 0, ""))
       @database.create_playlist(Export::Playlist.new('1111111111111111', 'test_playlist1', 'none', '0000000000000000', 1, "B7F8970B634DDEE3"))
@@ -298,9 +337,11 @@ describe 'iTunes Streamer' do
       expect(playlist.trackIds).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204})
 
       expect(library.totalFileSize).to eq(1001)
+      expect(library.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should include whether to track changes or not' do
+      @database.set_export_finished
       get '/api/library', {}, get_auth_header('test123')
       library = LibraryResponse.decode(last_response.body).library
       expect(library.trackUserChanges).to be true
@@ -311,6 +352,7 @@ describe 'iTunes Streamer' do
     end
 
     it 'should include album artwork' do
+      @database.set_export_finished
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
       expect(library.tracks[0].artworks).to eq([])
