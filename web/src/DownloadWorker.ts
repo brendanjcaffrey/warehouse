@@ -6,6 +6,7 @@ import {
   IsTypedMessage,
   IsSetAuthTokenMessage,
   IsKeepModeChangedMessage,
+  IsDownloadModeChangedMessage,
   IsClearedAllMessage,
   IsSetSourceRequestedFilesMessage,
   SetSourceRequestedFilesMessage,
@@ -51,7 +52,10 @@ class InFlightRequest {
 export class DownloadManager {
   private mutex = new Mutex();
   private authToken: string = "";
+  // safest to initialize to true, since we don't want to delete files at startup
   private keepMode: boolean = true;
+  // safest to initialize to false, since we don't want to download everything unnessarily
+  private downloadMode: boolean = false;
   private sources = new Map<FileRequestSource, RequestedFile[]>();
   private inflightRequests: InFlightRequest[] = [];
   private lastFailedRequest = new Map<FileType, string>();
@@ -81,6 +85,15 @@ export class DownloadManager {
     }
 
     this.keepMode = keepMode;
+    await this.update();
+  }
+
+  public async setDownloadMode(downloadMode: boolean) {
+    if (this.downloadMode === downloadMode) {
+      return;
+    }
+
+    this.downloadMode = downloadMode;
     await this.update();
   }
 
@@ -300,6 +313,10 @@ onmessage = (m: MessageEvent) => {
 
   if (IsKeepModeChangedMessage(data)) {
     downloadManager.setKeepMode(data.keepMode);
+  }
+
+  if (IsDownloadModeChangedMessage(data)) {
+    downloadManager.setDownloadMode(data.downloadMode);
   }
 
   if (IsSetSourceRequestedFilesMessage(data)) {

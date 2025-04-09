@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAtom, useSetAtom } from "jotai";
 import {
   keepModeAtom,
+  downloadModeAtom,
   shuffleAtom,
   repeatAtom,
   showArtworkAtom,
@@ -9,6 +10,7 @@ import {
   openedFoldersAtom,
   DEFAULT_VOLUME,
   SetPersistedKeepMode,
+  SetPersistedDownloadMode,
   SetPersistedShuffle,
   SetPersistedRepeat,
   SetPersistedShowArtwork,
@@ -17,10 +19,16 @@ import {
 } from "./Settings";
 import { clearSettingsFnAtom } from "./State";
 import { DownloadWorker } from "./DownloadWorkerHandle";
-import { KEEP_MODE_CHANGED_TYPE, KeepModeChangedMessage } from "./WorkerTypes";
+import {
+  KEEP_MODE_CHANGED_TYPE,
+  DOWNLOAD_MODE_CHANGED_TYPE,
+  KeepModeChangedMessage,
+  DownloadModeChangedMessage,
+} from "./WorkerTypes";
 
 function SettingsRecorder() {
   const [keepMode, setKeepMode] = useAtom(keepModeAtom);
+  const [downloadMode, setDownloadMode] = useAtom(downloadModeAtom);
   const [shuffle, setShuffle] = useAtom(shuffleAtom);
   const [repeat, setRepeat] = useAtom(repeatAtom);
   const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
@@ -35,6 +43,14 @@ function SettingsRecorder() {
       keepMode: keepMode,
     } as KeepModeChangedMessage);
   }, [keepMode]);
+
+  useEffect(() => {
+    SetPersistedDownloadMode(downloadMode);
+    DownloadWorker.postMessage({
+      type: DOWNLOAD_MODE_CHANGED_TYPE,
+      downloadMode: downloadMode,
+    } as DownloadModeChangedMessage);
+  }, [downloadMode]);
 
   useEffect(() => {
     SetPersistedShuffle(shuffle);
@@ -60,6 +76,7 @@ function SettingsRecorder() {
     setClearSettingsFn({
       fn: () => {
         setKeepMode(false);
+        setDownloadMode(false);
         setShuffle(false);
         setRepeat(false);
         setShowArtwork(false);
@@ -69,6 +86,7 @@ function SettingsRecorder() {
     });
   }, [
     setKeepMode,
+    setDownloadMode,
     setShuffle,
     setRepeat,
     setShowArtwork,

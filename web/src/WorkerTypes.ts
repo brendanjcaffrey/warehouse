@@ -5,6 +5,7 @@ export const SYNC_SUCCEEDED_TYPE = "syncSucceeded";
 export const SET_AUTH_TOKEN_TYPE = "setAuthToken";
 export const LIBRARY_METADATA_TYPE = "libraryMetadata";
 export const KEEP_MODE_CHANGED_TYPE = "keepModeChanged";
+export const DOWNLOAD_MODE_CHANGED_TYPE = "downloadModeChanged";
 export const SET_SOURCE_REQUESTED_FILES_TYPE = "setSourceRequestedFiles";
 export const FILE_FETCHED_TYPE = "fileFetched";
 export const FILE_DOWNLOAD_STATUS_TYPE = "fileDownloadStatus";
@@ -53,6 +54,10 @@ export interface LibraryMetadataMessage extends TypedMessage {
 
 export interface KeepModeChangedMessage extends TypedMessage {
   keepMode: boolean;
+}
+
+export interface DownloadModeChangedMessage extends TypedMessage {
+  downloadMode: boolean;
 }
 
 export interface TrackFileIds {
@@ -126,6 +131,16 @@ export function IsKeepModeChangedMessage(
     isObject(message) &&
     message.type === KEEP_MODE_CHANGED_TYPE &&
     "keepMode" in message
+  );
+}
+
+export function IsDownloadModeChangedMessage(
+  message: TypedMessage
+): message is DownloadModeChangedMessage {
+  return (
+    isObject(message) &&
+    message.type === DOWNLOAD_MODE_CHANGED_TYPE &&
+    "downloadMode" in message
   );
 }
 

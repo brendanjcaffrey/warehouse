@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
-import type { InlineConfig } from 'vitest';
-import type { UserConfig } from 'vite';
+import type { InlineConfig } from "vitest";
+import type { UserConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 
 // https://vite.dev/config/

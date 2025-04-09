@@ -1,6 +1,7 @@
 import { atom } from "jotai";
 
 const KEEP_MODE_KEY = "keepMode";
+const DOWNLOAD_MODE_KEY = "downloadMode";
 const SHUFFLE_KEY = "shuffle";
 const REPEAT_KEY = "repeat";
 const SHOW_ARTWORK_KEY = "showArtwork";
@@ -20,6 +21,19 @@ function GetPersistedKeepMode(): boolean {
 
 export function SetPersistedKeepMode(value: boolean) {
   localStorage.setItem(KEEP_MODE_KEY, value.toString());
+}
+
+function GetPersistedDownloadMode(): boolean {
+  const value = localStorage.getItem(DOWNLOAD_MODE_KEY);
+  if (value === null) {
+    return false;
+  } else {
+    return value === "true";
+  }
+}
+
+export function SetPersistedDownloadMode(value: boolean) {
+  localStorage.setItem(DOWNLOAD_MODE_KEY, value.toString());
 }
 
 function GetPersistedShuffle(): boolean {
@@ -67,6 +81,7 @@ export function SetPersistedOpenedFolders(value: Set<string>) {
 }
 
 export const keepModeAtom = atom(GetPersistedKeepMode());
+export const downloadModeAtom = atom(GetPersistedDownloadMode());
 export const shuffleAtom = atom(GetPersistedShuffle());
 export const repeatAtom = atom(GetPersistedRepeat());
 export const showArtworkAtom = atom(GetPersistedShowArtwork());

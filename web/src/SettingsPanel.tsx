@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import { HelpOutlineRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";
-import { showArtworkAtom, keepModeAtom } from "./Settings";
+import { showArtworkAtom, keepModeAtom, downloadModeAtom } from "./Settings";
 import { defaultGrey } from "./Colors";
 import { formatBytes } from "./Util";
 import library from "./Library";
@@ -35,6 +35,7 @@ function SettingsPanel({
   const [haveEnoughStorageForKeepMode, setHaveEnoughStorageForKeepMode] =
     useState(false);
   const [keepMode, setKeepMode] = useAtom(keepModeAtom);
+  const [downloadMode, setDownloadMode] = useAtom(downloadModeAtom);
 
   const [persistStorageHelpAnchorEl, setPersistStorageHelpAnchorEl] =
     useState<HTMLButtonElement | null>(null);
@@ -43,6 +44,10 @@ function SettingsPanel({
   const [keepModeHelpAnchorEl, setKeepModeHelpAnchorEl] =
     useState<HTMLButtonElement | null>(null);
   const keepModeHelpOpen = Boolean(keepModeHelpAnchorEl);
+
+  const [downloadModeHelpAnchorEl, setDownloadModeHelpAnchorEl] =
+    useState<HTMLButtonElement | null>(null);
+  const downloadModeHelpOpen = Boolean(downloadModeHelpAnchorEl);
 
   const handleShowArtworkChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -70,7 +75,16 @@ function SettingsPanel({
     if (!event.target.checked && !window.confirm(CONFIRM_MSG)) {
       return;
     }
+    if (!event.target.checked && downloadMode) {
+      setDownloadMode(false);
+    }
     setKeepMode(event.target.checked);
+  };
+
+  const handleDownloadModeChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setDownloadMode(event.target.checked);
   };
 
   const openPersistStorageHelp = (
@@ -89,6 +103,14 @@ function SettingsPanel({
 
   const closeKeepModeHelp = () => {
     setKeepModeHelpAnchorEl(null);
+  };
+
+  const openDownloadModeHelp = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setDownloadModeHelpAnchorEl(event.currentTarget);
+  };
+
+  const closeDownloadModeHelp = () => {
+    setDownloadModeHelpAnchorEl(null);
   };
 
   const [usage, setUsage] = useState(0);
@@ -188,6 +210,25 @@ function SettingsPanel({
               <HelpOutlineRounded />
             </IconButton>
           </Grid>
+          <Grid size={10}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={downloadMode}
+                  onChange={handleDownloadModeChange}
+                  disabled={
+                    !persisted || !haveEnoughStorageForKeepMode || !keepMode
+                  }
+                />
+              }
+              label="Download Mode"
+            />
+          </Grid>
+          <Grid size={2}>
+            <IconButton onClick={openDownloadModeHelp}>
+              <HelpOutlineRounded />
+            </IconButton>
+          </Grid>
           <Grid size={12}>
             <Tooltip title={`${formatBytes(usage)} / ${formatBytes(quota)}`}>
               <p>Storage Used: {percentageUsed}%</p>
@@ -228,6 +269,21 @@ function SettingsPanel({
             cache. This can be useful for offline listening, but may consume a
             lot of storage space. It is only available when storage is persisted
             and enough space is available for the entire library plus overhead.
+          </div>
+        </Popover>
+        <Popover
+          open={downloadModeHelpOpen}
+          anchorEl={downloadModeHelpAnchorEl}
+          onClose={closeDownloadModeHelp}
+          anchorOrigin={{
+            vertical: "bottom",
+            horizontal: "left",
+          }}
+        >
+          <div style={{ padding: "10px", maxWidth: "300px" }}>
+            Download mode will aggressively download all music and artwork files
+            at page load so you can listen to your entire music library without
+            having an internet connection.
           </div>
         </Popover>
       </Box>
