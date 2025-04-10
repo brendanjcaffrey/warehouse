@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
 import DelayedElement from "./DelayedElement";
 import CenteredHalfAlert from "./CenteredHalfAlert";
 import { AuthQueryResponse } from "./generated/messages";
@@ -32,7 +32,15 @@ function AuthVerifier({
       }
     } catch (error) {
       console.error(error);
-      setError("An error occurred while trying to verify authentication.");
+      console.log("window.navigator.onLine", window.navigator.onLine);
+      if (
+        isAxiosError(error) &&
+        (!window.navigator.onLine || error.code === "ERR_NETWORK")
+      ) {
+        setAuthVerified(true);
+      } else {
+        setError("An error occurred while trying to verify authentication.");
+      }
     }
   }, [authToken, setAuthToken, setAuthVerified]);
 

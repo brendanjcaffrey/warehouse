@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
 import {
   IsStartSyncMessage,
   IsTypedMessage,
@@ -21,7 +21,7 @@ import {
 class SyncManager {
   private syncInProgress: boolean = false;
 
-  public startSync(authToken: string, updateTimeNs: number) {
+  public startSync(authToken: string, updateTimeNs: number, browserOnline: boolean) {
     // this happens because react runs all effects twice in development mode
     if (this.syncInProgress) {
       return;
@@ -50,10 +50,17 @@ class SyncManager {
         })
         .catch((error) => {
           console.error(error);
-          postMessage({
-            type: ERROR_TYPE,
-            error: error.message,
-          } as ErrorMessage);
+          if (
+            isAxiosError(error) &&
+            (!browserOnline || error.code === "ERR_NETWORK")
+          ) {
+            postMessage({ type: SYNC_SUCCEEDED_TYPE } as TypedMessage);
+          } else {
+            postMessage({
+              type: ERROR_TYPE,
+              error: error.message,
+            } as ErrorMessage);
+          }
           this.syncInProgress = false;
         });
     } else {
@@ -169,6 +176,6 @@ onmessage = (m: MessageEvent) => {
   }
 
   if (IsStartSyncMessage(data)) {
-    syncManager.startSync(data.authToken, data.updateTimeNs);
+    syncManager.startSync(data.authToken, data.updateTimeNs, data.browserOnline);
   }
 };

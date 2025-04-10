@@ -72,6 +72,7 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
       type: START_SYNC_TYPE,
       authToken: localStorage.getItem(AUTH_TOKEN_KEY),
       updateTimeNs: library().getUpdateTimeNs(),
+      browserOnline: navigator.onLine,
     } as StartSyncMessage);
 
     return () => {

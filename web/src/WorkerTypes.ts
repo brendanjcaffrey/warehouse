@@ -42,6 +42,7 @@ export interface AuthTokenMessage extends TypedMessage {
 
 export interface StartSyncMessage extends AuthTokenMessage {
   updateTimeNs: number;
+  browserOnline: boolean;
 }
 
 export interface ErrorMessage extends TypedMessage {
@@ -97,7 +98,8 @@ export function IsStartSyncMessage(
     isObject(message) &&
     message.type === START_SYNC_TYPE &&
     "authToken" in message &&
-    "updateTimeNs" in message
+    "updateTimeNs" in message &&
+    "browserOnline" in message
   );
 }
 
