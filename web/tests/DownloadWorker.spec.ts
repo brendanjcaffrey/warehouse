@@ -32,8 +32,11 @@ vi.mock("../src/Files", () => {
 
 vi.mock("../src/Library", () => {
   const MockLibrary = vi.fn();
+  MockLibrary.prototype.setInitializedListener = vi.fn();
   MockLibrary.prototype.getMusicIds = vi.fn();
+  MockLibrary.prototype.getTrackMusicIds = vi.fn();
   MockLibrary.prototype.getArtworkIds = vi.fn();
+  MockLibrary.prototype.getTrackArtworkIds = vi.fn();
 
   const mockLibrary = new MockLibrary();
   return {
@@ -52,6 +55,8 @@ const FILE_456: TrackFileIds = { trackId: "t2", fileId: "456" };
 const FILE_789: TrackFileIds = { trackId: "t3", fileId: "789" };
 const FILE_ABC: TrackFileIds = { trackId: "t4", fileId: "abc" };
 const FILE_DEF: TrackFileIds = { trackId: "t5", fileId: "def" };
+const FILE_GHI: TrackFileIds = { trackId: "t6", fileId: "ghi" };
+const FILE_JKL: TrackFileIds = { trackId: "t7", fileId: "jkl" };
 
 function mockAxiosGetResolveAfterDelay<T>(data: T, delayMs: number) {
   (axios.get as Mock).mockImplementationOnce(() => {
@@ -77,9 +82,17 @@ describe("DownloadManager", () => {
   let downloadManager: DownloadManager;
   let tracksExist: Map<string, boolean>;
   let artworksExist: Map<string, boolean>;
+  let setInitializedListenerCallback: () => Promise<void>;
 
   beforeEach(() => {
     downloadManager = new DownloadManager();
+
+    // i feel like there should always only be one call here, but that's not true?
+    const numCalls = (library().setInitializedListener as Mock).mock.calls
+      .length;
+    setInitializedListenerCallback = (library().setInitializedListener as Mock)
+      .mock.calls[numCalls - 1][0];
+
     tracksExist = new Map<string, boolean>();
     artworksExist = new Map<string, boolean>();
     vi.clearAllMocks();
@@ -207,11 +220,15 @@ describe("DownloadManager", () => {
   function expectFileDoneAndFileInProgressPostMessageCalls(
     fileType: FileType,
     doneIds: TrackFileIds,
-    inProgressIds: TrackFileIds
+    inProgressIds: TrackFileIds,
+    inProgressFileType: FileType | undefined = undefined
   ) {
     expect(postMessage).toHaveBeenCalledTimes(3);
     _expectFileDonePostMessageCalls(fileType, doneIds);
-    _expectFileInProgressPostMessageCalls(fileType, inProgressIds);
+    _expectFileInProgressPostMessageCalls(
+      inProgressFileType || fileType,
+      inProgressIds
+    );
     (postMessage as Mock).mockClear();
   }
 
@@ -609,7 +626,6 @@ describe("DownloadManager", () => {
     await vi.advanceTimersToNextTimerAsync();
     expect(files().tryWriteFile).toHaveBeenCalledTimes(0);
     expect(axios.get).toHaveBeenCalledTimes(0);
-    console.log((postMessage as Mock).mock.calls);
     expectOnlyFileErrorPostMessageCalls(FileType.MUSIC, FILE_123);
 
     // 456 request failed, don't retry right away
@@ -756,5 +772,177 @@ describe("DownloadManager", () => {
     });
     expectOneTryDeleteFileCall(FileType.ARTWORK, "abc");
     await vi.advanceTimersToNextTimerAsync();
+  });
+
+  it("should download all files one by one when download mode is turned on", async () => {
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 100);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 200);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 300);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 400);
+
+    downloadManager.setAuthToken("test-token");
+    mockFilesExistsAndWriteMethods();
+    await downloadManager.setKeepMode(true);
+    await downloadManager.setDownloadMode(true);
+
+    (library().getTrackMusicIds as Mock).mockReturnValue([
+      FILE_123,
+      FILE_456,
+      FILE_789,
+    ]);
+    (library().getTrackArtworkIds as Mock).mockReturnValue([
+      FILE_ABC,
+      FILE_DEF,
+      FILE_GHI,
+      FILE_JKL,
+    ]);
+
+    tracksExist.set("456", true);
+    artworksExist.set("abc", true);
+    artworksExist.set("jkl", true);
+
+    await setInitializedListenerCallback();
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
+    expectOneAxiosGetCall("/tracks/123");
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "123");
+    expectOneAxiosGetCall("/tracks/789");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      FILE_789
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "789");
+    expectOneAxiosGetCall("/artwork/def");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_789,
+      FILE_DEF,
+      FileType.ARTWORK
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.ARTWORK, "def");
+    expectOneAxiosGetCall("/artwork/ghi");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.ARTWORK,
+      FILE_DEF,
+      FILE_GHI
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.ARTWORK, "ghi");
+    expectOnlyFileDonePostMessageCalls(FileType.ARTWORK, FILE_GHI);
+  });
+
+  it("should only download files in download mode when there are no other pre-load requests pending", async () => {
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 100);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 200);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 300);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 400);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 500);
+
+    // first, download the abc file in download mode
+    downloadManager.setAuthToken("test-token");
+    mockFilesExistsAndWriteMethods();
+    await downloadManager.setKeepMode(true);
+    await downloadManager.setDownloadMode(true);
+    (library().getTrackMusicIds as Mock).mockReturnValue([
+      FILE_ABC,
+      FILE_123,
+      FILE_456,
+      FILE_789,
+      FILE_DEF,
+    ]);
+    (library().getTrackArtworkIds as Mock).mockReturnValue([]);
+    await setInitializedListenerCallback();
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_ABC);
+    expectOneAxiosGetCall("/tracks/abc");
+
+    // then we set a non-download mode source, all those files should get downloaded next
+    await downloadManager.setSourceRequestedFiles({
+      type: "",
+      source: FileRequestSource.MUSIC_PRELOAD,
+      fileType: FileType.MUSIC,
+      ids: [FILE_123, FILE_456, FILE_789],
+    });
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
+    expectOneAxiosGetCall("/tracks/123");
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "abc");
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_ABC);
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "123");
+    expectOneAxiosGetCall("/tracks/456");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      FILE_456
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOneAxiosGetCall("/tracks/789");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_456,
+      FILE_789
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "789");
+    expectOneAxiosGetCall("/tracks/def");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_789,
+      FILE_DEF
+    );
+
+    // finish download mode
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "def");
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_DEF);
+  });
+
+  it("should allow any download requests to finish but not start any more when download mode is turned off", async () => {
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 100);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 200);
+
+    downloadManager.setAuthToken("test-token");
+    mockFilesExistsAndWriteMethods();
+    await downloadManager.setKeepMode(true);
+    await downloadManager.setDownloadMode(true);
+
+    (library().getTrackMusicIds as Mock).mockReturnValue([
+      FILE_123,
+      FILE_456,
+      FILE_789,
+      FILE_ABC,
+    ]);
+    (library().getTrackArtworkIds as Mock).mockReturnValue([]);
+
+    await setInitializedListenerCallback();
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
+    expectOneAxiosGetCall("/tracks/123");
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "123");
+    expectOneAxiosGetCall("/tracks/456");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_123,
+      FILE_456
+    );
+
+    await downloadManager.setDownloadMode(false);
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
   });
 });

@@ -21,6 +21,8 @@ export enum FileRequestSource {
   MUSIC_DOWNLOAD,
   MUSIC_PRELOAD,
   ARTWORK_PRELOAD,
+  DOWNLOAD_MODE_MUSIC,
+  DOWNLOAD_MODE_ARTWORK,
 }
 
 export enum DownloadStatus {

@@ -51,6 +51,7 @@ class InFlightRequest {
 
 export class DownloadManager {
   private mutex = new Mutex();
+  private libraryInitialized: boolean = false;
   private authToken: string = "";
   // safest to initialize to true, since we don't want to delete files at startup
   private keepMode: boolean = true;
@@ -59,9 +60,17 @@ export class DownloadManager {
   private sources = new Map<FileRequestSource, RequestedFile[]>();
   private inflightRequests: InFlightRequest[] = [];
   private lastFailedRequest = new Map<FileType, string>();
+  private missingMusicFiles = new Array<TrackFileIds>();
+  private missingArtworkFiles = new Array<TrackFileIds>();
 
   public constructor() {
     // NB: purposefully don't initialize the Files instance here, could be race condition-y?
+    library().setInitializedListener(async () => {
+      this.libraryInitialized = true;
+      if (this.downloadMode) {
+        await this.gatherMissingFiles();
+      }
+    });
   }
 
   public async syncSucceeded() {
@@ -94,6 +103,15 @@ export class DownloadManager {
     }
 
     this.downloadMode = downloadMode;
+    if (!this.downloadMode) {
+      this.missingMusicFiles = [];
+      this.sources.set(FileRequestSource.DOWNLOAD_MODE_MUSIC, []);
+
+      this.missingArtworkFiles = [];
+      this.sources.set(FileRequestSource.DOWNLOAD_MODE_ARTWORK, []);
+    } else if (this.libraryInitialized) {
+      await this.gatherMissingFiles();
+    }
     await this.update();
   }
 
@@ -124,11 +142,22 @@ export class DownloadManager {
     if (!this.keepMode) {
       this.cancelUnneededRequests();
     }
-    await this.startNewRequests();
+    const startedRequest = await this.startNewRequests();
     await this.deleteUnneededFiles();
+
+    if (
+      !startedRequest &&
+      this.libraryInitialized &&
+      this.downloadMode &&
+      this.inflightRequests.length === 0
+    ) {
+      await this.setDownloadModeRequestedFiles();
+      await this.startNewRequests();
+    }
   }
 
-  private async startNewRequests() {
+  private async startNewRequests(): Promise<boolean> {
+    let startedAny = false;
     for (const requestedFiles of this.sources.values()) {
       for (const file of requestedFiles) {
         if (await files().fileExists(file.type, file.ids.fileId)) {
@@ -137,10 +166,41 @@ export class DownloadManager {
         if (this.hasMatchingInFlightRequest(file)) {
           break;
         }
-        this.fetchFile(file);
+        /* not awaiting */ this.fetchFile(file);
+        startedAny = true;
         break;
       }
     }
+    return startedAny;
+  }
+
+  private async setDownloadModeRequestedFiles() {
+    const musicRequestedFiles: RequestedFile[] = [];
+    if (this.missingMusicFiles.length > 0) {
+      musicRequestedFiles.push({
+        type: FileType.MUSIC,
+        ids: this.missingMusicFiles[0],
+      });
+    }
+    this.sources.set(
+      FileRequestSource.DOWNLOAD_MODE_MUSIC,
+      musicRequestedFiles
+    );
+
+    const artworkRequestedFiles: RequestedFile[] = [];
+    if (
+      this.missingMusicFiles.length === 0 &&
+      this.missingArtworkFiles.length > 0
+    ) {
+      artworkRequestedFiles.push({
+        type: FileType.ARTWORK,
+        ids: this.missingArtworkFiles[0],
+      });
+    }
+    this.sources.set(
+      FileRequestSource.DOWNLOAD_MODE_ARTWORK,
+      artworkRequestedFiles
+    );
   }
 
   private hasMatchingInFlightRequest(request: RequestedFile) {
@@ -228,6 +288,15 @@ export class DownloadManager {
           data.byteLength,
           data.byteLength
         );
+        if (request.type === FileType.MUSIC) {
+          this.missingMusicFiles = this.missingMusicFiles.filter(
+            (tfi) => tfi.fileId !== request.ids.fileId
+          );
+        } else {
+          this.missingArtworkFiles = this.missingArtworkFiles.filter(
+            (tfi) => tfi.fileId !== request.ids.fileId
+          );
+        }
       }
     } catch (error) {
       if (!inflightRequest.canceled) {
@@ -292,6 +361,29 @@ export class DownloadManager {
 
   public async clearedAll() {
     files().reset();
+  }
+
+  private async gatherMissingFiles() {
+    this.missingMusicFiles = [];
+    this.missingArtworkFiles = [];
+
+    const trackMusicIds = await library().getTrackMusicIds();
+    for (const trackMusicId of trackMusicIds!.values()) {
+      if (!(await files().fileExists(FileType.MUSIC, trackMusicId.fileId))) {
+        this.missingMusicFiles.push(trackMusicId);
+      }
+    }
+
+    const trackArtworkIds = await library().getTrackArtworkIds();
+    for (const trackArtworkId of trackArtworkIds!.values()) {
+      if (
+        !(await files().fileExists(FileType.ARTWORK, trackArtworkId.fileId))
+      ) {
+        this.missingArtworkFiles.push(trackArtworkId);
+      }
+    }
+
+    await this.update();
   }
 }
 

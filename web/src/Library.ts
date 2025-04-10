@@ -1,6 +1,6 @@
 import { memoize } from "lodash";
 import { openDB, DBSchema, IDBPDatabase } from "idb";
-import { LibraryMetadataMessage } from "./WorkerTypes";
+import { LibraryMetadataMessage, TrackFileIds } from "./WorkerTypes";
 
 const DATABASE_NAME = "library";
 const DATABASE_VERSION = 1;
@@ -244,7 +244,7 @@ class Library {
       return;
     }
     if (!this.db) {
-      this.setError("getting track ids", "database is not initialized");
+      this.setError("getting music ids", "database is not initialized");
       return;
     }
 
@@ -252,6 +252,23 @@ class Library {
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
     return new Set(tracks.flatMap((t) => t.fileMd5));
+  }
+
+  public async getTrackMusicIds(): Promise<Array<TrackFileIds> | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting track music ids", "database is not initialized");
+      return;
+    }
+
+    const tx = this.db.transaction("tracks", "readonly");
+    const store = tx.objectStore("tracks");
+    const tracks = await store.getAll();
+    return tracks.flatMap((t) => {
+      return { trackId: t.id, fileId: t.fileMd5 };
+    });
   }
 
   public async getArtworkIds(): Promise<Set<string> | undefined> {
@@ -269,6 +286,37 @@ class Library {
     return new Set(
       tracks.filter((t) => t.artworks.length > 0).flatMap((t) => t.artworks)
     );
+  }
+
+  public async getTrackArtworkIds(): Promise<Array<TrackFileIds> | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting track music ids", "database is not initialized");
+      return;
+    }
+
+    const seen = new Set<string>();
+    const trackArtworkIds: Array<TrackFileIds> = [];
+    const tx = this.db.transaction("tracks", "readonly");
+    const store = tx.objectStore("tracks");
+    const tracks = await store.getAll();
+    for (const track of tracks) {
+      if (track.artworks.length === 0) {
+        continue;
+      }
+
+      if (!seen.has(track.artworks[0])) {
+        trackArtworkIds.push({
+          trackId: track.id,
+          fileId: track.artworks[0],
+        });
+        seen.add(track.artworks[0]);
+      }
+    }
+
+    return trackArtworkIds;
   }
 
   public async getTrack(trackId: string): Promise<Track | undefined> {
