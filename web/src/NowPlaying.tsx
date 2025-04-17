@@ -68,7 +68,7 @@ function NowPlaying() {
           }}
         >
           <DurationText sx={{paddingRight: '4px'}}>{formatSeconds(currentTime)}</DurationText>
-          <Box sx={{ display: "flex", alignItems: "center", maxWidth: "85%" }}>
+          <Box sx={{ display: "flex", alignItems: "center", maxWidth: "70%" }}>
             <Box sx={{ textAlign: "center", maxWidth: "100%" }}>
               <Typography
                 noWrap
