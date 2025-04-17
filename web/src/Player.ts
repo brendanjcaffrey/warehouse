@@ -1,4 +1,4 @@
-import { memoize, isEqual } from "lodash";
+import { memoize, isEqual, shuffle } from "lodash";
 import { volumeAtom, shuffleAtom, repeatAtom } from "./Settings";
 import {
   store,
@@ -200,7 +200,7 @@ class Player {
   ) {
     this.playingTrackIds = [...this.sortedPlayingTrackIds];
     if (store.get(shuffleAtom)) {
-      this.playingTrackIds.sort(() => Math.random() - 0.5);
+      this.playingTrackIds = shuffle(this.playingTrackIds);
     }
 
     if (overwritePlayingTrackId) {
