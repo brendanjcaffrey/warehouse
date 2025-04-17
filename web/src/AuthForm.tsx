@@ -10,7 +10,7 @@ import {
 } from "@mui/material";
 import axios from "axios";
 import DelayedElement from "./DelayedElement";
-import { AuthAttemptResponse } from "./generated/messages";
+import { AuthResponse } from "./generated/messages";
 
 interface AuthFormProps {
   setAuthToken: (authToken: string) => void;
@@ -34,7 +34,7 @@ function AuthForm({ setAuthToken }: AuthFormProps) {
         responseType: "arraybuffer",
       });
 
-      const msg = AuthAttemptResponse.deserialize(data);
+      const msg = AuthResponse.deserialize(data);
       if (msg.response === "token") {
         setAuthToken(msg.token);
       } else {

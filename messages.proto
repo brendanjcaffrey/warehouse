@@ -1,14 +1,10 @@
 syntax = "proto3";
 
-message AuthAttemptResponse {
+message AuthResponse {
   oneof response {
     string token = 1;
     string error = 2;
   }
-}
-
-message AuthQueryResponse {
-  bool isAuthed = 1;
 }
 
 message OperationResponse {

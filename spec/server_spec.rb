@@ -171,7 +171,7 @@ describe 'iTunes Streamer' do
   describe 'post /api/auth' do
     it 'return a token' do
       post '/api/auth', { username: 'test123', password: 'test123' }
-      response = AuthAttemptResponse.decode(last_response.body)
+      response = AuthResponse.decode(last_response.body)
       expect(response.response).to eq(:token)
       payload, header = JWT.decode(response.token, Config['secret'], true, { algorithm: JWT_ALGO} )
       expect(header['exp']).to be > Time.now.to_i
@@ -180,36 +180,43 @@ describe 'iTunes Streamer' do
 
     it 'should reject an invalid username' do
       post '/api/auth', { username: 'invalid', password: 'test123' }
-      response = AuthAttemptResponse.decode(last_response.body)
+      response = AuthResponse.decode(last_response.body)
       expect(response.response).to eq(:error)
     end
 
     it 'should reject an invalid password' do
       post '/api/auth', { username: 'test', password: 'invalid' }
-      response = AuthAttemptResponse.decode(last_response.body)
+      response = AuthResponse.decode(last_response.body)
       expect(response.response).to eq(:error)
     end
   end
 
-  describe 'get /api/auth' do
-    it 'should return true if valid jwt' do
-      get '/api/auth', {}, get_auth_header
-      expect(AuthQueryResponse.decode(last_response.body).isAuthed).to be true
+  describe 'put /api/auth' do
+    it 'should return a new token if valid jwt' do
+      auth_header = get_auth_header
+      put '/api/auth', {}, auth_header
+      response = AuthResponse.decode(last_response.body)
+      expect(response.response).to eq(:token)
+      expect(response.token).not_to eq(auth_header['HTTP_AUTHORIZATION'])
+
+      payload, header = JWT.decode(response.token, Config['secret'], true, { algorithm: JWT_ALGO} )
+      expect(header['exp']).to be > Time.now.to_i
+      expect(payload['username']).to eq('test123')
     end
 
-    it 'should return false if no auth header' do
-      get '/api/auth'
-      expect(AuthQueryResponse.decode(last_response.body).isAuthed).to be false
+    it 'should return an error if no auth header' do
+      put '/api/auth'
+      expect(AuthResponse.decode(last_response.body).response).to eq(:error)
     end
 
     it 'should return false if expired jwt' do
-      get '/api/auth', {}, get_expired_auth_header
-      expect(AuthQueryResponse.decode(last_response.body).isAuthed).to be false
+      put '/api/auth', {}, get_expired_auth_header
+      expect(AuthResponse.decode(last_response.body).response).to eq(:error)
     end
 
     it 'should return false if invalid jwt' do
-      get '/api/auth', {}, get_invalid_auth_header
-      expect(AuthQueryResponse.decode(last_response.body).isAuthed).to be false
+      put '/api/auth', {}, get_invalid_auth_header
+      expect(AuthResponse.decode(last_response.body).response).to eq(:error)
     end
   end
 

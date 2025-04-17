@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import axios, { isAxiosError } from "axios";
 import DelayedElement from "./DelayedElement";
 import CenteredHalfAlert from "./CenteredHalfAlert";
-import { AuthQueryResponse } from "./generated/messages";
+import { AuthResponse } from "./generated/messages";
 
 interface AuthVerifierProps {
   authToken: string;
@@ -19,20 +19,20 @@ function AuthVerifier({
 
   const checkAuth = useCallback(async () => {
     try {
-      const { data } = await axios.get("/api/auth", {
+      const { data } = await axios.put("/api/auth", undefined, {
         responseType: "arraybuffer",
         headers: { Authorization: `Bearer ${authToken}` },
       });
 
-      const msg = AuthQueryResponse.deserialize(data);
-      if (msg.isAuthed) {
+      const msg = AuthResponse.deserialize(data);
+      if (msg.response === "token") {
         setAuthVerified(true);
+        setAuthToken(msg.token);
       } else {
         setAuthToken("");
       }
     } catch (error) {
       console.error(error);
-      console.log("window.navigator.onLine", window.navigator.onLine);
       if (
         isAxiosError(error) &&
         (!window.navigator.onLine || error.code === "ERR_NETWORK")

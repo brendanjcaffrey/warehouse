@@ -247,14 +247,21 @@ class Server < Sinatra::Base
       content_type 'application/octet-stream'
       if valid_username_and_password?(params[:username], params[:password])
         token = build_jwt(params[:username], Config['secret'])
-        proto(AuthAttemptResponse.new(token: token))
+        proto(AuthResponse.new(token: token))
       else
-        proto(AuthAttemptResponse.new(error: INVALID_USERNAME_OR_PASSWORD_ERROR))
+        proto(AuthResponse.new(error: INVALID_USERNAME_OR_PASSWORD_ERROR))
       end
     end
 
-    get '/auth' do
-      proto(AuthQueryResponse.new(isAuthed: is_authed?))
+    put '/auth' do
+      content_type 'application/octet-stream'
+      username = get_validated_username
+      if !username.nil?
+        token = build_jwt(username, Config['secret'])
+        proto(AuthResponse.new(token: token))
+      else
+        proto(AuthResponse.new(error: NOT_AUTHED_ERROR))
+      end
     end
 
     get '/version' do
