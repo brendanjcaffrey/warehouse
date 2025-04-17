@@ -67,7 +67,7 @@ function NowPlaying() {
             marginTop: "4px",
           }}
         >
-          <DurationText>{formatSeconds(currentTime)}</DurationText>
+          <DurationText sx={{paddingRight: '4px'}}>{formatSeconds(currentTime)}</DurationText>
           <Box sx={{ display: "flex", alignItems: "center", maxWidth: "85%" }}>
             <Box sx={{ textAlign: "center", maxWidth: "100%" }}>
               <Typography
@@ -104,7 +104,7 @@ function NowPlaying() {
               </Typography>
             </Box>
           </Box>
-          <DurationText>-{formatSeconds(remaining)}</DurationText>
+          <DurationText sx={{paddingLeft: '4px'}}>-{formatSeconds(remaining)}</DurationText>
         </Box>
         <Slider
           size="small"
