@@ -434,6 +434,7 @@ class Player {
       );
     }
     store.set(playingTrackAtom, this.playingTrack);
+    store.set(currentTimeAtom, this.playingTrack!.start);
     this.trySetMediaMetadata();
     this.trySetPlayingMusicFile();
     await this.preloadTracks();
