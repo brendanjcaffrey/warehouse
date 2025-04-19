@@ -90,7 +90,7 @@ function Artwork() {
           height: ARTWORK_SIZE,
           marginTop: SPACING,
           paddingRight: SPACING,
-          cursor: "pointer",
+          cursor: artworkFileURL ? "pointer" : "auto",
         }}
       >
         {artworkFileURL ? (

@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import { useTheme, useMediaQuery, styled } from "@mui/material";
+import {
+  useTheme,
+  useMediaQuery,
+  styled,
+  CircularProgress,
+} from "@mui/material";
 import { Box, Stack, Typography, Slider } from "@mui/material";
 import { KeyboardReturnRounded } from "@mui/icons-material";
 import Artwork from "./Artwork";
+import DelayedElement from "./DelayedElement";
 import { lighterGrey, titleGrey, defaultGrey } from "./Colors";
 import { player } from "./Player";
 import {
@@ -11,6 +17,7 @@ import {
   playingTrackAtom,
   currentTimeAtom,
   selectedPlaylistIdAtom,
+  waitingForMusicDownloadAtom,
 } from "./State";
 
 const DurationText = styled(Typography)({
@@ -30,6 +37,7 @@ function NowPlaying() {
   const showTrackFn = useAtomValue(showTrackFnAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
+  const waitingForMusicDownload = useAtomValue(waitingForMusicDownloadAtom);
   const remaining = playingTrack ? playingTrack.finish - currentTime : 0;
 
   function formatSeconds(value: number) {
@@ -89,6 +97,13 @@ function NowPlaying() {
                   lineHeight: "20px",
                 }}
               >
+                {waitingForMusicDownload && (
+                  <DelayedElement>
+                    <span style={{ paddingRight: "4px" }}>
+                      <CircularProgress size={10} />
+                    </span>
+                  </DelayedElement>
+                )}
                 {playingTrack?.name || ""}
                 <span onMouseDown={returnButtonDown} onMouseUp={returnButtonUp}>
                   <KeyboardReturnRounded

@@ -13,6 +13,7 @@ export const searchAtom = atom("");
 
 export const stoppedAtom = atom(true);
 export const playingAtom = atom(false);
+export const waitingForMusicDownloadAtom = atom(false);
 export const playingTrackAtom = atom<Track | undefined>(undefined);
 export const currentTimeAtom = atom(0);
 

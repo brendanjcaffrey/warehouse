@@ -8,6 +8,7 @@ import {
   currentTimeAtom,
   playingTrackAtom,
   playingAtom,
+  waitingForMusicDownloadAtom,
   resetAllState,
 } from "./State";
 import library, { Track } from "./Library";
@@ -379,6 +380,7 @@ class Player {
       this.playingTrack.fileMd5
     ); // TODO release?
     if (url) {
+      store.set(waitingForMusicDownloadAtom, false);
       this.audioRef.src = url;
       this.audioRef.currentTime = this.playingTrack.start;
       this.lastSetAudioSrcTrackId = this.playingTrack.id;
@@ -386,6 +388,7 @@ class Player {
         this.audioPlay();
       }
     } else {
+      store.set(waitingForMusicDownloadAtom, true);
       this.audioRef.pause();
     }
   }
