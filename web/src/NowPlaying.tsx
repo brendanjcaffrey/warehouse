@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import { styled } from "@mui/material";
+import { useTheme, useMediaQuery, styled } from "@mui/material";
 import { Box, Stack, Typography, Slider } from "@mui/material";
 import { KeyboardReturnRounded } from "@mui/icons-material";
 import Artwork from "./Artwork";
@@ -20,6 +20,9 @@ const DurationText = styled(Typography)({
 });
 
 function NowPlaying() {
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
+
   const [returnDown, setReturnDown] = useState(false);
   const [selectedPlaylistId, setSelectedPlaylistId] = useAtom(
     selectedPlaylistIdAtom
@@ -67,8 +70,16 @@ function NowPlaying() {
             marginTop: "4px",
           }}
         >
-          <DurationText sx={{paddingRight: '4px'}}>{formatSeconds(currentTime)}</DurationText>
-          <Box sx={{ display: "flex", alignItems: "center", maxWidth: "70%" }}>
+          <DurationText sx={{ paddingRight: "4px" }}>
+            {formatSeconds(currentTime)}
+          </DurationText>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              maxWidth: isSmallScreen ? "70%" : "85%",
+            }}
+          >
             <Box sx={{ textAlign: "center", maxWidth: "100%" }}>
               <Typography
                 noWrap
@@ -104,7 +115,9 @@ function NowPlaying() {
               </Typography>
             </Box>
           </Box>
-          <DurationText sx={{paddingLeft: '4px'}}>-{formatSeconds(remaining)}</DurationText>
+          <DurationText sx={{ paddingLeft: "4px" }}>
+            -{formatSeconds(remaining)}
+          </DurationText>
         </Box>
         <Slider
           size="small"
