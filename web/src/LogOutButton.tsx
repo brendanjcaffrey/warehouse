@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { Box, Button } from "@mui/material";
+import { Button, ButtonOwnProps } from "@mui/material";
 import { Logout } from "@mui/icons-material";
 import { clearAuthFnAtom, clearSettingsFnAtom } from "./State";
 import library from "./Library";
@@ -10,7 +10,12 @@ import { player } from "./Player";
 import { files } from "./Files";
 import { CLEARED_ALL_TYPE, TypedMessage } from "./WorkerTypes";
 
-function LogOut({ height }: { height: string }) {
+interface LogOutButtonProps {
+  size?: ButtonOwnProps["size"];
+  sx?: ButtonOwnProps["sx"];
+}
+
+function LogOutButton({ size, sx }: LogOutButtonProps) {
   const clearAuthFn = useAtomValue(clearAuthFnAtom);
   const clearSettingsFn = useAtomValue(clearSettingsFnAtom);
 
@@ -28,18 +33,17 @@ function LogOut({ height }: { height: string }) {
   }
 
   return (
-    <Box sx={{ height: height }}>
-      <Button
-        color="info"
-        variant="text"
-        sx={{ width: "100%" }}
-        startIcon={<Logout />}
-        onClick={clearAllState}
-      >
-        Log Out
-      </Button>
-    </Box>
+    <Button
+      color="info"
+      variant="text"
+      size={size}
+      sx={sx}
+      startIcon={<Logout />}
+      onClick={clearAllState}
+    >
+      Log Out
+    </Button>
   );
 }
 
-export default LogOut;
+export default LogOutButton;

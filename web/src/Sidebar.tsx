@@ -1,5 +1,6 @@
+import { Box } from "@mui/material";
 import Playlists from "./Playlists";
-import LogOut from "./LogOut";
+import LogOutButton from "./LogOutButton";
 
 function Sidebar() {
   const logoutHeight = "36.5px";
@@ -8,7 +9,9 @@ function Sidebar() {
   return (
     <>
       <Playlists height={playlistsHeight} />
-      <LogOut height={logoutHeight} />
+      <Box sx={{ height: logoutHeight }}>
+        <LogOutButton sx={{ width: "100%" }} />
+      </Box>
     </>
   );
 }

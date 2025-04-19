@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import axios, { isAxiosError } from "axios";
 import DelayedElement from "./DelayedElement";
 import CenteredHalfAlert from "./CenteredHalfAlert";
+import LogOutButton from "./LogOutButton";
 import { AuthResponse } from "./generated/messages";
 
 interface AuthVerifierProps {
@@ -49,7 +50,14 @@ function AuthVerifier({
   });
 
   if (error) {
-    return <CenteredHalfAlert severity="error">{error}</CenteredHalfAlert>;
+    return (
+      <CenteredHalfAlert
+        severity="error"
+        action={<LogOutButton size="small" />}
+      >
+        {error}
+      </CenteredHalfAlert>
+    );
   } else {
     return (
       <DelayedElement>
