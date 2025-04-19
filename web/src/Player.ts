@@ -329,13 +329,16 @@ class Player {
       fileId: track.fileMd5,
     };
 
-    const url = await files().tryGetFileURL(FileType.MUSIC, track.fileMd5); // TODO release?
+    const url = await files().tryGetFileURL(FileType.MUSIC, track.fileMd5);
     if (url) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `${track.artistName} - ${track.name}.${track.ext}`;
       a.click();
       this.pendingDownloads.delete(ids);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 1000);
     } else {
       this.pendingDownloads.insert(ids);
       DownloadWorker.postMessage({
@@ -381,11 +384,15 @@ class Player {
     ); // TODO release?
     if (url) {
       store.set(waitingForMusicDownloadAtom, false);
+      const oldUrl = this.audioRef.src;
       this.audioRef.src = url;
       this.audioRef.currentTime = this.playingTrack.start;
       this.lastSetAudioSrcTrackId = this.playingTrack.id;
       if (this.playing) {
         this.audioPlay();
+      }
+      if (oldUrl) {
+        URL.revokeObjectURL(oldUrl);
       }
     } else {
       store.set(waitingForMusicDownloadAtom, true);
@@ -459,7 +466,7 @@ class Player {
             FileType.ARTWORK,
             this.playingTrack.artworks[0]
           )
-        : null; // TODO release?
+        : null;
     if (url) {
       // XXX if you update this, update the type detection in library.rb
       const ext = this.playingTrack.artworks[0].split(".").pop();
@@ -472,7 +479,13 @@ class Player {
           break;
       }
     }
+
+    const oldUrl = navigator.mediaSession.metadata?.artwork[0]?.src;
     navigator.mediaSession.metadata = metadata;
+
+    if (oldUrl) {
+      URL.revokeObjectURL(oldUrl);
+    }
   }
 
   private async preloadTracks() {
