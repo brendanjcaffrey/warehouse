@@ -305,9 +305,7 @@ class Player {
     this.inPlayNextList = false;
     this.playingTrackIds = [];
     await this.rebuildPlayingTrackIds(trackId);
-    if (this.stopped) {
-      this.playPause();
-    }
+    this.play();
   }
 
   async playTrackNext(trackId: string) {
@@ -366,6 +364,7 @@ class Player {
       this.trySetMediaMetadata();
     }
   }
+
   private async trySetPlayingMusicFile() {
     if (
       !this.playingTrack ||
