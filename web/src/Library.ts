@@ -195,6 +195,12 @@ class Library {
     }
   }
 
+  public clearStoredMetadata() {
+    localStorage.removeItem(TRACK_USER_CHANGES_KEY);
+    localStorage.removeItem(TOTAL_FILE_SIZE_KEY);
+    localStorage.removeItem(UPDATE_TIME_NS_KEY);
+  }
+
   public async getAllPlaylists(): Promise<Playlist[] | undefined> {
     if (!this.validState) {
       return;

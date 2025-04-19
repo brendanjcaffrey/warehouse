@@ -18,6 +18,7 @@ function LogOut({ height }: { height: string }) {
     clearAuthFn.fn();
     clearSettingsFn.fn();
     library().clear();
+    library().clearStoredMetadata();
     await player().reset();
     await files().clearAll();
     DownloadWorker.postMessage({ type: CLEARED_ALL_TYPE } as TypedMessage);

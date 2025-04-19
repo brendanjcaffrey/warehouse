@@ -21,7 +21,11 @@ import {
 class SyncManager {
   private syncInProgress: boolean = false;
 
-  public startSync(authToken: string, updateTimeNs: number, browserOnline: boolean) {
+  public startSync(
+    authToken: string,
+    updateTimeNs: number,
+    browserOnline: boolean
+  ) {
     // this happens because react runs all effects twice in development mode
     if (this.syncInProgress) {
       return;
@@ -44,6 +48,7 @@ class SyncManager {
 
           if (msg.updateTimeNs === updateTimeNs) {
             postMessage({ type: SYNC_SUCCEEDED_TYPE } as TypedMessage);
+            this.syncInProgress = false;
           } else {
             this.syncLibrary(authToken);
           }
@@ -176,6 +181,10 @@ onmessage = (m: MessageEvent) => {
   }
 
   if (IsStartSyncMessage(data)) {
-    syncManager.startSync(data.authToken, data.updateTimeNs, data.browserOnline);
+    syncManager.startSync(
+      data.authToken,
+      data.updateTimeNs,
+      data.browserOnline
+    );
   }
 };
