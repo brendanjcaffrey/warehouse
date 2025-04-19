@@ -62,7 +62,11 @@ export function SetPersistedShowArtwork(value: boolean) {
 
 function GetPersistedVolume(): number {
   try {
-    return Number(localStorage.getItem(VOLUME_KEY));
+    const value = localStorage.getItem(VOLUME_KEY);
+    if (value === null) {
+      return DEFAULT_VOLUME;
+    }
+    return Number(value);
   } catch {
     return DEFAULT_VOLUME;
   }
