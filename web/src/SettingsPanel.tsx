@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useAtom } from "jotai";
 import {
-  Modal,
-  Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
   FormControlLabel,
   Switch,
   IconButton,
@@ -13,7 +14,6 @@ import {
 import { HelpOutlineRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";
 import { showArtworkAtom, keepModeAtom, downloadModeAtom } from "./Settings";
-import { defaultGrey } from "./Colors";
 import { formatBytes } from "./Util";
 import library from "./Library";
 
@@ -148,21 +148,9 @@ function SettingsPanel({
   }, []);
 
   return (
-    <Modal open={showSettings} onClose={toggleShowSettings}>
-      <Box
-        sx={{
-          outline: 0,
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          bgcolor: "background.paper",
-          border: `1px solid ${defaultGrey}`,
-          borderRadius: 2,
-          boxShadow: 12,
-          p: 4,
-        }}
-      >
+    <Dialog open={showSettings} onClose={toggleShowSettings}>
+      <DialogTitle>Settings</DialogTitle>
+      <DialogContent>
         <Grid container spacing={0} sx={{ width: "300px" }}>
           <Grid size={10}>
             <FormControlLabel
@@ -286,8 +274,8 @@ function SettingsPanel({
             having an internet connection.
           </div>
         </Popover>
-      </Box>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }
 

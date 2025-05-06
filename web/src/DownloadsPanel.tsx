@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Modal,
-  Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
   Table,
   TableBody,
   TableRow,
@@ -17,7 +19,6 @@ import {
 import downloadsStore, { Download } from "./DownloadsStore";
 import { DownloadWorker } from "./DownloadWorkerHandle";
 import { formatBytes, formatTimestamp } from "./Util";
-import { defaultGrey } from "./Colors";
 
 function FileTypeToString(fileType: FileType) {
   switch (fileType) {
@@ -86,32 +87,19 @@ function DownloadsPanel({
   }, [handleDownloadWorkerMessage]);
 
   return (
-    <Modal open={showDownloads} onClose={toggleShowDownloads}>
-      <Box
-        sx={{
-          outline: 0,
-          position: "absolute",
-          width: "50vw",
-          maxHeight: "50vh",
-          overflowY: "auto",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          bgcolor: "background.paper",
-          border: `1px solid ${defaultGrey}`,
-          borderRadius: 2,
-          boxShadow: 12,
-          p: 4,
-        }}
-      >
-        <h3>Downloads</h3>
+    <Dialog open={showDownloads} onClose={toggleShowDownloads} maxWidth="xl">
+      <DialogTitle>Downloads</DialogTitle>
+      <DialogContent>
+        {downloads.length === 0 && (
+          <DialogContentText>No downloads yet</DialogContentText>
+        )}
         <Table>
           <TableBody>
             {downloads.map((d) => (
               <TableRow key={`${d.ids.trackId}-${d.ids.fileId}`}>
                 <TableCell>
                   <Tooltip title={`track id: ${d.ids.trackId}`}>
-                    <span>{d.trackName}</span>
+                    <span>{d.trackDesc}</span>
                   </Tooltip>
                 </TableCell>
                 <TableCell>
@@ -126,8 +114,8 @@ function DownloadsPanel({
             ))}
           </TableBody>
         </Table>
-      </Box>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }
 

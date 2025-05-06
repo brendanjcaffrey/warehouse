@@ -1,3 +1,5 @@
+import { Mutex } from "async-mutex";
+import { LRUCache } from "typescript-lru-cache";
 import { memoize } from "lodash";
 import library from "./Library";
 import {
@@ -15,11 +17,13 @@ export interface Download {
   status: DownloadStatus;
   receivedBytes: number;
   totalBytes: number;
-  trackName: string;
+  trackDesc: string;
   lastUpdate: number;
 }
 
 export class DownloadsStore {
+  private mutex = new Mutex();
+  private cache = new LRUCache<string, string>();
   private downloads: Download[] = [];
   private maxSize: number;
 
@@ -28,6 +32,22 @@ export class DownloadsStore {
   }
 
   async update(newStatus: FileDownloadStatusMessage) {
+    await this.mutex.runExclusive(async () => this.updateExclusive(newStatus));
+  }
+
+  async updateExclusive(newStatus: FileDownloadStatusMessage) {
+    const trackDescKey = `${newStatus.ids.trackId}-${newStatus.ids.fileId}`;
+    let trackDesc = this.cache.get(trackDescKey);
+    if (!trackDesc) {
+      const track = await library().getTrack(newStatus.ids.trackId);
+      if (!track) {
+        return;
+      }
+
+      trackDesc = `${track.name} - ${track.artistName}`;
+      this.cache.set(trackDescKey, trackDesc);
+    }
+
     // remove any existing entry with the same ids
     this.downloads = this.downloads.filter(
       (d) =>
@@ -41,18 +61,13 @@ export class DownloadsStore {
       status: newStatus.status,
       receivedBytes: newStatus.receivedBytes,
       totalBytes: newStatus.totalBytes,
-      trackName: "[pending]",
+      trackDesc: trackDesc,
       lastUpdate: Date.now(),
     };
     this.downloads.unshift(download);
 
     if (this.downloads.length > this.maxSize) {
       this.downloads.pop();
-    }
-
-    const track = await library().getTrack(newStatus.ids.trackId);
-    if (track) {
-      download.trackName = `${track.name} - ${track.artistName}`;
     }
   }
 
