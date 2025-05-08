@@ -34,8 +34,8 @@ jobs:
 
     - uses: arduino/setup-protoc@v2
 
-    - name: npm install
-      run: cd web && npm install
+    - name: npm ci
+      run: cd web && npm ci
 
     - name: compile protobufs & build
       run: bundle exec rake build
