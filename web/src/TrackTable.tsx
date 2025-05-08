@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useReducer, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
+import EditTrackPanel from "./EditTrackPanel";
 import { useDebouncedAtomValue } from "./useDebouncedAtomValue";
 import { useDebouncedTypedInput } from "./useDebouncedTypedInput";
 import library, { Track } from "./Library";
@@ -74,6 +75,8 @@ function TrackTable() {
   const [contextMenuData, setContextMenuData] =
     useState<TrackContextMenuData | null>(null);
 
+  const [editFormTrack, setEditFormTrack] = useState<Track | null>(null);
+
   const filterText = useDebouncedAtomValue(searchAtom, 250);
   useEffect(() => {
     dispatch({ type: UpdateType.FilterChanged, filterText: filterText });
@@ -85,6 +88,10 @@ function TrackTable() {
     },
     [dispatch]
   );
+
+  const closeEditTrackPanel = useCallback(() => {
+    setEditFormTrack(null);
+  }, [setEditFormTrack]);
 
   useEffect(() => {
     library()
@@ -209,7 +216,13 @@ function TrackTable() {
           player().downloadMusic(trackId);
           break;
         case TrackAction.EDIT:
-          // TODO
+          library()
+            .getTrack(trackId)
+            .then((track) => {
+              if (track) {
+                setEditFormTrack(track);
+              }
+            });
           break;
       }
       setContextMenuData(null);
@@ -275,6 +288,10 @@ function TrackTable() {
         data={contextMenuData}
         setData={setContextMenuData}
         handleAction={handleTrackAction}
+      />
+      <EditTrackPanel
+        track={editFormTrack}
+        closeEditTrackPanel={closeEditTrackPanel}
       />
     </TrackTableContext.Provider>
   );

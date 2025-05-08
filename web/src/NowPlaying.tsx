@@ -19,6 +19,7 @@ import {
   selectedPlaylistIdAtom,
   waitingForMusicDownloadAtom,
 } from "./State";
+import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
 
 const DurationText = styled(Typography)({
   color: defaultGrey,
@@ -39,12 +40,6 @@ function NowPlaying() {
   const currentTime = useAtomValue(currentTimeAtom);
   const waitingForMusicDownload = useAtomValue(waitingForMusicDownloadAtom);
   const remaining = playingTrack ? playingTrack.finish - currentTime : 0;
-
-  function formatSeconds(value: number) {
-    const minute = Math.floor(value / 60);
-    const secondLeft = Math.floor(value - minute * 60);
-    return `${minute}:${secondLeft < 10 ? `0${secondLeft}` : secondLeft}`;
-  }
 
   function returnButtonDown() {
     setReturnDown(true);
@@ -79,7 +74,7 @@ function NowPlaying() {
           }}
         >
           <DurationText sx={{ paddingRight: "4px" }}>
-            {formatSeconds(currentTime)}
+            {FormatPlaybackPosition(currentTime)}
           </DurationText>
           <Box
             sx={{
@@ -131,7 +126,7 @@ function NowPlaying() {
             </Box>
           </Box>
           <DurationText sx={{ paddingLeft: "4px" }}>
-            -{formatSeconds(remaining)}
+            -{FormatPlaybackPosition(remaining)}
           </DurationText>
         </Box>
         <Slider
