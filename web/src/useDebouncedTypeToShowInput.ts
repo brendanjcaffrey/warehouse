@@ -1,19 +1,22 @@
 import { useState, useEffect } from "react";
-import { player } from "./Player";
+import { useSetAtom } from "jotai";
+import { typeToShowInProgressAtom } from "./State";
 
-const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.()- '".split("");
+const TYPE_TO_SHOW_ALPHABET =
+  "abcdefghijklmnopqrstuvwxyz0123456789.()- '".split("");
+const TYPE_TO_SHOW_DELAY_MILLIS = 750;
 
-export function useDebouncedTypedInput(
-  callback: (typedInput: string) => void,
-  delayMillis = 750
+export function useDebouncedTypeToShowInput(
+  callback: (typedInput: string) => void
 ) {
   const [typedInput, setTypedInput] = useState("");
+  const setTypeToShowInProgress = useSetAtom(typeToShowInProgressAtom);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.target instanceof HTMLInputElement ||
-        !ALPHABET.includes(event.key) ||
+        !TYPE_TO_SHOW_ALPHABET.includes(event.key) ||
         event.altKey ||
         event.ctrlKey ||
         event.metaKey
@@ -33,20 +36,22 @@ export function useDebouncedTypedInput(
   useEffect(() => {
     if (typedInput === "") return;
 
-    // this feels kind of shoe horned in here but whatever
+    // if the typed input is only a space, then ignore
     if (typedInput === " ") {
-      player().playPause();
       setTypedInput("");
+      setTypeToShowInProgress(false);
       return;
     }
 
+    setTypeToShowInProgress(true);
     const timeoutId = setTimeout(() => {
       callback(typedInput);
       setTypedInput("");
-    }, delayMillis);
+      setTypeToShowInProgress(false);
+    }, TYPE_TO_SHOW_DELAY_MILLIS);
 
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [typedInput, callback, delayMillis]);
+  }, [typedInput, setTypeToShowInProgress, callback]);
 }

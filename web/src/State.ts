@@ -10,6 +10,7 @@ export const showTrackFnAtom = atom({ fn: (_: string, __: boolean) => {} }); // 
 
 export const selectedPlaylistIdAtom = atom("");
 export const searchAtom = atom("");
+export const typeToShowInProgressAtom = atom(false);
 
 export const stoppedAtom = atom(true);
 export const playingAtom = atom(false);

@@ -4,7 +4,7 @@ import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
 import EditTrackPanel from "./EditTrackPanel";
 import { useDebouncedAtomValue } from "./useDebouncedAtomValue";
-import { useDebouncedTypedInput } from "./useDebouncedTypedInput";
+import { useDebouncedTypeToShowInput } from "./useDebouncedTypeToShowInput";
 import library, { Track } from "./Library";
 import { player } from "./Player";
 import {
@@ -175,7 +175,7 @@ function TrackTable() {
     setShowTrackFn({ fn: showTrack });
   }, [setShowTrackFn, showTrack]);
 
-  useDebouncedTypedInput((typedInput: string) => {
+  useDebouncedTypeToShowInput((typedInput: string) => {
     const entry = BinarySearchTypeToShowList(state.typeToShowList, typedInput);
     if (entry && gridRef.current) {
       setSelectedTrackId(state.tracks[entry.trackIndex].id);

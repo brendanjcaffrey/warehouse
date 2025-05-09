@@ -9,6 +9,7 @@ import {
   playingTrackAtom,
   playingAtom,
   waitingForMusicDownloadAtom,
+  typeToShowInProgressAtom,
   resetAllState,
 } from "./State";
 import library, { Track } from "./Library";
@@ -63,6 +64,7 @@ class Player {
 
   constructor() {
     files(); // initialize it
+
     DownloadWorker.addEventListener("message", (m: MessageEvent) => {
       const { data } = m;
       if (!IsTypedMessage(data)) {
@@ -85,6 +87,21 @@ class Player {
         this.prev()
       );
     }
+
+    document.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === " " && !store.get(typeToShowInProgressAtom)) {
+        event.preventDefault();
+        this.playPause();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        this.next();
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        this.prev();
+      }
+    });
   }
 
   async reset() {
@@ -381,7 +398,7 @@ class Player {
     const url = await files().tryGetFileURL(
       FileType.MUSIC,
       this.playingTrack.fileMd5
-    ); // TODO release?
+    );
     if (url) {
       store.set(waitingForMusicDownloadAtom, false);
       const oldUrl = this.audioRef.src;
