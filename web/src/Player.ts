@@ -89,7 +89,11 @@ class Player {
     }
 
     document.addEventListener("keydown", (event: KeyboardEvent) => {
-      if (event.key === " " && !store.get(typeToShowInProgressAtom)) {
+      if (
+        event.key === " " &&
+        !store.get(typeToShowInProgressAtom) &&
+        !(event.target instanceof HTMLInputElement)
+      ) {
         event.preventDefault();
         this.playPause();
       }
