@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtomValue } from "jotai";
 import {
   useTheme,
   useMediaQuery,
@@ -16,7 +16,6 @@ import {
   showTrackFnAtom,
   playingTrackAtom,
   currentTimeAtom,
-  selectedPlaylistIdAtom,
   waitingForMusicDownloadAtom,
 } from "./State";
 import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
@@ -32,30 +31,22 @@ function NowPlaying() {
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
 
   const [returnDown, setReturnDown] = useState(false);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useAtom(
-    selectedPlaylistIdAtom
-  );
   const showTrackFn = useAtomValue(showTrackFnAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
   const waitingForMusicDownload = useAtomValue(waitingForMusicDownloadAtom);
-  const remaining = playingTrack ? playingTrack.finish - currentTime : 0;
+  const remaining = playingTrack ? playingTrack.track.finish - currentTime : 0;
 
   function returnButtonDown() {
     setReturnDown(true);
   }
   function returnButtonUp() {
     setReturnDown(false);
-    const playingPlaylistId = player().playingPlaylistId;
-    if (
-      playingPlaylistId &&
-      playingTrack &&
-      selectedPlaylistId !== player().playingPlaylistId
-    ) {
-      showTrackFn.fn(playingTrack?.id || "", false);
-      setSelectedPlaylistId(playingPlaylistId);
-    } else {
-      showTrackFn.fn(playingTrack?.id || "", true);
+    if (playingTrack) {
+      showTrackFn.fn({
+        playlistId: playingTrack.playlistId,
+        playlistOffset: playingTrack.playlistOffset,
+      });
     }
   }
 
@@ -99,7 +90,7 @@ function NowPlaying() {
                     </span>
                   </DelayedElement>
                 )}
-                {playingTrack?.name || ""}
+                {playingTrack?.track.name || ""}
                 <span onMouseDown={returnButtonDown} onMouseUp={returnButtonUp}>
                   <KeyboardReturnRounded
                     sx={{
@@ -119,9 +110,9 @@ function NowPlaying() {
                   lineHeight: "17.15px",
                 }}
               >
-                {playingTrack?.artistName || ""}
-                {playingTrack?.albumName && " - "}
-                {playingTrack?.albumName || ""}
+                {playingTrack?.track.artistName || ""}
+                {playingTrack?.track.albumName && " - "}
+                {playingTrack?.track.albumName || ""}
               </Typography>
             </Box>
           </Box>
@@ -132,8 +123,8 @@ function NowPlaying() {
         <Slider
           size="small"
           value={currentTime}
-          min={playingTrack?.start}
-          max={playingTrack?.finish}
+          min={playingTrack?.track.start}
+          max={playingTrack?.track.finish}
           onChange={(_, value) => player().setCurrentTime(value as number)}
           sx={() => ({
             color: defaultGrey,

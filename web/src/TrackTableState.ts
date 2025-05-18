@@ -5,6 +5,7 @@ import { SortState, SortTracks } from "./TrackTableSort";
 import { FilterTrackList } from "./TrackTableFilter";
 import { TypeToShowEntry, BuildTypeToShowList } from "./TrackTableTypeToShow";
 import { DEFAULT_COLUMN_WIDTH } from "./TrackTableConstants";
+import { PlaylistEntry } from "./Types";
 
 export interface TrackTableState {
   iconWidths: IconWidths;
@@ -13,10 +14,15 @@ export interface TrackTableState {
   columnWidths: number[];
 
   sortState: SortState;
-  sortIndexes: number[];
+  // tracks in sorted order, these are indexes into `tracks`
+  sortedPlaylistOffsets: number[];
 
   filterText: string;
-  sortFilteredIndexes: number[];
+  // sorted tracks after applying the filter text, these are indexes into `tracks`
+  sortedFilteredPlaylistOffsets: number[];
+
+  // selected track, an index into tracks
+  selectedPlaylistEntry: PlaylistEntry | undefined;
 
   typeToShowList: TypeToShowEntry[];
 }
@@ -31,10 +37,12 @@ export const DEFAULT_STATE: TrackTableState = {
     columnId: null,
     ascending: true,
   },
-  sortIndexes: [],
+  sortedPlaylistOffsets: [],
 
   filterText: "",
-  sortFilteredIndexes: [],
+  sortedFilteredPlaylistOffsets: [],
+
+  selectedPlaylistEntry: undefined,
 
   typeToShowList: [],
 };
@@ -44,6 +52,7 @@ export enum UpdateType {
   TracksChanged,
   SortChanged,
   FilterChanged,
+  SelectedPlaylistOffsetChanged,
   TrackUpdated,
 }
 
@@ -56,6 +65,7 @@ export type TracksChanged = {
   type: UpdateType.TracksChanged;
   playlistId: string;
   tracks: Track[];
+  selectedPlaylistOffset: number | undefined;
 };
 
 export type SortChanged = {
@@ -66,6 +76,11 @@ export type SortChanged = {
 export type FilterChanged = {
   type: UpdateType.FilterChanged;
   filterText: string;
+};
+
+export type SelectedPlaylistOffsetChanged = {
+  type: UpdateType.SelectedPlaylistOffsetChanged;
+  playlistOffset: number;
 };
 
 export type TrackUpdated = {
@@ -80,6 +95,7 @@ export function UpdateTrackTableState(
     | TracksChanged
     | SortChanged
     | FilterChanged
+    | SelectedPlaylistOffsetChanged
     | TrackUpdated
 ): TrackTableState {
   const newState = { ...oldState };
@@ -90,6 +106,12 @@ export function UpdateTrackTableState(
     case UpdateType.TracksChanged:
       newState.playlistId = event.playlistId;
       newState.tracks = event.tracks;
+      if (event.selectedPlaylistOffset) {
+        newState.selectedPlaylistEntry = {
+          playlistId: newState.playlistId,
+          playlistOffset: event.selectedPlaylistOffset,
+        };
+      }
       break;
     case UpdateType.SortChanged:
       newState.sortState = event.sortState;
@@ -97,6 +119,12 @@ export function UpdateTrackTableState(
     case UpdateType.FilterChanged:
       newState.filterText = event.filterText;
       break;
+    case UpdateType.SelectedPlaylistOffsetChanged:
+      newState.selectedPlaylistEntry = {
+        playlistId: newState.playlistId,
+        playlistOffset: event.playlistOffset,
+      };
+      return newState; // no need to do anything else
     case UpdateType.TrackUpdated: {
       const trackIndex = newState.tracks.findIndex(
         (track) => track.id === event.track.id
@@ -133,13 +161,13 @@ export function UpdateTrackTableState(
   ) {
     const allIndexes = newState.tracks.map((_, i) => i);
     if (newState.sortState.columnId === null) {
-      newState.sortIndexes = allIndexes;
+      newState.sortedPlaylistOffsets = allIndexes;
     } else {
       const column = COLUMNS.find(
         (column) => column.id === newState.sortState.columnId
       );
 
-      newState.sortIndexes = SortTracks(
+      newState.sortedPlaylistOffsets = SortTracks(
         newState.tracks,
         allIndexes,
         column!,
@@ -149,12 +177,13 @@ export function UpdateTrackTableState(
   }
 
   // we don't re-filter on a single track edit either
-  if (newState.filterText === "" || event.type === UpdateType.TracksChanged) {
-    newState.sortFilteredIndexes = newState.sortIndexes.slice();
+  if (newState.filterText === "" || event.type === UpdateType.TrackUpdated) {
+    newState.sortedFilteredPlaylistOffsets =
+      newState.sortedPlaylistOffsets.slice();
   } else {
-    newState.sortFilteredIndexes = FilterTrackList(
+    newState.sortedFilteredPlaylistOffsets = FilterTrackList(
       newState.tracks,
-      newState.sortIndexes,
+      newState.sortedPlaylistOffsets,
       newState.filterText
     );
   }
@@ -164,7 +193,7 @@ export function UpdateTrackTableState(
   );
   newState.typeToShowList = BuildTypeToShowList(
     newState.tracks,
-    newState.sortFilteredIndexes,
+    newState.sortedFilteredPlaylistOffsets,
     column || COLUMNS[0]
   );
 

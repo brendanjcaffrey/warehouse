@@ -28,6 +28,7 @@ import {
 import { files } from "./Files";
 import { circularArraySlice } from "./Util";
 import { TrackFileSet } from "./TrackFileSet";
+import { PlayingTrack, DisplayedTrack, PlaylistTrack } from "./Types";
 
 const TRACKS_TO_PRELOAD = 3;
 
@@ -36,20 +37,22 @@ class Player {
 
   // what is displayed in the track table
   displayedPlaylistId: string | undefined = undefined;
-  displayedTrackIds: string[] = [];
+  displayedTracks: DisplayedTrack[] = [];
 
-  // what we're playing right now - can be different from displayed
+  // what playlist is playing right now - can be different from displayed
   playingPlaylistId: string | undefined = undefined;
   // tracks sorted in the order they are displayed in
-  sortedPlayingTrackIds: string[] = [];
+  sortedPlayingTracks: DisplayedTrack[] = [];
   // tracks sorted in the order we are playing them - can be different than above if shuffle is on
-  playingTrackIds: string[] = [];
-  // a list of songs to play next, distinct from the main playlist
-  playNextTrackIds: string[] = [];
-  // index into playingTrackIds
+  playingTracks: DisplayedTrack[] = [];
+
+  // a list of songs to play next, distinct from the playing playlist
+  playNextTracks: PlaylistTrack[] = [];
+
+  // index into playingTracks
   playingTrackIdx: number = 0;
   inPlayNextList: boolean = false;
-  playingTrack: Track | undefined = undefined;
+  playingTrack: PlayingTrack | undefined = undefined;
   // last track we set the audio src to, here to avoid setting it to the same thing
   lastSetAudioSrcTrackId: string | undefined = undefined;
 
@@ -111,11 +114,11 @@ class Player {
   async reset() {
     this.audioRef = undefined;
     this.displayedPlaylistId = undefined;
-    this.displayedTrackIds = [];
+    this.displayedTracks = [];
     this.playingPlaylistId = undefined;
-    this.sortedPlayingTrackIds = [];
-    this.playingTrackIds = [];
-    this.playNextTrackIds = [];
+    this.sortedPlayingTracks = [];
+    this.playingTracks = [];
+    this.playNextTracks = [];
     this.playingTrackIdx = 0;
     this.inPlayNextList = false;
     this.playingTrack = undefined;
@@ -140,8 +143,8 @@ class Player {
         return;
       }
       if (
-        currentTime >= this.playingTrack.finish ||
-        currentTime >= this.playingTrack.duration
+        currentTime >= this.playingTrack.track.finish ||
+        currentTime >= this.playingTrack.track.duration
       ) {
         this.trackFinished();
       }
@@ -153,23 +156,24 @@ class Player {
       return;
     }
     // make sure two ontimeupdate events don't trigger two next() calls
-    if (this.addingPlay === this.playingTrack.id) {
+    if (this.addingPlay === this.playingTrack.track.id) {
       return;
     }
 
-    this.addingPlay = this.playingTrack.id;
+    this.addingPlay = this.playingTrack.track.id;
     try {
       this.audioRef!.pause();
-      updatePersister().addPlay(this.playingTrack.id);
+      updatePersister().addPlay(this.playingTrack.track.id);
       // always get the latest version of the track just in case it was updated
-      const track = await library().getTrack(this.playingTrack.id);
+      const track = await library().getTrack(this.playingTrack.track.id);
       if (track) {
         if (library().getTrackUserChanges()) {
           track.playCount++;
           await library().putTrack(track);
           store.get(trackUpdatedFnAtom).fn(track);
         }
-        this.playingTrack = track;
+        this.playingTrack.track = track;
+        store.set(playingTrackAtom, this.playingTrack);
       }
       await this.next();
     } finally {
@@ -193,49 +197,50 @@ class Player {
 
   async setDisplayedTrackIds(
     displayedPlaylistId: string,
-    displayedTrackIds: string[]
+    displayedTracks: DisplayedTrack[]
   ) {
     if (
       displayedPlaylistId === this.displayedPlaylistId &&
-      isEqual(this.displayedTrackIds, displayedTrackIds)
+      isEqual(this.displayedTracks, displayedTracks)
     ) {
       return;
     }
 
     this.displayedPlaylistId = displayedPlaylistId;
-    this.displayedTrackIds = displayedTrackIds;
+    this.displayedTracks = displayedTracks;
     if (this.stopped || this.displayedPlaylistId === this.playingPlaylistId) {
-      this.rebuildPlayingTrackIds();
+      this.rebuildPlayingTracks();
     }
   }
 
-  async rebuildPlayingTrackIds(
-    overwritePlayingTrackId: string | undefined = undefined
+  async rebuildPlayingTracks(
+    overwritePlayingTrack: DisplayedTrack | undefined = undefined
   ) {
     this.playingPlaylistId = this.displayedPlaylistId;
-    this.sortedPlayingTrackIds = [...this.displayedTrackIds];
-    await this.shuffleChanged(overwritePlayingTrackId);
+    this.sortedPlayingTracks = [...this.displayedTracks];
+    await this.shuffleChanged(overwritePlayingTrack);
   }
 
   async shuffleChanged(
-    overwritePlayingTrackId: string | undefined = undefined
+    overwritePlayingTrack: DisplayedTrack | undefined = undefined
   ) {
-    this.playingTrackIds = [...this.sortedPlayingTrackIds];
+    const savedPlaying = this.playingTracks[this.playingTrackIdx];
+    this.playingTracks = [...this.sortedPlayingTracks];
     if (store.get(shuffleAtom)) {
-      this.playingTrackIds = shuffle(this.playingTrackIds);
+      this.playingTracks = shuffle(this.playingTracks);
     }
 
-    if (overwritePlayingTrackId) {
-      this.playingTrackIdx = this.playingTrackIds.indexOf(
-        overwritePlayingTrackId
+    if (overwritePlayingTrack) {
+      this.playingTrackIdx = this.playingTracks.findIndex((dt) =>
+        isEqual(dt, overwritePlayingTrack)
       );
       await this.updatePlayingTrack();
     } else if (this.stopped) {
       this.playingTrackIdx = 0;
       await this.updatePlayingTrack();
     } else {
-      this.playingTrackIdx = this.playingTrackIds.indexOf(
-        this.playingTrack!.id
+      this.playingTrackIdx = this.playingTracks.findIndex((dt) =>
+        isEqual(dt, savedPlaying)
       );
     }
   }
@@ -254,7 +259,7 @@ class Player {
     this.playPause();
   }
   playPause() {
-    if (!this.audioRef || this.playingTrackIds.length === 0) {
+    if (!this.audioRef || this.playingTracks.length === 0) {
       return;
     }
 
@@ -278,7 +283,7 @@ class Player {
     }
 
     if (this.inPlayNextList) {
-      this.playNextTrackIds.shift();
+      this.playNextTracks.shift();
       this.inPlayNextList = false;
       await this.updatePlayingTrack();
     } else if (this.shouldRewind()) {
@@ -287,7 +292,7 @@ class Player {
     } else {
       this.playingTrackIdx =
         this.playingTrackIdx === 0
-          ? this.playingTrackIds.length - 1
+          ? this.playingTracks.length - 1
           : this.playingTrackIdx - 1;
       await this.updatePlayingTrack();
     }
@@ -302,9 +307,9 @@ class Player {
 
     const wasInPlayNextList = this.inPlayNextList;
     if (this.inPlayNextList) {
-      this.playNextTrackIds.shift();
+      this.playNextTracks.shift();
     }
-    this.inPlayNextList = this.playNextTrackIds.length > 0;
+    this.inPlayNextList = this.playNextTracks.length > 0;
 
     if (this.inPlayNextList) {
       await this.updatePlayingTrack();
@@ -316,26 +321,26 @@ class Player {
       this.audioPlay();
     } else {
       this.playingTrackIdx =
-        (this.playingTrackIdx + 1) % this.playingTrackIds.length;
+        (this.playingTrackIdx + 1) % this.playingTracks.length;
       await this.updatePlayingTrack();
     }
     this.showPlayingTrackIfInPlaylist();
   }
 
   // actions
-  async playTrack(trackId: string) {
+  async playTrack(track: DisplayedTrack) {
     this.inPlayNextList = false;
-    this.playingTrackIds = [];
-    await this.rebuildPlayingTrackIds(trackId);
+    this.playingTracks = [];
+    await this.rebuildPlayingTracks(track);
     this.play();
   }
 
-  async playTrackNext(trackId: string) {
+  async playTrackNext(playlistTrack: PlaylistTrack) {
     if (this.inPlayNextList) {
       // add after the current play next track
-      this.playNextTrackIds.splice(1, 0, trackId);
+      this.playNextTracks.splice(1, 0, playlistTrack);
     } else {
-      this.playNextTrackIds.unshift(trackId);
+      this.playNextTracks.unshift(playlistTrack);
     }
     await this.preloadTracks();
   }
@@ -373,7 +378,7 @@ class Player {
 
   // helpers
   private handleMusicFetched(data: FileFetchedMessage) {
-    if (data.ids.fileId === this.playingTrack?.fileMd5) {
+    if (data.ids.fileId === this.playingTrack?.track.fileMd5) {
       this.trySetPlayingMusicFile();
     }
     if (this.pendingDownloads.has(data.ids)) {
@@ -384,7 +389,7 @@ class Player {
   private handleArtworkFetched(data: FileFetchedMessage) {
     if (
       this.playingTrack &&
-      this.playingTrack.artworks.includes(data.ids.fileId)
+      this.playingTrack.track.artworks.includes(data.ids.fileId)
     ) {
       this.trySetMediaMetadata();
     }
@@ -394,21 +399,21 @@ class Player {
     if (
       !this.playingTrack ||
       !this.audioRef ||
-      this.lastSetAudioSrcTrackId === this.playingTrack.id
+      this.lastSetAudioSrcTrackId === this.playingTrack.track.id
     ) {
       return;
     }
 
     const url = await files().tryGetFileURL(
       FileType.MUSIC,
-      this.playingTrack.fileMd5
+      this.playingTrack.track.fileMd5
     );
     if (url) {
       store.set(waitingForMusicDownloadAtom, false);
       const oldUrl = this.audioRef.src;
       this.audioRef.src = url;
-      this.audioRef.currentTime = this.playingTrack.start;
-      this.lastSetAudioSrcTrackId = this.playingTrack.id;
+      this.audioRef.currentTime = this.playingTrack.track.start;
+      this.lastSetAudioSrcTrackId = this.playingTrack.track.id;
       if (this.playing) {
         this.audioPlay();
       }
@@ -422,7 +427,7 @@ class Player {
   }
 
   private audioPlay() {
-    if (this.lastSetAudioSrcTrackId !== this.playingTrack?.id) {
+    if (this.lastSetAudioSrcTrackId !== this.playingTrack?.track.id) {
       return;
     }
     this.audioRef?.play().catch(() => {
@@ -431,7 +436,7 @@ class Player {
   }
 
   private shouldRewind() {
-    return store.get(repeatAtom) || this.playingTrackIds.length === 1;
+    return store.get(repeatAtom) || this.playingTracks.length === 1;
   }
 
   private inValidState(): this is {
@@ -442,27 +447,35 @@ class Player {
     return (
       this.audioRef !== undefined &&
       this.playingTrack !== undefined &&
-      this.playingTrackIds.length > 0
+      this.playingTracks.length > 0
     );
   }
 
   private async updatePlayingTrack() {
-    if (
-      this.playingTrackIds.length === 0 &&
-      this.playNextTrackIds.length === 0
-    ) {
+    if (this.playingTracks.length === 0 && this.playNextTracks.length === 0) {
       return;
     }
 
     if (this.inPlayNextList) {
-      this.playingTrack = await library().getTrack(this.playNextTrackIds[0]);
+      const playNextTrack = this.playNextTracks[0];
+      const track = await library().getTrack(playNextTrack.trackId);
+      this.playingTrack = {
+        track: track!,
+        playlistId: playNextTrack.playlistId,
+        playlistOffset: playNextTrack.playlistOffset,
+      };
     } else {
-      this.playingTrack = await library().getTrack(
-        this.playingTrackIds[this.playingTrackIdx]
-      );
+      const displayedTrack = this.playingTracks[this.playingTrackIdx];
+      const track = await library().getTrack(displayedTrack.trackId);
+      this.playingTrack = {
+        track: track!,
+        playlistId: this.playingPlaylistId!,
+        playlistOffset: displayedTrack.playlistOffset,
+      };
     }
+
     store.set(playingTrackAtom, this.playingTrack);
-    store.set(currentTimeAtom, this.playingTrack!.start);
+    store.set(currentTimeAtom, this.playingTrack!.track.start);
     this.trySetMediaMetadata();
     this.trySetPlayingMusicFile();
     await this.preloadTracks();
@@ -474,23 +487,23 @@ class Player {
     }
 
     const metadata = new MediaMetadata({
-      title: this.playingTrack.name,
-      artist: this.playingTrack.artistName,
-      album: this.playingTrack.albumName,
+      title: this.playingTrack.track.name,
+      artist: this.playingTrack.track.artistName,
+      album: this.playingTrack.track.albumName,
       artwork: [],
     });
 
     // NB: media metadata artwork not working in Firefox but does in Chrome
     const url =
-      this.playingTrack.artworks.length > 0
+      this.playingTrack.track.artworks.length > 0
         ? await files().tryGetFileURL(
             FileType.ARTWORK,
-            this.playingTrack.artworks[0]
+            this.playingTrack.track.artworks[0]
           )
         : null;
     if (url) {
       // XXX if you update this, update the type detection in library.rb
-      const ext = this.playingTrack.artworks[0].split(".").pop();
+      const ext = this.playingTrack.track.artworks[0].split(".").pop();
       switch (ext) {
         case "jpg":
           metadata.artwork = [{ src: url, type: "image/jpeg" }];
@@ -510,12 +523,15 @@ class Player {
   }
 
   private async preloadTracks() {
-    let trackIds = circularArraySlice(
-      this.playingTrackIds,
+    const displayedTracks = circularArraySlice(
+      this.playingTracks,
       this.playingTrackIdx,
       TRACKS_TO_PRELOAD
     );
-    trackIds = [...trackIds, ...this.playNextTrackIds];
+    const trackIds = [
+      ...displayedTracks.map((dt) => dt.trackId),
+      ...this.playNextTracks.map((pt) => pt.trackId),
+    ];
 
     const musicIds: TrackFileIds[] = [];
     const artworkIds: TrackFileIds[] = [];
@@ -543,10 +559,14 @@ class Player {
   }
 
   private async showPlayingTrackIfInPlaylist() {
-    if (this.playingPlaylistId === this.displayedPlaylistId) {
-      store
-        .get(showTrackFnAtom)
-        .fn(this.playingTrackIds[this.playingTrackIdx], true);
+    if (
+      this.playingTrack &&
+      this.playingTrack.playlistId === this.displayedPlaylistId
+    ) {
+      store.get(showTrackFnAtom).fn({
+        playlistId: this.playingTrack.playlistId,
+        playlistOffset: this.playingTrack.playlistOffset,
+      });
     }
   }
 }

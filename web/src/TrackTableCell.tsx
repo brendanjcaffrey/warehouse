@@ -5,13 +5,10 @@ import { COLUMNS } from "./TrackTableColumns";
 import { TrackAction } from "./TrackAction";
 import { lightestGrey, selectedGrey, white } from "./Colors";
 import { CELL_HORIZONTAL_PADDING_SIDE } from "./TrackTableConstants";
+import { PlaylistEntry, PlaylistTrack } from "./Types";
 
-function CellBackgroundColor(
-  rowIndex: number,
-  trackId: string,
-  selectedTrackId: string | null
-) {
-  if (trackId === selectedTrackId) {
+function CellBackgroundColor(rowIndex: number, isSelected: boolean) {
+  if (isSelected) {
     return selectedGrey;
   } else {
     return rowIndex % 2 === 0 ? lightestGrey : white;
@@ -19,31 +16,40 @@ function CellBackgroundColor(
 }
 
 interface TrackTableCellProps extends GridChildComponentProps {
+  playlistId: string;
   tracks: Track[];
   trackDisplayIndexes: number[];
-  selectedTrackId: string | null;
-  setSelectedTrackId: (trackId: string) => void;
-  playingTrackId: string | null;
+  selectedPlaylistEntry: PlaylistEntry | undefined;
+  setSelectedPlaylistOffset: (playlistOffset: number) => void;
+  playingPlaylistEntry: PlaylistEntry | undefined;
   showContextMenu: (
     event: React.MouseEvent<HTMLDivElement>,
-    trackId: string
+    playlistTrack: PlaylistTrack
   ) => void;
-  handleAction: (action: TrackAction, trackId: string | undefined) => void;
+  handleAction: (action: TrackAction, playlistTrack: PlaylistTrack) => void;
 }
 
 export function TrackTableCell(props: TrackTableCellProps) {
   const rowIndex = props.rowIndex;
-  const trackId = props.tracks[props.trackDisplayIndexes[rowIndex]].id;
+  const playlistOffset = props.trackDisplayIndexes[rowIndex];
+  const trackId = props.tracks[playlistOffset].id;
   const column = COLUMNS[props.columnIndex];
+  const playlistTrack = {
+    playlistId: props.playlistId,
+    trackId,
+    playlistOffset,
+  };
+  const isSelected =
+    props.playlistId === props.selectedPlaylistEntry?.playlistId &&
+    playlistOffset === props.selectedPlaylistEntry.playlistOffset;
+  const IsPlaying =
+    props.playlistId === props.playingPlaylistEntry?.playlistId &&
+    playlistOffset === props.playingPlaylistEntry.playlistOffset;
 
   return (
     <div
       style={{
-        backgroundColor: CellBackgroundColor(
-          rowIndex,
-          trackId,
-          props.selectedTrackId
-        ),
+        backgroundColor: CellBackgroundColor(rowIndex, isSelected),
         padding: `0 ${
           column.childAppliesPadding ? 0 : CELL_HORIZONTAL_PADDING_SIDE
         }px`,
@@ -54,11 +60,13 @@ export function TrackTableCell(props: TrackTableCellProps) {
         ...props.style,
       }}
       className="valign-center no-select"
-      onClick={() => props.setSelectedTrackId(trackId)}
-      onContextMenu={(event) => props.showContextMenu(event, trackId)}
-      onDoubleClick={() => props.handleAction(TrackAction.PLAY, trackId)}
+      onClick={() =>
+        !isSelected && props.setSelectedPlaylistOffset(playlistOffset)
+      }
+      onContextMenu={(event) => props.showContextMenu(event, playlistTrack)}
+      onDoubleClick={() => props.handleAction(TrackAction.PLAY, playlistTrack)}
     >
-      {column.canHaveNowPlayingIcon && trackId === props.playingTrackId ? (
+      {column.canHaveNowPlayingIcon && IsPlaying ? (
         <VolumeUpRounded fontSize="small" color="primary" />
       ) : null}
       {column.render(props.tracks[props.trackDisplayIndexes[rowIndex]])}

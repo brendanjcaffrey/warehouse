@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useReducer, useCallback } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
 import EditTrackPanel from "./EditTrackPanel";
@@ -30,30 +30,28 @@ import { BinarySearchTypeToShowList } from "./TrackTableTypeToShow";
 import { TrackContextMenu, TrackContextMenuData } from "./TrackContextMenu";
 import { TrackAction } from "./TrackAction";
 import { ROW_HEIGHT } from "./TrackTableConstants";
+import { PlaylistTrack, PlaylistEntry } from "./Types";
 
 function showTrackInGrid(
   gridRef: React.RefObject<VariableSizeGrid>,
-  displayedRowIdxs: React.RefObject<[number, number]>,
-  tracks: Track[],
-  sortFilteredIndexes: number[],
-  trackId: string
+  displayedRows: React.RefObject<[number, number]>,
+  sortedFilteredPlaylistOffsets: number[],
+  playlistOffset: number
 ) {
-  const trackIndex = sortFilteredIndexes.findIndex(
-    (i) => tracks[i].id === trackId
-  );
-  if (trackIndex !== -1 && gridRef.current) {
+  const row = sortedFilteredPlaylistOffsets.indexOf(playlistOffset);
+  if (row !== -1 && gridRef.current) {
     // if the track is already displayed, don't scroll
     if (
-      displayedRowIdxs.current &&
+      displayedRows.current &&
       // the row #s seem to be off slightly? just move the range in by 1 on each side
-      displayedRowIdxs.current[0] + 1 <= trackIndex &&
-      displayedRowIdxs.current[1] - 1 >= trackIndex
+      displayedRows.current[0] + 1 <= row &&
+      displayedRows.current[1] - 1 >= row
     ) {
       return;
     }
     gridRef.current.scrollToItem({
       align: "center",
-      rowIndex: trackIndex,
+      rowIndex: row,
       columnIndex: 0,
     });
   }
@@ -64,14 +62,15 @@ function TrackTable() {
 
   const setTrackUpdatedFn = useSetAtom(trackUpdatedFnAtom);
   const setShowTrackFn = useSetAtom(showTrackFnAtom);
-  const selectedPlaylistId = useAtomValue(selectedPlaylistIdAtom);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useAtom(
+    selectedPlaylistIdAtom
+  );
   const stopped = useAtomValue(stoppedAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const [state, dispatch] = useReducer(UpdateTrackTableState, DEFAULT_STATE);
-  const trackToShowAfterPlaylistSwitch = useRef("");
+  const offsetToShowAfterPlaylistSwitch = useRef<number | undefined>(undefined);
   const displayedRowIdxs = useRef<[number, number]>([-1, -1]);
 
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [contextMenuData, setContextMenuData] =
     useState<TrackContextMenuData | null>(null);
 
@@ -89,6 +88,16 @@ function TrackTable() {
     [dispatch]
   );
 
+  const setSelectedPlaylistOffset = useCallback(
+    (playlistOffset: number) => {
+      dispatch({
+        type: UpdateType.SelectedPlaylistOffsetChanged,
+        playlistOffset,
+      });
+    },
+    [dispatch]
+  );
+
   const closeEditTrackPanel = useCallback(() => {
     setEditFormTrack(null);
   }, [setEditFormTrack]);
@@ -101,23 +110,21 @@ function TrackTable() {
           for (const track of tracks || []) {
             PrecomputeTrackSort(track);
           }
+          let newSelectedOffset = undefined;
+          if (playingTrack?.playlistId === selectedPlaylistId) {
+            newSelectedOffset = playingTrack?.playlistOffset;
+          }
           dispatch({
             type: UpdateType.TracksChanged,
             playlistId: selectedPlaylistId,
             tracks,
+            selectedPlaylistOffset: newSelectedOffset,
           });
-          setSelectedTrackId(null);
           // have to reset the column widths
           if (gridRef.current) {
             gridRef.current.resetAfterIndices({ columnIndex: 0, rowIndex: 0 });
           }
-          if (
-            player().playingPlaylistId === selectedPlaylistId &&
-            player().playingTrack
-          ) {
-            trackToShowAfterPlaylistSwitch.current =
-              player().playingTrack?.id || "";
-          }
+          offsetToShowAfterPlaylistSwitch.current = newSelectedOffset;
         }
       });
   }, [selectedPlaylistId]);
@@ -125,19 +132,23 @@ function TrackTable() {
   useEffect(() => {
     player().setDisplayedTrackIds(
       state.playlistId,
-      state.sortFilteredIndexes.map((idx) => state.tracks[idx].id)
+      state.sortedFilteredPlaylistOffsets.map((playlistOffset) => {
+        return {
+          trackId: state.tracks[playlistOffset].id,
+          playlistOffset,
+        };
+      })
     );
 
-    const trackId = trackToShowAfterPlaylistSwitch.current;
-    if (trackId) {
-      trackToShowAfterPlaylistSwitch.current = "";
-      setSelectedTrackId(trackId);
+    const playlistOffset = offsetToShowAfterPlaylistSwitch.current;
+    if (playlistOffset) {
+      offsetToShowAfterPlaylistSwitch.current = undefined;
+      setSelectedPlaylistOffset(playlistOffset);
       showTrackInGrid(
         gridRef,
         displayedRowIdxs,
-        state.tracks,
-        state.sortFilteredIndexes,
-        trackId
+        state.sortedFilteredPlaylistOffsets,
+        playlistOffset
       );
     }
   }, [state]);
@@ -154,21 +165,21 @@ function TrackTable() {
   // we need to wait for the async effect to finish before showing the track. there's no clean way
   // to do this really, so we just use a ref to store the track id to show after the async effect
   const showTrack = useCallback(
-    (trackId: string, immediate: boolean) => {
-      if (!immediate) {
-        trackToShowAfterPlaylistSwitch.current = trackId;
+    (entry: PlaylistEntry) => {
+      if (state.playlistId !== entry.playlistId) {
+        offsetToShowAfterPlaylistSwitch.current = entry.playlistOffset;
+        setSelectedPlaylistId(entry.playlistId);
         return;
       }
-      setSelectedTrackId(trackId);
+      setSelectedPlaylistOffset(entry.playlistOffset);
       showTrackInGrid(
         gridRef,
         displayedRowIdxs,
-        state.tracks,
-        state.sortFilteredIndexes,
-        trackId
+        state.sortedFilteredPlaylistOffsets,
+        entry.playlistOffset
       );
     },
-    [state, setSelectedTrackId]
+    [state, setSelectedPlaylistId, setSelectedPlaylistOffset]
   );
 
   useEffect(() => {
@@ -178,7 +189,7 @@ function TrackTable() {
   useDebouncedTypeToShowInput((typedInput: string) => {
     const entry = BinarySearchTypeToShowList(state.typeToShowList, typedInput);
     if (entry && gridRef.current) {
-      setSelectedTrackId(state.tracks[entry.trackIndex].id);
+      setSelectedPlaylistOffset(entry.trackIndex);
       gridRef.current.scrollToItem({
         align: "center",
         rowIndex: entry.displayIndex,
@@ -188,11 +199,11 @@ function TrackTable() {
   });
 
   const showContextMenu = useCallback(
-    (event: React.MouseEvent, trackId: string) => {
+    (event: React.MouseEvent, playlistTrack: PlaylistTrack) => {
       event.preventDefault();
-      setSelectedTrackId(trackId);
+      setSelectedPlaylistOffset(playlistTrack.playlistOffset);
       setContextMenuData({
-        trackId: trackId,
+        playlistTrack,
         mouseX: event.clientX,
         mouseY: event.clientY,
       });
@@ -201,23 +212,23 @@ function TrackTable() {
   );
 
   const handleTrackAction = useCallback(
-    (action: TrackAction, trackId: string | undefined) => {
-      if (!trackId) {
-        return;
-      }
+    (action: TrackAction, playlistTrack: PlaylistTrack) => {
       switch (action) {
         case TrackAction.PLAY:
-          player().playTrack(trackId);
+          player().playTrack({
+            trackId: playlistTrack.trackId,
+            playlistOffset: playlistTrack.playlistOffset,
+          });
           break;
         case TrackAction.PLAY_NEXT:
-          player().playTrackNext(trackId);
+          player().playTrackNext(playlistTrack);
           break;
         case TrackAction.DOWNLOAD:
-          player().downloadMusic(trackId);
+          player().downloadMusic(playlistTrack.trackId);
           break;
         case TrackAction.EDIT:
           library()
-            .getTrack(trackId)
+            .getTrack(playlistTrack.trackId)
             .then((track) => {
               if (track) {
                 setEditFormTrack(track);
@@ -252,7 +263,7 @@ function TrackTable() {
               width={width}
               columnCount={COLUMNS.length}
               columnWidth={(i: number) => state.columnWidths[i]}
-              rowCount={state.sortFilteredIndexes.length}
+              rowCount={state.sortedFilteredPlaylistOffsets.length}
               rowHeight={() => ROW_HEIGHT}
               innerElementType={TrackTableStickyHeaderGrid}
               onItemsRendered={({
@@ -268,12 +279,18 @@ function TrackTable() {
               {(props) => (
                 <TrackTableCell
                   {...props}
+                  playlistId={state.playlistId}
                   tracks={state.tracks}
-                  trackDisplayIndexes={state.sortFilteredIndexes}
-                  selectedTrackId={selectedTrackId}
-                  setSelectedTrackId={setSelectedTrackId}
-                  playingTrackId={
-                    !stopped && playingTrack ? playingTrack.id : null
+                  trackDisplayIndexes={state.sortedFilteredPlaylistOffsets}
+                  selectedPlaylistEntry={state.selectedPlaylistEntry}
+                  setSelectedPlaylistOffset={setSelectedPlaylistOffset}
+                  playingPlaylistEntry={
+                    !stopped && playingTrack
+                      ? {
+                          playlistId: playingTrack.playlistId,
+                          playlistOffset: playingTrack.playlistOffset,
+                        }
+                      : undefined
                   }
                   showContextMenu={showContextMenu}
                   handleAction={handleTrackAction}

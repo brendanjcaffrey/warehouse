@@ -6,9 +6,10 @@ import {
   EditRounded,
 } from "@mui/icons-material";
 import { TrackAction } from "./TrackAction";
+import { PlaylistTrack } from "./Types";
 
 export interface TrackContextMenuData {
-  trackId: string;
+  playlistTrack: PlaylistTrack;
   mouseX: number;
   mouseY: number;
 }
@@ -16,7 +17,7 @@ export interface TrackContextMenuData {
 export interface TrackContextMenuProps {
   data: TrackContextMenuData | null;
   setData: (data: TrackContextMenuData | null) => void;
-  handleAction: (action: TrackAction, trackId: string | undefined) => void;
+  handleAction: (action: TrackAction, playlistTrack: PlaylistTrack) => void;
 }
 
 export function TrackContextMenu({
@@ -37,14 +38,16 @@ export function TrackContextMenu({
         data !== null ? { top: data.mouseY, left: data.mouseX } : undefined
       }
     >
-      <MenuItem onClick={() => handleAction(TrackAction.PLAY, data?.trackId)}>
+      <MenuItem
+        onClick={() => handleAction(TrackAction.PLAY, data!.playlistTrack)}
+      >
         <ListItemIcon>
           <PlayArrowRounded fontSize="small" />
         </ListItemIcon>
         <ListItemText>Play</ListItemText>
       </MenuItem>
       <MenuItem
-        onClick={() => handleAction(TrackAction.PLAY_NEXT, data?.trackId)}
+        onClick={() => handleAction(TrackAction.PLAY_NEXT, data!.playlistTrack)}
       >
         <ListItemIcon>
           <SkipNextRounded fontSize="small" />
@@ -52,14 +55,16 @@ export function TrackContextMenu({
         <ListItemText>Play Next</ListItemText>
       </MenuItem>
       <MenuItem
-        onClick={() => handleAction(TrackAction.DOWNLOAD, data?.trackId)}
+        onClick={() => handleAction(TrackAction.DOWNLOAD, data!.playlistTrack)}
       >
         <ListItemIcon>
           <DownloadRounded fontSize="small" />
         </ListItemIcon>
         <ListItemText>Download</ListItemText>
       </MenuItem>
-      <MenuItem onClick={() => handleAction(TrackAction.EDIT, data?.trackId)}>
+      <MenuItem
+        onClick={() => handleAction(TrackAction.EDIT, data!.playlistTrack)}
+      >
         <ListItemIcon>
           <EditRounded fontSize="small" />
         </ListItemIcon>
