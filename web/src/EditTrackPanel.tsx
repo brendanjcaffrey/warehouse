@@ -7,8 +7,11 @@ import {
   Button,
   TextField,
 } from "@mui/material";
-import { Track } from "./Library";
-import { FormatPlaybackPositionWithMillis } from "./PlaybackPositionFormatters";
+import { FieldDefinition, EDIT_TRACK_FIELDS } from "./EditTrackFields";
+import { store, trackUpdatedFnAtom } from "./State";
+import library, { Track } from "./Library";
+import { player } from "./Player";
+import { updatePersister } from "./UpdatePersister";
 
 interface EditTrackPanelProps {
   track: Track | null;
@@ -16,78 +19,94 @@ interface EditTrackPanelProps {
 }
 
 interface Field {
-  name: string;
-  label: string;
-  value: string;
-  setValue: (v: string) => void;
+  definition: FieldDefinition;
+  stateValue: string;
+  setStateValue: (v: string) => void;
+  valid: boolean;
 }
 
 function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
-  const [name, setName] = useState("");
-  const [artist, setArtist] = useState("");
-  const [album, setAlbum] = useState("");
-  const [albumArtist, setAlbumArtist] = useState("");
-  const [genre, setGenre] = useState("");
-  const [year, setYear] = useState("");
-  const [start, setStart] = useState("");
-  const [finish, setFinish] = useState("");
+  const fields: Field[] = EDIT_TRACK_FIELDS.map((definition) => {
+    const [stateValue, setStateValue] = useState("");
+    return {
+      definition,
+      stateValue,
+      setStateValue,
+      valid: track ? definition.validate(stateValue, track) : false,
+    };
+  });
+  const submitEnabled = fields.map((f) => f.valid).reduce((p, c) => p && c);
 
   useEffect(() => {
     if (!track) {
       return;
     }
-    setName(track.name);
-    setArtist(track.artistName);
-    setAlbum(track.albumName);
-    setAlbumArtist(track.albumArtistName);
-    setGenre(track.genre);
-    setYear(track.year.toString());
-    setStart(FormatPlaybackPositionWithMillis(track.start));
-    setFinish(FormatPlaybackPositionWithMillis(track.finish));
+    for (const field of fields) {
+      field.setStateValue(field.definition.getDisplayTrackValue(track));
+    }
   }, [track]);
 
-  const fields: Field[] = [
-    { name: "name", label: "Name", value: name, setValue: setName },
-    { name: "artist", label: "Artist", value: artist, setValue: setArtist },
-    { name: "album", label: "Album", value: album, setValue: setAlbum },
-    {
-      name: "albumArtist",
-      label: "Album Artist",
-      value: albumArtist,
-      setValue: setAlbumArtist,
-    },
-    { name: "genre", label: "Genre", value: genre, setValue: setGenre },
-    { name: "year", label: "Year", value: year, setValue: setYear },
-    { name: "start", label: "Start", value: start, setValue: setStart },
-    { name: "finish", label: "Finish", value: finish, setValue: setFinish },
-  ];
+  const submitEdits = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!track) {
+      return;
+    }
+
+    const updatedTrack = await library().getTrack(track.id);
+    if (!updatedTrack) {
+      return;
+    }
+
+    let updatedFields: { [key: string]: string } = {};
+    for (const field of fields) {
+      if (field.stateValue != field.definition.getDisplayTrackValue(track)) {
+        field.definition.setTrackValue(updatedTrack, field.stateValue);
+        const getter =
+          field.definition.getApiTrackValue ??
+          field.definition.getDisplayTrackValue;
+        updatedFields[field.definition.name] = getter(updatedTrack);
+      }
+    }
+    if (Object.keys(updatedFields).length > 0) {
+      await library().putTrack(updatedTrack);
+      store.get(trackUpdatedFnAtom).fn(updatedTrack);
+      player().trackInfoUpdated(updatedTrack);
+      updatePersister().updateTrackInfo(track?.id, updatedFields);
+    }
+    closeEditTrackPanel();
+  };
 
   return (
     <Dialog open={!!track} onClose={closeEditTrackPanel} maxWidth="xl">
-      <DialogTitle>Edit Track</DialogTitle>
-      <DialogContent>
-        {fields.map((f) => (
-          <TextField
-            key={f.name}
-            id={f.name}
-            name={f.name}
-            label={f.label}
-            value={f.value}
-            onChange={(e) => {
-              f.setValue(e.target.value);
-            }}
-            fullWidth
-            autoComplete="off"
-            margin="dense"
-            variant="standard"
-            type="text"
-          />
-        ))}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={closeEditTrackPanel}>Cancel</Button>
-        <Button>Submit</Button>
-      </DialogActions>
+      <form onSubmit={submitEdits}>
+        <DialogTitle>Edit Track</DialogTitle>
+        <DialogContent>
+          {fields.map((f) => (
+            <TextField
+              key={f.definition.name}
+              id={f.definition.name}
+              name={f.definition.name}
+              label={f.definition.label}
+              value={f.stateValue}
+              onChange={(e) => {
+                f.setStateValue(e.target.value);
+              }}
+              error={!f.valid}
+              fullWidth
+              autoComplete="off"
+              margin="dense"
+              variant="standard"
+              type="text"
+            />
+          ))}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEditTrackPanel}>Cancel</Button>
+          <Button type="submit" disabled={!submitEnabled}>
+            Submit
+          </Button>
+        </DialogActions>
+      </form>
     </Dialog>
   );
 }

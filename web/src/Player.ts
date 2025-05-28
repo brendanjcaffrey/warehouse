@@ -92,11 +92,10 @@ class Player {
     }
 
     document.addEventListener("keydown", (event: KeyboardEvent) => {
-      if (
-        event.key === " " &&
-        !store.get(typeToShowInProgressAtom) &&
-        !(event.target instanceof HTMLInputElement)
-      ) {
+      if (event.target instanceof HTMLInputElement) {
+        return;
+      }
+      if (event.key === " " && !store.get(typeToShowInProgressAtom)) {
         event.preventDefault();
         this.playPause();
       }
@@ -149,6 +148,21 @@ class Player {
         this.trackFinished();
       }
     };
+  }
+
+  trackInfoUpdated(track: Track) {
+    if (this.playingTrack?.track.id == track.id) {
+      this.playingTrack.track = track;
+      store.set(playingTrackAtom, this.playingTrack);
+
+      if (
+        this.stopped &&
+        this.audioRef &&
+        !store.get(waitingForMusicDownloadAtom)
+      ) {
+        this.audioRef.currentTime = this.playingTrack.track.start;
+      }
+    }
   }
 
   private async trackFinished() {

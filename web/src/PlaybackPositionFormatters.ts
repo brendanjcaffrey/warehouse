@@ -9,7 +9,13 @@ export function FormatPlaybackPositionWithMillis(time: number): string {
   const seconds = Math.floor(time % 60);
   const millis = Math.round((time % 1) * 1000);
   if (millis > 0) {
-    const trimmedMillis = millis.toString().replace(/0+$/, "");
+    let trimmedMillis = millis.toString().replace(/0+$/, "");
+    if (millis < 10) {
+      trimmedMillis = `0${trimmedMillis}`;
+    }
+    if (millis < 100) {
+      trimmedMillis = `0${trimmedMillis}`;
+    }
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}.${trimmedMillis}`;
   } else {
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
@@ -30,7 +36,7 @@ export function UnformatPlaybackPositionWithMillis(time: string): number {
   const seconds = parseInt(secondsParts[0], 10);
   let millis = 0;
   let millisDivisor = 1;
-  if (secondsParts.length === 2) {
+  if (secondsParts.length === 2 && secondsParts[1].length > 0) {
     millis = parseInt(secondsParts[1], 10);
     millisDivisor = Math.pow(10, secondsParts[1].length);
   }

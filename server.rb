@@ -98,6 +98,8 @@ ALBUM_ID_SQL = 'SELECT id FROM albums WHERE name=$1;'
 CREATE_ALBUM_SQL = 'INSERT INTO albums (name, sort_name) VALUES ($1, \'\') RETURNING id;'
 UPDATE_ALBUM_SQL = 'UPDATE tracks SET album_id=$1 WHERE id=$2;'
 
+UPDATE_EXPORT_FINISHED_SQL = 'UPDATE export_finished SET finished_at=current_timestamp;'
+
 MIME_TYPES = {
   'mp3' => 'audio/mpeg',
   'mp4' => 'audio/mp4',
@@ -385,6 +387,7 @@ class Server < Sinatra::Base
       perform_updates_if_should_track_changes(id) do
         db.exec_params(CREATE_PLAY_SQL, [id])
         db.exec_params(INCREMENT_PLAY_SQL, [id])
+        db.exec(UPDATE_EXPORT_FINISHED_SQL)
       end
     end
 
@@ -403,6 +406,7 @@ class Server < Sinatra::Base
           db.exec_params(DELETE_RATING_UPDATE_SQL, [id])
           db.exec_params(CREATE_RATING_UPDATE_SQL, [id, rating])
           db.exec_params(UPDATE_RATING_SQL, [rating, id])
+          db.exec(UPDATE_EXPORT_FINISHED_SQL)
         end
       end
     end
@@ -489,6 +493,7 @@ class Server < Sinatra::Base
           end
           db.exec_params(UPDATE_ALBUM_SQL, [album_id, id])
         end
+        db.exec(UPDATE_EXPORT_FINISHED_SQL)
       end
     end
   end

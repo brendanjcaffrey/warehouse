@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
 import axios from "axios";
+import qs from "qs";
 import library from "../src/Library";
 import { UpdatePersister, Update } from "../src/UpdatePersister";
 import { OperationResponse } from "../src/generated/messages";
@@ -33,6 +34,19 @@ function expectRatingPostRequest(id: string, value: number) {
   expect(axios.post).toHaveBeenCalledWith(
     `/api/rating/${id}`,
     `rating=${value}`,
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        Authorization: "Bearer mock-token",
+        "Content-Type": "application/x-www-form-urlencoded",
+      }),
+    })
+  );
+}
+
+function expectTrackInfoPostRequest(id: string, updates: object) {
+  expect(axios.post).toHaveBeenCalledWith(
+    `/api/track-info/${id}`,
+    qs.stringify(updates),
     expect.objectContaining({
       headers: expect.objectContaining({
         Authorization: "Bearer mock-token",
@@ -82,6 +96,14 @@ describe("UpdatePersister", () => {
     params: { rating: 60 },
   };
   const RATING_UPDATE_ARR_STR = JSON.stringify([RATING_UPDATE]);
+
+  const TRACK_INFO_PARAMS = { artist: "hello", album: "goodbye" };
+  const TRACK_INFO_UPDATE: Update = {
+    type: "track-info",
+    trackId: "123",
+    params: TRACK_INFO_PARAMS,
+  };
+  const TRACK_INFO_UPDATE_ARR_STR = JSON.stringify([TRACK_INFO_UPDATE]);
 
   beforeEach(() => {
     localStorage.clear();
@@ -323,11 +345,116 @@ describe("UpdatePersister", () => {
     });
   });
 
+  describe("track-info", () => {
+    it("should initialize with pending track info updates from local storage if they exist", () => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, TRACK_INFO_UPDATE_ARR_STR);
+      const persister = new UpdatePersister();
+      expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
+    });
+
+    it("should attempt any pending updates when the auth token & library metadata is set", async () => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, TRACK_INFO_UPDATE_ARR_STR);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
+      expectTrackInfoPostRequest("123", TRACK_INFO_UPDATE.params!);
+    });
+
+    it("should add a track info update to pending updates & persist if not authenticated", async () => {
+      const persister = new UpdatePersister();
+      persister.setHasLibraryMetadata(true);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
+
+      expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        TRACK_INFO_UPDATE_ARR_STR
+      );
+    });
+
+    it("should add a track info update to pending updates & persist if no library metadata", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("hi");
+      await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
+
+      expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        TRACK_INFO_UPDATE_ARR_STR
+      );
+    });
+
+    it("should add a track info update and immediately attempt it if authenticated", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+
+      await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
+      expectTrackInfoPostRequest("123", TRACK_INFO_PARAMS);
+      expect(persister.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
+    });
+
+    it("should do nothing if track user changes is false", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      persister.setHasLibraryMetadata(true);
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+
+      await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
+      expect(axios.post).toHaveBeenCalledTimes(0);
+      expect(persister.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(null);
+    });
+
+    it("should retry sending pending updates on a timer", async () => {
+      const persister = new UpdatePersister();
+      persister.setAuthToken("mock-token");
+      persister.setHasLibraryMetadata(true);
+      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+
+      // fails on first attempt
+      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
+      expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        TRACK_INFO_UPDATE_ARR_STR
+      );
+      expectTrackInfoPostRequest("123", TRACK_INFO_PARAMS);
+      clearPostMock();
+
+      // fails on second attempt
+      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.runOnlyPendingTimers();
+      await waitForUpdatesToFinish(persister);
+      expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
+        TRACK_INFO_UPDATE_ARR_STR
+      );
+      expectTrackInfoPostRequest("123", TRACK_INFO_PARAMS);
+      clearPostMock();
+
+      // succeeds on third attempt
+      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.runOnlyPendingTimers();
+      await waitForUpdatesToFinish(persister);
+
+      expectTrackInfoPostRequest("123", TRACK_INFO_PARAMS);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
+      expect(persister.pendingUpdates).toEqual([]);
+    });
+  });
+
   it("should support intermittent failing requests and adding while attempting updates", async () => {
     const updates: Update[] = [
       { type: "play", trackId: "123", params: undefined },
       { type: "rating", trackId: "456", params: { rating: 60 } },
-      { type: "play", trackId: "789", params: undefined },
+      { type: "track-info", trackId: "789", params: TRACK_INFO_PARAMS },
     ];
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updates));
     updates.push({ type: "play", trackId: "abc", params: undefined });
@@ -345,7 +472,7 @@ describe("UpdatePersister", () => {
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
     expectRatingPostRequest("456", 60);
-    expectPlayPostRequest("789");
+    expectTrackInfoPostRequest("789", TRACK_INFO_PARAMS);
     expectPlayPostRequest("abc");
     clearPostMock();
     expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
@@ -364,7 +491,7 @@ describe("UpdatePersister", () => {
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
-    expectPlayPostRequest("789");
+    expectTrackInfoPostRequest("789", TRACK_INFO_PARAMS);
     expectPlayPostRequest("abc");
     clearPostMock();
     expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
@@ -378,7 +505,7 @@ describe("UpdatePersister", () => {
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
-    expectPlayPostRequest("789");
+    expectTrackInfoPostRequest("789", TRACK_INFO_PARAMS);
     clearPostMock();
     expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
       JSON.stringify([updates[2]])
@@ -389,7 +516,7 @@ describe("UpdatePersister", () => {
     (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
-    expectPlayPostRequest("789");
+    expectTrackInfoPostRequest("789", TRACK_INFO_PARAMS);
     clearPostMock();
     expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
     expect(persister.pendingUpdates).toEqual([]);

@@ -65,24 +65,20 @@ export class UpdatePersister {
 
   async addPlay(trackId: string) {
     const update = { type: "play", trackId, params: undefined };
-    if (!this.shouldAttemptUpdate(update)) {
-      return;
-    }
-
-    if (this.authToken && !this.attemptingBulkUpdates) {
-      try {
-        await this.attemptUpdate(update);
-      } catch (e) {
-        console.error("unable to add play", e);
-        this.addPendingUpdate(update);
-      }
-    } else {
-      this.addPendingUpdate(update);
-    }
+    await this.handleUpdate(update);
   }
 
   async updateRating(trackId: string, rating: number) {
     const update = { type: "rating", trackId, params: { rating } };
+    await this.handleUpdate(update);
+  }
+
+  async updateTrackInfo(trackId: string, updatedFields: object) {
+    const update = { type: "track-info", trackId, params: updatedFields };
+    await this.handleUpdate(update);
+  }
+
+  private async handleUpdate(update: Update) {
     if (!this.shouldAttemptUpdate(update)) {
       return;
     }
@@ -91,7 +87,7 @@ export class UpdatePersister {
       try {
         await this.attemptUpdate(update);
       } catch (e) {
-        console.error("unable to update rating", e);
+        console.error(`unable to handle ${update.type} update`, e);
         this.addPendingUpdate(update);
       }
     } else {

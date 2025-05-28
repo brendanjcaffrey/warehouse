@@ -57,11 +57,11 @@ function LibraryWrapper({ children }: LibraryWrapperProps) {
 
       if (IsLibraryMetadataMessage(data)) {
         library().putMetadata(data);
-        updatePersister().setHasLibraryMetadata(true);
       }
 
       if (IsSyncSucceededMessage(data)) {
         setSyncFinished(true);
+        updatePersister().setHasLibraryMetadata(true);
         DownloadWorker.postMessage({
           type: SYNC_SUCCEEDED_TYPE,
         } as TypedMessage);

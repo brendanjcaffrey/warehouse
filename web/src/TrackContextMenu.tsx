@@ -7,6 +7,7 @@ import {
 } from "@mui/icons-material";
 import { TrackAction } from "./TrackAction";
 import { PlaylistTrack } from "./Types";
+import library from "./Library";
 
 export interface TrackContextMenuData {
   playlistTrack: PlaylistTrack;
@@ -62,14 +63,16 @@ export function TrackContextMenu({
         </ListItemIcon>
         <ListItemText>Download</ListItemText>
       </MenuItem>
-      <MenuItem
-        onClick={() => handleAction(TrackAction.EDIT, data!.playlistTrack)}
-      >
-        <ListItemIcon>
-          <EditRounded fontSize="small" />
-        </ListItemIcon>
-        <ListItemText>Edit</ListItemText>
-      </MenuItem>
+      {library().getTrackUserChanges() && (
+        <MenuItem
+          onClick={() => handleAction(TrackAction.EDIT, data!.playlistTrack)}
+        >
+          <ListItemIcon>
+            <EditRounded fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Edit</ListItemText>
+        </MenuItem>
+      )}
     </Menu>
   );
 }

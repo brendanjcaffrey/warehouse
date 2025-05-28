@@ -79,6 +79,14 @@ describe 'iTunes Streamer' do
     { 'HTTP_AUTHORIZATION' => 'Bearer blah' }
   end
 
+  def insert_old_export_finished_at
+    @db.exec('INSERT INTO export_finished (finished_at) VALUES (\'2020-01-01 00:00:00.000000\')')
+  end
+
+  def export_finished_at
+    timestamp_to_ns(get_first_value('SELECT finished_at FROM export_finished'))
+  end
+
   before :all do
     `echo "fake mp3 contents" > spec/__test.mp3`
     `echo "fake jpg contents" > spec/__artwork.jpg`
@@ -547,13 +555,16 @@ describe 'iTunes Streamer' do
     end
 
     it 'should create a play if tracking this user\'s changes is enabled' do
+      insert_old_export_finished_at
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('5')
+
       post '/api/play/21D8E2441A5E2204', {}, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('1')
       expect(get_first_value('SELECT track_id FROM plays')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT play_count FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('6')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
   end
 
@@ -629,6 +640,7 @@ describe 'iTunes Streamer' do
     end
 
     it 'should create a rating update if tracking this user\'s changes is enabled' do
+      insert_old_export_finished_at
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
 
       post '/api/rating/21D8E2441A5E2204', { rating: '80' }, get_auth_header
@@ -646,10 +658,16 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM rating_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT rating FROM rating_updates')).to eq('100')
       expect(get_first_value('SELECT rating FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('100')
+
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
   end
 
   describe '/api/track-info/*' do
+    before do
+      insert_old_export_finished_at
+    end
+
     it 'should return an error if no jwt' do
       post '/api/track-info/21D8E2441A5E2204'
       resp = OperationResponse.decode(last_response.body)
@@ -729,6 +747,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM name_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT name FROM name_updates')).to eq('abc')
       expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('abc')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { name: 'test_title' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -736,6 +755,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM name_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT name FROM name_updates')).to eq('test_title')
       expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('test_title')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create a year update if tracking this user\'s changes is enabled' do
@@ -747,6 +767,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM year_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT year FROM year_updates')).to eq('1970')
       expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1970')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { year: '1990' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -754,6 +775,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM year_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT year FROM year_updates')).to eq('1990')
       expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1990')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create a start update if tracking this user\'s changes is enabled' do
@@ -765,6 +787,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM start_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT start FROM start_updates')).to eq('1.2')
       expect(get_first_value('SELECT start FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1.2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { start: '1.3' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -772,6 +795,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM start_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT start FROM start_updates')).to eq('1.3')
       expect(get_first_value('SELECT start FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1.3')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create a finish update if tracking this user\'s changes is enabled' do
@@ -783,6 +807,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM finish_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT finish FROM finish_updates')).to eq('2.3')
       expect(get_first_value('SELECT finish FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('2.3')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { finish: '2.4' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -790,6 +815,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT track_id FROM finish_updates')).to eq('21D8E2441A5E2204')
       expect(get_first_value('SELECT finish FROM finish_updates')).to eq('2.4')
       expect(get_first_value('SELECT finish FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('2.4')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create an artist update if tracking this user\'s changes is enabled' do
@@ -803,6 +829,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT artist FROM artist_updates')).to eq('new_artist')
       expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { artist: 'test_artist' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -811,6 +838,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT artist FROM artist_updates')).to eq('test_artist')
       expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create an genre update if tracking this user\'s changes is enabled' do
@@ -824,6 +852,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT genre FROM genre_updates')).to eq('new_genre')
       expect(get_first_value('SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_genre')
       expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { genre: 'test_genre' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -832,6 +861,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT genre FROM genre_updates')).to eq('test_genre')
       expect(get_first_value('SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_genre')
       expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create an album artist update if tracking this user\'s changes is enabled' do
@@ -845,6 +875,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('new_album_artist')
       expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.album_artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_album_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { album_artist: '' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -853,6 +884,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('')
       expect(get_first_value('SELECT album_artist_id FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { album_artist: 'test_artist' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -861,6 +893,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('test_artist')
       expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.album_artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
     it 'should create an album album update if tracking this user\'s changes is enabled' do
@@ -874,6 +907,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album FROM album_updates')).to eq('new_album')
       expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { album: '' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -882,6 +916,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album FROM album_updates')).to eq('')
       expect(get_first_value('SELECT album_id FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
       post '/api/track-info/21D8E2441A5E2204', { album: 'test_album' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
@@ -890,6 +925,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album FROM album_updates')).to eq('test_album')
       expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
   end
 end
