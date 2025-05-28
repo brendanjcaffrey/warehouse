@@ -25,7 +25,7 @@ const TRACKS: Track[] = [
     rating: 100,
     ext: "mp3",
     fileMd5: "md5",
-    artworks: [],
+    artwork: null,
   },
 ];
 

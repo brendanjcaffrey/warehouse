@@ -258,7 +258,7 @@ module Export
           FileUtils.mv(artwork_filename, "#{@artwork_dir}/#{out_filename}")
         end
       end
-      track.add_artwork(@artwork_files[md5])
+      track.set_artwork_filename(@artwork_files[md5])
     end
 
     def total_file_size

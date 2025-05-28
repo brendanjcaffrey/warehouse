@@ -29,7 +29,7 @@ export interface Track {
   rating: number;
   ext: string;
   fileMd5: string;
-  artworks: string[];
+  artwork: string | null;
 }
 
 export interface Playlist {
@@ -289,9 +289,7 @@ class Library {
     const tx = this.db.transaction("tracks", "readonly");
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
-    return new Set(
-      tracks.filter((t) => t.artworks.length > 0).flatMap((t) => t.artworks)
-    );
+    return new Set(tracks.filter((t) => t.artwork).map((t) => t.artwork!));
   }
 
   public async getTrackArtworkIds(): Promise<Array<TrackFileIds> | undefined> {
@@ -309,16 +307,16 @@ class Library {
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
     for (const track of tracks) {
-      if (track.artworks.length === 0) {
+      if (!track.artwork) {
         continue;
       }
 
-      if (!seen.has(track.artworks[0])) {
+      if (!seen.has(track.artwork)) {
         trackArtworkIds.push({
           trackId: track.id,
-          fileId: track.artworks[0],
+          fileId: track.artwork,
         });
-        seen.add(track.artworks[0]);
+        seen.add(track.artwork);
       }
     }
 

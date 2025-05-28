@@ -154,7 +154,7 @@ class SyncManager {
         rating: track.rating,
         ext: track.ext,
         fileMd5: track.fileMd5,
-        artworks: track.artworks,
+        artwork: track.artworkFilename === "" ? null : track.artworkFilename,
       };
       await library().putTrack(dto);
     }

@@ -46,7 +46,7 @@ function Artwork() {
       if (
         IsFileFetchedMessage(data) &&
         data.fileType === FileType.ARTWORK &&
-        data.ids.fileId === playingTrack?.track.artworks[0]
+        data.ids.fileId === playingTrack?.track.artwork
       ) {
         showFetchedArtwork(data.ids.fileId);
       }
@@ -65,14 +65,14 @@ function Artwork() {
   }, [handleDownloadWorkerMessage]);
 
   useEffect(() => {
-    if (playingTrack && playingTrack.track.artworks[0] !== shownArtwork) {
+    if (playingTrack && playingTrack.track.artwork !== shownArtwork) {
       setShowModal(false);
       if (artworkFileURL) {
         URL.revokeObjectURL(artworkFileURL);
         setArtworkFileURL(null);
       }
 
-      const artworkId = playingTrack.track.artworks[0];
+      const artworkId = playingTrack.track.artwork;
       if (artworkId) {
         setShownArtwork(artworkId);
         showFetchedArtwork(artworkId);
@@ -82,7 +82,7 @@ function Artwork() {
     }
   }, [playingTrack, artworkFileURL, shownArtwork, showFetchedArtwork]);
 
-  if (showArtwork && (playingTrack?.track.artworks.length ?? 0) > 0) {
+  if (showArtwork && playingTrack && playingTrack.track.artwork) {
     return (
       <Box
         sx={{

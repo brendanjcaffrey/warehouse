@@ -56,13 +56,12 @@ module Export
       ACCEPTABLE_EXTENSIONS.index(ext) != nil
     end
 
-    def artworks
-      @artworks || []
+    def artwork_filename
+      @artwork_filename || nil
     end
 
-    def add_artwork(filename)
-      @artworks ||= []
-      @artworks << filename
+    def set_artwork_filename(filename)
+      @artwork_filename = filename
     end
 
     private

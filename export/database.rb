@@ -63,14 +63,8 @@ module Export
         rating INTEGER,
         ext TEXT,
         file TEXT,
-        file_md5 CHAR(32)
-      );
-    SQL
-
-    CREATE_TRACK_ARTWORK_SQL = <<-SQL
-      CREATE TABLE track_artwork (
-        track_id CHAR(16),
-        filename CHAR(36)
+        file_md5 CHAR(32),
+        artwork_filename CHAR(36)
       );
     SQL
 
@@ -179,11 +173,7 @@ module Export
 
     TRACK_SQL = <<-SQL
       INSERT INTO tracks (id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, year, duration, start, finish,
-        track_number, disc_number, play_count, rating, ext, file, file_md5) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18);
-    SQL
-
-    TRACK_ARTWORK_SQL = <<-SQL
-      INSERT INTO track_artwork (track_id, filename) VALUES ($1,$2);
+        track_number, disc_number, play_count, rating, ext, file, file_md5, artwork_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19);
     SQL
 
     PLAYLIST_SQL = 'INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4);'
@@ -273,10 +263,6 @@ module Export
       build_tables
     end
 
-    def create_track_artwork(track_id, artwork_md5)
-      @db.exec_params(TRACK_ARTWORK_SQL, [track_id, artwork_md5])
-    end
-
     def create_track(track)
       genre = genre_id(track.genre)
       artist = artist_id(track.artist, track.sort_artist)
@@ -285,7 +271,7 @@ module Export
 
       @db.exec_params(TRACK_SQL, [track.id, track.name, track.sort_name, artist, album_artist, album, genre, track.year,
                                   track.duration, track.start, track.finish, track.track_number, track.disc_number, track.play_count,
-                                  track.rating, track.ext, track.file, track.track_file_md5])
+                                  track.rating, track.ext, track.file, track.track_file_md5, track.artwork_filename])
     end
 
     def create_playlist(playlist)
@@ -308,7 +294,6 @@ module Export
       @db.exec(CREATE_ARTISTS_SQL)
       @db.exec(CREATE_ALBUMS_SQL)
       @db.exec(CREATE_TRACKS_SQL)
-      @db.exec(CREATE_TRACK_ARTWORK_SQL)
       @db.exec(CREATE_PLAYLISTS_SQL)
       @db.exec(CREATE_PLAYLIST_TRACK_SQL)
       @db.exec(CREATE_PLAYS_SQL)

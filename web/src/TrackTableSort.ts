@@ -39,7 +39,7 @@ export function SortTracks(
       const valueA = trackA[key];
       const valueB = trackB[key];
       if (valueA !== valueB) {
-        return valueA < valueB ? -1 : 1;
+        return valueA! < valueB! ? -1 : 1;
       }
     }
     return 0;

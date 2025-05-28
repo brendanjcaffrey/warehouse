@@ -109,7 +109,6 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM artists')
     @db.exec('DELETE FROM albums')
     @db.exec('DELETE FROM tracks')
-    @db.exec('DELETE FROM track_artwork')
     @db.exec('DELETE FROM playlists')
     @db.exec('DELETE FROM playlist_tracks')
     @db.exec('DELETE FROM plays')
@@ -127,8 +126,11 @@ describe 'iTunes Streamer' do
 
     @database.clear
     file_path = "HD:#{Dir.pwd}/spec/__test.mp3"
-    @database.create_track(Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_artist', '', 'test_album', '',
-                                             'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, file_path))
+
+    track = Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_artist', '', 'test_album', '',
+                              'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, file_path)
+    track.set_artwork_filename('__artwork.jpg')
+    @database.create_track(track)
   end
 
   describe '/' do
@@ -169,12 +171,11 @@ describe 'iTunes Streamer' do
     end
 
     it 'should 404 if the file exists but isn\'t in the database' do
-      get '/artwork/__artwork.jpg', {}, get_auth_header
+      get '/artwork/__fake_artwork.jpg', {}, get_auth_header
       expect(last_response.status).to eq(404)
     end
 
     it 'should send the contents of the file if it is in the database' do
-      @database.create_track_artwork('21D8E2441A5E2204', '__artwork.jpg')
       get '/artwork/__artwork.jpg', {}, get_auth_header
       expect(last_response.body).to eq("fake jpg contents\n")
     end
@@ -323,8 +324,8 @@ describe 'iTunes Streamer' do
       expect(track.playCount).to eq(5)
       expect(track.rating).to eq(100)
       expect(track.ext).to eq('mp3')
-      expect(track.artworks).to eq([])
       expect(track.fileMd5).to eq('06dbe92c2a5dab2f7911e20a9e157521')
+      expect(track.artworkFilename.strip).to eq('__artwork.jpg')
 
       expect(library.playlists.length).to eq(4)
       playlist = library.playlists[0]
@@ -370,21 +371,12 @@ describe 'iTunes Streamer' do
       expect(library.trackUserChanges).to be false
     end
 
-    it 'should include album artwork' do
+    it 'should support missing artwork' do
       @database.set_export_finished
+      @db.exec('UPDATE tracks SET artwork_filename=NULL')
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
-      expect(library.tracks[0].artworks).to eq([])
-
-      @database.create_track_artwork('21D8E2441A5E2204', 'test_artwork.jpg')
-      get '/api/library', {}, get_auth_header
-      library = LibraryResponse.decode(last_response.body).library
-      expect(library.tracks[0].artworks).to eq(%w[test_artwork.jpg])
-
-      @database.create_track_artwork('21D8E2441A5E2204', 'test_artwork2.jpg')
-      get '/api/library', {}, get_auth_header
-      library = LibraryResponse.decode(last_response.body).library
-      expect(library.tracks[0].artworks).to eq(%w[test_artwork.jpg test_artwork2.jpg])
+      expect(library.tracks[0].artworkFilename).to eq('')
     end
   end
 

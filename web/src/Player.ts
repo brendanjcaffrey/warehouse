@@ -403,7 +403,7 @@ class Player {
   private handleArtworkFetched(data: FileFetchedMessage) {
     if (
       this.playingTrack &&
-      this.playingTrack.track.artworks.includes(data.ids.fileId)
+      this.playingTrack.track.artwork === data.ids.fileId
     ) {
       this.trySetMediaMetadata();
     }
@@ -508,16 +508,15 @@ class Player {
     });
 
     // NB: media metadata artwork not working in Firefox but does in Chrome
-    const url =
-      this.playingTrack.track.artworks.length > 0
-        ? await files().tryGetFileURL(
-            FileType.ARTWORK,
-            this.playingTrack.track.artworks[0]
-          )
-        : null;
+    const url = this.playingTrack.track.artwork
+      ? await files().tryGetFileURL(
+          FileType.ARTWORK,
+          this.playingTrack.track.artwork
+        )
+      : null;
     if (url) {
       // XXX if you update this, update the type detection in library.rb
-      const ext = this.playingTrack.track.artworks[0].split(".").pop();
+      const ext = this.playingTrack.track.artwork!.split(".").pop();
       switch (ext) {
         case "jpg":
           metadata.artwork = [{ src: url, type: "image/jpeg" }];
@@ -553,8 +552,8 @@ class Player {
       const track = await library().getTrack(trackId);
       if (track) {
         musicIds.push({ trackId: track.id, fileId: track.fileMd5 });
-        if (track.artworks.length > 0) {
-          artworkIds.push({ trackId: track.id, fileId: track.artworks[0] });
+        if (track.artwork) {
+          artworkIds.push({ trackId: track.id, fileId: track.artwork });
         }
       }
     }
