@@ -1,8 +1,11 @@
+# frozen_string_literal: true
+
 module Export
   ACCEPTABLE_EXTENSIONS = %w[mp3 mp4 m4a aiff aif wav].freeze
 
   Track = Struct.new(:id, :name, :sort_name_unclean, :artist, :sort_artist_unclean, :album_artist, :sort_album_artist_unclean,
-                     :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track_number, :disc_number, :play_count, :rating_raw, :location, :num_artworks) do
+                     :album, :sort_album_unclean, :genre, :year, :duration, :start, :finish, :track_number, :disc_number,
+                     :play_count, :rating_raw, :location) do
     def file
       # location is like "Macintosh HD:Users:Brendan:Music:iTunes:iTunes Music:artist:album:song.mp3"
       # so we turn the : into /, remove the drive name and lop off what the config provides

@@ -16,6 +16,9 @@ module Export
     SCRIPT
 
     TOTAL_TRACK_COUNT = 'tell application "Music" to get count of file tracks in library playlist 1'
+    # NB: while the applescript dictionary for the Music app allegedly supports multiple artworks
+    # for the same track, requesting the details of artwork 2 of a file track has never worked in
+    # my experience, so this script early exits after getting the first one.
     TRACK_INFO = <<-SCRIPT
       tell application "Music"
         set output to ""
@@ -43,22 +46,20 @@ module Export
         set output to output & rating of thisTrack & "\n"
         set output to output & location of thisTrack as text & "\n"
 
-        set numArtworks to 0
         repeat with thisArtwork in artworks of thisTrack
-            set fileName to (artworkDir & "img" & (numArtworks as string))
+            set fileName to (artworkDir & (persistent ID of thisTrack as string))
             try
               set outFile to open for access fileName with write permission
               set srcBytes to raw data of thisArtwork
               set eof outFile to 0
               write srcBytes to outFile
 
-              set numArtworks to numArtworks + 1
               close access fileName
+              exit repeat
             on error
               close access fileName
             end try
         end repeat
-        set output to output & numArtworks as text & "\n"
         #{RESET_DELIMS}
 
         output
@@ -219,40 +220,45 @@ module Export
         end
 
         track = Track.new(*result.out.split("\n"))
-        track.num_artworks.to_i.times do |i|
-          in_filename = "#{@tmpdir}/img#{i}"
-          md5 = Digest::MD5.file(in_filename).hexdigest
-          unless @artwork_files.key?(md5)
-            out = @command.run("file #{in_filename}").out
-            type = nil
-            type = 'jpg' if out.include?('JPEG image data')
-            type = 'png' if out.include?('PNG image data')
-
-            # XXX if you update this, update the type detection in Player.ts
-            if type.nil?
-              puts 'Unable to determine album artwork image type'
-              puts "file output: #{out}"
-              exit(1)
-            end
-
-            out_filename = "#{md5}.#{type}"
-            @artwork_files[md5] = out_filename
-            @artwork_total_file_size += File.size(in_filename)
-            # leave existing files in place so they don't get updated mod times and get re-rsynced
-            if @existing_artwork_files.include?(out_filename)
-              FileUtils.rm(in_filename)
-            else
-              FileUtils.mv(in_filename, "#{@artwork_dir}/#{out_filename}")
-            end
-          end
-          track.add_artwork(@artwork_files[md5])
-        end
+        check_for_track_artwork(track)
         @track_total_file_size += track.track_file_size
         return track
       end
 
       puts "Unable to get track info even after retrying (track_no: #{track_offset})"
       exit(1)
+    end
+
+    def check_for_track_artwork(track)
+      artwork_filename = "#{@tmpdir}/#{track.id}"
+      artwork_size = File.size?(artwork_filename)
+      return unless artwork_size
+
+      md5 = Digest::MD5.file(artwork_filename).hexdigest
+      unless @artwork_files.key?(md5)
+        out = @command.run("file #{artwork_filename}").out
+        type = nil
+        type = 'jpg' if out.include?('JPEG image data')
+        type = 'png' if out.include?('PNG image data')
+
+        # XXX if you update this, update the type detection in Player.ts
+        if type.nil?
+          puts 'Unable to determine album artwork image type'
+          puts "file output: #{out}"
+          exit(1)
+        end
+
+        out_filename = "#{md5}.#{type}"
+        @artwork_files[md5] = out_filename
+        @artwork_total_file_size += File.size(artwork_filename)
+        # leave existing files in place so they don't get updated mod times and get re-rsynced
+        if @existing_artwork_files.include?(out_filename)
+          FileUtils.rm(artwork_filename)
+        else
+          FileUtils.mv(artwork_filename, "#{@artwork_dir}/#{out_filename}")
+        end
+      end
+      track.add_artwork(@artwork_files[md5])
     end
 
     def total_file_size
