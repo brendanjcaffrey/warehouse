@@ -2,7 +2,7 @@ require 'rubygems'
 require 'require_all'
 require 'sinatra'
 require 'tty-command'
-require_relative 'shared/config.rb'
+require_relative 'shared/config'
 
 task :export do
   Config.set_env('local')
@@ -50,7 +50,7 @@ task :proto do
   command.run('protoc --plugin="protoc-gen-ts=./web/node_modules/.bin/protoc-gen-ts" --ts_out="./web/src/generated" ./messages.proto')
 end
 
-task :build => [:install, :proto] do
+task build: %i[install proto] do
   command = TTY::Command.new
   command.run('cd web && npm run build')
 end

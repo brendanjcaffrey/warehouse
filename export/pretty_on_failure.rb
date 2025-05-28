@@ -1,7 +1,9 @@
+# frozen_string_literal: true
+
 require 'tty-command'
 
 class PrettyOnFailure < TTY::Command::Printers::Abstract
-  TIME_FORMAT = "%5.3f %s"
+  TIME_FORMAT = '%5.3f %s'
 
   def initialize(*)
     super
@@ -11,27 +13,27 @@ class PrettyOnFailure < TTY::Command::Printers::Abstract
 
   def print_command_start(cmd, *args)
     message = ["Running #{decorate(cmd.to_command, :yellow, :bold)}"]
-    message << args.map(&:chomp).join(" ") unless args.empty?
+    message << args.map(&:chomp).join(' ') unless args.empty?
     write(cmd, message.join, @cached)
   end
 
   def print_command_out_data(cmd, *args)
-    message = args.map(&:chomp).join(" ")
+    message = args.map(&:chomp).join(' ')
     write(cmd, "\t#{message}", out_data)
   end
 
   def print_command_err_data(cmd, *args)
-    message = args.map(&:chomp).join(" ")
-    write(cmd, "\t" + decorate(message, :red), err_data)
+    message = args.map(&:chomp).join(' ')
+    write(cmd, "\t#{decorate(message, :red)}", err_data)
   end
 
-  def print_command_exit(cmd, status, runtime, *args)
-    if !status.zero?
+  def print_command_exit(cmd, status, runtime, *_args)
+    unless status.zero?
       output << @cached.join
       output << out_data
       output << err_data
 
-      runtime = TIME_FORMAT % [runtime, pluralize(runtime, "second")]
+      runtime = format(TIME_FORMAT, runtime, pluralize(runtime, 'second'))
       message = ["Finished in #{runtime}"]
       message << " with exit status #{status}" if status
       message << " (#{success_or_failure(status)})"
@@ -47,9 +49,7 @@ class PrettyOnFailure < TTY::Command::Printers::Abstract
     cmd_set_uuid = cmd.options.fetch(:uuid, true)
     uuid_needed = cmd.options[:uuid].nil? ? @uuid : cmd_set_uuid
     out = []
-    if uuid_needed
-      out << "[#{decorate(cmd.uuid, :green)}] " unless cmd.uuid.nil?
-    end
+    out << "[#{decorate(cmd.uuid, :green)}] " if uuid_needed && !cmd.uuid.nil?
     out << "#{message}\n"
     target = !data.nil? ? data : output
     target << out.join
@@ -66,10 +66,10 @@ class PrettyOnFailure < TTY::Command::Printers::Abstract
 
   # @api private
   def success_or_failure(status)
-    if status == 0
-      decorate("successful", :green, :bold)
+    if status.zero?
+      decorate('successful', :green, :bold)
     else
-      decorate("failed", :red, :bold)
+      decorate('failed', :red, :bold)
     end
   end
 end

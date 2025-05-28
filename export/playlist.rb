@@ -1,5 +1,5 @@
 module Export
-  class Playlist < Struct.new(:id, :name, :special_kind, :parent_id, :track_count, :track_string)
+  Playlist = Struct.new(:id, :name, :special_kind, :parent_id, :track_count, :track_string) do
     def tracks
       @tracks ||= (track_string.nil? ? [] : track_string.split("\n"))
     end

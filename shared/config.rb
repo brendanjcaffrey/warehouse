@@ -11,17 +11,9 @@ module Config
     @env == 'remote'
   end
 
-  def set_use_persistent_db(val)
-    @use_persistent_db = val
-  end
-
-  def use_persistent_db?
-    @use_persistent_db
-  end
-
   def vals
     @vals ||= begin
-      YAML.load(File.open('config.yaml'))
+      YAML.safe_load(File.open('config.yaml'))
     rescue ArgumentError => e
       puts "Could not parse config: #{e.message}"
       exit
@@ -37,7 +29,7 @@ module Config
   end
 
   def [](key)
-    if @env.nil? || !['local', 'remote'].include?(@env)
+    if @env.nil? || !%w[local remote].include?(@env)
       puts 'Invalid config environment'
       exit
     end

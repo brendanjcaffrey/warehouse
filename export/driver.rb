@@ -1,7 +1,7 @@
 require 'net/http'
 require 'json'
-require_relative '../shared/jwt.rb'
-require_relative '../shared/messages_pb.rb'
+require_relative '../shared/jwt'
+require_relative '../shared/messages_pb'
 
 module Export
   class Driver
@@ -25,44 +25,44 @@ module Export
         finish_updates(@database.get_finish_updates)
       end
 
-      if Config.remote('update_library')
-        uri = URI("#{Config.remote('base_url')}/api/updates")
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = uri.scheme == 'https'
+      return unless Config.remote('update_library')
 
-        request = Net::HTTP::Get.new(uri)
-        request['Authorization'] = "Bearer #{build_jwt('export_driver_update_library', Config.remote('secret'))}"
-        response = http.request(request)
-        updates = nil
+      uri = URI("#{Config.remote('base_url')}/api/updates")
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == 'https'
 
-        if response.is_a?(Net::HTTPSuccess)
-          begin
-            updates = UpdatesResponse.decode(response.body)
-            if updates.response == :error
-              puts "failed to fetch updates: #{updates.error}"
-              exit(1)
-            end
-          rescue Google::Protobuf::ParseError => e
-            puts "failed to parse protobuf: #{e.message}"
+      request = Net::HTTP::Get.new(uri)
+      request['Authorization'] = "Bearer #{build_jwt('export_driver_update_library', Config.remote('secret'))}"
+      response = http.request(request)
+      updates = nil
+
+      if response.is_a?(Net::HTTPSuccess)
+        begin
+          updates = UpdatesResponse.decode(response.body)
+          if updates.response == :error
+            puts "failed to fetch updates: #{updates.error}"
             exit(1)
           end
-        else
-          puts "HTTP request failed with status: #{response.code} #{response.message}"
+        rescue Google::Protobuf::ParseError => e
+          puts "failed to parse protobuf: #{e.message}"
           exit(1)
         end
-
-        updates = updates.updates
-        play_updates(updates.plays.map(&:trackId))
-        rating_updates(flatten_updates(updates.ratings))
-        name_updates(flatten_updates(updates.names))
-        artist_updates(flatten_updates(updates.artists))
-        album_updates(flatten_updates(updates.albums))
-        album_artist_updates(flatten_updates(updates.albumArtists))
-        genre_updates(flatten_updates(updates.genres))
-        year_updates(flatten_updates(updates.years))
-        start_updates(flatten_updates(updates.starts))
-        finish_updates(flatten_updates(updates.finishes))
+      else
+        puts "HTTP request failed with status: #{response.code} #{response.message}"
+        exit(1)
       end
+
+      updates = updates.updates
+      play_updates(updates.plays.map(&:trackId))
+      rating_updates(flatten_updates(updates.ratings))
+      name_updates(flatten_updates(updates.names))
+      artist_updates(flatten_updates(updates.artists))
+      album_updates(flatten_updates(updates.albums))
+      album_artist_updates(flatten_updates(updates.albumArtists))
+      genre_updates(flatten_updates(updates.genres))
+      year_updates(flatten_updates(updates.years))
+      start_updates(flatten_updates(updates.starts))
+      finish_updates(flatten_updates(updates.finishes))
     end
 
     def export_itunes_library!
@@ -192,7 +192,7 @@ module Export
         playlist = @library.playlist_info(playlist_index)
         next if playlist.skip?
 
-        playlist.tracks.reject! { |track_id| @skipped_tracks.has_key?(track_id) }
+        playlist.tracks.reject! { |track_id| @skipped_tracks.key?(track_id) }
 
         @database.create_playlist(playlist)
         @needed_folders[playlist.parent_id] = true if playlist.parent_id != -1
@@ -207,7 +207,7 @@ module Export
         @progress.increment!
         folder = @library.folder_info(folder_index)
 
-        if @needed_folders.has_key?(folder.id)
+        if @needed_folders.key?(folder.id)
           @database.create_playlist(folder)
         else
           puts "Skipping folder #{folder.name} because it has no children"

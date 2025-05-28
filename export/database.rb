@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'pg'
 
 module Export
@@ -214,43 +216,43 @@ module Export
     end
 
     def get_plays
-      return @db.exec(GET_PLAYS_SQL).values.flatten
+      @db.exec(GET_PLAYS_SQL).values.flatten
     end
 
     def get_ratings
-      return @db.exec(GET_RATING_UPDATES_SQL).values
+      @db.exec(GET_RATING_UPDATES_SQL).values
     end
 
     def get_name_updates
-      return @db.exec(GET_NAME_UPDATES_SQL).values
+      @db.exec(GET_NAME_UPDATES_SQL).values
     end
 
     def get_artist_updates
-      return @db.exec(GET_ARTIST_UPDATES_SQL).values
+      @db.exec(GET_ARTIST_UPDATES_SQL).values
     end
 
     def get_album_updates
-      return @db.exec(GET_ALBUM_UPDATES_SQL).values
+      @db.exec(GET_ALBUM_UPDATES_SQL).values
     end
 
     def get_album_artist_updates
-      return @db.exec(GET_ALBUM_ARTIST_UPDATES_SQL).values
+      @db.exec(GET_ALBUM_ARTIST_UPDATES_SQL).values
     end
 
     def get_genre_updates
-      return @db.exec(GET_GENRE_UPDATES_SQL).values
+      @db.exec(GET_GENRE_UPDATES_SQL).values
     end
 
     def get_year_updates
-      return @db.exec(GET_YEAR_UPDATES_SQL).values
+      @db.exec(GET_YEAR_UPDATES_SQL).values
     end
 
     def get_start_updates
-      return @db.exec(GET_START_UPDATES_SQL).values
+      @db.exec(GET_START_UPDATES_SQL).values
     end
 
     def get_finish_updates
-      return @db.exec(GET_FINISH_UPDATES_SQL).values
+      @db.exec(GET_FINISH_UPDATES_SQL).values
     end
 
     def get_track_and_artist_name(id)
@@ -262,11 +264,9 @@ module Export
 
       db = PG.connect(@postgres_connection_options)
       database_exists = db.exec(DATABASE_EXISTS_SQL).values.flatten.any? { |name| name == @database_name }
-      if database_exists
-        db.exec(DROP_DATABASE_SQL % @database_name)
-      end
+      db.exec(DROP_DATABASE_SQL % @database_name) if database_exists
 
-      db.exec(CREATE_DATABASE_SQL % [@database_name])
+      db.exec(format(CREATE_DATABASE_SQL, @database_name))
       db.close
 
       @db = PG.connect(@db_connection_options)
@@ -340,6 +340,7 @@ module Export
 
     def album_artist_id(name, sort_name)
       return nil if name.empty?
+
       @artists[name] || create_artist(name, sort_name)
     end
 
@@ -350,6 +351,7 @@ module Export
 
     def album_id(name, sort_name)
       return nil if name.empty?
+
       @albums[name] || create_album(name, sort_name)
     end
 

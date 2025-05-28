@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'tmpdir'
 require 'set'
 require_relative './pretty_on_failure'
@@ -156,24 +158,24 @@ module Export
       end tell
     SCRIPT
 
-    GET_RATING = GET_TEMPLATE % ['%s', 'rating']
-    GET_NAME = GET_TEMPLATE % ['%s', 'name']
-    GET_ARTIST = GET_TEMPLATE % ['%s', 'artist']
-    GET_ALBUM = GET_TEMPLATE % ['%s', 'album']
-    GET_ALBUM_ARTIST = GET_TEMPLATE % ['%s', 'album artist']
-    GET_GENRE = GET_TEMPLATE % ['%s', 'genre']
-    GET_YEAR = GET_TEMPLATE % ['%s', 'year']
-    GET_START = GET_TEMPLATE % ['%s', 'start']
-    GET_FINISH = GET_TEMPLATE % ['%s', 'finish']
-    UPDATE_RATING = UPDATE_TEMPLATE % ['%s', 'rating', '%s']
-    UPDATE_NAME = UPDATE_TEMPLATE % ['%s', 'name', '"%s"']
-    UPDATE_ARTIST = UPDATE_TEMPLATE % ['%s', 'artist', '"%s"']
-    UPDATE_ALBUM = UPDATE_TEMPLATE % ['%s', 'album', '"%s"']
-    UPDATE_ALBUM_ARTIST = UPDATE_TEMPLATE % ['%s', 'album artist', '"%s"']
-    UPDATE_GENRE = UPDATE_TEMPLATE % ['%s', 'genre', '"%s"']
-    UPDATE_YEAR = UPDATE_TEMPLATE % ['%s', 'year', '%s']
-    UPDATE_START = UPDATE_TEMPLATE % ['%s', 'start', '%s']
-    UPDATE_FINISH = UPDATE_TEMPLATE % ['%s', 'finish', '%s']
+    GET_RATING = format(GET_TEMPLATE, '%s', 'rating')
+    GET_NAME = format(GET_TEMPLATE, '%s', 'name')
+    GET_ARTIST = format(GET_TEMPLATE, '%s', 'artist')
+    GET_ALBUM = format(GET_TEMPLATE, '%s', 'album')
+    GET_ALBUM_ARTIST = format(GET_TEMPLATE, '%s', 'album artist')
+    GET_GENRE = format(GET_TEMPLATE, '%s', 'genre')
+    GET_YEAR = format(GET_TEMPLATE, '%s', 'year')
+    GET_START = format(GET_TEMPLATE, '%s', 'start')
+    GET_FINISH = format(GET_TEMPLATE, '%s', 'finish')
+    UPDATE_RATING = format(UPDATE_TEMPLATE, '%s', 'rating', '%s')
+    UPDATE_NAME = format(UPDATE_TEMPLATE, '%s', 'name', '"%s"')
+    UPDATE_ARTIST = format(UPDATE_TEMPLATE, '%s', 'artist', '"%s"')
+    UPDATE_ALBUM = format(UPDATE_TEMPLATE, '%s', 'album', '"%s"')
+    UPDATE_ALBUM_ARTIST = format(UPDATE_TEMPLATE, '%s', 'album artist', '"%s"')
+    UPDATE_GENRE = format(UPDATE_TEMPLATE, '%s', 'genre', '"%s"')
+    UPDATE_YEAR = format(UPDATE_TEMPLATE, '%s', 'year', '%s')
+    UPDATE_START = format(UPDATE_TEMPLATE, '%s', 'start', '%s')
+    UPDATE_FINISH = format(UPDATE_TEMPLATE, '%s', 'finish', '%s')
 
     def initialize
       @artwork_files = {} # md5 => filename
@@ -193,11 +195,11 @@ module Export
       # remove any files that are no longer in the library
       new_artwork_files = Set.new(@artwork_files.values)
       missing_artwork_files = @existing_artwork_files - new_artwork_files
-      if !missing_artwork_files.empty?
-        puts "Cleaning up old artwork files: #{missing_artwork_files.to_a}"
-        missing_artwork_files.each do |filename|
-          FileUtils.rm_f(File.join(@artwork_dir, filename))
-        end
+      return if missing_artwork_files.empty?
+
+      puts "Cleaning up old artwork files: #{missing_artwork_files.to_a}"
+      missing_artwork_files.each do |filename|
+        FileUtils.rm_f(File.join(@artwork_dir, filename))
       end
     end
 
@@ -209,9 +211,9 @@ module Export
       track_offset = track_index + 1
 
       # this command fails every so often, but waiting and trying again usually works
-      5.times do |attempt|
-        result = @command.run!("osascript -e '#{TRACK_INFO % [track_offset.to_i, "#{@tmpdir}/"]}'")
-        if !result.success?
+      5.times do |_attempt|
+        result = @command.run!("osascript -e '#{format(TRACK_INFO, track_offset.to_i, "#{@tmpdir}/")}'")
+        unless result.success?
           sleep 10
           next
         end
@@ -220,7 +222,7 @@ module Export
         track.num_artworks.to_i.times do |i|
           in_filename = "#{@tmpdir}/img#{i}"
           md5 = Digest::MD5.file(in_filename).hexdigest
-          if !@artwork_files.has_key?(md5)
+          unless @artwork_files.key?(md5)
             out = @command.run("file #{in_filename}").out
             type = nil
             type = 'jpg' if out.include?('JPEG image data')
@@ -266,9 +268,7 @@ module Export
       split = @command.run("osascript -e '#{PLAYLIST_INFO % playlist_number.to_i}'").out.split("\n")
       playlist = Playlist.new(*split)
 
-      if playlist.is_library == 0 # no use having a list of all tracks for the library playlist
-        playlist.track_string = @command.run("osascript -e '#{PLAYLIST_TRACKS % playlist_number.to_i}'").out
-      end
+      playlist.track_string = @command.run("osascript -e '#{PLAYLIST_TRACKS % playlist_number.to_i}'").out if playlist.is_library.zero? # no use having a list of all tracks for the library playlist
 
       playlist
     end
@@ -302,7 +302,7 @@ module Export
 
     def update_rating(persistent_id, new_rating)
       start_rating = get_rating(persistent_id)
-      @command.run("osascript -e '#{UPDATE_RATING % [escape(persistent_id), new_rating.to_i]}'")
+      @command.run("osascript -e '#{format(UPDATE_RATING, escape(persistent_id), new_rating.to_i)}'")
       end_rating = get_rating(persistent_id)
       puts "#{start_rating} -> #{end_rating}"
     end
@@ -313,7 +313,7 @@ module Export
 
     def update_name(persistent_id, new_name)
       start_name = get_name(persistent_id)
-      @command.run("osascript -e '#{UPDATE_NAME % [escape(persistent_id), escape(new_name)]}'")
+      @command.run("osascript -e '#{format(UPDATE_NAME, escape(persistent_id), escape(new_name))}'")
       end_name = get_name(persistent_id)
       puts "#{start_name} -> #{end_name}"
     end
@@ -324,7 +324,7 @@ module Export
 
     def update_artist(persistent_id, new_artist)
       start_artist = get_artist(persistent_id)
-      @command.run("osascript -e '#{UPDATE_ARTIST % [escape(persistent_id), escape(new_artist)]}'")
+      @command.run("osascript -e '#{format(UPDATE_ARTIST, escape(persistent_id), escape(new_artist))}'")
       end_artist = get_artist(persistent_id)
       puts "#{start_artist} -> #{end_artist}"
     end
@@ -335,7 +335,7 @@ module Export
 
     def update_album(persistent_id, new_album)
       start_album = get_album(persistent_id)
-      @command.run("osascript -e '#{UPDATE_ALBUM % [escape(persistent_id), escape(new_album)]}'")
+      @command.run("osascript -e '#{format(UPDATE_ALBUM, escape(persistent_id), escape(new_album))}'")
       end_album = get_album(persistent_id)
       puts "#{start_album} -> #{end_album}"
     end
@@ -346,7 +346,7 @@ module Export
 
     def update_album_artist(persistent_id, new_album_artist)
       start_album_artist = get_album_artist(persistent_id)
-      @command.run("osascript -e '#{UPDATE_ALBUM_ARTIST % [escape(persistent_id), escape(new_album_artist)]}'")
+      @command.run("osascript -e '#{format(UPDATE_ALBUM_ARTIST, escape(persistent_id), escape(new_album_artist))}'")
       end_album_artist = get_album_artist(persistent_id)
       puts "#{start_album_artist} -> #{end_album_artist}"
     end
@@ -357,7 +357,7 @@ module Export
 
     def update_genre(persistent_id, new_genre)
       start_genre = get_genre(persistent_id)
-      @command.run("osascript -e '#{UPDATE_GENRE % [escape(persistent_id), escape(new_genre)]}'")
+      @command.run("osascript -e '#{format(UPDATE_GENRE, escape(persistent_id), escape(new_genre))}'")
       end_genre = get_genre(persistent_id)
       puts "#{start_genre} -> #{end_genre}"
     end
@@ -368,7 +368,7 @@ module Export
 
     def update_year(persistent_id, new_year)
       start_year = get_year(persistent_id)
-      @command.run("osascript -e '#{UPDATE_YEAR % [escape(persistent_id), new_year.to_i]}'")
+      @command.run("osascript -e '#{format(UPDATE_YEAR, escape(persistent_id), new_year.to_i)}'")
       end_year = get_year(persistent_id)
       puts "#{start_year} -> #{end_year}"
     end
@@ -379,7 +379,7 @@ module Export
 
     def update_start(persistent_id, new_start)
       start_start = get_start(persistent_id)
-      @command.run("osascript -e '#{UPDATE_START % [escape(persistent_id), new_start.to_i]}'")
+      @command.run("osascript -e '#{format(UPDATE_START, escape(persistent_id), new_start.to_i)}'")
       end_start = get_start(persistent_id)
       puts "#{start_start} -> #{end_start}"
     end
@@ -390,7 +390,7 @@ module Export
 
     def update_finish(persistent_id, new_finish)
       finish_finish = get_finish(persistent_id)
-      @command.run("osascript -e '#{UPDATE_FINISH % [escape(persistent_id), new_finish.to_i]}'")
+      @command.run("osascript -e '#{format(UPDATE_FINISH, escape(persistent_id), new_finish.to_i)}'")
       end_finish = get_finish(persistent_id)
       puts "#{finish_finish} -> #{end_finish}"
     end

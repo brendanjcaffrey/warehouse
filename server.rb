@@ -1,10 +1,12 @@
+# frozen_string_literal: true
+
 require 'pg'
 require 'rack/utils'
 require 'sinatra/base'
 require 'sinatra/namespace'
-require_relative 'export/database.rb'
-require_relative 'shared/messages_pb.rb'
-require_relative 'shared/jwt.rb'
+require_relative 'export/database'
+require_relative 'shared/messages_pb'
+require_relative 'shared/jwt'
 
 INVALID_USERNAME_OR_PASSWORD_ERROR = 'invalid username or password'
 NOT_AUTHED_ERROR = 'not authenticated'
@@ -17,32 +19,32 @@ INVALID_YEAR_ERROR = 'invalid year'
 GENRE_SQL = 'SELECT id, name FROM genres;'
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
 ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
-TRACK_SQL = <<-SQL
-SELECT
-    t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
-    t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, t.ext,
-    t.file_md5, STRING_AGG(ta.filename, ',') AS artwork_filenames
-FROM
-    tracks t
-LEFT JOIN
-    track_artwork ta
-ON
-    t.id = ta.track_id
-GROUP BY
-    t.id;
+TRACK_SQL = <<~SQL
+  SELECT
+      t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
+      t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, t.ext,
+      t.file_md5, STRING_AGG(ta.filename, ',') AS artwork_filenames
+  FROM
+      tracks t
+  LEFT JOIN
+      track_artwork ta
+  ON
+      t.id = ta.track_id
+  GROUP BY
+      t.id;
 SQL
-PLAYLIST_SQL = <<-SQL
-SELECT
-    p.id, p.name, p.parent_id, p.is_library,
-    STRING_AGG(pt.track_id, ',') AS track_ids
-FROM
-    playlists p
-LEFT JOIN
-    playlist_tracks pt
-ON
-    p.id = pt.playlist_id
-GROUP BY
-    p.id, p.name, p.parent_id, p.is_library;
+PLAYLIST_SQL = <<~SQL
+  SELECT
+      p.id, p.name, p.parent_id, p.is_library,
+      STRING_AGG(pt.track_id, ',') AS track_ids
+  FROM
+      playlists p
+  LEFT JOIN
+      playlist_tracks pt
+  ON
+      p.id = pt.playlist_id
+  GROUP BY
+      p.id, p.name, p.parent_id, p.is_library;
 SQL
 LIBRARY_METADATA_SQL = 'SELECT total_file_size FROM library_metadata;'
 EXPORT_FINISHED_SQL = 'SELECT finished_at FROM export_finished;'
@@ -77,13 +79,13 @@ UPDATE_FINISH_SQL = 'UPDATE tracks SET finish=$1 WHERE id=$2;'
 DELETE_ARTIST_UPDATE_SQL = 'DELETE FROM artist_updates WHERE track_id=$1;'
 CREATE_ARTIST_UPDATE_SQL = 'INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);'
 ARTIST_ID_SQL = 'SELECT id FROM artists WHERE name=$1;'
-CREATE_ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1, \'\') RETURNING id;';
+CREATE_ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1, \'\') RETURNING id;'
 UPDATE_ARTIST_SQL = 'UPDATE tracks SET artist_id=$1 WHERE id=$2;'
 
 DELETE_GENRE_UPDATE_SQL = 'DELETE FROM genre_updates WHERE track_id=$1;'
 CREATE_GENRE_UPDATE_SQL = 'INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);'
 GENRE_ID_SQL = 'SELECT id FROM genres WHERE name=$1;'
-CREATE_GENRE_SQL = 'INSERT INTO genres (name) VALUES ($1) RETURNING id;';
+CREATE_GENRE_SQL = 'INSERT INTO genres (name) VALUES ($1) RETURNING id;'
 UPDATE_GENRE_SQL = 'UPDATE tracks SET genre_id=$1 WHERE id=$2;'
 
 DELETE_ALBUM_ARTIST_UPDATE_SQL = 'DELETE FROM album_artist_updates WHERE track_id=$1;'
@@ -93,7 +95,7 @@ UPDATE_ALBUM_ARTIST_SQL = 'UPDATE tracks SET album_artist_id=$1 WHERE id=$2;'
 DELETE_ALBUM_UPDATE_SQL = 'DELETE FROM album_updates WHERE track_id=$1;'
 CREATE_ALBUM_UPDATE_SQL = 'INSERT INTO album_updates (track_id, album) VALUES ($1, $2);'
 ALBUM_ID_SQL = 'SELECT id FROM albums WHERE name=$1;'
-CREATE_ALBUM_SQL = 'INSERT INTO albums (name, sort_name) VALUES ($1, \'\') RETURNING id;';
+CREATE_ALBUM_SQL = 'INSERT INTO albums (name, sort_name) VALUES ($1, \'\') RETURNING id;'
 UPDATE_ALBUM_SQL = 'UPDATE tracks SET album_id=$1 WHERE id=$2;'
 
 MIME_TYPES = {
@@ -104,8 +106,8 @@ MIME_TYPES = {
   'aiff' => 'audio/aif',
   'wav' => 'audio/wav',
   'jpg' => 'image/jpeg',
-  'png' => 'image/png',
-}
+  'png' => 'image/png'
+}.freeze
 
 def convert_cols_to_ints(rows, indices)
   rows.each do |cols|
@@ -116,7 +118,7 @@ def convert_cols_to_ints(rows, indices)
 end
 
 def timestamp_to_ns(time_str)
-  time = Time.strptime(time_str, "%Y-%m-%d %H:%M:%S.%N")
+  time = Time.strptime(time_str, '%Y-%m-%d %H:%M:%S.%N')
   time.to_i * 1_000_000_000 + time.nsec
 end
 
@@ -129,7 +131,7 @@ class Server < Sinatra::Base
     end
   end
 
-  set :public_folder, Proc.new { File.join(root, 'public') }
+  set :public_folder, proc { File.join(root, 'public') }
 
   if Config.remote?
     set :environment, :production
@@ -146,54 +148,51 @@ class Server < Sinatra::Base
       db_connection_options[:password] = 'ci'
     end
 
-    if Config.use_persistent_db?
-      @@db ||= PG.connect(db_connection_options)
-    else
-      @db ||= PG.connect(db_connection_options)
-    end
+    @db ||= PG.connect(db_connection_options)
   end
 
   def valid_username_and_password?(username, password)
-    Config.vals['users'].has_key?(username) && Config.vals['users'][username]['password'] == password
+    Config.vals['users'].key?(username) && Config.vals['users'][username]['password'] == password
   end
 
-  def get_validated_username(allow_export_user = false)
+  def get_validated_username(allow_export_user: false)
     auth_header = request.env['HTTP_AUTHORIZATION']
     return nil if auth_header.nil? || !auth_header.start_with?('Bearer ')
 
     token = auth_header.gsub('Bearer ', '')
     begin
       payload, header = decode_jwt(token, Config['secret'])
-    rescue
+    rescue StandardError
       return nil
     end
 
-    exp = header["exp"]
+    exp = header['exp']
     return nil if exp.nil? || Time.now > Time.at(exp.to_i)
 
     username = payload['username']
-    valid = Config.vals['users'].has_key?(username) || (allow_export_user && username == 'export_driver_update_library')
+    valid = Config.vals['users'].key?(username) || (allow_export_user && username == 'export_driver_update_library')
     return nil unless valid
+
     username
   end
 
-  def is_authed?(allow_export_user = false)
-    !get_validated_username(allow_export_user).nil?
+  def authed?(allow_export_user: false)
+    !get_validated_username(allow_export_user: allow_export_user).nil?
   end
 
   def track_user_changes?(username)
-    Config.vals['users'].has_key?(username) && Config.vals['users'][username]['track_updates']
+    Config.vals['users'].key?(username) && Config.vals['users'][username]['track_updates']
   end
 
   def track_exists?(track_id)
     result = db.exec_params(TRACK_EXISTS_SQL, [track_id])
-    count = result.num_tuples > 0 ? result.getvalue(0, 0).to_i : 0
-    count > 0
+    count = result.num_tuples.positive? ? result.getvalue(0, 0).to_i : 0
+    count.positive?
   end
 
   def send_track_if_exists(db, music_path, track_file_id)
     file, ext = db.exec_params(TRACK_INFO_SQL, [track_file_id]).values.first
-    if file == nil || !MIME_TYPES.has_key?(ext)
+    if file.nil? || !MIME_TYPES.key?(ext)
       false
     else
       if Config.remote?
@@ -206,13 +205,12 @@ class Server < Sinatra::Base
     end
   end
 
-
   get '/' do
     send_file File.join(settings.public_folder, 'index.html')
   end
 
   get '/tracks/*' do
-    if !is_authed?
+    if !authed?
       redirect to('/')
     elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0])
       raise Sinatra::NotFound
@@ -220,7 +218,7 @@ class Server < Sinatra::Base
   end
 
   get '/artwork/*' do
-    if !is_authed?
+    if !authed?
       redirect to('/')
     else
       file = params['splat'][0]
@@ -316,7 +314,7 @@ class Server < Sinatra::Base
           library.playlists << Playlist.new(id: playlist[0],
                                             name: playlist[1],
                                             parentId: playlist[2],
-                                            isLibrary: playlist[3] == "1",
+                                            isLibrary: playlist[3] == '1',
                                             trackIds: (playlist[4] || '').split(','))
         end
 
@@ -330,7 +328,7 @@ class Server < Sinatra::Base
     end
 
     get '/updates' do
-      if is_authed?(true)
+      if authed?(allow_export_user: true)
         updates = Updates.new
         db.exec(Export::Database::GET_PLAYS_SQL).values.each do |play|
           updates.plays << IncrementUpdate.new(trackId: play[0])
@@ -394,11 +392,11 @@ class Server < Sinatra::Base
       id = params['splat'][0]
       begin
         rating = Integer(params['rating'])
-      rescue
+      rescue StandardError
         return proto(OperationResponse.new(success: false, error: INVALID_RATING_ERROR))
       end
 
-      if rating < 0 || rating > 100
+      if rating.negative? || rating > 100
         proto(OperationResponse.new(success: false, error: INVALID_RATING_ERROR))
       else
         perform_updates_if_should_track_changes(id) do
@@ -412,89 +410,81 @@ class Server < Sinatra::Base
     post '/track-info/*' do
       id = params['splat'][0]
 
-      if (params.has_key?('name') && params['name'].empty?) ||
-         (params.has_key?('year') && params['year'].empty?) ||
-         (params.has_key?('artist') && params['artist'].empty?) ||
-         (params.has_key?('genre') && params['genre'].empty?)
+      if (params.key?('name') && params['name'].empty?) ||
+         (params.key?('year') && params['year'].empty?) ||
+         (params.key?('artist') && params['artist'].empty?) ||
+         (params.key?('genre') && params['genre'].empty?)
         return proto(OperationResponse.new(success: false, error: TRACK_FIELD_MISSING_ERROR))
       end
 
-      if params.has_key?('year')
+      if params.key?('year')
         begin
           Integer(params['year'])
-        rescue
+        rescue StandardError
           return proto(OperationResponse.new(success: false, error: INVALID_YEAR_ERROR))
         end
       end
 
       perform_updates_if_should_track_changes(id) do
-        if name = params['name']
+        if (name = params['name'])
           db.exec_params(DELETE_NAME_UPDATE_SQL, [id])
           db.exec_params(CREATE_NAME_UPDATE_SQL, [id, name])
           db.exec_params(UPDATE_NAME_SQL, [name, id])
         end
-        if year = params['year']
+        if (year = params['year'])
           db.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
           db.exec_params(CREATE_YEAR_UPDATE_SQL, [id, year])
           db.exec_params(UPDATE_YEAR_SQL, [year, id])
         end
-        if start = params['start']
+        if (start = params['start'])
           db.exec_params(DELETE_START_UPDATE_SQL, [id])
           db.exec_params(CREATE_START_UPDATE_SQL, [id, start])
           db.exec_params(UPDATE_START_SQL, [start, id])
         end
-        if finish = params['finish']
+        if (finish = params['finish'])
           db.exec_params(DELETE_FINISH_UPDATE_SQL, [id])
           db.exec_params(CREATE_FINISH_UPDATE_SQL, [id, finish])
           db.exec_params(UPDATE_FINISH_SQL, [finish, id])
         end
-        if artist = params['artist']
+        if (artist = params['artist'])
           db.exec_params(DELETE_ARTIST_UPDATE_SQL, [id])
           db.exec_params(CREATE_ARTIST_UPDATE_SQL, [id, artist])
           result = db.exec_params(ARTIST_ID_SQL, [artist])
-          artist_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
-          if !artist_id
-            artist_id = db.exec_params(CREATE_ARTIST_SQL, [artist]).getvalue(0,0)
-          end
+          artist_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
+          artist_id ||= db.exec_params(CREATE_ARTIST_SQL, [artist]).getvalue(0, 0)
           db.exec_params(UPDATE_ARTIST_SQL, [artist_id.to_i, id])
         end
-        if genre = params['genre']
+        if (genre = params['genre'])
           db.exec_params(DELETE_GENRE_UPDATE_SQL, [id])
           db.exec_params(CREATE_GENRE_UPDATE_SQL, [id, genre])
 
           result = db.exec_params(GENRE_ID_SQL, [genre])
-          genre_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
-          if !genre_id
-            genre_id = db.exec_params(CREATE_GENRE_SQL, [genre]).getvalue(0,0)
-          end
+          genre_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
+          genre_id ||= db.exec_params(CREATE_GENRE_SQL, [genre]).getvalue(0, 0)
           db.exec_params(UPDATE_GENRE_SQL, [genre_id.to_i, id])
         end
-        if album_artist = params['album_artist']
+        if (album_artist = params['album_artist'])
           db.exec_params(DELETE_ALBUM_ARTIST_UPDATE_SQL, [id])
           db.exec_params(CREATE_ALBUM_ARTIST_UPDATE_SQL, [id, album_artist])
           if album_artist.empty?
             album_artist_id = nil
           else
             result = db.exec_params(ARTIST_ID_SQL, [album_artist])
-            album_artist_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
-            if !album_artist_id
-              album_artist_id = db.exec_params(CREATE_ARTIST_SQL, [album_artist]).getvalue(0,0)
-            end
+            album_artist_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
+            album_artist_id ||= db.exec_params(CREATE_ARTIST_SQL, [album_artist]).getvalue(0, 0)
             album_artist_id = album_artist_id.to_i
           end
           db.exec_params(UPDATE_ALBUM_ARTIST_SQL, [album_artist_id, id])
         end
-        if album = params['album']
+        if (album = params['album'])
           db.exec_params(DELETE_ALBUM_UPDATE_SQL, [id])
           db.exec_params(CREATE_ALBUM_UPDATE_SQL, [id, album])
           if album.empty?
             album_id = nil
           else
             result = db.exec_params(ALBUM_ID_SQL, [album])
-            album_id = result.ntuples == 0 ? nil : result.getvalue(0,0)
-            if !album_id
-              album_id = db.exec_params(CREATE_ALBUM_SQL, [album]).getvalue(0,0)
-            end
+            album_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
+            album_id ||= db.exec_params(CREATE_ALBUM_SQL, [album]).getvalue(0, 0)
             album_id = album_id.to_i
           end
           db.exec_params(UPDATE_ALBUM_SQL, [album_id, id])

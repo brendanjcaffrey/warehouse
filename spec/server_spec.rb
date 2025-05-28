@@ -9,17 +9,14 @@ module Config
   module_function
 
   def [](key)
-    return ENV['CI'] ? 'ci' : YAML.load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
+    return ENV['CI'] ? 'ci' : YAML.safe_load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
     return 'streamer_test' if key == 'database_name'
-    return "#{Dir.pwd}/spec" if key == 'music_path' || key == 'artwork_path'
-    return '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
+    return "#{Dir.pwd}/spec" if %w[music_path artwork_path].include?(key)
+
+    '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
   end
 
   def remote?
-    false
-  end
-
-  def use_persistent_db?
     false
   end
 
@@ -39,10 +36,17 @@ require_relative '../server'
 require_relative '../export/database'
 require_relative '../export/track'
 require_relative '../export/playlist'
-module Export ; class Database
-  attr_accessor :db
-  def clear ; @genres.clear ; @artists.clear ; @albums.clear ; end
-end ; end
+module Export
+  class Database
+    attr_accessor :db
+
+    def clear
+      @genres.clear
+      @artists.clear
+      @albums.clear
+    end
+  end
+end
 
 describe 'iTunes Streamer' do
   include Rack::Test::Methods
@@ -61,18 +65,18 @@ describe 'iTunes Streamer' do
 
   def get_auth_header(username = 'test123')
     headers = { exp: Time.now.to_i + 5 }
-    token = JWT.encode({username: username}, Config['secret'], JWT_ALGO, headers)
+    token = JWT.encode({ username: username }, Config['secret'], JWT_ALGO, headers)
     { 'HTTP_AUTHORIZATION' => "Bearer #{token}" }
   end
 
   def get_expired_auth_header(username = 'test123')
     headers = { exp: Time.now.to_i - 5 }
-    token = JWT.encode({username: username}, Config['secret'], JWT_ALGO, headers)
+    token = JWT.encode({ username: username }, Config['secret'], JWT_ALGO, headers)
     { 'HTTP_AUTHORIZATION' => "Bearer #{token}" }
   end
 
   def get_invalid_auth_header
-    { 'HTTP_AUTHORIZATION' => "Bearer blah" }
+    { 'HTTP_AUTHORIZATION' => 'Bearer blah' }
   end
 
   before :all do
@@ -116,7 +120,7 @@ describe 'iTunes Streamer' do
     @database.clear
     file_path = "HD:#{Dir.pwd}/spec/__test.mp3"
     @database.create_track(Export::Track.new('21D8E2441A5E2204', 'test_title', '', 'test_artist', '', 'test_artist', '', 'test_album', '',
-                                            'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, file_path))
+                                             'test_genre', 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, file_path))
   end
 
   describe '/' do
@@ -173,7 +177,7 @@ describe 'iTunes Streamer' do
       post '/api/auth', { username: 'test123', password: 'test123' }
       response = AuthResponse.decode(last_response.body)
       expect(response.response).to eq(:token)
-      payload, header = JWT.decode(response.token, Config['secret'], true, { algorithm: JWT_ALGO} )
+      payload, header = JWT.decode(response.token, Config['secret'], true, { algorithm: JWT_ALGO })
       expect(header['exp']).to be > Time.now.to_i
       expect(payload['username']).to eq('test123')
     end
@@ -199,7 +203,7 @@ describe 'iTunes Streamer' do
       expect(response.response).to eq(:token)
       expect(response.token).not_to eq(auth_header['HTTP_AUTHORIZATION'])
 
-      payload, header = JWT.decode(response.token, Config['secret'], true, { algorithm: JWT_ALGO} )
+      payload, header = JWT.decode(response.token, Config['secret'], true, { algorithm: JWT_ALGO })
       expect(header['exp']).to be > Time.now.to_i
       expect(payload['username']).to eq('test123')
     end
@@ -271,9 +275,9 @@ describe 'iTunes Streamer' do
 
     it 'should dump all genres, artists, albums and tracks' do
       @database.set_export_finished
-      @database.create_playlist(Export::Playlist.new('XXXXXXXXXXXXXXXX', 'library', 'Music', '', 100, ""))
-      @database.create_playlist(Export::Playlist.new('0000000000000000', 'test_playlist0', 'none', '', 0, ""))
-      @database.create_playlist(Export::Playlist.new('1111111111111111', 'test_playlist1', 'none', '0000000000000000', 1, "B7F8970B634DDEE3"))
+      @database.create_playlist(Export::Playlist.new('XXXXXXXXXXXXXXXX', 'library', 'Music', '', 100, ''))
+      @database.create_playlist(Export::Playlist.new('0000000000000000', 'test_playlist0', 'none', '', 0, ''))
+      @database.create_playlist(Export::Playlist.new('1111111111111111', 'test_playlist1', 'none', '0000000000000000', 1, 'B7F8970B634DDEE3'))
       @database.create_playlist(Export::Playlist.new('2222222222222222', 'test_playlist2', 'none', '', 2, "5E3FA18D81E469D2\n21D8E2441A5E2204"))
       @database.set_library_metadata(1001)
 
@@ -320,7 +324,7 @@ describe 'iTunes Streamer' do
       expect(playlist.name).to eq('test_playlist1')
       expect(playlist.parentId).to eq('0000000000000000')
       expect(playlist.isLibrary).to be(false)
-      expect(playlist.trackIds).to eq(%w{B7F8970B634DDEE3})
+      expect(playlist.trackIds).to eq(%w[B7F8970B634DDEE3])
 
       playlist = library.playlists[1]
       expect(playlist.id).to eq('0000000000000000')
@@ -341,7 +345,7 @@ describe 'iTunes Streamer' do
       expect(playlist.name).to eq('test_playlist2')
       expect(playlist.parentId).to eq('')
       expect(playlist.isLibrary).to be(false)
-      expect(playlist.trackIds).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204})
+      expect(playlist.trackIds).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204])
 
       expect(library.totalFileSize).to eq(1001)
       expect(library.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
@@ -367,12 +371,12 @@ describe 'iTunes Streamer' do
       @database.create_track_artwork('21D8E2441A5E2204', 'test_artwork.jpg')
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
-      expect(library.tracks[0].artworks).to eq(%w{test_artwork.jpg})
+      expect(library.tracks[0].artworks).to eq(%w[test_artwork.jpg])
 
       @database.create_track_artwork('21D8E2441A5E2204', 'test_artwork2.jpg')
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
-      expect(library.tracks[0].artworks).to eq(%w{test_artwork.jpg test_artwork2.jpg})
+      expect(library.tracks[0].artworks).to eq(%w[test_artwork.jpg test_artwork2.jpg])
     end
   end
 
@@ -399,7 +403,7 @@ describe 'iTunes Streamer' do
 
       get '/api/updates', {}, get_auth_header
       updates = UpdatesResponse.decode(last_response.body).updates
-      expect(updates.plays.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
+      expect(updates.plays.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
     end
 
     it 'should include all ratings' do
@@ -409,63 +413,63 @@ describe 'iTunes Streamer' do
 
       get '/api/updates', {}, get_auth_header
       ratings = UpdatesResponse.decode(last_response.body).updates.ratings
-      expect(ratings.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
+      expect(ratings.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
       expect(ratings.map(&:value)).to eq([100, 80, 60])
     end
 
     it 'should include all names' do
-      @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'abc'])
-      @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', ['21D8E2441A5E2204', 'def'])
-      @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
+      @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', %w[5E3FA18D81E469D2 abc])
+      @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', %w[21D8E2441A5E2204 def])
+      @db.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', %w[5E3FA18D81E469D2 ghi])
 
       get '/api/updates', {}, get_auth_header
       names = UpdatesResponse.decode(last_response.body).updates.names
-      expect(names.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
-      expect(names.map(&:value)).to eq(%w{abc def ghi})
+      expect(names.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
+      expect(names.map(&:value)).to eq(%w[abc def ghi])
     end
 
     it 'should include all artists' do
-      @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'abc'])
-      @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', ['21D8E2441A5E2204', 'def'])
-      @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
+      @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', %w[5E3FA18D81E469D2 abc])
+      @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', %w[21D8E2441A5E2204 def])
+      @db.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', %w[5E3FA18D81E469D2 ghi])
 
       get '/api/updates', {}, get_auth_header
       artists = UpdatesResponse.decode(last_response.body).updates.artists
-      expect(artists.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
-      expect(artists.map(&:value)).to eq(%w{abc def ghi})
+      expect(artists.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
+      expect(artists.map(&:value)).to eq(%w[abc def ghi])
     end
 
     it 'should include all albums' do
-      @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'abc'])
-      @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', ['21D8E2441A5E2204', 'def'])
-      @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
+      @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', %w[5E3FA18D81E469D2 abc])
+      @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', %w[21D8E2441A5E2204 def])
+      @db.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', %w[5E3FA18D81E469D2 ghi])
 
       get '/api/updates', {}, get_auth_header
       albums = UpdatesResponse.decode(last_response.body).updates.albums
-      expect(albums.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
-      expect(albums.map(&:value)).to eq(%w{abc def ghi})
+      expect(albums.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
+      expect(albums.map(&:value)).to eq(%w[abc def ghi])
     end
 
     it 'should include all album artists' do
-      @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'abc'])
-      @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', ['21D8E2441A5E2204', 'def'])
-      @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
+      @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', %w[5E3FA18D81E469D2 abc])
+      @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', %w[21D8E2441A5E2204 def])
+      @db.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', %w[5E3FA18D81E469D2 ghi])
 
       get '/api/updates', {}, get_auth_header
       album_artists = UpdatesResponse.decode(last_response.body).updates.albumArtists
-      expect(album_artists.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
-      expect(album_artists.map(&:value)).to eq(%w{abc def ghi})
+      expect(album_artists.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
+      expect(album_artists.map(&:value)).to eq(%w[abc def ghi])
     end
 
     it 'should include all genres' do
-      @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'abc'])
-      @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', ['21D8E2441A5E2204', 'def'])
-      @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'ghi'])
+      @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', %w[5E3FA18D81E469D2 abc])
+      @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', %w[21D8E2441A5E2204 def])
+      @db.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', %w[5E3FA18D81E469D2 ghi])
 
       get '/api/updates', {}, get_auth_header
       genres = UpdatesResponse.decode(last_response.body).updates.genres
-      expect(genres.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
-      expect(genres.map(&:value)).to eq(%w{abc def ghi})
+      expect(genres.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
+      expect(genres.map(&:value)).to eq(%w[abc def ghi])
     end
 
     it 'should include all years' do
@@ -475,7 +479,7 @@ describe 'iTunes Streamer' do
 
       get '/api/updates', {}, get_auth_header
       years = UpdatesResponse.decode(last_response.body).updates.years
-      expect(years.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
+      expect(years.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
       expect(years.map(&:value)).to eq([100, 200, 300])
     end
 
@@ -486,7 +490,7 @@ describe 'iTunes Streamer' do
 
       get '/api/updates', {}, get_auth_header
       starts = UpdatesResponse.decode(last_response.body).updates.starts
-      expect(starts.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
+      expect(starts.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
       expect(starts[0].value).to be_within(0.001).of(1.1)
       expect(starts[1].value).to be_within(0.001).of(1.2)
       expect(starts[2].value).to be_within(0.001).of(1.3)
@@ -499,7 +503,7 @@ describe 'iTunes Streamer' do
 
       get '/api/updates', {}, get_auth_header
       finishes = UpdatesResponse.decode(last_response.body).updates.finishes
-      expect(finishes.map(&:trackId)).to eq(%w{5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2})
+      expect(finishes.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
       expect(finishes[0].value).to be_within(0.001).of(1.1)
       expect(finishes[1].value).to be_within(0.001).of(1.2)
       expect(finishes[2].value).to be_within(0.001).of(1.3)
@@ -744,7 +748,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT year FROM year_updates')).to eq('1970')
       expect(get_first_value('SELECT year FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1970')
 
-      post '/api/track-info/21D8E2441A5E2204', { year: '1990'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { year: '1990' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM year_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM year_updates')).to eq('21D8E2441A5E2204')
@@ -762,7 +766,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT start FROM start_updates')).to eq('1.2')
       expect(get_first_value('SELECT start FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('1.2')
 
-      post '/api/track-info/21D8E2441A5E2204', { start: '1.3'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { start: '1.3' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM start_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM start_updates')).to eq('21D8E2441A5E2204')
@@ -780,7 +784,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT finish FROM finish_updates')).to eq('2.3')
       expect(get_first_value('SELECT finish FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('2.3')
 
-      post '/api/track-info/21D8E2441A5E2204', { finish: '2.4'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { finish: '2.4' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM finish_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM finish_updates')).to eq('21D8E2441A5E2204')
@@ -800,7 +804,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
 
-      post '/api/track-info/21D8E2441A5E2204', { artist: 'test_artist'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { artist: 'test_artist' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM artist_updates')).to eq('21D8E2441A5E2204')
@@ -821,7 +825,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('new_genre')
       expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('2')
 
-      post '/api/track-info/21D8E2441A5E2204', { genre: 'test_genre'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { genre: 'test_genre' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM genre_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM genre_updates')).to eq('21D8E2441A5E2204')
@@ -850,7 +854,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album_artist_id FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
 
-      post '/api/track-info/21D8E2441A5E2204', { album_artist: 'test_artist'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { album_artist: 'test_artist' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq('21D8E2441A5E2204')
@@ -879,7 +883,7 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album_id FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
 
-      post '/api/track-info/21D8E2441A5E2204', { album: 'test_album'}, get_auth_header
+      post '/api/track-info/21D8E2441A5E2204', { album: 'test_album' }, get_auth_header
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_updates')).to eq('21D8E2441A5E2204')
