@@ -1,15 +1,20 @@
 ### Installing dependencies
-* bundle && cd web && npm install
+
+- bundle && cd web && npm install
 
 ### Production
-* rake build
-* rake remote
+
+- rake build
+- rake remote
 
 ### Development
+
 In one terminal:
-* rake local
+
+- rake local
 
 In another:
-* rake vite
 
-Then open `http://localhost:5568`
+- rake vite
+
+Then open `http://localhost:20602`

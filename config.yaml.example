@@ -6,7 +6,7 @@ local:
   update_library: true
   -- generate with: ruby -rsecurerandom -e 'p SecureRandom.hex(32)'
   secret: [something]
-  port: 4567
+  port: 20601
 
 remote:
   base_url: http://example.com/
