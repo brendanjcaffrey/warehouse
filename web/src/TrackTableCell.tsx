@@ -50,9 +50,7 @@ export function TrackTableCell(props: TrackTableCellProps) {
     <div
       style={{
         backgroundColor: CellBackgroundColor(rowIndex, isSelected),
-        padding: `0 ${
-          column.childAppliesPadding ? 0 : CELL_HORIZONTAL_PADDING_SIDE
-        }px`,
+        padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
         boxSizing: "border-box",
         whiteSpace: "nowrap",
         overflow: "hidden",

@@ -32,7 +32,6 @@ export interface Column {
   render: (track: Track) => JSX.Element | string;
   calculateSizeByRendering: boolean;
   canHaveNowPlayingIcon: boolean;
-  childAppliesPadding: boolean;
   sortKeys: SortKey[];
 }
 
@@ -43,7 +42,6 @@ export const COLUMNS: Column[] = [
     render: (track: Track) => track.name,
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: true,
-    childAppliesPadding: false,
     sortKeys: ["sortName"],
   },
   {
@@ -56,7 +54,6 @@ export const COLUMNS: Column[] = [
     },
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: false,
     sortKeys: ["duration"],
   },
   {
@@ -65,7 +62,6 @@ export const COLUMNS: Column[] = [
     render: (track: Track) => track.artistName,
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: false,
     sortKeys: ["artistSortName"],
   },
   {
@@ -74,7 +70,6 @@ export const COLUMNS: Column[] = [
     render: (track: Track) => track.albumName,
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: false,
     sortKeys: [
       "albumArtistSortName",
       "year",
@@ -89,7 +84,6 @@ export const COLUMNS: Column[] = [
     render: (track: Track) => track.genre,
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: false,
     sortKeys: ["genre"],
   },
   {
@@ -98,7 +92,6 @@ export const COLUMNS: Column[] = [
     render: (track: Track) => (track.year !== 0 ? track.year.toString() : ""),
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: false,
     sortKeys: ["year"],
   },
   {
@@ -107,7 +100,6 @@ export const COLUMNS: Column[] = [
     render: (track: Track) => track.playCount.toString(),
     calculateSizeByRendering: true,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: false,
     sortKeys: ["playCount"],
   },
   {
@@ -116,7 +108,6 @@ export const COLUMNS: Column[] = [
     render: RenderRating,
     calculateSizeByRendering: false,
     canHaveNowPlayingIcon: false,
-    childAppliesPadding: true,
     sortKeys: ["rating"],
   },
 ];
