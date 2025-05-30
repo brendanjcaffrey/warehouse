@@ -122,7 +122,8 @@ export function GetColumnWidths(
 ): number[] {
   const widths = COLUMNS.map(() => 0);
   widths[RATING_COLUMN_INDEX] =
-    iconWidths.star * NUM_ICONS + CELL_HORIZONTAL_PADDING_TOTAL;
+    // add an extra half padding here so the scroll bar doesn't overlap with the right most star
+    iconWidths.star * NUM_ICONS + CELL_HORIZONTAL_PADDING_TOTAL * 1.5;
 
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
