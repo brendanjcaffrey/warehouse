@@ -9,7 +9,7 @@ import {
   IconButton,
   Popover,
   Tooltip,
-  Grid2 as Grid,
+  Grid,
 } from "@mui/material";
 import { HelpOutlineRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";

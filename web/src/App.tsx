@@ -1,4 +1,4 @@
-import Grid from "@mui/material/Grid2";
+import Grid from "@mui/material/Grid";
 import { SxProps, createTheme, ThemeProvider } from "@mui/material";
 import { Provider as JotaiProvider } from "jotai";
 import { store } from "./State";
