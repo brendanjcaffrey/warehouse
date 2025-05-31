@@ -1,17 +1,23 @@
 import { GridChildComponentProps } from "react-window";
+import { useTheme, Theme } from "@mui/material";
 import { VolumeUpRounded } from "@mui/icons-material";
 import { Track } from "./Library";
 import { COLUMNS } from "./TrackTableColumns";
 import { TrackAction } from "./TrackAction";
-import { lightestGrey, selectedGrey, white } from "./Colors";
 import { CELL_HORIZONTAL_PADDING_SIDE } from "./TrackTableConstants";
 import { PlaylistEntry, PlaylistTrack } from "./Types";
 
-function CellBackgroundColor(rowIndex: number, isSelected: boolean) {
+function CellBackgroundColor(
+  rowIndex: number,
+  isSelected: boolean,
+  theme: Theme
+) {
   if (isSelected) {
-    return selectedGrey;
+    return theme.palette.action.selected;
   } else {
-    return rowIndex % 2 === 0 ? lightestGrey : white;
+    return rowIndex % 2 === 0
+      ? theme.palette.action.hover
+      : theme.palette.background.default;
   }
 }
 
@@ -30,6 +36,8 @@ interface TrackTableCellProps extends GridChildComponentProps {
 }
 
 export function TrackTableCell(props: TrackTableCellProps) {
+  const theme = useTheme();
+
   const rowIndex = props.rowIndex;
   const playlistOffset = props.trackDisplayIndexes[rowIndex];
   const trackId = props.tracks[playlistOffset].id;
@@ -49,7 +57,8 @@ export function TrackTableCell(props: TrackTableCellProps) {
   return (
     <div
       style={{
-        backgroundColor: CellBackgroundColor(rowIndex, isSelected),
+        color: theme.palette.text.primary,
+        backgroundColor: CellBackgroundColor(rowIndex, isSelected, theme),
         padding: `0 ${CELL_HORIZONTAL_PADDING_SIDE}px`,
         boxSizing: "border-box",
         whiteSpace: "nowrap",

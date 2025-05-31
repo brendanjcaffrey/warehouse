@@ -53,13 +53,13 @@ function AuthForm({ setAuthToken }: AuthFormProps) {
     <Container component="main" maxWidth="xs">
       <Box
         sx={{
-          marginTop: 8,
+          paddingTop: "40px",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
         }}
       >
-        <Typography component="h1" variant="h5">
+        <Typography component="h1" variant="h5" color="textPrimary">
           Music Streamer
         </Typography>
         <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>

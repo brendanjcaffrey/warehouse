@@ -111,7 +111,10 @@ function PlaylistItem({ playlist }: { playlist: PlaylistDisplay }) {
           <ListItemIcon sx={{ minWidth: `${ICON_WIDTH}px` }}>
             {getIcon()}
           </ListItemIcon>
-          <ListItemText primary={playlist.name} />
+          <ListItemText
+            primary={playlist.name}
+            sx={{ color: "text.primary" }}
+          />
         </ListItemButton>
       </ListItem>
       {isFolder && (
@@ -139,7 +142,7 @@ function PlaylistLevelList({
   );
 }
 
-function Playlists({ height }: { height: string }) {
+function Playlists() {
   const setSelectedPlaylistId = useSetAtom(selectedPlaylistIdAtom);
   const [playlists, setPlaylists] = useState<PlaylistDisplay[]>([]);
 
@@ -182,7 +185,7 @@ function Playlists({ height }: { height: string }) {
   }, [setPlaylists, setSelectedPlaylistId]);
 
   return (
-    <Box sx={{ height: height, overflowY: "auto" }}>
+    <Box sx={{ height: "100vh", overflowY: "auto" }}>
       <PlaylistLevelList playlists={playlists} inSublist={false} />
     </Box>
   );

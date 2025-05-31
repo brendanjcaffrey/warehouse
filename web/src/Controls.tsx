@@ -22,7 +22,6 @@ import {
 import { shuffleAtom, repeatAtom, volumeAtom } from "./Settings";
 import { player } from "./Player";
 import { playingAtom } from "./State";
-import { defaultGrey, darkerGrey, titleGrey } from "./Colors";
 
 function Controls() {
   const theme = useTheme();
@@ -60,7 +59,7 @@ function Controls() {
   const alwaysShownItems = (
     <>
       <IconButton size="large" onClick={() => player().prev()}>
-        <SkipPreviousRounded fontSize="inherit" sx={{ color: titleGrey }} />
+        <SkipPreviousRounded fontSize="inherit" color="action" />
       </IconButton>
       <IconButton
         size="large"
@@ -68,13 +67,13 @@ function Controls() {
         edge="start"
       >
         {playing ? (
-          <PauseRounded fontSize="inherit" sx={{ color: titleGrey }} />
+          <PauseRounded fontSize="inherit" color="action" />
         ) : (
-          <PlayArrowRounded fontSize="inherit" sx={{ color: titleGrey }} />
+          <PlayArrowRounded fontSize="inherit" color="action" />
         )}
       </IconButton>
       <IconButton size="large" edge="start" onClick={() => player().next()}>
-        <SkipNextRounded fontSize="inherit" sx={{ color: titleGrey }} />
+        <SkipNextRounded fontSize="inherit" color="action" />
       </IconButton>
     </>
   );
@@ -82,22 +81,19 @@ function Controls() {
   const possiblyHiddenItems = (
     <>
       <Tooltip title="Shuffle Playlist">
-        <IconButton
-          size="large"
-          onClick={toggleShuffle}
-          sx={{ color: shuffle ? titleGrey : defaultGrey }}
-        >
-          <ShuffleRounded fontSize="inherit" />
+        <IconButton size="large" onClick={toggleShuffle}>
+          <ShuffleRounded
+            color={shuffle ? "action" : "disabled"}
+            fontSize="inherit"
+          />
         </IconButton>
       </Tooltip>
       <Tooltip title="Repeat Track">
-        <IconButton
-          size="large"
-          onClick={toggleRepeat}
-          edge="start"
-          sx={{ color: repeat ? titleGrey : defaultGrey }}
-        >
-          <RepeatRounded fontSize="inherit" />
+        <IconButton size="large" onClick={toggleRepeat} edge="start">
+          <RepeatRounded
+            color={repeat ? "action" : "disabled"}
+            fontSize="inherit"
+          />
         </IconButton>
       </Tooltip>
       <Slider
@@ -106,13 +102,12 @@ function Controls() {
         sx={() => ({
           maxWidth: "125px",
           ml: "12px",
-          color: defaultGrey,
+          color: theme.palette.action.disabled,
           "& .MuiSlider-track": {
             border: "none",
           },
           "& .MuiSlider-thumb": {
-            backgroundColor: "#fff",
-            border: `1px solid ${darkerGrey}`,
+            backgroundColor: theme.palette.grey[500],
             "&::before": {
               boxShadow: "none",
             },

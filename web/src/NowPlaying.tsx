@@ -10,7 +10,6 @@ import { Box, Stack, Typography, Slider } from "@mui/material";
 import { KeyboardReturnRounded } from "@mui/icons-material";
 import Artwork from "./Artwork";
 import DelayedElement from "./DelayedElement";
-import { lighterGrey, titleGrey, defaultGrey } from "./Colors";
 import { player } from "./Player";
 import {
   showTrackFnAtom,
@@ -21,7 +20,6 @@ import {
 import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
 
 const DurationText = styled(Typography)({
-  color: defaultGrey,
   fontSize: "12px",
   marginTop: "auto",
 });
@@ -55,7 +53,7 @@ function NowPlaying() {
       <Box>
         <Artwork />
       </Box>
-      <Box sx={{ width: "100%" }}>
+      <Box sx={{ width: "100%", color: theme.palette.text.primary }}>
         <Box
           sx={{
             display: "flex",
@@ -64,7 +62,7 @@ function NowPlaying() {
             marginTop: "4px",
           }}
         >
-          <DurationText sx={{ paddingRight: "4px" }}>
+          <DurationText color="textSecondary" sx={{ paddingRight: "4px" }}>
             {FormatPlaybackPosition(currentTime)}
           </DurationText>
           <Box
@@ -78,7 +76,6 @@ function NowPlaying() {
               <Typography
                 noWrap
                 sx={{
-                  color: titleGrey,
                   fontSize: "14px",
                   lineHeight: "20px",
                 }}
@@ -93,19 +90,19 @@ function NowPlaying() {
                 {playingTrack?.track.name || ""}
                 <span onMouseDown={returnButtonDown} onMouseUp={returnButtonUp}>
                   <KeyboardReturnRounded
+                    color={returnDown ? "disabled" : "action"}
                     sx={{
                       fontSize: "12px",
                       cursor: "pointer",
                       pl: "2px",
-                      color: returnDown ? lighterGrey : titleGrey,
                     }}
                   />
                 </span>
               </Typography>
               <Typography
+                color="textSecondary"
                 noWrap
                 sx={{
-                  color: defaultGrey,
                   fontSize: "12px",
                   lineHeight: "17.15px",
                 }}
@@ -116,7 +113,7 @@ function NowPlaying() {
               </Typography>
             </Box>
           </Box>
-          <DurationText sx={{ paddingLeft: "4px" }}>
+          <DurationText color="textSecondary" sx={{ paddingLeft: "4px" }}>
             -{FormatPlaybackPosition(remaining)}
           </DurationText>
         </Box>
@@ -127,7 +124,7 @@ function NowPlaying() {
           max={playingTrack?.track.finish}
           onChange={(_, value) => player().setCurrentTime(value as number)}
           sx={() => ({
-            color: defaultGrey,
+            color: theme.palette.text.secondary,
             height: 4,
             mt: "0px",
             padding: "0",

@@ -16,6 +16,7 @@ import { enqueueSnackbar } from "notistack";
 import { showArtworkAtom, keepModeAtom, downloadModeAtom } from "./Settings";
 import { formatBytes } from "./Util";
 import library from "./Library";
+import LogOutButton from "./LogOutButton";
 
 interface SettingsPanelProps {
   showSettings: boolean;
@@ -225,6 +226,9 @@ function SettingsPanel({
             <p>
               Library Total Size: {formatBytes(library().getTotalFileSize())}
             </p>
+          </Grid>
+          <Grid size={12}>
+            <LogOutButton />
           </Grid>
         </Grid>
         <Popover

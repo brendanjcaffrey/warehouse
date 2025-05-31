@@ -8,21 +8,16 @@ import LibraryWrapper from "./LibraryWrapper";
 import Controls from "./Controls";
 import NowPlaying from "./NowPlaying";
 import SearchBar from "./SearchBar";
-import Sidebar from "./Sidebar";
+import Playlists from "./Playlists";
 import TrackTable from "./TrackTable";
 import Audio from "./Audio";
 import SettingsRecorder from "./SettingsRecorder";
-import { titleGrey, defaultGrey } from "./Colors";
 import "./index.css";
+import { BackgroundWrapper } from "./BackgroundWrapper";
 
 const theme = createTheme({
-  palette: {
-    info: {
-      main: titleGrey,
-    },
-    primary: {
-      main: defaultGrey,
-    },
+  colorSchemes: {
+    dark: true,
   },
 });
 
@@ -33,30 +28,32 @@ function App() {
   return (
     <JotaiProvider store={store}>
       <ThemeProvider theme={theme}>
-        <SnackbarProvider maxSnack={3} />
-        <AuthWrapper>
-          <LibraryWrapper>
-            <Grid container sx={{ height: "100vh" }}>
-              <Grid size={4} sx={topBarSx}>
-                <Controls />
+        <BackgroundWrapper>
+          <SnackbarProvider maxSnack={3} />
+          <AuthWrapper>
+            <LibraryWrapper>
+              <Grid container sx={{ height: "100vh" }}>
+                <Grid size={4} sx={topBarSx}>
+                  <Controls />
+                </Grid>
+                <Grid size={4} sx={topBarSx}>
+                  <NowPlaying />
+                </Grid>
+                <Grid size={4} sx={topBarSx}>
+                  <SearchBar />
+                </Grid>
+                <Grid size={2} sx={bodySx}>
+                  <Playlists />
+                </Grid>
+                <Grid size={10} sx={bodySx}>
+                  <TrackTable />
+                </Grid>
               </Grid>
-              <Grid size={4} sx={topBarSx}>
-                <NowPlaying />
-              </Grid>
-              <Grid size={4} sx={topBarSx}>
-                <SearchBar />
-              </Grid>
-              <Grid size={2} sx={bodySx}>
-                <Sidebar />
-              </Grid>
-              <Grid size={10} sx={bodySx}>
-                <TrackTable />
-              </Grid>
-            </Grid>
-          </LibraryWrapper>
-          <Audio />
-          <SettingsRecorder />
-        </AuthWrapper>
+            </LibraryWrapper>
+            <Audio />
+            <SettingsRecorder />
+          </AuthWrapper>
+        </BackgroundWrapper>
       </ThemeProvider>
     </JotaiProvider>
   );

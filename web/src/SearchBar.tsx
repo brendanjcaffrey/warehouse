@@ -13,7 +13,6 @@ import {
 } from "@mui/material";
 import { SettingsRounded, DownloadRounded } from "@mui/icons-material";
 import { SearchRounded } from "@mui/icons-material";
-import { titleGrey } from "./Colors";
 import { searchAtom } from "./State";
 import DownloadsPanel from "./DownloadsPanel";
 import SettingsPanel from "./SettingsPanel";
@@ -61,7 +60,7 @@ function SearchBar() {
             <SearchRounded sx={{ pb: "5px" }} />
           </InputAdornment>
         }
-        sx={{ fontSize: "12px", color: titleGrey }}
+        sx={{ fontSize: "12px", color: theme.palette.text.primary }}
       />
     </FormControl>
   );
@@ -97,22 +96,12 @@ function SearchBar() {
         searchBar
       )}
       <Tooltip title="Download Status">
-        <IconButton
-          size="large"
-          onClick={toggleShowDownloads}
-          edge="start"
-          sx={{ color: titleGrey }}
-        >
+        <IconButton size="large" onClick={toggleShowDownloads} edge="start">
           <DownloadRounded fontSize="inherit" />
         </IconButton>
       </Tooltip>
       <Tooltip title="Settings">
-        <IconButton
-          size="large"
-          onClick={toggleShowSettings}
-          edge="start"
-          sx={{ color: titleGrey }}
-        >
+        <IconButton size="large" onClick={toggleShowSettings} edge="start">
           <SettingsRounded fontSize="inherit" />
         </IconButton>
       </Tooltip>

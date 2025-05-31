@@ -34,7 +34,7 @@ function LogOutButton({ size, sx }: LogOutButtonProps) {
 
   return (
     <Button
-      color="info"
+      color="primary"
       variant="text"
       size={size}
       sx={sx}
