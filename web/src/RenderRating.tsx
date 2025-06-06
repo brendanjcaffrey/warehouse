@@ -6,9 +6,10 @@ import library, { Track } from "./Library";
 import { updatePersister } from "./UpdatePersister";
 
 export const NUM_ICONS = 5;
+export const RATING_MULTIPLIER = 20;
 
 export function RenderRating(track: Track): JSX.Element {
-  const [rating, setRating] = useState(track.rating / 10);
+  const [rating, setRating] = useState(track.rating / RATING_MULTIPLIER);
 
   return (
     <Rating
@@ -30,7 +31,7 @@ export function RenderRating(track: Track): JSX.Element {
         if (!updatedTrack) {
           return;
         }
-        updatedTrack.rating = newValue * 10;
+        updatedTrack.rating = newValue * RATING_MULTIPLIER;
         await library().putTrack(updatedTrack);
         store.get(trackUpdatedFnAtom).fn(updatedTrack);
         updatePersister().updateRating(track.id, updatedTrack.rating);
