@@ -107,6 +107,8 @@ function Controls() {
             border: "none",
           },
           "& .MuiSlider-thumb": {
+            width: "16px",
+            height: "16px",
             backgroundColor: theme.palette.grey[500],
             "&::before": {
               boxShadow: "none",
