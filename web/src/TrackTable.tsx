@@ -74,7 +74,7 @@ function TrackTable() {
   const [contextMenuData, setContextMenuData] =
     useState<TrackContextMenuData | null>(null);
 
-  const [editFormTrack, setEditFormTrack] = useState<Track | null>(null);
+  const [editFormTrack, setEditFormTrack] = useState<Track | undefined>(undefined);
 
   const filterText = useDebouncedAtomValue(searchAtom, 250);
   useEffect(() => {
@@ -99,7 +99,7 @@ function TrackTable() {
   );
 
   const closeEditTrackPanel = useCallback(() => {
-    setEditFormTrack(null);
+    setEditFormTrack(undefined);
   }, [setEditFormTrack]);
 
   useEffect(() => {

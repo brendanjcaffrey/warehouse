@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useAtomValue } from "jotai";
 import { Box, CircularProgress, Modal } from "@mui/material";
 import DelayedElement from "./DelayedElement";
 import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom } from "./State";
-import { DownloadWorker } from "./DownloadWorkerHandle";
 import { files } from "./Files";
-import { FileType, IsTypedMessage, IsFileFetchedMessage } from "./WorkerTypes";
+import { useArtworkFileURL } from "./useArtworkFileURL";
 
 const ARTWORK_SIZE = "40px";
 const SPINNER_SIZE = "20px";
@@ -16,71 +15,13 @@ function Artwork() {
   const showArtwork = useAtomValue(showArtworkAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const [showModal, setShowModal] = useState(false);
-  const [shownArtwork, setShownArtwork] = useState<string | null>(null);
-  const [artworkFileURL, setArtworkFileURL] = useState<string | null>(null);
   const [modalWidth, setModalWidth] = useState(0);
   const [modalHeight, setModalHeight] = useState(0);
+  const artworkFileURL = useArtworkFileURL(playingTrack?.track);
 
   useEffect(() => {
     files(); // initialize it
   }, []);
-
-  const showFetchedArtwork = useCallback(
-    async (artworkId: string) => {
-      const url = await files().tryGetFileURL(FileType.ARTWORK, artworkId);
-      if (url) {
-        setArtworkFileURL(url);
-      } else {
-        // nop, Player handles downloading artwork, so wait for a message to come in from the worker
-      }
-    },
-    [setArtworkFileURL]
-  );
-
-  const handleDownloadWorkerMessage = useCallback(
-    (m: MessageEvent) => {
-      const { data } = m;
-      if (!IsTypedMessage(data)) {
-        return;
-      }
-      if (
-        IsFileFetchedMessage(data) &&
-        data.fileType === FileType.ARTWORK &&
-        data.ids.fileId === playingTrack?.track.artwork
-      ) {
-        showFetchedArtwork(data.ids.fileId);
-      }
-    },
-    [playingTrack, showFetchedArtwork]
-  );
-
-  useEffect(() => {
-    DownloadWorker.addEventListener("message", handleDownloadWorkerMessage);
-    return () => {
-      DownloadWorker.removeEventListener(
-        "message",
-        handleDownloadWorkerMessage
-      );
-    };
-  }, [handleDownloadWorkerMessage]);
-
-  useEffect(() => {
-    if (playingTrack && playingTrack.track.artwork !== shownArtwork) {
-      setShowModal(false);
-      if (artworkFileURL) {
-        URL.revokeObjectURL(artworkFileURL);
-        setArtworkFileURL(null);
-      }
-
-      const artworkId = playingTrack.track.artwork;
-      if (artworkId) {
-        setShownArtwork(artworkId);
-        showFetchedArtwork(artworkId);
-      } else {
-        setShownArtwork(null);
-      }
-    }
-  }, [playingTrack, artworkFileURL, shownArtwork, showFetchedArtwork]);
 
   if (showArtwork && playingTrack && playingTrack.track.artwork) {
     return (

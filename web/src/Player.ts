@@ -515,7 +515,6 @@ class Player {
         )
       : null;
     if (url) {
-      // XXX if you update this, update the type detection in library.rb
       const ext = this.playingTrack.track.artwork!.split(".").pop();
       switch (ext) {
         case "jpg":

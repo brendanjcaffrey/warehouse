@@ -6,15 +6,17 @@ import {
   DialogActions,
   Button,
   TextField,
+  InputLabel,
 } from "@mui/material";
 import { FieldDefinition, EDIT_TRACK_FIELDS } from "./EditTrackFields";
 import { store, trackUpdatedFnAtom } from "./State";
 import library, { Track } from "./Library";
 import { player } from "./Player";
 import { updatePersister } from "./UpdatePersister";
+import { EditTrackArtwork } from "./EditTrackArtwork";
 
 interface EditTrackPanelProps {
-  track: Track | null;
+  track: Track | undefined;
   closeEditTrackPanel: () => void;
 }
 
@@ -99,6 +101,10 @@ function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
               type="text"
             />
           ))}
+          <InputLabel shrink={true} sx={{ marginTop: "8px" }}>
+            Album Artwork
+          </InputLabel>
+          <EditTrackArtwork track={track} />
         </DialogContent>
         <DialogActions>
           <Button onClick={closeEditTrackPanel}>Cancel</Button>

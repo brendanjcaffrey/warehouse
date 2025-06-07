@@ -23,6 +23,7 @@ export enum FileRequestSource {
   ARTWORK_PRELOAD,
   DOWNLOAD_MODE_MUSIC,
   DOWNLOAD_MODE_ARTWORK,
+  EDIT_TRACK_ARTWORK,
 }
 
 export enum DownloadStatus {
