@@ -15,6 +15,9 @@ INVALID_TRACK_ERROR = 'invalid track'
 INVALID_RATING_ERROR = 'invalid rating'
 TRACK_FIELD_MISSING_ERROR = 'name/year/artist/genre cannot be empty'
 INVALID_YEAR_ERROR = 'invalid year'
+MISSING_FILE_ERROR = 'missing file'
+INVALID_MIME_ERROR = 'invalid file type'
+INVALID_MD5_ERROR = 'file name and contents mismatch'
 
 GENRE_SQL = 'SELECT id, name FROM genres;'
 ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
@@ -93,15 +96,18 @@ UPDATE_ALBUM_SQL = 'UPDATE tracks SET album_id=$1 WHERE id=$2;'
 
 UPDATE_EXPORT_FINISHED_SQL = 'UPDATE export_finished SET finished_at=current_timestamp;'
 
-MIME_TYPES = {
+IMAGE_MIME_TYPES = {
+  'jpg' => 'image/jpeg',
+  'png' => 'image/png'
+}.freeze
+
+AUDIO_MIME_TYPES = {
   'mp3' => 'audio/mpeg',
   'mp4' => 'audio/mp4',
   'm4a' => 'audio/mp4',
   'aif' => 'audio/aif',
   'aiff' => 'audio/aif',
-  'wav' => 'audio/wav',
-  'jpg' => 'image/jpeg',
-  'png' => 'image/png'
+  'wav' => 'audio/wav'
 }.freeze
 
 def convert_cols_to_ints(rows, indices)
@@ -121,7 +127,10 @@ class Server < Sinatra::Base
   register Sinatra::Namespace
 
   configure do
-    MIME_TYPES.each do |key, value|
+    IMAGE_MIME_TYPES.each do |key, value|
+      mime_type key.to_sym, value
+    end
+    AUDIO_MIME_TYPES.each do |key, value|
       mime_type key.to_sym, value
     end
   end
@@ -187,12 +196,12 @@ class Server < Sinatra::Base
 
   def send_track_if_exists(db, music_path, track_file_id)
     file, ext = db.exec_params(TRACK_INFO_SQL, [track_file_id]).values.first
-    if file.nil? || !MIME_TYPES.key?(ext)
+    if file.nil? || !AUDIO_MIME_TYPES.key?(ext)
       false
     else
       if Config.remote?
         headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{file}")
-        headers['Content-Type'] = MIME_TYPES[ext]
+        headers['Content-Type'] = AUDIO_MIME_TYPES[ext]
       else
         send_file(music_path + file, type: ext)
       end
@@ -223,7 +232,7 @@ class Server < Sinatra::Base
 
       if Config.remote?
         headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/artwork/#{file}")
-        headers['Content-Type'] = MIME_TYPES[file.split('.').last]
+        headers['Content-Type'] = IMAGE_MIME_TYPES[file.split('.').last]
       else
         send_file(full_path)
       end
@@ -488,6 +497,29 @@ class Server < Sinatra::Base
         end
         db.exec(UPDATE_EXPORT_FINISHED_SQL)
       end
+    end
+
+    post '/artwork' do
+      username = get_validated_username
+      if username.nil?
+        return proto(OperationResponse.new(success: false, error: NOT_AUTHED_ERROR))
+      elsif !track_user_changes?(username)
+        return proto(OperationResponse.new(success: false, error: NOT_TRACKING_ERROR))
+      end
+
+      return proto(OperationResponse.new(success: false, error: MISSING_FILE_ERROR)) if !params.key?(:file) || params[:file].nil? || params[:file][:tempfile].nil? || params[:file][:filename].nil?
+
+      filename = params[:file][:filename]
+      expected_md5, extension = filename.split('.')
+      return proto(OperationResponse.new(success: false, error: INVALID_MIME_ERROR)) unless IMAGE_MIME_TYPES.key?(extension)
+
+      tempfile = params[:file][:tempfile]
+      md5 = Digest::MD5.file(tempfile).hexdigest
+      return proto(OperationResponse.new(success: false, error: INVALID_MD5_ERROR)) if md5 != expected_md5
+
+      out_path = File.expand_path(File.join(Config['artwork_path'], filename))
+      FileUtils.cp(tempfile.path, out_path) unless File.exist?(out_path)
+      return proto(OperationResponse.new(success: true))
     end
   end
 end

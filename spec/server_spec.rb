@@ -90,6 +90,7 @@ describe 'iTunes Streamer' do
   before :all do
     `echo "fake mp3 contents" > spec/__test.mp3`
     `echo "fake jpg contents" > spec/__artwork.jpg`
+    `echo "fake png contents" > spec/__artwork.png`
     @database = Export::Database.new(Config['database_username'], Config['database_name'])
     @database.clean_and_rebuild
     @db = @database.db
@@ -98,6 +99,7 @@ describe 'iTunes Streamer' do
   after :all do
     `rm spec/__test.mp3`
     `rm spec/__artwork.jpg`
+    `rm spec/__artwork.png`
   end
 
   before :each do
@@ -560,7 +562,7 @@ describe 'iTunes Streamer' do
     end
   end
 
-  describe '/rating/*' do
+  describe '/api/rating/*' do
     it 'should return an error if rating is missing' do
       post '/api/rating/21D8E2441A5E2204', {}, get_auth_header
       resp = OperationResponse.decode(last_response.body)
@@ -918,6 +920,82 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+  end
+
+  describe '/api/artwork' do
+    after :each do
+      FileUtils.rm_f('spec/27a8d4658b73d9533c1db34ee2350da0.jpg')
+      FileUtils.rm_f('spec/f693282ce0329b1fb9ec383feae8088b.png')
+    end
+
+    it 'should return an error if no jwt' do
+      post '/api/artwork', 'file' => Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/jpeg')
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'should return an error if invalid jwt' do
+      post '/api/artwork', {}, get_invalid_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'should return an error if expired jwt' do
+      post '/api/artwork', {}, get_expired_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'should return an error if not tracking the user\'s changes' do
+      post '/api/artwork', {}, get_auth_header('notrack')
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(NOT_TRACKING_ERROR)
+    end
+
+    it 'should return an error if missing the file' do
+      post '/api/artwork', {}, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(MISSING_FILE_ERROR)
+    end
+
+    it 'should return an error if an invalid extension' do
+      invalid_ext_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/wav', true, original_filename: 'artwork.wav')
+      post '/api/artwork', { 'file' => invalid_ext_uploaded_file }, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(INVALID_MIME_ERROR)
+    end
+
+    it 'should return an error if the md5 doesn\'t match the filename' do
+      invalid_md5_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/jpeg', true, original_filename: '49f68a5c8493ec2c0bf489821c21fc3b.jpg')
+      post '/api/artwork', { 'file' => invalid_md5_uploaded_file }, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(INVALID_MD5_ERROR)
+    end
+
+    it 'should accept a valid jpg' do
+      expect(File.exist?('spec/27a8d4658b73d9533c1db34ee2350da0.jpg')).to be false
+      jpg_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/jpeg', true, original_filename: '27a8d4658b73d9533c1db34ee2350da0.jpg')
+      post '/api/artwork', { 'file' => jpg_uploaded_file }, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be true
+      expect(File.read('spec/27a8d4658b73d9533c1db34ee2350da0.jpg')).to eq("fake jpg contents\n")
+    end
+
+    it 'should accept a valid png' do
+      expect(File.exist?('spec/f693282ce0329b1fb9ec383feae8088b.png')).to be false
+      png_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.png', 'image/png', true, original_filename: 'f693282ce0329b1fb9ec383feae8088b.png')
+      post '/api/artwork', { 'file' => png_uploaded_file }, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be true
+      expect(File.read('spec/f693282ce0329b1fb9ec383feae8088b.png')).to eq("fake png contents\n")
     end
   end
 end
