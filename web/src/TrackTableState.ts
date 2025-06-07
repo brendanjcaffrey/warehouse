@@ -1,7 +1,7 @@
 import { Track } from "./Library";
 import { COLUMNS, GetColumnWidths } from "./TrackTableColumns";
 import { IconWidths } from "./MeasureIconWidths";
-import { SortState, SortTracks } from "./TrackTableSort";
+import { PrecomputeTrackSort, SortState, SortTracks } from "./TrackTableSort";
 import { FilterTrackList } from "./TrackTableFilter";
 import { TypeToShowEntry, BuildTypeToShowList } from "./TrackTableTypeToShow";
 import { DEFAULT_COLUMN_WIDTH } from "./TrackTableConstants";
@@ -130,7 +130,9 @@ export function UpdateTrackTableState(
         (track) => track.id === event.track.id
       );
       if (trackIndex !== -1) {
-        newState.tracks[trackIndex] = event.track;
+        const track = newState.tracks[trackIndex];
+        PrecomputeTrackSort(event.track);
+        newState.tracks[trackIndex] = track;
       }
       break;
     }
