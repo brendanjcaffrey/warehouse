@@ -316,18 +316,18 @@ export class DownloadManager {
     if (this.keepMode) {
       return;
     }
-    const trackIds = new Set<string>();
+    const musicIds = new Set<string>();
     const artworkIds = new Set<string>();
     for (const requestedFiles of this.sources.values()) {
       for (const file of requestedFiles) {
         if (file.type === FileType.MUSIC) {
-          trackIds.add(file.ids.fileId);
+          musicIds.add(file.ids.fileId);
         } else {
           artworkIds.add(file.ids.fileId);
         }
       }
     }
-    this.removeMusicFilesExcept(trackIds);
+    this.removeMusicFilesExcept(musicIds);
     this.removeArtworkFilesExcept(artworkIds);
   }
 

@@ -2,6 +2,15 @@ import "fake-indexeddb/auto";
 import { Track } from "../src/Library";
 import { FilterTrackList } from "../src/TrackTableFilter";
 import { expect, test } from "vitest";
+import { vi } from "vitest";
+
+vi.mock("../src/DownloadWorkerHandle", () => {
+  return {
+    DownloadWorker: {
+      postMessage: vi.fn(),
+    },
+  };
+});
 
 const TRACKS: Track[] = [
   {
