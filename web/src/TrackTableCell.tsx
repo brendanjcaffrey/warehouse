@@ -13,7 +13,7 @@ function CellBackgroundColor(
   theme: Theme
 ) {
   if (isSelected) {
-    return theme.palette.action.selected;
+    return theme.palette.action.focus;
   } else {
     return rowIndex % 2 === 0
       ? theme.palette.action.hover
