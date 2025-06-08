@@ -52,6 +52,16 @@ class FileTypeManager {
     }
   }
 
+  async tryReadFile(id: string): Promise<File | null> {
+    try {
+      const fileHandle = await this.handle!.getFileHandle(id);
+      return await fileHandle.getFile();
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  }
+
   async tryWriteFile(
     id: string,
     data: FileSystemWriteChunkType
@@ -132,6 +142,10 @@ export class Files {
 
   async tryGetFileURL(type: FileType, id: string): Promise<string | null> {
     return (await this.managers.get(type)?.tryGetFileURL(id)) ?? null;
+  }
+
+  async tryReadFile(type: FileType, id: string): Promise<File | null> {
+    return (await this.managers.get(type)?.tryReadFile(id)) ?? null;
   }
 
   async tryWriteFile(

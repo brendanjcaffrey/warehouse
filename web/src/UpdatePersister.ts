@@ -223,6 +223,7 @@ export class UpdatePersister {
     var formData = new FormData();
     formData.append("file", file, upload.params.filename);
     const { data } = await axios.post(requestPath, formData, {
+      responseType: "arraybuffer",
       headers: {
         Authorization: `Bearer ${this.authToken}`,
         "Content-Type": "multipart/form-data",

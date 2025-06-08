@@ -20,10 +20,10 @@ import DelayedElement from "./DelayedElement";
 import { CircularProgress, ClickAwayListener, useTheme } from "@mui/material";
 import { UploadFileRounded } from "@mui/icons-material";
 import { enqueueSnackbar } from "notistack";
-
-interface EditTrackArtworkProps {
-  track: Track | undefined;
-}
+import { files } from "./Files";
+import SparkMD5 from "spark-md5";
+import { IMAGE_MIME_TO_EXTENSION } from "./MimeTypes";
+import { updatePersister } from "./UpdatePersister";
 
 enum ArtworkDisplayState {
   NONE,
@@ -38,17 +38,83 @@ const BORDER_WIDTH = 2;
 const SPINNER_CONTAINER_SIZE = ARTWORK_SIZE + BORDER_WIDTH * 2;
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
-export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
+async function TryStoreArtwork(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!IMAGE_MIME_TO_EXTENSION.has(file.type)) {
+      reject(new Error("invalid file type"));
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = async function (e) {
+      if (e.target?.result instanceof ArrayBuffer) {
+        const md5 = SparkMD5.ArrayBuffer.hash(e.target.result);
+        const filename = `${md5}.${IMAGE_MIME_TO_EXTENSION.get(file.type)}`;
+        if (await files().fileExists(FileType.ARTWORK, filename)) {
+          resolve(filename);
+        } else {
+          const result = await files().tryWriteFile(
+            FileType.ARTWORK,
+            filename,
+            e.target?.result
+          );
+          if (result) {
+            updatePersister().uploadArtwork(filename);
+            resolve(filename);
+          } else {
+            reject(new Error("Failed to write file"));
+          }
+        }
+      } else {
+        reject(new Error("Failed to read file as ArrayBuffer"));
+      }
+    };
+
+    reader.onerror = function () {
+      reject(new Error("FileReader error"));
+    };
+
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+interface EditTrackArtworkProps {
+  track: Track | undefined;
+  artworkCleared: boolean;
+  setArtworkCleared: (cleared: boolean) => void;
+  uploadedImageFilename: string | null;
+  setUploadedImageFilename: (url: string | null) => void;
+}
+
+export function EditTrackArtwork({
+  track,
+  artworkCleared,
+  setArtworkCleared,
+  uploadedImageFilename,
+  setUploadedImageFilename,
+}: EditTrackArtworkProps) {
   const theme = useTheme();
   const artworkFileURL = useArtworkFileURL(track);
   const [artworkSelected, setArtworkSelected] = useState(false);
-  const [artworkCleared, setArtworkCleared] = useState(false);
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedImageFileURL, _setUploadedImageFileURL] = useState<
+    string | null
+  >(null);
+  const setAndClearUploadedImageFileURL = useCallback(
+    (v: string | null) => {
+      _setUploadedImageFileURL((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return v;
+      });
+    },
+    [_setUploadedImageFileURL]
+  );
 
   useEffect(() => {
     setArtworkCleared(false);
     setArtworkSelected(false);
-    setUploadedImage(null);
+    setUploadedImageFilename(null);
 
     var preloadArtworkIds: TrackFileIds[] = [];
     if (track && track.artwork) {
@@ -62,6 +128,22 @@ export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
     } as SetSourceRequestedFilesMessage);
   }, [track]);
 
+  useEffect(() => {
+    if (uploadedImageFilename) {
+      files()
+        .tryGetFileURL(FileType.ARTWORK, uploadedImageFilename)
+        .then((url) => {
+          setAndClearUploadedImageFileURL(url);
+        })
+        .catch((error) => {
+          console.error("Failed to get uploaded image URL:", error);
+          setAndClearUploadedImageFileURL(null);
+        });
+    } else {
+      setAndClearUploadedImageFileURL(null);
+    }
+  }, [uploadedImageFilename]);
+
   const clearOnDelete = useCallback(
     (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement) {
@@ -73,14 +155,15 @@ export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
       if (track && artworkSelected) {
         setArtworkSelected(false);
         setArtworkCleared(true);
-        setUploadedImage(null);
+        setUploadedImageFilename(null);
+        event.preventDefault();
       }
     },
     [
       track,
       artworkSelected,
       setArtworkCleared,
-      setUploadedImage,
+      setUploadedImageFilename,
       setArtworkSelected,
     ]
   );
@@ -110,18 +193,13 @@ export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
     }
   };
 
-  const handleFileChange = (file: File) => {
+  const handleFileChange = async (file: File) => {
     if (file.size > MAX_FILE_SIZE) {
       enqueueSnackbar("File size exceeds 100 MB limit.", { variant: "error" });
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        setUploadedImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    const filename = await TryStoreArtwork(file);
+    setUploadedImageFilename(filename);
   };
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -142,7 +220,7 @@ export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
 
   var artworkDisplayState = ArtworkDisplayState.NONE;
   if (track) {
-    if (uploadedImage) {
+    if (uploadedImageFileURL) {
       artworkDisplayState = ArtworkDisplayState.LOADED;
     } else if (track.artwork && !artworkCleared) {
       artworkDisplayState = artworkFileURL
@@ -176,7 +254,7 @@ export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
       return (
         <ClickAwayListener onClickAway={() => setArtworkSelected(false)}>
           <img
-            src={uploadedImage ?? artworkFileURL!}
+            src={uploadedImageFileURL ?? artworkFileURL!}
             style={{
               width: `${ARTWORK_SIZE}px`,
               height: `${ARTWORK_SIZE}px`,
@@ -205,7 +283,7 @@ export function EditTrackArtwork({ track }: EditTrackArtworkProps) {
           onClick={openInput}
         >
           <input
-            accept="image/png, image/jpeg"
+            accept={Object.keys(IMAGE_MIME_TO_EXTENSION).join(", ")}
             style={{ display: "none" }}
             type="file"
             id="artwork-upload"

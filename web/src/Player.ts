@@ -29,6 +29,7 @@ import { files } from "./Files";
 import { circularArraySlice } from "./Util";
 import { TrackFileSet } from "./TrackFileSet";
 import { PlayingTrack, DisplayedTrack, PlaylistTrack } from "./Types";
+import { IMAGE_EXTENSION_TO_MIME } from "./MimeTypes";
 
 const TRACKS_TO_PRELOAD = 3;
 
@@ -516,13 +517,9 @@ class Player {
       : null;
     if (url) {
       const ext = this.playingTrack.track.artwork!.split(".").pop();
-      switch (ext) {
-        case "jpg":
-          metadata.artwork = [{ src: url, type: "image/jpeg" }];
-          break;
-        case "png":
-          metadata.artwork = [{ src: url, type: "image/png" }];
-          break;
+      const mime = ext ? IMAGE_EXTENSION_TO_MIME.get(ext) : null;
+      if (mime) {
+        metadata.artwork = [{ src: url, type: mime }];
       }
     }
 

@@ -48,6 +48,11 @@ function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
     }
   }, [track]);
 
+  const [artworkCleared, setArtworkCleared] = useState(false);
+  const [uploadedImageFilename, setUploadedImageFilename] = useState<
+    string | null
+  >(null);
+
   const submitEdits = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!track) {
@@ -69,6 +74,17 @@ function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
         updatedFields[field.definition.name] = getter(updatedTrack);
       }
     }
+
+    if (uploadedImageFilename) {
+      if (updatedTrack.artwork != uploadedImageFilename) {
+        updatedTrack.artwork = uploadedImageFilename;
+        updatedFields.artwork = uploadedImageFilename;
+      }
+    } else if (artworkCleared) {
+      updatedTrack.artwork = null;
+      updatedFields.artwork = "";
+    }
+
     if (Object.keys(updatedFields).length > 0) {
       await library().putTrack(updatedTrack);
       store.get(trackUpdatedFnAtom).fn(updatedTrack);
@@ -104,7 +120,13 @@ function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
           <InputLabel shrink={true} sx={{ marginTop: "8px" }}>
             Album Artwork
           </InputLabel>
-          <EditTrackArtwork track={track} />
+          <EditTrackArtwork
+            track={track}
+            artworkCleared={artworkCleared}
+            setArtworkCleared={setArtworkCleared}
+            uploadedImageFilename={uploadedImageFilename}
+            setUploadedImageFilename={setUploadedImageFilename}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={closeEditTrackPanel}>Cancel</Button>
