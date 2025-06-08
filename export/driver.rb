@@ -23,16 +23,12 @@ module Export
         year_updates(@database.get_year_updates)
         start_updates(@database.get_start_updates)
         finish_updates(@database.get_finish_updates)
+        artwork_updates(@database.get_artwork_updates)
       end
 
       return unless Config.remote('update_library')
 
-      uri = URI("#{Config.remote('base_url')}/api/updates")
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = uri.scheme == 'https'
-
-      request = Net::HTTP::Get.new(uri)
-      request['Authorization'] = "Bearer #{build_jwt('export_driver_update_library', Config.remote('secret'))}"
+      jwt = build_jwt('export_driver_update_library', Config.remote('secret'))
       response = http.request(request)
       updates = nil
 
@@ -63,6 +59,21 @@ module Export
       year_updates(flatten_updates(updates.years))
       start_updates(flatten_updates(updates.starts))
       finish_updates(flatten_updates(updates.finishes))
+
+      flat_artwork_updates = flatten_updates(updates.artworks)
+      flat_artwork_updates.each do |_, artwork_filename|
+        next if @library.has_artwork?(artwork_filename)
+
+        response = execute_remote_request("/artwork/#{artwork_filename}", jwt)
+        if response.is_a?(Net::HTTPSuccess)
+          puts "Successfully fetched artwork: #{artwork_filename}"
+          @library.put_artwork(artwork_filename, response.body)
+        else
+          puts "HTTP request failed with status: #{response.code} #{response.message}"
+          exit(1)
+        end
+      end
+      artwork_updates(flat_artwork_updates)
     end
 
     def export_itunes_library!
@@ -78,6 +89,16 @@ module Export
     end
 
     private
+
+    def execute_remote_request(path, jwt)
+      uri = URI("#{Config.remote('base_url')}#{path}")
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == 'https'
+
+      request = Net::HTTP::Get.new(uri)
+      request['Authorization'] = "Bearer #{jwt}"
+      http.request(request)
+    end
 
     def flatten_updates(updates)
       updates.map { [_1.trackId, _1.value] }
@@ -160,6 +181,14 @@ module Export
       finishes.each do |row|
         puts @database.get_track_and_artist_name(row.first).join(' - ')
         @library.update_finish(row.first, row.last)
+      end
+    end
+
+    def artwork_updates(artworks)
+      puts "\n=== Artworks ==="
+      artworks.each do |row|
+        puts @database.get_track_and_artist_name(row.first).join(' - ')
+        @library.update_artwork(row.first, row.last)
       end
     end
 

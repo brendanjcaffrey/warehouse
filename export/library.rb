@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
-require 'set'
 require_relative './pretty_on_failure'
 
 module Export
@@ -178,6 +177,50 @@ module Export
     UPDATE_START = format(UPDATE_TEMPLATE, '%s', 'start', '%s')
     UPDATE_FINISH = format(UPDATE_TEMPLATE, '%s', 'finish', '%s')
 
+    GET_ARTWORK = <<-SCRIPT
+      tell application "Music"
+        set thisTrack to some file track whose persistent ID is "%s"
+        set artworkDir to "%s"
+        repeat with thisArtwork in artworks of thisTrack
+            set fileName to (artworkDir & (persistent ID of thisTrack as string))
+            try
+              set outFile to open for access fileName with write permission
+              set srcBytes to raw data of thisArtwork
+              set eof outFile to 0
+              write srcBytes to outFile
+
+              close access fileName
+              exit repeat
+            on error
+              close access fileName
+            end try
+        end repeat
+      end tell
+    SCRIPT
+
+    CLEAR_ARTWORK = <<-SCRIPT
+      tell application "Music"
+        set thisTrack to some file track whose persistent ID is "%s"
+        repeat while count of artworks of thisTrack > 0
+          delete artwork 1 of thisTrack
+        end repeat
+      end tell
+    SCRIPT
+
+    SET_ARTWORK = <<-SCRIPT
+      tell application "Music"
+        set thisTrack to some file track whose persistent ID is "%s"
+        set artworkFilePath to "%s"
+
+        set artworkFile to POSIX file artworkFilePath as alias
+        set fileRef to (open for access artworkFile)
+        set artworkData to (read fileRef as picture)
+        close access fileRef
+
+        set data of artwork 1 of thisTrack to artworkData
+      end tell
+    SCRIPT
+
     def initialize
       @artwork_files = {} # md5 => filename
       @command = TTY::Command.new(printer: PrettyOnFailure)
@@ -190,6 +233,16 @@ module Export
       @artwork_total_file_size = 0
       @track_total_file_size = 0
       @existing_artwork_files = Set.new(Dir.entries(@artwork_dir).select { |f| f =~ /^[0-9a-f]{32}\.(jpg|png)$/ })
+    end
+
+    def has_artwork?(filename)
+      File.exist?(File.join(@artwork_dir, filename))
+    end
+
+    def put_artwork(filename, contents)
+      File.open(File.join(@artwork_dir, filename), 'wb') do |file|
+        file.write(contents)
+      end
     end
 
     def cleanup_artwork
@@ -229,6 +282,21 @@ module Export
       exit(1)
     end
 
+    def get_artwork_type(artwork_filename)
+      # TODO: use IMAGE_TYPE constant
+      out = @command.run("file #{artwork_filename}").out
+      type = nil
+      type = 'jpg' if out.include?('JPEG image data')
+      type = 'png' if out.include?('PNG image data')
+
+      return type unless type.nil?
+
+      puts 'Unable to determine album artwork image type'
+      puts "artwork_filename: #{artwork_filename}"
+      puts "file output: #{out}"
+      exit(1)
+    end
+
     def check_for_track_artwork(track)
       artwork_filename = "#{@tmpdir}/#{track.id}"
       artwork_size = File.size?(artwork_filename)
@@ -236,18 +304,7 @@ module Export
 
       md5 = Digest::MD5.file(artwork_filename).hexdigest
       unless @artwork_files.key?(md5)
-        out = @command.run("file #{artwork_filename}").out
-        type = nil
-        type = 'jpg' if out.include?('JPEG image data')
-        type = 'png' if out.include?('PNG image data')
-
-        # XXX if you update this, update the type detection in Player.ts
-        if type.nil?
-          puts 'Unable to determine album artwork image type'
-          puts "file output: #{out}"
-          exit(1)
-        end
-
+        type = get_artwork_type(artwork_filename)
         out_filename = "#{md5}.#{type}"
         @artwork_files[md5] = out_filename
         @artwork_total_file_size += File.size(artwork_filename)
@@ -395,10 +452,36 @@ module Export
     end
 
     def update_finish(persistent_id, new_finish)
-      finish_finish = get_finish(persistent_id)
+      start_finish = get_finish(persistent_id)
       @command.run("osascript -e '#{format(UPDATE_FINISH, escape(persistent_id), new_finish.to_i)}'")
       end_finish = get_finish(persistent_id)
-      puts "#{finish_finish} -> #{end_finish}"
+      puts "#{start_finish} -> #{end_finish}"
+    end
+
+    def get_artwork(persistent_id)
+      @command.run!("osascript -e '#{format(GET_ARTWORK, persistent_id, "#{@tmpdir}/")}'")
+      artwork_filename = "#{@tmpdir}/#{persistent_id}"
+      artwork_size = File.size?(artwork_filename)
+      return 'nil' unless artwork_size
+
+      md5 = Digest::MD5.file(artwork_filename).hexdigest
+      type = get_artwork_type(artwork_filename)
+      FileUtils.rm_f(artwork_filename)
+      "#{md5}.#{type}"
+    end
+
+    def update_artwork(persistent_id, new_artwork)
+      start_artwork = get_artwork(persistent_id)
+      @command.run("osascript -e '#{format(CLEAR_ARTWORK, escape(persistent_id))}'")
+      if new_artwork && new_artwork != ''
+        artwork_filepath = File.join(@artwork_dir, new_artwork)
+        raise "Artwork file '#{artwork_filepath}' does not exist" unless File.exist?(artwork_filepath)
+
+        @command.run("osascript -e '#{format(SET_ARTWORK, escape(persistent_id), escape(artwork_filepath))}'")
+      end
+
+      end_artwork = get_artwork(persistent_id)
+      puts "#{start_artwork} -> #{end_artwork}"
     end
 
     def escape(str)

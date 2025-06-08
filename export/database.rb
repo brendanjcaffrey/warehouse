@@ -253,6 +253,10 @@ module Export
       @db.exec(GET_FINISH_UPDATES_SQL).values
     end
 
+    def get_artwork_updates
+      @db.exec(GET_ARTWORK_UPDATES_SQL).values
+    end
+
     def get_track_and_artist_name(id)
       @db.exec_params(TRACK_AND_ARTIST_NAME_SQL, [id]).values.first
     end
