@@ -26,6 +26,10 @@ jobs:
       with:
         ruby-version: 3.3.4
 
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22.14.0'
+
     - name: bundle
       id: bundle
       run: |
