@@ -368,6 +368,9 @@ class Server < Sinatra::Base
         db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values.each do |finish|
           updates.finishes << FloatUpdate.new(trackId: finish[0], value: finish[1].to_f)
         end
+        db.exec(Export::Database::GET_ARTWORK_UPDATES_SQL).values.each do |artwork|
+          updates.artworks << StringUpdate.new(trackId: artwork[0], value: artwork[1])
+        end
         proto(UpdatesResponse.new(updates: updates))
       else
         proto(UpdatesResponse.new(error: NOT_AUTHED_ERROR))

@@ -124,6 +124,7 @@ describe 'iTunes Streamer' do
     @db.exec('DELETE FROM start_updates')
     @db.exec('DELETE FROM finish_updates')
     @db.exec('DELETE FROM rating_updates')
+    @db.exec('DELETE FROM artwork_updates')
     @db.exec('DELETE FROM export_finished')
 
     @database.clear
@@ -509,6 +510,19 @@ describe 'iTunes Streamer' do
       expect(finishes[0].value).to be_within(0.001).of(1.1)
       expect(finishes[1].value).to be_within(0.001).of(1.2)
       expect(finishes[2].value).to be_within(0.001).of(1.3)
+    end
+
+    it 'should include all artwork updates' do
+      @db.exec('INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'hi.jpg'])
+      @db.exec('INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);', ['21D8E2441A5E2204', nil])
+      @db.exec('INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);', ['5E3FA18D81E469D2', 'hello.png'])
+
+      get '/api/updates', {}, get_auth_header
+      artworks = UpdatesResponse.decode(last_response.body).updates.artworks
+      expect(artworks.map(&:trackId)).to eq(%w[5E3FA18D81E469D2 21D8E2441A5E2204 5E3FA18D81E469D2])
+      expect(artworks[0].value.strip).to eq('hi.jpg')
+      expect(artworks[1].value).to eq('')
+      expect(artworks[2].value.strip).to eq('hello.png')
     end
   end
 

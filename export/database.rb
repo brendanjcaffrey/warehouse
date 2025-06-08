@@ -20,6 +20,7 @@ module Export
     GET_YEAR_UPDATES_SQL = 'SELECT track_id, year FROM year_updates;'
     GET_START_UPDATES_SQL = 'SELECT track_id, start FROM start_updates;'
     GET_FINISH_UPDATES_SQL = 'SELECT track_id, finish FROM finish_updates;'
+    GET_ARTWORK_UPDATES_SQL = 'SELECT track_id, artwork_filename FROM artwork_updates;'
 
     CREATE_GENRES_SQL = <<-SQL
       CREATE TABLE genres (

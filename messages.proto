@@ -107,6 +107,7 @@ message Updates {
   repeated IntUpdate years = 8;
   repeated FloatUpdate starts = 9;
   repeated FloatUpdate finishes = 10;
+  repeated StringUpdate artworks = 11;
 }
 
 message UpdatesResponse {
