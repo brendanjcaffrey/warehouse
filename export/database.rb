@@ -153,6 +153,13 @@ module Export
       );
     SQL
 
+    CREATE_ARTWORK_UPDATES_SQL = <<-SQL
+      CREATE TABLE artwork_updates (
+        track_id CHAR(16),
+        artwork_filename CHAR(36)
+      );
+    SQL
+
     CREATE_LIBRARY_METADATA_SQL = <<-SQL
       CREATE TABLE library_metadata (
         total_file_size BIGINT
@@ -306,6 +313,7 @@ module Export
       @db.exec(CREATE_YEAR_UPDATES_SQL)
       @db.exec(CREATE_START_UPDATES_SQL)
       @db.exec(CREATE_FINISH_UPDATES_SQL)
+      @db.exec(CREATE_ARTWORK_UPDATES_SQL)
       @db.exec(CREATE_LIBRARY_METADATA_SQL)
       @db.exec(CREATE_EXPORT_FINISHED_SQL)
     end

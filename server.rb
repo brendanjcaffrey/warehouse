@@ -94,6 +94,10 @@ ALBUM_ID_SQL = 'SELECT id FROM albums WHERE name=$1;'
 CREATE_ALBUM_SQL = 'INSERT INTO albums (name, sort_name) VALUES ($1, \'\') RETURNING id;'
 UPDATE_ALBUM_SQL = 'UPDATE tracks SET album_id=$1 WHERE id=$2;'
 
+DELETE_ARTWORK_UPDATE_SQL = 'DELETE FROM artwork_updates WHERE track_id=$1;'
+CREATE_ARTWORK_UPDATE_SQL = 'INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);'
+UPDATE_ARTWORK_SQL = 'UPDATE tracks SET artwork_filename=$1 WHERE id=$2;'
+
 UPDATE_EXPORT_FINISHED_SQL = 'UPDATE export_finished SET finished_at=current_timestamp;'
 
 IMAGE_MIME_TYPES = {
@@ -431,6 +435,8 @@ class Server < Sinatra::Base
         end
       end
 
+      return proto(OperationResponse.new(success: false, error: MISSING_FILE_ERROR)) if params.key?('artwork') && params['artwork'] != '' && !File.exist?(File.join(Config['artwork_path'], params['artwork']))
+
       perform_updates_if_should_track_changes(id) do
         if (name = params['name'])
           db.exec_params(DELETE_NAME_UPDATE_SQL, [id])
@@ -494,6 +500,12 @@ class Server < Sinatra::Base
             album_id = album_id.to_i
           end
           db.exec_params(UPDATE_ALBUM_SQL, [album_id, id])
+        end
+        if (artwork = params['artwork'])
+          artwork = nil if artwork == ''
+          db.exec_params(DELETE_ARTWORK_UPDATE_SQL, [id])
+          db.exec_params(CREATE_ARTWORK_UPDATE_SQL, [id, artwork])
+          db.exec_params(UPDATE_ARTWORK_SQL, [artwork, id])
         end
         db.exec(UPDATE_EXPORT_FINISHED_SQL)
       end

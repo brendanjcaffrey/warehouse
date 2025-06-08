@@ -732,6 +732,13 @@ describe 'iTunes Streamer' do
       expect(resp.error).to eq(INVALID_YEAR_ERROR)
     end
 
+    it 'should return an error if artwork file does not exist' do
+      post '/api/track-info/ABCD', { artwork: 'abcd.png' }, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(MISSING_FILE_ERROR)
+    end
+
     it 'should create a name update if tracking this user\'s changes is enabled' do
       expect(get_first_value('SELECT name FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq('test_title')
 
@@ -890,7 +897,7 @@ describe 'iTunes Streamer' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create an album album update if tracking this user\'s changes is enabled' do
+    it 'should create an album update if tracking this user\'s changes is enabled' do
       expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('1')
 
@@ -919,6 +926,26 @@ describe 'iTunes Streamer' do
       expect(get_first_value('SELECT album FROM album_updates')).to eq('test_album')
       expect(get_first_value('SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id=\'21D8E2441A5E2204\'')).to eq('test_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+
+    it 'should create an artwork update if tracking this user\'s changes' do
+      expect(get_first_value('SELECT artwork_filename FROM tracks WHERE id=\'21D8E2441A5E2204\'').strip).to eq('__artwork.jpg')
+
+      post '/api/track-info/21D8E2441A5E2204', { artwork: '__artwork.png' }, get_auth_header
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      expect(get_first_value('SELECT COUNT(*) FROM artwork_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM artwork_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT artwork_filename FROM artwork_updates').strip).to eq('__artwork.png')
+      expect(get_first_value('SELECT artwork_filename FROM tracks WHERE id=\'21D8E2441A5E2204\'').strip).to eq('__artwork.png')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+
+      post '/api/track-info/21D8E2441A5E2204', { artwork: '' }, get_auth_header
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      expect(get_first_value('SELECT COUNT(*) FROM artwork_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM artwork_updates')).to eq('21D8E2441A5E2204')
+      expect(get_first_value('SELECT artwork_filename FROM artwork_updates')).to eq(nil)
+      expect(get_first_value('SELECT artwork_filename FROM tracks WHERE id=\'21D8E2441A5E2204\'')).to eq(nil)
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
   end
