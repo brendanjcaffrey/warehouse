@@ -226,7 +226,7 @@ class Server < Sinatra::Base
   end
 
   get '/artwork/*' do
-    if !authed?
+    if !authed?(allow_export_user: true)
       redirect to('/')
     else
       file = params['splat'][0]

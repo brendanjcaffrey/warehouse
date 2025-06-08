@@ -29,7 +29,7 @@ module Export
       return unless Config.remote('update_library')
 
       jwt = build_jwt('export_driver_update_library', Config.remote('secret'))
-      response = http.request(request)
+      response = execute_remote_request('/api/updates', jwt)
       updates = nil
 
       if response.is_a?(Net::HTTPSuccess)
@@ -92,12 +92,12 @@ module Export
 
     def execute_remote_request(path, jwt)
       uri = URI("#{Config.remote('base_url')}#{path}")
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = uri.scheme == 'https'
-
       request = Net::HTTP::Get.new(uri)
       request['Authorization'] = "Bearer #{jwt}"
-      http.request(request)
+
+      Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+        http.request(request)
+      end
     end
 
     def flatten_updates(updates)
