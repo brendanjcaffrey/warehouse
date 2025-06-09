@@ -130,9 +130,8 @@ export function UpdateTrackTableState(
         (track) => track.id === event.track.id
       );
       if (trackIndex !== -1) {
-        const track = newState.tracks[trackIndex];
         PrecomputeTrackSort(event.track);
-        newState.tracks[trackIndex] = track;
+        newState.tracks[trackIndex] = event.track;
       }
       break;
     }
@@ -178,8 +177,9 @@ export function UpdateTrackTableState(
     }
   }
 
-  // we don't re-filter on a single track edit either
-  if (newState.filterText === "" || event.type === UpdateType.TrackUpdated) {
+  if (event.type === UpdateType.TrackUpdated) {
+    // nop, we don't re-filter on a single track edit either
+  } else if (newState.filterText === "") {
     newState.sortedFilteredPlaylistOffsets =
       newState.sortedPlaylistOffsets.slice();
   } else {
