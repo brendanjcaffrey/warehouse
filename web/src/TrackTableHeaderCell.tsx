@@ -33,7 +33,6 @@ interface TrackTableHeaderCellProps {
   sortState: SortState;
   setSortState: (sortState: SortState) => void;
   style: CSSProperties;
-  label: string;
 }
 
 export function TrackTableHeaderCell({
@@ -41,7 +40,6 @@ export function TrackTableHeaderCell({
   sortState,
   setSortState,
   style,
-  label,
 }: TrackTableHeaderCellProps) {
   const theme = useTheme();
 
@@ -73,7 +71,7 @@ export function TrackTableHeaderCell({
       className="has-sort-icon valign-center no-select"
       onClick={() => updateSortState()}
     >
-      {label}
+      {column.label}
       <SortIcon sortState={sortState} columnId={column.id} />
     </div>
   );

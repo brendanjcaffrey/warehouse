@@ -21,12 +21,17 @@ interface HeaderColumnStyle {
   left: number;
 }
 
-const GetHeaderColumnStyles = (
+interface HeaderColumn {
+  index: number;
+  style: HeaderColumnStyle;
+}
+
+const GetHeaderColumns = (
   minColumn: number,
   maxColumn: number,
   columnWidth: (idx: number) => number
-): HeaderColumnStyle[] => {
-  const columns = [];
+): HeaderColumn[] => {
+  const columns: HeaderColumn[] = [];
   const left = [0];
   let pos = 0;
 
@@ -37,9 +42,12 @@ const GetHeaderColumnStyles = (
 
   for (let i = minColumn; i <= maxColumn; i++) {
     columns.push({
-      height: HEADER_HEIGHT,
-      width: columnWidth(i),
-      left: left[i],
+      index: i,
+      style: {
+        height: HEADER_HEIGHT,
+        width: columnWidth(i),
+        left: left[i],
+      },
     });
   }
 
@@ -47,10 +55,10 @@ const GetHeaderColumnStyles = (
 };
 
 interface StickyHeaderProps {
-  headerStyles: HeaderColumnStyle[];
+  headerColumns: HeaderColumn[];
 }
 
-const StickyHeader = ({ headerStyles }: StickyHeaderProps) => {
+const StickyHeader = ({ headerColumns }: StickyHeaderProps) => {
   const context = useContext(TrackTableContext);
 
   return (
@@ -65,14 +73,13 @@ const StickyHeader = ({ headerStyles }: StickyHeaderProps) => {
       }}
     >
       <div style={{ position: "absolute", left: 0 }}>
-        {headerStyles.map((style, i: number) => (
+        {headerColumns.map((column) => (
           <TrackTableHeaderCell
-            column={COLUMNS[i]}
+            column={COLUMNS[column.index]}
             sortState={context.sortState}
-            style={style}
+            style={column.style}
             setSortState={context.setSortState}
-            label={COLUMNS[i].label}
-            key={i}
+            key={column.index}
           />
         ))}
       </div>
@@ -92,7 +99,7 @@ export const TrackTableStickyHeaderGrid = forwardRef<
   const context = useContext(TrackTableContext);
   const { min: minColumn, max: maxColumn } = GetRenderedColumnRange(children);
 
-  const headerStyles = GetHeaderColumnStyles(
+  const headerColumns = GetHeaderColumns(
     minColumn,
     maxColumn,
     (i) => context.columnWidths[i]
@@ -114,7 +121,7 @@ export const TrackTableStickyHeaderGrid = forwardRef<
 
   return (
     <div ref={ref} {...containerProps}>
-      <StickyHeader headerStyles={headerStyles} />
+      <StickyHeader headerColumns={headerColumns} />
       <div style={gridDataContainerStyle}>{children}</div>
     </div>
   );
