@@ -16,7 +16,9 @@ import { updatePersister } from "./UpdatePersister";
 import { EditTrackArtwork } from "./EditTrackArtwork";
 
 interface EditTrackPanelProps {
+  open: boolean;
   track: Track | undefined;
+  setTrack: (track: Track | undefined) => void;
   closeEditTrackPanel: () => void;
 }
 
@@ -27,7 +29,12 @@ interface Field {
   valid: boolean;
 }
 
-function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
+function EditTrackPanel({
+  open,
+  setTrack,
+  track,
+  closeEditTrackPanel,
+}: EditTrackPanelProps) {
   const fields: Field[] = EDIT_TRACK_FIELDS.map((definition) => {
     const [stateValue, setStateValue] = useState("");
     return {
@@ -55,6 +62,8 @@ function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
 
   const submitEdits = async (event: React.FormEvent) => {
     event.preventDefault();
+    closeEditTrackPanel();
+
     if (!track) {
       return;
     }
@@ -91,11 +100,21 @@ function EditTrackPanel({ track, closeEditTrackPanel }: EditTrackPanelProps) {
       player().trackInfoUpdated(updatedTrack);
       updatePersister().updateTrackInfo(track?.id, updatedFields);
     }
-    closeEditTrackPanel();
   };
 
   return (
-    <Dialog open={!!track} onClose={closeEditTrackPanel} maxWidth="xl">
+    <Dialog
+      open={open}
+      onClose={closeEditTrackPanel}
+      maxWidth="xl"
+      slotProps={{
+        transition: {
+          onExited: () => {
+            setTrack(undefined);
+          },
+        },
+      }}
+    >
       <form onSubmit={submitEdits}>
         <DialogTitle>Edit Track</DialogTitle>
         <DialogContent>

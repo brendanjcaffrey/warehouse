@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useReducer, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
@@ -74,7 +75,10 @@ function TrackTable() {
   const [contextMenuData, setContextMenuData] =
     useState<TrackContextMenuData | null>(null);
 
-  const [editFormTrack, setEditFormTrack] = useState<Track | undefined>(undefined);
+  const [editFormOpen, setEditFormOpen] = useState(false);
+  const [editFormTrack, setEditFormTrack] = useState<Track | undefined>(
+    undefined
+  );
 
   const filterText = useDebouncedAtomValue(searchAtom, 250);
   useEffect(() => {
@@ -99,8 +103,8 @@ function TrackTable() {
   );
 
   const closeEditTrackPanel = useCallback(() => {
-    setEditFormTrack(undefined);
-  }, [setEditFormTrack]);
+    setEditFormOpen(false);
+  }, [setEditFormOpen]);
 
   useEffect(() => {
     library()
@@ -231,6 +235,7 @@ function TrackTable() {
             .getTrack(playlistTrack.trackId)
             .then((track) => {
               if (track) {
+                setEditFormOpen(true);
                 setEditFormTrack(track);
               }
             });
@@ -307,7 +312,9 @@ function TrackTable() {
         handleAction={handleTrackAction}
       />
       <EditTrackPanel
+        open={editFormOpen}
         track={editFormTrack}
+        setTrack={setEditFormTrack}
         closeEditTrackPanel={closeEditTrackPanel}
       />
     </TrackTableContext.Provider>
