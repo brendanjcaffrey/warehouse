@@ -38,6 +38,22 @@ const BORDER_WIDTH = 2;
 const SPINNER_CONTAINER_SIZE = ARTWORK_SIZE + BORDER_WIDTH * 2;
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
+function PostArtworkRequest(
+  track: Track | undefined,
+  artworkId: string | null
+) {
+  var preloadArtworkIds: TrackFileIds[] = [];
+  if (track && artworkId) {
+    preloadArtworkIds = [{ trackId: track.id, fileId: artworkId }];
+  }
+  DownloadWorker.postMessage({
+    type: SET_SOURCE_REQUESTED_FILES_TYPE,
+    source: FileRequestSource.EDIT_TRACK_ARTWORK,
+    fileType: FileType.ARTWORK,
+    ids: preloadArtworkIds,
+  } as SetSourceRequestedFilesMessage);
+}
+
 async function TryStoreArtwork(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!IMAGE_MIME_TO_EXTENSION.has(file.type)) {
@@ -116,16 +132,7 @@ export function EditTrackArtwork({
     setArtworkSelected(false);
     setUploadedImageFilename(null);
 
-    var preloadArtworkIds: TrackFileIds[] = [];
-    if (track && track.artwork) {
-      preloadArtworkIds = [{ trackId: track.id, fileId: track.artwork }];
-    }
-    DownloadWorker.postMessage({
-      type: SET_SOURCE_REQUESTED_FILES_TYPE,
-      source: FileRequestSource.EDIT_TRACK_ARTWORK,
-      fileType: FileType.ARTWORK,
-      ids: preloadArtworkIds,
-    } as SetSourceRequestedFilesMessage);
+    PostArtworkRequest(track, track?.artwork ?? null);
   }, [track]);
 
   useEffect(() => {
@@ -153,10 +160,11 @@ export function EditTrackArtwork({
         return;
       }
       if (track && artworkSelected) {
+        event.preventDefault();
         setArtworkSelected(false);
         setArtworkCleared(true);
         setUploadedImageFilename(null);
-        event.preventDefault();
+        PostArtworkRequest(track, null);
       }
     },
     [
@@ -200,6 +208,7 @@ export function EditTrackArtwork({
     }
     const filename = await TryStoreArtwork(file);
     setUploadedImageFilename(filename);
+    PostArtworkRequest(track, filename);
   };
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
