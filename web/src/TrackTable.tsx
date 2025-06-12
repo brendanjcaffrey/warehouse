@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useReducer, useCallback } from "react";
-import { flushSync } from "react-dom";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { VariableSizeGrid } from "react-window";
@@ -245,6 +244,58 @@ function TrackTable() {
     },
     [setContextMenuData]
   );
+
+  const handleArrowKeyMovement = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement) {
+        return;
+      }
+
+      var adjustment: number | undefined = undefined;
+      if (event.key === "ArrowUp") {
+        adjustment = -1;
+      } else if (event.key === "ArrowDown") {
+        adjustment = 1;
+      }
+
+      if (adjustment) {
+        if (state.selectedPlaylistEntry) {
+          let index = state.sortedFilteredPlaylistOffsets.findIndex(
+            (o) => o === state.selectedPlaylistEntry!.playlistOffset
+          );
+          if (index === -1) {
+            return;
+          }
+
+          let newIndex = index + adjustment;
+          newIndex = Math.max(newIndex, 0);
+          newIndex = Math.min(
+            newIndex,
+            state.sortedFilteredPlaylistOffsets.length - 1
+          );
+          dispatch({
+            type: UpdateType.SelectedPlaylistOffsetChanged,
+            playlistOffset: state.sortedFilteredPlaylistOffsets[newIndex],
+          });
+          showTrackInGrid(
+            gridRef,
+            displayedRowIdxs,
+            state.sortedFilteredPlaylistOffsets,
+            state.sortedFilteredPlaylistOffsets[newIndex]
+          );
+          event.preventDefault();
+        }
+      }
+    },
+    [state, dispatch]
+  );
+
+  useEffect(() => {
+    document.addEventListener("keydown", handleArrowKeyMovement);
+    return () => {
+      document.removeEventListener("keydown", handleArrowKeyMovement);
+    };
+  }, [handleArrowKeyMovement]);
 
   return (
     <TrackTableContext.Provider
