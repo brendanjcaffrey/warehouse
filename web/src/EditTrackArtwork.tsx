@@ -179,7 +179,7 @@ export function EditTrackArtwork({
   useEffect(() => {
     document.addEventListener("keydown", clearOnDelete);
     return () => {
-      document.addEventListener("keydown", clearOnDelete);
+      document.removeEventListener("keydown", clearOnDelete);
     };
   }, [clearOnDelete]);
 
