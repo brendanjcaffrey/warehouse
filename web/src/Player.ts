@@ -345,6 +345,7 @@ class Player {
   // actions
   async playTrack(track: DisplayedTrack) {
     this.inPlayNextList = false;
+    this.playNextTracks = [];
     this.playingTracks = [];
     await this.rebuildPlayingTracks(track);
     this.play();
