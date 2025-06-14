@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import axios from "axios";
 import qs from "qs";
 import library from "../src/Library";
@@ -95,10 +95,10 @@ function expectArtworkPostRequest() {
     })
   );
 
-  const call = (axios.post as Mock).mock.calls.filter(
-    (c) => c[0] == "/api/artwork"
-  )[0];
-  const file = call[1].get("file");
+  const call = vi
+    .mocked(axios.post)
+    .mock.calls.filter((c) => c[0] == "/api/artwork")[0];
+  const file = (call[1] as FormData).get("file") as File;
   expect(file.name).toBe("hello.jpg");
   expect(file.size).toBe(IMAGE_BLOB.size);
 }
@@ -140,11 +140,11 @@ function expectArtworkDownloadMessage(type: ArtworkDownloadMessage) {
       ids: [],
     });
   }
-  (DownloadWorker.postMessage as Mock).mockClear();
+  vi.mocked(DownloadWorker.postMessage).mockClear();
 }
 
 function clearPostMock() {
-  (axios.post as Mock).mockClear();
+  vi.mocked(axios.post).mockClear();
 }
 
 async function waitForUpdatesToFinish(persister: UpdatePersister) {
@@ -206,12 +206,12 @@ describe("UpdatePersister", () => {
     vi.clearAllMocks();
     vi.clearAllTimers();
 
-    (files().tryReadFile as Mock).mockImplementation(
+    vi.mocked(files().tryReadFile).mockImplementation(
       (type: FileType, id: string) => {
         if (type === FileType.ARTWORK && id == "hello.jpg") {
-          return IMAGE_BLOB;
+          return Promise.resolve(IMAGE_BLOB as File);
         } else {
-          return null;
+          return Promise.resolve(null);
         }
       }
     );
@@ -240,7 +240,7 @@ describe("UpdatePersister", () => {
     const persister = new UpdatePersister();
     expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
 
-    (library().getTrackUserChanges as Mock).mockReturnValue(false);
+    vi.mocked(library().getTrackUserChanges).mockReturnValue(false);
     await persister.setAuthToken("mock-token");
     await persister.setHasLibraryMetadata(true);
 
@@ -257,8 +257,8 @@ describe("UpdatePersister", () => {
 
     it("should attempt any pending updates when the auth token & library metadata is set", async () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, PLAY_UPDATE_ARR_STR);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
@@ -268,7 +268,7 @@ describe("UpdatePersister", () => {
 
     it("should add a play update to pending updates & persist if not authenticated", async () => {
       const persister = new UpdatePersister();
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
       await persister.setHasLibraryMetadata(true);
       await persister.addPlay("123");
 
@@ -288,9 +288,9 @@ describe("UpdatePersister", () => {
     it("should add a play update and immediately attempt it if authenticated", async () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
       await persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       await persister.addPlay("123");
       expectPlayPostRequest("123");
@@ -301,9 +301,9 @@ describe("UpdatePersister", () => {
     it("should do nothing if track user changes is false", async () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
-      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(false);
       await persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       await persister.addPlay("123");
       expect(axios.post).toHaveBeenCalledTimes(0);
@@ -314,11 +314,11 @@ describe("UpdatePersister", () => {
     it("should retry sending pending updates on a timer", async () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
       await persister.setHasLibraryMetadata(true);
 
       // fails on first attempt
-      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
       await persister.addPlay("123");
       expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
       expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(PLAY_UPDATE_ARR_STR);
@@ -326,7 +326,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // fails on second attempt
-      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.mocked(axios.post).mockRejectedValueOnce(OPERATION_FAILED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
       expect(persister.pendingUpdates).toEqual([PLAY_UPDATE]);
@@ -335,7 +335,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // succeeds on third attempt
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
 
@@ -354,8 +354,8 @@ describe("UpdatePersister", () => {
 
     it("should attempt any pending updates when the auth token & library metadata is set", async () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, RATING_UPDATE_ARR_STR);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
@@ -366,7 +366,7 @@ describe("UpdatePersister", () => {
     it("should add a rating update to pending updates & persist if not authenticated", async () => {
       const persister = new UpdatePersister();
       await persister.setHasLibraryMetadata(true);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
       await persister.updateRating("123", 60);
 
       expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
@@ -390,8 +390,8 @@ describe("UpdatePersister", () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
       await persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       await persister.updateRating("123", 60);
       expectRatingPostRequest("123", 60);
@@ -402,9 +402,9 @@ describe("UpdatePersister", () => {
     it("should do nothing if track user changes is false", async () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
-      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(false);
       await persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       await persister.updateRating("123", 60);
       expect(axios.post).toHaveBeenCalledTimes(0);
@@ -416,10 +416,10 @@ describe("UpdatePersister", () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
       await persister.setHasLibraryMetadata(true);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       // fails on first attempt
-      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
       await persister.updateRating("123", 60);
       expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
       expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
@@ -429,7 +429,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // fails on second attempt
-      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.mocked(axios.post).mockRejectedValueOnce(OPERATION_FAILED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
       expect(persister.pendingUpdates).toEqual([RATING_UPDATE]);
@@ -440,7 +440,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // succeeds on third attempt
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
 
@@ -459,8 +459,8 @@ describe("UpdatePersister", () => {
 
     it("should attempt any pending updates when the auth token & library metadata is set", async () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, TRACK_INFO_UPDATE_ARR_STR);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
@@ -471,7 +471,7 @@ describe("UpdatePersister", () => {
     it("should add a track info update to pending updates & persist if not authenticated", async () => {
       const persister = new UpdatePersister();
       await persister.setHasLibraryMetadata(true);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
       await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
 
       expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
@@ -495,8 +495,8 @@ describe("UpdatePersister", () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
       await persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
       expectTrackInfoPostRequest("123", TRACK_INFO_PARAMS);
@@ -507,9 +507,9 @@ describe("UpdatePersister", () => {
     it("should do nothing if track user changes is false", async () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
-      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(false);
       await persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
       expect(axios.post).toHaveBeenCalledTimes(0);
@@ -521,10 +521,10 @@ describe("UpdatePersister", () => {
       const persister = new UpdatePersister();
       await persister.setAuthToken("mock-token");
       await persister.setHasLibraryMetadata(true);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       // fails on first attempt
-      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
       await persister.updateTrackInfo("123", TRACK_INFO_PARAMS);
       expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
       expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(
@@ -534,7 +534,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // fails on second attempt
-      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.mocked(axios.post).mockRejectedValueOnce(OPERATION_FAILED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
       expect(persister.pendingUpdates).toEqual([TRACK_INFO_UPDATE]);
@@ -545,7 +545,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // succeeds on third attempt
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
 
@@ -565,8 +565,8 @@ describe("UpdatePersister", () => {
 
     it("should attempt any pending updates when the auth token & library metadata is set", async () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, ARTWORK_UPDATE_ARR_STR);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       const persister = new UpdatePersister();
       expectArtworkDownloadMessage(ArtworkDownloadMessage.WITH_FILE);
@@ -580,7 +580,7 @@ describe("UpdatePersister", () => {
       const persister = new UpdatePersister();
       expectArtworkDownloadMessage(ArtworkDownloadMessage.WITHOUT_FILE);
       persister.setHasLibraryMetadata(true);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
       await persister.uploadArtwork("hello.jpg");
 
       expect(persister.pendingUpdates).toEqual([ARTWORK_UPDATE]);
@@ -608,8 +608,8 @@ describe("UpdatePersister", () => {
       expectArtworkDownloadMessage(ArtworkDownloadMessage.WITHOUT_FILE);
       persister.setAuthToken("mock-token");
       persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       await persister.uploadArtwork("hello.jpg");
       expectArtworkDownloadMessage(ArtworkDownloadMessage.BOTH);
@@ -622,9 +622,9 @@ describe("UpdatePersister", () => {
       const persister = new UpdatePersister();
       expectArtworkDownloadMessage(ArtworkDownloadMessage.WITHOUT_FILE);
       persister.setAuthToken("mock-token");
-      (library().getTrackUserChanges as Mock).mockReturnValue(false);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(false);
       persister.setHasLibraryMetadata(true);
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
 
       await persister.uploadArtwork("hello.jpg");
       expect(axios.post).toHaveBeenCalledTimes(0);
@@ -637,10 +637,10 @@ describe("UpdatePersister", () => {
       expectArtworkDownloadMessage(ArtworkDownloadMessage.WITHOUT_FILE);
       persister.setAuthToken("mock-token");
       persister.setHasLibraryMetadata(true);
-      (library().getTrackUserChanges as Mock).mockReturnValue(true);
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
       // fails on first attempt
-      (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+      vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
       await persister.uploadArtwork("hello.jpg");
       expectArtworkDownloadMessage(ArtworkDownloadMessage.WITH_FILE);
       expect(persister.pendingUpdates).toEqual([ARTWORK_UPDATE]);
@@ -651,7 +651,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // fails on second attempt
-      (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
+      vi.mocked(axios.post).mockRejectedValueOnce(OPERATION_FAILED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
       expect(persister.pendingUpdates).toEqual([ARTWORK_UPDATE]);
@@ -662,7 +662,7 @@ describe("UpdatePersister", () => {
       clearPostMock();
 
       // succeeds on third attempt
-      (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+      vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
       vi.runOnlyPendingTimers();
       await waitForUpdatesToFinish(persister);
 
@@ -684,14 +684,14 @@ describe("UpdatePersister", () => {
     updates.push({ type: "play", trackId: "abc", params: undefined });
     const persister = new UpdatePersister();
     expectArtworkDownloadMessage(ArtworkDownloadMessage.WITH_FILE);
-    (library().getTrackUserChanges as Mock).mockReturnValue(true);
+    vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
 
     // first attempt: only 456 succeeds
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
     persister.setAuthToken("mock-token");
     persister.setHasLibraryMetadata(true);
     persister.addPlay("abc"); // add another one, why not
@@ -713,10 +713,10 @@ describe("UpdatePersister", () => {
     ]);
 
     // second attempt: only abc succeeds
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockRejectedValueOnce(OPERATION_FAILED);
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockRejectedValueOnce(OPERATION_FAILED);
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
@@ -734,9 +734,9 @@ describe("UpdatePersister", () => {
     ]);
 
     // third attempt: only 123 succeeds
-    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
-    (axios.post as Mock).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectPlayPostRequest("123");
@@ -749,8 +749,8 @@ describe("UpdatePersister", () => {
     expect(persister.pendingUpdates).toEqual([updates[2], updates[3]]);
 
     // fourth attempt: 789 succeeds
-    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
-    (axios.post as Mock).mockResolvedValueOnce(OPERATION_FAILED);
+    vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+    vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_FAILED);
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectTrackInfoPostRequest("789", TRACK_INFO_PARAMS);
@@ -762,7 +762,7 @@ describe("UpdatePersister", () => {
     expect(persister.pendingUpdates).toEqual([updates[3]]);
 
     // fourth attempt: artwork succeeds
-    (axios.post as Mock).mockResolvedValueOnce(OPERATION_SUCCEEDED);
+    vi.mocked(axios.post).mockResolvedValueOnce(OPERATION_SUCCEEDED);
     persister.setAuthToken("mock-token");
     await waitForUpdatesToFinish(persister);
     expectArtworkPostRequest();

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DownloadManager } from "../src/DownloadManager";
 import { files } from "../src/Files";
 import library from "../src/Library";
@@ -12,7 +12,7 @@ import {
   FILE_FETCHED_TYPE,
   FILE_DOWNLOAD_STATUS_TYPE,
 } from "../src/WorkerTypes";
-import axios from "axios";
+import axios, { GenericAbortSignal } from "axios";
 
 vi.mock("axios");
 
@@ -59,7 +59,7 @@ const FILE_GHI: TrackFileIds = { trackId: "t6", fileId: "ghi" };
 const FILE_JKL: TrackFileIds = { trackId: "t7", fileId: "jkl" };
 
 function mockAxiosGetResolveAfterDelay<T>(data: T, delayMs: number) {
-  (axios.get as Mock).mockImplementationOnce(() => {
+  vi.mocked(axios.get).mockImplementationOnce(() => {
     return new Promise((resolve) => {
       setTimeout(() => {
         resolve(data);
@@ -69,7 +69,7 @@ function mockAxiosGetResolveAfterDelay<T>(data: T, delayMs: number) {
 }
 
 function mockAxiosGetErrorAfterDelay<T>(data: T, delayMs: number) {
-  (axios.get as Mock).mockImplementationOnce(() => {
+  vi.mocked(axios.get).mockImplementationOnce(() => {
     return new Promise((_, reject) => {
       setTimeout(() => {
         reject(data);
@@ -88,10 +88,10 @@ describe("DownloadManager", () => {
     downloadManager = new DownloadManager();
 
     // i feel like there should always only be one call here, but that's not true?
-    const numCalls = (library().setInitializedListener as Mock).mock.calls
+    const numCalls = vi.mocked(library().setInitializedListener).mock.calls
       .length;
-    setInitializedListenerCallback = (library().setInitializedListener as Mock)
-      .mock.calls[numCalls - 1][0];
+    setInitializedListenerCallback = vi.mocked(library().setInitializedListener)
+      .mock.calls[numCalls - 1][0] as () => Promise<void>;
 
     tracksExist = new Map<string, boolean>();
     artworksExist = new Map<string, boolean>();
@@ -105,47 +105,53 @@ describe("DownloadManager", () => {
   });
 
   function mockFilesExistsAndWriteMethods() {
-    (files().typeIsInitialized as Mock).mockReturnValue(true);
-    (files().fileExists as Mock).mockImplementation(
+    vi.mocked(files().typeIsInitialized).mockReturnValue(true);
+    vi.mocked(files().fileExists).mockImplementation(
       (type: FileType, id: string) => {
         if (type === FileType.MUSIC) {
-          return tracksExist.get(id) || false;
+          return Promise.resolve(tracksExist.get(id) || false);
         } else if (type === FileType.ARTWORK) {
-          return artworksExist.get(id) || false;
+          return Promise.resolve(artworksExist.get(id) || false);
         } else {
-          return false;
+          return Promise.resolve(false);
         }
       }
     );
-    (files().tryWriteFile as Mock).mockImplementation(
+    vi.mocked(files().tryWriteFile).mockImplementation(
       (type: FileType, id: string) => {
         if (type === FileType.MUSIC) {
           tracksExist.set(id, true);
         } else if (type === FileType.ARTWORK) {
           artworksExist.set(id, true);
         }
-        return true;
+        return Promise.resolve(true);
       }
     );
-    (files().tryDeleteFile as Mock).mockImplementation(
+    vi.mocked(files().tryDeleteFile).mockImplementation(
       (type: FileType, id: string) => {
         if (type === FileType.MUSIC) {
           tracksExist.set(id, false);
         } else if (type === FileType.ARTWORK) {
           artworksExist.set(id, false);
         }
-        return true;
+        return Promise.resolve(true);
       }
     );
-    (files().getAllOfType as Mock).mockImplementation((type: FileType) => {
+    vi.mocked(files().getAllOfType).mockImplementation((type: FileType) => {
       if (type === FileType.MUSIC) {
-        return [...tracksExist.entries()].filter(([, v]) => v).map(([k]) => k);
+        return Promise.resolve(
+          new Set(
+            [...tracksExist.entries()].filter(([, v]) => v).map(([k]) => k)
+          )
+        );
       } else if (type === FileType.ARTWORK) {
-        return [...artworksExist.entries()]
-          .filter(([, v]) => v)
-          .map(([k]) => k);
+        return Promise.resolve(
+          new Set(
+            [...artworksExist.entries()].filter(([, v]) => v).map(([k]) => k)
+          )
+        );
       } else {
-        return new Set();
+        return Promise.resolve(new Set());
       }
     });
   }
@@ -161,7 +167,7 @@ describe("DownloadManager", () => {
         responseType: "arraybuffer",
       })
     );
-    (axios.get as Mock).mockClear();
+    vi.mocked(axios.get).mockClear();
   }
 
   // don't call this directly, use the more specific ones below
@@ -205,7 +211,7 @@ describe("DownloadManager", () => {
   ) {
     expect(postMessage).toHaveBeenCalledTimes(1);
     _expectFileInProgressPostMessageCalls(fileType, ids);
-    (postMessage as Mock).mockClear();
+    vi.mocked(postMessage).mockClear();
   }
 
   function expectOnlyFileDonePostMessageCalls(
@@ -214,7 +220,7 @@ describe("DownloadManager", () => {
   ) {
     expect(postMessage).toHaveBeenCalledTimes(2);
     _expectFileDonePostMessageCalls(fileType, ids);
-    (postMessage as Mock).mockClear();
+    vi.mocked(postMessage).mockClear();
   }
 
   function expectFileDoneAndFileInProgressPostMessageCalls(
@@ -229,7 +235,7 @@ describe("DownloadManager", () => {
       inProgressFileType || fileType,
       inProgressIds
     );
-    (postMessage as Mock).mockClear();
+    vi.mocked(postMessage).mockClear();
   }
 
   function expectFileCanceledAndInProgressPostMessageCalls(
@@ -247,7 +253,7 @@ describe("DownloadManager", () => {
       totalBytes: 0,
     } as FileDownloadStatusMessage);
     _expectFileInProgressPostMessageCalls(fileType, inProgressIds);
-    (postMessage as Mock).mockClear();
+    vi.mocked(postMessage).mockClear();
   }
 
   function expectOnlyFileErrorPostMessageCalls(
@@ -263,7 +269,7 @@ describe("DownloadManager", () => {
       receivedBytes: 0,
       totalBytes: 0,
     } as FileDownloadStatusMessage);
-    (postMessage as Mock).mockClear();
+    vi.mocked(postMessage).mockClear();
   }
 
   function expectOnlyDownloadProgressPostMessageCalls(
@@ -281,7 +287,7 @@ describe("DownloadManager", () => {
       receivedBytes: loaded,
       totalBytes: total,
     } as FileDownloadStatusMessage);
-    (postMessage as Mock).mockClear();
+    vi.mocked(postMessage).mockClear();
   }
 
   function expectOneTryWriteFileCall(fileType: FileType, id: string) {
@@ -291,13 +297,13 @@ describe("DownloadManager", () => {
       id,
       TEST_FILE_DATA.data
     );
-    (files().tryWriteFile as Mock).mockClear();
+    vi.mocked(files().tryWriteFile).mockClear();
   }
 
   function expectOneTryDeleteFileCall(fileType: FileType, id: string) {
     expect(files().tryDeleteFile).toHaveBeenCalledTimes(1);
     expect(files().tryDeleteFile).toHaveBeenCalledWith(fileType, id);
-    (files().tryDeleteFile as Mock).mockClear();
+    vi.mocked(files().tryDeleteFile).mockClear();
   }
 
   it("should try updating over and over until the auth token is set and the files are all initialized", async () => {
@@ -305,19 +311,19 @@ describe("DownloadManager", () => {
     expect(files().typeIsInitialized).not.toHaveBeenCalled();
 
     downloadManager.setAuthToken("test-token");
-    (files().typeIsInitialized as Mock).mockReturnValueOnce(false);
+    vi.mocked(files().typeIsInitialized).mockReturnValueOnce(false);
     vi.runOnlyPendingTimersAsync();
     await vi.waitFor(async () => {
-      if ((files().typeIsInitialized as Mock).mock.calls.length < 1) {
+      if (vi.mocked(files().typeIsInitialized).mock.calls.length < 1) {
         throw new Error("waiting for 1 call");
       }
     });
     expect(files().typeIsInitialized).toHaveBeenCalledTimes(1);
 
-    (files().typeIsInitialized as Mock).mockClear().mockReturnValue(true);
+    vi.mocked(files().typeIsInitialized).mockClear().mockReturnValue(true);
     vi.runOnlyPendingTimersAsync();
     await vi.waitFor(async () => {
-      if ((files().typeIsInitialized as Mock).mock.calls.length < 2) {
+      if (vi.mocked(files().typeIsInitialized).mock.calls.length < 2) {
         throw new Error("waiting for 2 calls");
       }
     });
@@ -340,8 +346,8 @@ describe("DownloadManager", () => {
 
   it("should not start requests if file exists", async () => {
     downloadManager.setAuthToken("test-token");
-    (files().typeIsInitialized as Mock).mockResolvedValue(true);
-    (files().fileExists as Mock).mockResolvedValue(true);
+    vi.mocked(files().typeIsInitialized).mockResolvedValue(true);
+    vi.mocked(files().fileExists).mockResolvedValue(true);
 
     await downloadManager.setSourceRequestedFiles({
       type: "",
@@ -523,7 +529,8 @@ describe("DownloadManager", () => {
       ids: [FILE_123],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
-    const signal: AbortSignal = (axios.get as Mock).mock.calls[0][1].signal;
+    const signal: GenericAbortSignal = vi.mocked(axios.get).mock.calls[0][1]!
+      .signal!;
     expect(signal.aborted).toBe(false);
     expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
     expectOneAxiosGetCall("/tracks/123");
@@ -564,7 +571,8 @@ describe("DownloadManager", () => {
       ids: [FILE_123],
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
-    const signal: AbortSignal = (axios.get as Mock).mock.calls[0][1].signal;
+    const signal: GenericAbortSignal = vi.mocked(axios.get).mock.calls[0][1]!
+      .signal!;
     expect(signal.aborted).toBe(false);
     expectOneAxiosGetCall("/tracks/123");
     expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
@@ -657,11 +665,16 @@ describe("DownloadManager", () => {
     });
     expect(files().fileExists).toHaveBeenCalledWith(FileType.MUSIC, "123");
     expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
-    const onDownloadProgress = (axios.get as Mock).mock.calls[0][1]
-      .onDownloadProgress;
+    const onDownloadProgress = vi.mocked(axios.get).mock.calls[0][1]!
+      .onDownloadProgress!;
     expectOneAxiosGetCall("/tracks/123");
 
-    onDownloadProgress({ loaded: 10, total: 100 });
+    onDownloadProgress({
+      loaded: 10,
+      total: 100,
+      bytes: 0,
+      lengthComputable: true,
+    });
     expectOnlyDownloadProgressPostMessageCalls(
       FileType.MUSIC,
       FILE_123,
@@ -669,7 +682,12 @@ describe("DownloadManager", () => {
       100
     );
 
-    onDownloadProgress({ loaded: 20, total: 100 });
+    onDownloadProgress({
+      loaded: 20,
+      total: 100,
+      bytes: 0,
+      lengthComputable: true,
+    });
     expectOnlyDownloadProgressPostMessageCalls(
       FileType.MUSIC,
       FILE_123,
@@ -683,17 +701,21 @@ describe("DownloadManager", () => {
   });
 
   it("should delete any unneeded files when a library sync finishes", async () => {
-    (files().getAllOfType as Mock).mockImplementation((type: FileType) => {
+    vi.mocked(files().getAllOfType).mockImplementation((type: FileType) => {
       if (type === FileType.MUSIC) {
-        return new Set(["123", "456", "789"]);
+        return Promise.resolve(new Set(["123", "456", "789"]));
       } else if (type === FileType.ARTWORK) {
-        return new Set(["abc", "def", "ghi"]);
+        return Promise.resolve(new Set(["abc", "def", "ghi"]));
       } else {
-        return new Set();
+        return Promise.resolve(new Set());
       }
     });
-    (library().getMusicIds as Mock).mockReturnValue(new Set(["123", "789"]));
-    (library().getArtworkIds as Mock).mockReturnValue(new Set(["abc", "ghi"]));
+    vi.mocked(library().getMusicIds).mockReturnValue(
+      Promise.resolve(new Set(["123", "789"]))
+    );
+    vi.mocked(library().getArtworkIds).mockReturnValue(
+      Promise.resolve(new Set(["abc", "ghi"]))
+    );
     await downloadManager.syncSucceeded();
 
     expect(files().tryDeleteFile).toHaveBeenCalledTimes(2);
@@ -785,17 +807,12 @@ describe("DownloadManager", () => {
     await downloadManager.setKeepMode(true);
     await downloadManager.setDownloadMode(true);
 
-    (library().getTrackMusicIds as Mock).mockReturnValue([
-      FILE_123,
-      FILE_456,
-      FILE_789,
-    ]);
-    (library().getTrackArtworkIds as Mock).mockReturnValue([
-      FILE_ABC,
-      FILE_DEF,
-      FILE_GHI,
-      FILE_JKL,
-    ]);
+    vi.mocked(library().getTrackMusicIds).mockReturnValue(
+      Promise.resolve([FILE_123, FILE_456, FILE_789])
+    );
+    vi.mocked(library().getTrackArtworkIds).mockReturnValue(
+      Promise.resolve([FILE_ABC, FILE_DEF, FILE_GHI, FILE_JKL])
+    );
 
     tracksExist.set("456", true);
     artworksExist.set("abc", true);
@@ -850,14 +867,12 @@ describe("DownloadManager", () => {
     mockFilesExistsAndWriteMethods();
     await downloadManager.setKeepMode(true);
     await downloadManager.setDownloadMode(true);
-    (library().getTrackMusicIds as Mock).mockReturnValue([
-      FILE_ABC,
-      FILE_123,
-      FILE_456,
-      FILE_789,
-      FILE_DEF,
-    ]);
-    (library().getTrackArtworkIds as Mock).mockReturnValue([]);
+    vi.mocked(library().getTrackMusicIds).mockReturnValue(
+      Promise.resolve([FILE_ABC, FILE_123, FILE_456, FILE_789, FILE_DEF])
+    );
+    vi.mocked(library().getTrackArtworkIds).mockReturnValue(
+      Promise.resolve([])
+    );
     await setInitializedListenerCallback();
     expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_ABC);
     expectOneAxiosGetCall("/tracks/abc");
@@ -918,13 +933,12 @@ describe("DownloadManager", () => {
     await downloadManager.setKeepMode(true);
     await downloadManager.setDownloadMode(true);
 
-    (library().getTrackMusicIds as Mock).mockReturnValue([
-      FILE_123,
-      FILE_456,
-      FILE_789,
-      FILE_ABC,
-    ]);
-    (library().getTrackArtworkIds as Mock).mockReturnValue([]);
+    vi.mocked(library().getTrackMusicIds).mockReturnValue(
+      Promise.resolve([FILE_123, FILE_456, FILE_789, FILE_ABC])
+    );
+    vi.mocked(library().getTrackArtworkIds).mockReturnValue(
+      Promise.resolve([])
+    );
 
     await setInitializedListenerCallback();
     expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_123);
