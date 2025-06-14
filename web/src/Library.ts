@@ -38,6 +38,8 @@ export interface Playlist {
   parentId: string;
   isLibrary: boolean;
   trackIds: string[];
+  parentPlaylistIds: string[];
+  childPlaylistIds: string[];
 }
 
 interface LibraryDB extends DBSchema {
