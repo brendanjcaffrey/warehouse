@@ -17,7 +17,7 @@ import {
   DownloadStatus,
 } from "./WorkerTypes";
 import downloadsStore, { Download } from "./DownloadsStore";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import { formatBytes, formatTimestamp } from "./Util";
 
 function FileTypeToString(fileType: FileType) {

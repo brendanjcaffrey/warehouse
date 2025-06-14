@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { files } from "./Files";
 import { FileType, IsTypedMessage, IsFileFetchedMessage } from "./WorkerTypes";
 import { Track } from "./Library";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 
 export function useArtworkFileURL(track: Track | undefined) {
   const [shownArtwork, setShownArtwork] = useState<string | null>(null);

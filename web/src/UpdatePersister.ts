@@ -3,7 +3,7 @@ import qs from "qs";
 import { memoize } from "lodash";
 import { OperationResponse } from "./generated/messages";
 import library from "./Library";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import {
   FileRequestSource,
   FileType,

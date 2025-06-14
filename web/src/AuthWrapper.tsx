@@ -3,7 +3,7 @@ import { useSetAtom } from "jotai";
 import useAuthToken from "./useAuthToken";
 import AuthForm from "./AuthForm";
 import AuthVerifier from "./AuthVerifier";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import { AuthTokenMessage, SET_AUTH_TOKEN_TYPE } from "./WorkerTypes";
 import { clearAuthFnAtom } from "./State";
 import { updatePersister } from "./UpdatePersister";

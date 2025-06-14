@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
-import { DownloadManager } from "../src/DownloadWorker";
+import { DownloadManager } from "../src/DownloadManager";
 import { files } from "../src/Files";
 import library from "../src/Library";
 import {

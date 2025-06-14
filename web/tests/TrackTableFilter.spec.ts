@@ -4,7 +4,7 @@ import { FilterTrackList } from "../src/TrackTableFilter";
 import { expect, test } from "vitest";
 import { vi } from "vitest";
 
-vi.mock("../src/DownloadWorkerHandle", () => {
+vi.mock("../src/DownloadWorker", () => {
   return {
     DownloadWorker: {
       postMessage: vi.fn(),

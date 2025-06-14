@@ -13,7 +13,7 @@ import {
   resetAllState,
 } from "./State";
 import library, { Track } from "./Library";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import { updatePersister } from "./UpdatePersister";
 import {
   SET_SOURCE_REQUESTED_FILES_TYPE,

@@ -5,7 +5,7 @@ import { clearAuthFnAtom, clearSettingsFnAtom } from "./State";
 import library from "./Library";
 import downloadsStore from "./Library";
 import { updatePersister } from "./UpdatePersister";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import { player } from "./Player";
 import { files } from "./Files";
 import { CLEARED_ALL_TYPE, TypedMessage } from "./WorkerTypes";

@@ -18,7 +18,7 @@ import {
   SetPersistedOpenedFolders,
 } from "./Settings";
 import { clearSettingsFnAtom } from "./State";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import {
   KEEP_MODE_CHANGED_TYPE,
   DOWNLOAD_MODE_CHANGED_TYPE,

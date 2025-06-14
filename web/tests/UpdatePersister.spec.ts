@@ -10,7 +10,7 @@ import {
   FileType,
   SET_SOURCE_REQUESTED_FILES_TYPE,
 } from "../src/WorkerTypes";
-import { DownloadWorker } from "../src/DownloadWorkerHandle";
+import { DownloadWorker } from "../src/DownloadWorker";
 
 vi.mock("axios");
 
@@ -24,7 +24,7 @@ vi.mock("../src/Library", () => {
   };
 });
 
-vi.mock("../src/DownloadWorkerHandle", () => {
+vi.mock("../src/DownloadWorker", () => {
   return {
     DownloadWorker: {
       postMessage: vi.fn(),

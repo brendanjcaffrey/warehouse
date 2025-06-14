@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useArtworkFileURL } from "./useArtworkFileURL";
 import { Track } from "./Library";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { DownloadWorker } from "./DownloadWorker";
 import {
   FileRequestSource,
   FileType,

@@ -12,13 +12,10 @@ import {
   START_SYNC_TYPE,
   SYNC_SUCCEEDED_TYPE,
 } from "./WorkerTypes";
-import { DownloadWorker } from "./DownloadWorkerHandle";
+import { SyncWorker } from "./SyncWorker";
+import { DownloadWorker } from "./DownloadWorker";
 import { updatePersister } from "./UpdatePersister";
 import { AUTH_TOKEN_KEY } from "./useAuthToken";
-
-const SyncWorker = new Worker(new URL("./SyncWorker.ts", import.meta.url), {
-  type: "module",
-});
 
 interface LibraryWrapperProps {
   children: ReactNode;
