@@ -143,8 +143,16 @@ function PlaylistLevelList({
 }
 
 function Playlists() {
-  const setSelectedPlaylistId = useSetAtom(selectedPlaylistIdAtom);
-  const [playlists, setPlaylists] = useState<PlaylistDisplay[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useAtom(
+    selectedPlaylistIdAtom
+  );
+  const [topLevelPlaylists, setTopLevelPlaylists] = useState<PlaylistDisplay[]>(
+    []
+  );
+  const [playlistParentIds, setPlaylistParentIds] = useState<
+    Map<string, string[]>
+  >(new Map());
+  const setOpenedFolders = useSetAtom(openedFoldersAtom);
 
   useEffect(() => {
     async function fetchPlaylists() {
@@ -155,6 +163,7 @@ function Playlists() {
 
       const display = [];
       const playlistsMap = new Map<string, PlaylistDisplay>();
+      const playlistParents = new Map<string, string[]>();
       for (const playlist of allPlaylists) {
         playlistsMap.set(playlist.id, {
           id: playlist.id,
@@ -163,7 +172,9 @@ function Playlists() {
           parentId: playlist.parentId,
           children: [],
         });
+        playlistParents.set(playlist.id, playlist.parentPlaylistIds || []);
       }
+      setPlaylistParentIds(playlistParents);
 
       for (const playlist of playlistsMap.values()) {
         const parent = playlistsMap.get(playlist.parentId);
@@ -175,18 +186,31 @@ function Playlists() {
       }
 
       SortPlaylistTree(display);
-      setPlaylists(display);
+      setTopLevelPlaylists(display);
       if (display.length > 0) {
         setSelectedPlaylistId(display[0].id);
       }
     }
 
     fetchPlaylists();
-  }, [setPlaylists, setSelectedPlaylistId]);
+  }, [setTopLevelPlaylists, setSelectedPlaylistId]);
+
+  useEffect(() => {
+    const parentIds = playlistParentIds.get(selectedPlaylistId);
+    if (parentIds && parentIds.length > 0) {
+      setOpenedFolders((prev) => {
+        const newOpenedFolders = new Set(prev);
+        for (const id of parentIds) {
+          newOpenedFolders.add(id);
+        }
+        return newOpenedFolders;
+      });
+    }
+  }, [playlistParentIds, selectedPlaylistId]);
 
   return (
     <Box sx={{ height: "100vh", overflowY: "auto" }}>
-      <PlaylistLevelList playlists={playlists} inSublist={false} />
+      <PlaylistLevelList playlists={topLevelPlaylists} inSublist={false} />
     </Box>
   );
 }
