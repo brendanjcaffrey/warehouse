@@ -24,11 +24,19 @@ ARTIST_SQL = 'SELECT id, name, sort_name FROM artists;'
 ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
 TRACK_SQL = <<~SQL
   SELECT
-      id, name, sort_name, artist_id, album_artist_id, album_id, genre_id, year,
-      duration, start, finish, track_number, disc_number, play_count, rating, ext,
-      file_md5, artwork_filename
-  FROM tracks
+      t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
+      t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, t.ext,
+      t.file_md5, t.artwork_filename, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
+  FROM
+      tracks t
+  LEFT JOIN
+      playlist_tracks pt
+  ON
+      t.id = pt.track_id
+  GROUP BY
+      t.id
 SQL
+LIBRARY_PLAYLIST_IDS_SQL = 'SELECT id FROM playlists WHERE is_library = 1;'
 PLAYLIST_SQL = <<~SQL
   SELECT
       p.id, p.name, p.parent_id, p.is_library,
@@ -284,6 +292,7 @@ class Server < Sinatra::Base
       username = get_validated_username
       if !username.nil?
         library = Library.new(trackUserChanges: track_user_changes?(username))
+        library_playlist_ids = db.exec(LIBRARY_PLAYLIST_IDS_SQL).values.to_a.flatten
 
         db.exec(GENRE_SQL).values.each do |genre|
           library.genres[genre[0].to_i] = Name.new(name: genre[1])
@@ -315,7 +324,8 @@ class Server < Sinatra::Base
                                       rating: track[14].to_i,
                                       ext: track[15],
                                       fileMd5: track[16].strip,
-                                      artworkFilename: track[17])
+                                      artworkFilename: track[17],
+                                      playlistIds: (track[18] || '').split(',').concat(library_playlist_ids))
         end
 
         db.exec(PLAYLIST_SQL).values.each do |playlist|

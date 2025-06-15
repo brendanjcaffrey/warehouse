@@ -329,6 +329,7 @@ describe 'iTunes Streamer' do
       expect(track.ext).to eq('mp3')
       expect(track.fileMd5).to eq('06dbe92c2a5dab2f7911e20a9e157521')
       expect(track.artworkFilename.strip).to eq('__artwork.jpg')
+      expect(track.playlistIds).to eq(%w[2222222222222222 XXXXXXXXXXXXXXXX])
 
       expect(library.playlists.length).to eq(4)
       playlist = library.playlists[0]

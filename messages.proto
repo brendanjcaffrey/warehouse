@@ -49,6 +49,7 @@ message Track {
   // skip 17
   string fileMd5 = 18;
   string artworkFilename = 19;
+  repeated string playlistIds = 20;
 }
 
 message Playlist {

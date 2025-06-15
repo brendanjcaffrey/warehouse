@@ -231,6 +231,7 @@ describe("SyncManager", () => {
         ext: "mp3",
         fileMd5: "md5hash1",
         artworkFilename: "",
+        playlistIds: ["p1", "p2"],
       })
     );
     artists.set(5, new SortName({ name: "artist5" }));
@@ -255,6 +256,7 @@ describe("SyncManager", () => {
         ext: "wav",
         fileMd5: "md5hash2",
         artworkFilename: "artwork1",
+        playlistIds: ["p3", "p4"],
       })
     );
     mockAxiosGetResolve(buildLibraryMsg());
@@ -286,6 +288,7 @@ describe("SyncManager", () => {
       fileMd5: "md5hash1",
       rating: 80,
       artwork: null,
+      playlistIds: ["p1", "p2"],
     });
     expect(library().putTrack).toHaveBeenCalledWith({
       id: "id2",
@@ -309,6 +312,7 @@ describe("SyncManager", () => {
       fileMd5: "md5hash2",
       rating: 100,
       artwork: "artwork1",
+      playlistIds: ["p3", "p4"],
     });
   });
 

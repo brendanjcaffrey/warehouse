@@ -29,6 +29,7 @@ const TRACK: Track = {
   ext: "mp3",
   fileMd5: "md5",
   artwork: null,
+  playlistIds: [],
 };
 
 test("ValidOptionalField", () => {

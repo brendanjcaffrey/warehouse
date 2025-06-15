@@ -35,6 +35,7 @@ const TRACKS: Track[] = [
     ext: "mp3",
     fileMd5: "md5",
     artwork: null,
+    playlistIds: [],
   },
 ];
 

@@ -30,6 +30,7 @@ export interface Track {
   ext: string;
   fileMd5: string;
   artwork: string | null;
+  playlistIds: string[]
 }
 
 export interface Playlist {
