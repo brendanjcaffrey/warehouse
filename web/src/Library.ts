@@ -235,13 +235,35 @@ class Library {
       return [];
     }
 
+    // gather the child playlists here before the playlistTx goes inactive
+    const trackIds = new Set<string>();
+    if (playlist.childPlaylistIds.length > 0) {
+      const playlists = [playlist];
+      const childPlaylists = await Promise.all(
+        playlist.childPlaylistIds.map((id) => playlistStore.get(id))
+      );
+      playlists.push(
+        ...childPlaylists.filter((p): p is Playlist => p !== undefined)
+      );
+      for (const playlist of playlists) {
+        for (const trackId of playlist.trackIds) {
+          trackIds.add(trackId);
+        }
+      }
+    }
+
     const trackTx = this.db.transaction("tracks", "readonly");
     const trackStore = trackTx.objectStore("tracks");
     if (playlist.isLibrary) {
       return trackStore.getAll();
-    } else {
+    } else if (playlist.childPlaylistIds.length === 0) {
       const tracks = await Promise.all(
         playlist.trackIds.map((trackId) => trackStore.get(trackId))
+      );
+      return tracks.filter((track): track is Track => track !== undefined);
+    } else {
+      const tracks = await Promise.all(
+        trackIds.values().map((trackId) => trackStore.get(trackId))
       );
       return tracks.filter((track): track is Track => track !== undefined);
     }
