@@ -114,7 +114,9 @@ function TrackTable() {
             PrecomputeTrackSort(track);
           }
           let newSelectedOffset = undefined;
-          if (playingTrack?.playlistId === selectedPlaylistId) {
+          if (offsetToShowAfterPlaylistSwitch.current !== undefined) {
+            newSelectedOffset = offsetToShowAfterPlaylistSwitch.current;
+          } else if (playingTrack?.playlistId === selectedPlaylistId) {
             newSelectedOffset = playingTrack?.playlistOffset;
           }
           dispatch({
@@ -146,7 +148,6 @@ function TrackTable() {
     const playlistOffset = offsetToShowAfterPlaylistSwitch.current;
     if (playlistOffset) {
       offsetToShowAfterPlaylistSwitch.current = undefined;
-      setSelectedPlaylistOffset(playlistOffset);
       showTrackInGrid(
         gridRef,
         displayedRowIdxs,
@@ -202,11 +203,12 @@ function TrackTable() {
   });
 
   const showContextMenu = useCallback(
-    (event: React.MouseEvent, playlistTrack: PlaylistTrack) => {
+    (event: React.MouseEvent, playlistTrack: PlaylistTrack, track: Track) => {
       event.preventDefault();
       setSelectedPlaylistOffset(playlistTrack.playlistOffset);
       setContextMenuData({
         playlistTrack,
+        track,
         mouseX: event.clientX,
         mouseY: event.clientY,
       });

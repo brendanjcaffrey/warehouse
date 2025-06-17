@@ -30,7 +30,7 @@ export interface Track {
   ext: string;
   fileMd5: string;
   artwork: string | null;
-  playlistIds: string[]
+  playlistIds: string[];
 }
 
 export interface Playlist {
@@ -216,6 +216,31 @@ class Library {
     const tx = this.db.transaction("playlists", "readonly");
     const store = tx.objectStore("playlists");
     return await store.getAll();
+  }
+
+  public async getPlaylistsById(
+    playlistIds: string[]
+  ): Promise<Playlist[] | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting playlists", "database is not initialized");
+      return;
+    }
+
+    const ids = new Set<string>(playlistIds);
+    const out: Playlist[] = [];
+    const tx = this.db.transaction("playlists", "readonly");
+    const store = tx.objectStore("playlists");
+    for (const playlist of await store.getAll()) {
+      if (ids.has(playlist.id)) {
+        ids.delete(playlist.id);
+        out.push(playlist);
+      }
+    }
+
+    return out;
   }
 
   public async getAllPlaylistTracks(

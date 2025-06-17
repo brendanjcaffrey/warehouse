@@ -32,7 +32,8 @@ interface TrackTableCellProps extends GridChildComponentProps {
   playingPlaylistEntry: PlaylistEntry | undefined;
   showContextMenu: (
     event: React.MouseEvent<HTMLDivElement>,
-    playlistTrack: PlaylistTrack
+    playlistTrack: PlaylistTrack,
+    track: Track
   ) => void;
   handleAction: (action: TrackAction, playlistTrack: PlaylistTrack) => void;
 }
@@ -72,7 +73,13 @@ export function TrackTableCell(props: TrackTableCellProps) {
       onClick={() =>
         !isSelected && props.setSelectedPlaylistOffset(playlistOffset)
       }
-      onContextMenu={(event) => props.showContextMenu(event, playlistTrack)}
+      onContextMenu={(event) =>
+        props.showContextMenu(
+          event,
+          playlistTrack,
+          props.tracks[playlistOffset]
+        )
+      }
       onDoubleClick={() => props.handleAction(TrackAction.PLAY, playlistTrack)}
     >
       {column.canHaveNowPlayingIcon && IsPlaying ? (
