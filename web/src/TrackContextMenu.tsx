@@ -134,9 +134,9 @@ export function TrackContextMenu({
           <ListItemText>Show in Playlist</ListItemText>
           <ListItemIcon>
             {showPlaylists ? (
-              <ArrowDropDownRounded fontSize="small" />
-            ) : (
               <ArrowDropUpRounded fontSize="small" />
+            ) : (
+              <ArrowDropDownRounded fontSize="small" />
             )}
           </ListItemIcon>
         </MenuItem>
