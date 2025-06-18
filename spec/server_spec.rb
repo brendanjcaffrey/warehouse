@@ -10,7 +10,7 @@ module Config
 
   def [](key)
     return ENV['CI'] ? 'ci' : YAML.safe_load(File.open('config.yaml'))['local']['database_username'] if key == 'database_username'
-    return 'streamer_test' if key == 'database_name'
+    return 'warehouse_test' if key == 'database_name'
     return "#{Dir.pwd}/spec" if %w[music_path artwork_path].include?(key)
 
     '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0' if key == 'secret'
@@ -48,7 +48,7 @@ module Export
   end
 end
 
-describe 'iTunes Streamer' do
+describe 'Warehouse Server' do
   include Rack::Test::Methods
 
   def app
@@ -139,7 +139,7 @@ describe 'iTunes Streamer' do
   describe '/' do
     it 'sends index.html' do
       get '/'
-      expect(last_response.body).to include('Music Streamer')
+      expect(last_response.body).to include('Warehouse')
     end
   end
 

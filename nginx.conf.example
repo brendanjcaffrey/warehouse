@@ -1,6 +1,6 @@
-# put this file in /etc/nginx/conf.d/streamer.conf
+# put this file in /etc/nginx/conf.d/warehouse.conf
 upstream puma_server {
-    server unix:/tmp/itunes-streamer.sock fail_timeout=0;
+    server unix:/tmp/warehouse.sock fail_timeout=0;
 }
 
 server {
@@ -8,7 +8,7 @@ server {
     ssl_certificate     /path/to/ssl.crt;
     ssl_certificate_key /path/to/ssl.key;
 
-    root /home/user/streamer/server;
+    root /home/user/warehouse/server;
     listen 20600 ssl;
     client_max_body_size 1G;
     keepalive_timeout 5;
@@ -18,12 +18,12 @@ server {
     }
 
     location /accel/music/ {
-        alias /home/user/streamer/music/;
+        alias /home/user/warehouse/music/;
         internal;
     }
 
     location /accel/artwork/ {
-        alias /home/user/streamer/artwork/;
+        alias /home/user/warehouse/artwork/;
         internal;
     }
 

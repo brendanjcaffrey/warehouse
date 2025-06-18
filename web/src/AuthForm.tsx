@@ -60,7 +60,7 @@ function AuthForm({ setAuthToken }: AuthFormProps) {
         }}
       >
         <Typography component="h1" variant="h5" color="textPrimary">
-          Music Streamer
+          Warehouse
         </Typography>
         <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}

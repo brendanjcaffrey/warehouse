@@ -15,8 +15,8 @@ const config: ViteConfig = {
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
       },
       manifest: {
-        name: "Music Streamer",
-        short_name: "Streamer",
+        name: "Warehouse",
+        short_name: "Warehouse",
         description: "Music library streamer",
         theme_color: "#ffffff",
         icons: [

@@ -1,8 +1,8 @@
 local:
-  music_path: /Users/Brendan/Music/
-  artwork_path: /Users/Brendan/Development/itunes-streamer/artwork/
+  music_path: /Users/you/Music/iTunes/iTunes Music
+  artwork_path: /Users/you/Development/warehouse/artwork/
   database_username: music
-  database_name: itunes_streamer
+  database_name: warehouse
   update_library: true
   -- generate with: ruby -rsecurerandom -e 'p SecureRandom.hex(32)'
   secret: [something]
@@ -10,13 +10,13 @@ local:
 
 remote:
   base_url: http://example.com/
-  music_path: /home/music/music/
-  artwork_path: /home/music/artwork/
+  music_path: /home/user/music/
+  artwork_path: /home/user/artwork/
   database_username: music
-  database_name: itunes_streamer
-  update_library: false
+  database_name: warehouse
+  update_library: true
   secret: [something]
-  socket_path: /tmp/itunes-streamer.sock
+  socket_path: /tmp/warehouse.sock
 
 users:
   brendan:
