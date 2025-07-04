@@ -11,5 +11,5 @@ end
 
 def build_jwt(username, _secret)
   headers = { exp: Time.now.to_i + JWT_EXPIRY }
-  JWT.encode({ username: username }, Config['secret'], JWT_ALGO, headers)
+  JWT.encode({ username: username }, Config.env.secret, JWT_ALGO, headers)
 end

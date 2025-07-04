@@ -6,3 +6,5 @@
 /web/src/generated/messages.ts
 /artwork/*.jpg
 /artwork/*.png
+/export.log
+/export/warehouse-export.xcodeproj/project.xcworkspace/xcuserdata

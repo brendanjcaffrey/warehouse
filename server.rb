@@ -4,7 +4,7 @@ require 'pg'
 require 'rack/utils'
 require 'sinatra/base'
 require 'sinatra/namespace'
-require_relative 'export/database'
+require_relative 'update/database'
 require_relative 'shared/messages_pb'
 require_relative 'shared/jwt'
 
@@ -151,14 +151,14 @@ class Server < Sinatra::Base
 
   if Config.remote?
     set :environment, :production
-    set :bind, Config['socket_path']
+    set :bind, Config.env.socket_path
   else
     set :environment, :development
-    set :port, Config['port']
+    set :port, Config.env.port
   end
 
   def db
-    db_connection_options = { user: Config['database_username'], dbname: Config['database_name'] }
+    db_connection_options = { user: Config.env.database_username, dbname: Config.env.database_name }
     if ENV['CI']
       db_connection_options[:host] = 'localhost'
       db_connection_options[:password] = 'ci'
@@ -167,17 +167,13 @@ class Server < Sinatra::Base
     @db ||= PG.connect(db_connection_options)
   end
 
-  def valid_username_and_password?(username, password)
-    Config.vals['users'].key?(username) && Config.vals['users'][username]['password'] == password
-  end
-
   def get_validated_username(allow_export_user: false)
     auth_header = request.env['HTTP_AUTHORIZATION']
     return nil if auth_header.nil? || !auth_header.start_with?('Bearer ')
 
     token = auth_header.gsub('Bearer ', '')
     begin
-      payload, header = decode_jwt(token, Config['secret'])
+      payload, header = decode_jwt(token, Config.env.secret)
     rescue StandardError
       return nil
     end
@@ -186,7 +182,7 @@ class Server < Sinatra::Base
     return nil if exp.nil? || Time.now > Time.at(exp.to_i)
 
     username = payload['username']
-    valid = Config.vals['users'].key?(username) || (allow_export_user && username == 'export_driver_update_library')
+    valid = Config.valid_username?(username) || (allow_export_user && username == 'export_driver_update_library')
     return nil unless valid
 
     username
@@ -194,10 +190,6 @@ class Server < Sinatra::Base
 
   def authed?(allow_export_user: false)
     !get_validated_username(allow_export_user: allow_export_user).nil?
-  end
-
-  def track_user_changes?(username)
-    Config.vals['users'].key?(username) && Config.vals['users'][username]['track_updates']
   end
 
   def track_exists?(track_id)
@@ -215,7 +207,7 @@ class Server < Sinatra::Base
         headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{file}")
         headers['Content-Type'] = AUDIO_MIME_TYPES[ext]
       else
-        send_file(music_path + file, type: ext)
+        send_file(File.join(music_path, file), type: ext)
       end
       true
     end
@@ -228,7 +220,7 @@ class Server < Sinatra::Base
   get '/tracks/*' do
     if !authed?
       redirect to('/')
-    elsif !send_track_if_exists(db, Config['music_path'], params['splat'][0])
+    elsif !send_track_if_exists(db, Config.env.music_path, params['splat'][0])
       raise Sinatra::NotFound
     end
   end
@@ -238,7 +230,7 @@ class Server < Sinatra::Base
       redirect to('/')
     else
       file = params['splat'][0]
-      full_path = File.expand_path(File.join(Config['artwork_path'], file))
+      full_path = File.expand_path(File.join(Config.env.artwork_path, file))
       valid_artwork = db.exec_params(TRACK_HAS_ARTWORK_SQL, [file]).values.first.first == 't'
       raise Sinatra::NotFound unless valid_artwork && File.exist?(full_path)
 
@@ -259,8 +251,8 @@ class Server < Sinatra::Base
 
     post '/auth' do
       content_type 'application/octet-stream'
-      if valid_username_and_password?(params[:username], params[:password])
-        token = build_jwt(params[:username], Config['secret'])
+      if Config.valid_username_and_password?(params[:username], params[:password])
+        token = build_jwt(params[:username], Config.env.secret)
         proto(AuthResponse.new(token: token))
       else
         proto(AuthResponse.new(error: INVALID_USERNAME_OR_PASSWORD_ERROR))
@@ -271,7 +263,7 @@ class Server < Sinatra::Base
       content_type 'application/octet-stream'
       username = get_validated_username
       if !username.nil?
-        token = build_jwt(username, Config['secret'])
+        token = build_jwt(username, Config.env.secret)
         proto(AuthResponse.new(token: token))
       else
         proto(AuthResponse.new(error: NOT_AUTHED_ERROR))
@@ -291,7 +283,7 @@ class Server < Sinatra::Base
     get '/library' do
       username = get_validated_username
       if !username.nil?
-        library = Library.new(trackUserChanges: track_user_changes?(username))
+        library = Library.new(trackUserChanges: Config.track_user_changes?(username))
         library_playlist_ids = db.exec(LIBRARY_PLAYLIST_IDS_SQL).values.to_a.flatten
 
         db.exec(GENRE_SQL).values.each do |genre|
@@ -348,37 +340,37 @@ class Server < Sinatra::Base
     get '/updates' do
       if authed?(allow_export_user: true)
         updates = Updates.new
-        db.exec(Export::Database::GET_PLAYS_SQL).values.each do |play|
+        db.exec(Update::Database::GET_PLAYS_SQL).values.each do |play|
           updates.plays << IncrementUpdate.new(trackId: play[0])
         end
-        db.exec(Export::Database::GET_RATING_UPDATES_SQL).values.each do |rating|
+        db.exec(Update::Database::GET_RATING_UPDATES_SQL).values.each do |rating|
           updates.ratings << IntUpdate.new(trackId: rating[0], value: rating[1].to_i)
         end
-        db.exec(Export::Database::GET_NAME_UPDATES_SQL).values.each do |name|
+        db.exec(Update::Database::GET_NAME_UPDATES_SQL).values.each do |name|
           updates.names << StringUpdate.new(trackId: name[0], value: name[1])
         end
-        db.exec(Export::Database::GET_ARTIST_UPDATES_SQL).values.each do |artist|
+        db.exec(Update::Database::GET_ARTIST_UPDATES_SQL).values.each do |artist|
           updates.artists << StringUpdate.new(trackId: artist[0], value: artist[1])
         end
-        db.exec(Export::Database::GET_ALBUM_UPDATES_SQL).values.each do |album|
+        db.exec(Update::Database::GET_ALBUM_UPDATES_SQL).values.each do |album|
           updates.albums << StringUpdate.new(trackId: album[0], value: album[1])
         end
-        db.exec(Export::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values.each do |album_artist|
+        db.exec(Update::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values.each do |album_artist|
           updates.albumArtists << StringUpdate.new(trackId: album_artist[0], value: album_artist[1])
         end
-        db.exec(Export::Database::GET_GENRE_UPDATES_SQL).values.each do |genre|
+        db.exec(Update::Database::GET_GENRE_UPDATES_SQL).values.each do |genre|
           updates.genres << StringUpdate.new(trackId: genre[0], value: genre[1])
         end
-        db.exec(Export::Database::GET_YEAR_UPDATES_SQL).values.each do |year|
+        db.exec(Update::Database::GET_YEAR_UPDATES_SQL).values.each do |year|
           updates.years << IntUpdate.new(trackId: year[0], value: year[1].to_i)
         end
-        db.exec(Export::Database::GET_START_UPDATES_SQL).values.each do |start|
+        db.exec(Update::Database::GET_START_UPDATES_SQL).values.each do |start|
           updates.starts << FloatUpdate.new(trackId: start[0], value: start[1].to_f)
         end
-        db.exec(Export::Database::GET_FINISH_UPDATES_SQL).values.each do |finish|
+        db.exec(Update::Database::GET_FINISH_UPDATES_SQL).values.each do |finish|
           updates.finishes << FloatUpdate.new(trackId: finish[0], value: finish[1].to_f)
         end
-        db.exec(Export::Database::GET_ARTWORK_UPDATES_SQL).values.each do |artwork|
+        db.exec(Update::Database::GET_ARTWORK_UPDATES_SQL).values.each do |artwork|
           updates.artworks << StringUpdate.new(trackId: artwork[0], value: artwork[1])
         end
         proto(UpdatesResponse.new(updates: updates))
@@ -391,7 +383,7 @@ class Server < Sinatra::Base
       username = get_validated_username
       if username.nil?
         proto(OperationResponse.new(success: false, error: NOT_AUTHED_ERROR))
-      elsif !track_user_changes?(username)
+      elsif !Config.track_user_changes?(username)
         proto(OperationResponse.new(success: false, error: NOT_TRACKING_ERROR))
       elsif !track_exists?(track_id)
         proto(OperationResponse.new(success: false, error: INVALID_TRACK_ERROR))
@@ -448,7 +440,7 @@ class Server < Sinatra::Base
         end
       end
 
-      return proto(OperationResponse.new(success: false, error: MISSING_FILE_ERROR)) if params.key?('artwork') && params['artwork'] != '' && !File.exist?(File.join(Config['artwork_path'], params['artwork']))
+      return proto(OperationResponse.new(success: false, error: MISSING_FILE_ERROR)) if params.key?('artwork') && params['artwork'] != '' && !File.exist?(File.join(Config.env.artwork_path, params['artwork']))
 
       perform_updates_if_should_track_changes(id) do
         if (name = params['name'])
@@ -528,7 +520,7 @@ class Server < Sinatra::Base
       username = get_validated_username
       if username.nil?
         return proto(OperationResponse.new(success: false, error: NOT_AUTHED_ERROR))
-      elsif !track_user_changes?(username)
+      elsif !Config.track_user_changes?(username)
         return proto(OperationResponse.new(success: false, error: NOT_TRACKING_ERROR))
       end
 
@@ -542,7 +534,7 @@ class Server < Sinatra::Base
       md5 = Digest::MD5.file(tempfile).hexdigest
       return proto(OperationResponse.new(success: false, error: INVALID_MD5_ERROR)) if md5 != expected_md5
 
-      out_path = File.expand_path(File.join(Config['artwork_path'], filename))
+      out_path = File.expand_path(File.join(Config.env.artwork_path, filename))
       FileUtils.cp(tempfile.path, out_path) unless File.exist?(out_path)
       return proto(OperationResponse.new(success: true))
     end

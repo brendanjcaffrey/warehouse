@@ -3,16 +3,15 @@ require 'json'
 require_relative '../shared/jwt'
 require_relative '../shared/messages_pb'
 
-module Export
-  class Driver
-    def initialize(database, library, progress)
+module Update
+  class Updater
+    def initialize(database, library)
       @database = database
       @library = library
-      @progress = progress
     end
 
     def update_library!
-      if Config.local('update_library')
+      if Config.local.update_library
         play_updates(@database.get_plays)
         rating_updates(@database.get_ratings)
         name_updates(@database.get_name_updates)
@@ -26,9 +25,9 @@ module Export
         artwork_updates(@database.get_artwork_updates)
       end
 
-      return unless Config.remote('update_library')
+      return unless Config.remote.update_library
 
-      jwt = build_jwt('export_driver_update_library', Config.remote('secret'))
+      jwt = build_jwt('export_driver_update_library', Config.remote.secret)
       response = execute_remote_request('/api/updates', jwt)
       updates = nil
 
@@ -76,22 +75,10 @@ module Export
       artwork_updates(flat_artwork_updates)
     end
 
-    def export_itunes_library!
-      @database.clean_and_rebuild
-      @skipped_tracks = {}
-      @needed_folders = {}
-
-      export_tracks
-      export_playlists
-      export_folders
-      @database.set_library_metadata(@library.total_file_size)
-      @database.set_export_finished
-    end
-
     private
 
     def execute_remote_request(path, jwt)
-      uri = URI("#{Config.remote('base_url')}#{path}")
+      uri = URI("#{Config.remote.base_url}#{path}")
       request = Net::HTTP::Get.new(uri)
       request['Authorization'] = "Bearer #{jwt}"
 
@@ -189,57 +176,6 @@ module Export
       artworks.each do |row|
         puts @database.get_track_and_artist_name(row.first).join(' - ')
         @library.update_artwork(row.first, row.last)
-      end
-    end
-
-    def export_tracks
-      track_count = @library.total_track_count
-      @progress.start('Exporting tracks...', track_count)
-
-      track_count.times do |track_index|
-        @progress.increment!
-        track = @library.track_info(track_index)
-
-        if track.valid_extension?
-          @database.create_track(track)
-        else
-          puts "Skipping #{track.file} due to invalid extension"
-          @skipped_tracks[track.id] = true
-        end
-      end
-
-      @library.cleanup_artwork
-    end
-
-    def export_playlists
-      playlist_count = @library.total_playlist_count
-      @progress.start('Exporting playlists...', playlist_count)
-
-      playlist_count.times do |playlist_index|
-        @progress.increment!
-        playlist = @library.playlist_info(playlist_index)
-        next if playlist.skip?
-
-        playlist.tracks.reject! { |track_id| @skipped_tracks.key?(track_id) }
-
-        @database.create_playlist(playlist)
-        @needed_folders[playlist.parent_id] = true if playlist.parent_id != -1
-      end
-    end
-
-    def export_folders
-      folder_count = @library.total_folder_count
-      @progress.start('Exporting folders...', folder_count)
-
-      folder_count.times do |folder_index|
-        @progress.increment!
-        folder = @library.folder_info(folder_index)
-
-        if @needed_folders.key?(folder.id)
-          @database.create_playlist(folder)
-        else
-          puts "Skipping folder #{folder.name} because it has no children"
-        end
       end
     end
   end
