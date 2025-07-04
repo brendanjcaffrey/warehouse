@@ -173,7 +173,7 @@ class Library {
         var genres: [InsertGenreQuery] = []
         for item in lib.allMediaItems {
             if shouldIgnoreItem(item) { continue }
-            let genreName = cleanName(item.genre)
+            let genreName = normalizeUTF(item.genre)
             if genreIds[genreName] == nil {
                 let genreId = genreIds.count + 1
                 genreIds[genreName] = genreId
@@ -193,10 +193,10 @@ class Library {
             if shouldIgnoreItem(item) { continue }
 
             if let rawName = item.artist?.name {
-                let name = cleanName(rawName)
+                let name = normalizeUTF(rawName)
                 if artistIds[name] == nil {
                     let artistId = artistIds.count + 1
-                    var sortName = item.artist?.sortName == nil ? name : cleanName(item.artist!.sortName!)
+                    var sortName = item.artist?.sortName == nil ? name : normalizeUTF(item.artist!.sortName!)
                     if sortName == name { sortName = "" }
                     artistIds[name] = artistId
                     artists.append(InsertArtistQuery(id: artistId, name: name, sortName: sortName))
@@ -204,10 +204,10 @@ class Library {
             }
 
             if let rawName = item.album.albumArtist {
-                let name = cleanName(rawName)
+                let name = normalizeUTF(rawName)
                 if artistIds[name] == nil {
                     let artistId = artistIds.count + 1
-                    var sortName = item.album.sortAlbumArtist == nil ? name : cleanName(item.album.sortAlbumArtist!)
+                    var sortName = item.album.sortAlbumArtist == nil ? name : normalizeUTF(item.album.sortAlbumArtist!)
                     if sortName == name { sortName = "" }
                     artistIds[name] = artistId
                     artists.append(InsertArtistQuery(id: artistId, name: name, sortName: sortName))
@@ -227,10 +227,10 @@ class Library {
             if shouldIgnoreItem(item) { continue }
 
             if let rawName = item.album.title {
-                let name = cleanName(rawName)
+                let name = normalizeUTF(rawName)
                 if albumIds[name] == nil {
                     let albumId = albumIds.count + 1
-                    var sortName = item.album.sortTitle == nil ? name : cleanName(item.album.sortTitle!)
+                    var sortName = item.album.sortTitle == nil ? name : normalizeUTF(item.album.sortTitle!)
                     if sortName == name { sortName = "" }
                     albumIds[name] = albumId
                     albums.append(InsertAlbumQuery(id: albumId, name: name, sortName: sortName))
@@ -260,13 +260,13 @@ class Library {
             if location == nil { fatalError() }
 
             let persistentId = formatPersistentId(item.persistentID)
-            let genreId = genreIds[cleanName(item.genre)]
-            let artistId = item.artist?.name != nil ? artistIds[cleanName(item.artist!.name!)] : nil
-            let albumArtistId = item.album.albumArtist != nil ? artistIds[cleanName(item.album.albumArtist!)] : nil
-            let albumId = item.album.title != nil ? albumIds[cleanName(item.album.title!)] : nil
+            let genreId = genreIds[normalizeUTF(item.genre)]
+            let artistId = item.artist?.name != nil ? artistIds[normalizeUTF(item.artist!.name!)] : nil
+            let albumArtistId = item.album.albumArtist != nil ? artistIds[normalizeUTF(item.album.albumArtist!)] : nil
+            let albumId = item.album.title != nil ? albumIds[normalizeUTF(item.album.title!)] : nil
 
-            let title = cleanName(item.title)
-            var sortTitle = item.sortTitle == nil ? title : cleanName(item.sortTitle!)
+            let title = normalizeUTF(item.title)
+            var sortTitle = item.sortTitle == nil ? title : normalizeUTF(item.sortTitle!)
             if sortTitle == title { sortTitle = "" }
 
             let totalTime = Double(item.totalTime) / 1000.0
@@ -304,7 +304,7 @@ class Library {
                 id: persistentId, name: title, sortName: sortTitle, artistId: artistId, albumArtistId: albumArtistId,
                 albumId: albumId, genreId: genreId, year: item.year, duration: totalTime, start: startTime, finish: finishTime,
                 trackNumber: item.trackNumber, discNumber: item.album.discNumber, playCount: item.playCount, rating: rating,
-                ext: fileExt, file: filePath.subpath!, fileMd5: fileMD5!, artworkFilename: artworkFilename
+                ext: fileExt, file: normalizeUTF(filePath.subpath!), fileMd5: fileMD5!, artworkFilename: artworkFilename
             ))
             trackIds.insert(persistentId)
 
@@ -437,9 +437,16 @@ class Library {
         return String(format: "%016llx", id.int64Value).uppercased()
     }
 
-    private func cleanName(_ str: String) -> String {
-        // remove the utf BOM
-        return str.replacingOccurrences(of: "\u{FEFF}", with: "")
+    private func normalizeUTF(_ str: String) -> String {
+        // there are two ways to represent multi-byte characters in utf-8:
+        //   NFC (Normalization Form C): Composed form (single codepoints).
+        //   NFD (Normalization Form D): Decomposed form (base characters + combining diacritics).
+        // on macos, the file system automatically normalizes filenames to NFD, but on linux, the
+        // filenames are used exactly as given. the values coming out of ITLibrary seem to be in
+        // NFC, but the files are NFD. on macos this isn't a problem, but if the files and database
+        // are synced to linux as is, the server won't be able to find the files. so we convert
+        // all string values to NFD to be safe (even if they aren't used in the filename).
+        return str.precomposedStringWithCanonicalMapping
     }
 
     private func formatMD5Digest(_ digest: CryptoKit.Insecure.MD5Digest) -> String {
