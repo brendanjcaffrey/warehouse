@@ -72,6 +72,9 @@ class Library {
 
     var existingMD5s: Dictionary<String, ExistingMD5s> = [:]
 
+    let allowedDistinguisedKinds: Set<ITLibDistinguishedPlaylistKind> = [.kindNone, .kindMusic]
+    let allowedPlaylistKinds: Set<ITLibPlaylistKind> = [.smart, .regular, .folder]
+
     init(pgConfig: PostgresClient.Configuration) {
         self.dbConfig = pgConfig
     }
@@ -339,13 +342,24 @@ class Library {
         }
     }
 
+    private func shouldSkipPlaylist(_ playlist: ITLibPlaylist) -> Bool {
+        if playlist.isPrimary { return true } // skip the Library playlist, we'll get the music specific one instead
+        if !allowedPlaylistKinds.contains(playlist.kind) { return true }
+        if !allowedDistinguisedKinds.contains(playlist.distinguishedKind) { return true }
+        return false
+    }
+
+    private func playlistIsLibrary(_ playlist: ITLibPlaylist) -> Bool {
+        return playlist.distinguishedKind == .kindMusic
+    }
+
     private func exportPlaylists(_ lib: ITLibrary, _ client: PostgresClient, _ progress: ExportProgressModel) async throws {
-        let allPlaylists = lib.allPlaylists
+        let allPlaylists = lib.allPlaylists.filter { !shouldSkipPlaylist($0) }
 
         let playlists: [InsertPlaylistQuery] = allPlaylists.map { playlist in
             let id = formatPersistentId(playlist.persistentID)
             let parentId = playlist.parentID != nil ? formatPersistentId(playlist.parentID!) : nil
-            return InsertPlaylistQuery(id: id, name: playlist.name, isLibrary: playlist.isPrimary, parentId: parentId)
+            return InsertPlaylistQuery(id: id, name: playlist.name, isLibrary: playlistIsLibrary(playlist), parentId: parentId)
         }
         let start = Date()
         try await client.query(insertPlaylistsQuery(playlists))
@@ -354,7 +368,8 @@ class Library {
         var playlistTrackDuration = 0.0
         for playlist in allPlaylists {
             let id = formatPersistentId(playlist.persistentID)
-            if !playlist.isPrimary { // no need to insert every track into the database for this one
+            // no need to insert tracks into the database for the all music playlist and folders
+            if playlist.distinguishedKind == .kindNone && playlist.kind != .folder {
                 let playlistTrackIds = playlist.items.map { formatPersistentId($0.persistentID) }.filter { trackIds.contains($0) }
                 if playlistTrackIds.isEmpty { continue }
                 let start = Date()
