@@ -8,6 +8,7 @@ module Update
     def initialize(database, library)
       @database = database
       @library = library
+      @local_artwork_dir = File.expand_path(Config.local.artwork_path)
     end
 
     def update_library!
@@ -61,12 +62,12 @@ module Update
 
       flat_artwork_updates = flatten_updates(updates.artworks)
       flat_artwork_updates.each do |_, artwork_filename|
-        next if @library.has_artwork?(artwork_filename)
+        next if has_artwork?(artwork_filename)
 
         response = execute_remote_request("/artwork/#{artwork_filename}", jwt)
         if response.is_a?(Net::HTTPSuccess)
           puts "Successfully fetched artwork: #{artwork_filename}"
-          @library.put_artwork(artwork_filename, response.body)
+          put_artwork(artwork_filename, response.body)
         else
           puts "HTTP request failed with status: #{response.code} #{response.message}"
           exit(1)
@@ -176,6 +177,16 @@ module Update
       artworks.each do |row|
         puts @database.get_track_and_artist_name(row.first).join(' - ')
         @library.update_artwork(row.first, row.last)
+      end
+    end
+
+    def has_artwork?(filename)
+      File.exist?(File.join(@local_artwork_dir, filename))
+    end
+
+    def put_artwork(filename, contents)
+      File.open(File.join(@local_artwork_dir, filename), 'wb') do |file|
+        file.write(contents)
       end
     end
   end
