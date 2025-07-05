@@ -41,8 +41,8 @@ jobs:
     - name: npm ci
       run: cd web && npm ci
 
-    - name: compile protobufs & build
-      run: bundle exec rake build
+    - name: compile protobufs & build web
+      run: bundle exec rake web:build
 
     - name: discord prerequisites
       id: discord_prerequisites

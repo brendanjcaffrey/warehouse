@@ -12,3 +12,5 @@
 /music/*.m4a
 /music/*.mp4
 /music/*.wav
+/changes/tracks/*.json
+/changes/playlists/*.json

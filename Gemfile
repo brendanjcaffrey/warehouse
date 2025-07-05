@@ -1,5 +1,6 @@
 source 'https://rubygems.org'
 
+gem 'algorithms'
 gem 'google-protobuf'
 gem 'jwt'
 gem 'pg'

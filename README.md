@@ -1,20 +1,21 @@
 ### Installing dependencies
 
-- bundle && cd web && npm install
+- rake server:install
+- rake web:install
 
 ### Production
 
 - rake build
-- rake remote
+- rake server:remote
 
 ### Development
 
 In one terminal:
 
-- rake local
+- rake server:local
 
 In another:
 
-- rake vite
+- rake web:vite
 
 Then open `http://localhost:20602`
