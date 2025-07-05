@@ -66,24 +66,34 @@ class Library {
 
     var totalTrackFileSize: Int64 = 0
     var totalArtworkFileSize: Int64 = 0
+    
+    let musicDirURL: URL
+    var oldMusicFiles: Set<String> = []
+    var newMusicFiles: Set<String> = []
 
-    var existingArtwork: Set<String> = []
-    var seenArtworks: Set<String> = []
+    let artworkDirURL: URL
+    var oldArtworkFiles: Set<String> = []
+    var newArtworkFiles: Set<String> = []
 
     var existingMD5s: Dictionary<String, ExistingMD5s> = [:]
 
     let allowedDistinguisedKinds: Set<ITLibDistinguishedPlaylistKind> = [.kindNone, .kindMusic]
     let allowedPlaylistKinds: Set<ITLibPlaylistKind> = [.smart, .regular, .folder]
 
-    init(pgConfig: PostgresClient.Configuration) {
+    init(pgConfig: PostgresClient.Configuration, musicDirURL: URL, artworkDirURL: URL) {
         self.dbConfig = pgConfig
+        self.musicDirURL = musicDirURL
+        self.artworkDirURL = artworkDirURL
     }
 
-    func export(musicPath: String, artworkDirURL: URL, progress: ExportProgressModel, fast: Bool) async throws -> Optional<String> {
+    func export(progress: ExportProgressModel, fast: Bool) async throws -> Optional<String> {
         self.totalTrackFileSize = 0
         self.totalArtworkFileSize = 0
-        self.seenArtworks = []
-        self.existingArtwork = []
+        self.oldMusicFiles = []
+        self.newMusicFiles = []
+        self.oldArtworkFiles = []
+        self.newArtworkFiles = []
+        self.oldArtworkFiles = []
 
         await MainActor.run {
             progress.status.totalTracks = 0
@@ -108,17 +118,17 @@ class Library {
             taskGroup.addTask { await client.run() }
             do {
                 let lib = try! ITLibrary(apiVersion: "1.1")
-                if !fast { try self.gatherExistingArtwork(artworkDirURL) }
+                if !fast { try self.gatherOldFiles() }
                 if fast { try await self.gatherExistingMD5s(client) }
                 try await self.dropTables(client, progress)
                 try await self.createTables(client, progress)
                 try await self.exportGenres(lib, client, progress)
                 try await self.exportArtists(lib, client, progress)
                 try await self.exportAlbums(lib, client, progress)
-                try await self.exportTracks(lib, client, musicPath, artworkDirURL, progress, fast)
+                try await self.exportTracks(lib, client, progress, fast)
                 try await self.exportPlaylists(lib, client, progress)
                 try await self.finishExport(client)
-                if !fast { try self.cleanupArtwork(artworkDirURL) }
+                if !fast { try self.removeOldFiles() }
                 await MainActor.run { progress.status.totalTime = Date().timeIntervalSince(start) }
                 return nil
             } catch let error {
@@ -127,9 +137,14 @@ class Library {
         }
     }
 
-    private func gatherExistingArtwork(_ artworkDirURL: URL) throws {
-        self.existingArtwork = Set(try FileManager.default.contentsOfDirectory(
-            at: artworkDirURL,
+    private func gatherOldFiles() throws {
+        oldMusicFiles = try gatherOldFiles(musicDirURL)
+        oldArtworkFiles = try gatherOldFiles(artworkDirURL)
+    }
+
+    private func gatherOldFiles(_ dirURL: URL) throws -> Set<String> {
+        return Set(try FileManager.default.contentsOfDirectory(
+            at: dirURL,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         ).map { $0.lastPathComponent })
@@ -247,7 +262,7 @@ class Library {
         await MainActor.run { progress.status.albumQueryTime = duration }
     }
 
-    private func exportTracks(_ lib: ITLibrary, _ client: PostgresClient, _ musicPath: String, _ artworkDirURL: URL, _ progress: ExportProgressModel, _ fast: Bool) async throws {
+    private func exportTracks(_ lib: ITLibrary, _ client: PostgresClient, _ progress: ExportProgressModel, _ fast: Bool) async throws {
         let allItems = lib.allMediaItems
         await MainActor.run { progress.status.totalTracks = allItems.count }
 
@@ -259,8 +274,7 @@ class Library {
         for (i, item) in allItems.enumerated() {
             if shouldIgnoreItem(item) { continue }
 
-            let location = item.location
-            if location == nil { fatalError() }
+            guard let location = item.location else { fatalError() }
 
             let persistentId = formatPersistentId(item.persistentID)
             let genreId = genreIds[normalizeUTF(item.genre)]
@@ -277,28 +291,46 @@ class Library {
             let finishTime = item.stopTime == 0 ? totalTime : Double(item.stopTime) / 1000.0
             let rating = item.rating == 1 || item.isRatingComputed ? 0 : item.rating
 
-            let filePath = Config.checkMusicPath(musicPath: musicPath, trackLocation: location!)
-            if !filePath.success {
-                throw ExportError(message: "track with id \(item.persistentID) has invalid file path: \(filePath.errorMsg!)")
-            }
-            let fileExt = location!.pathExtension
+            let fileExt = location.pathExtension
             var fileMD5: String?
             var artworkFilename: String?
             if fast, let existingMD5 = self.existingMD5s[persistentId] {
                 fileMD5 = existingMD5.music
                 artworkFilename = existingMD5.artwork
                 if let af = artworkFilename, !af.isEmpty {
-                    seenArtworks.insert(af)
+                    newArtworkFiles.insert(af)
                     let fullPath = artworkDirURL.appendingPathComponent(af)
                     totalArtworkFileSize += try getFileSize(fullPath)
                 }
             }
             if fileMD5 == nil {
                 let start = Date()
-                fileMD5 = try getFileMD5(file: location!)
+                fileMD5 = try getFileMD5(file: location)
                 trackMd5Duration += Date().timeIntervalSince(start)
             }
-            totalTrackFileSize += try getFileSize(location!)
+            totalTrackFileSize += try getFileSize(location)
+
+            let symlinkFilename = "\(fileMD5!).\(fileExt)"
+            let symlinkURL = musicDirURL.appendingPathComponent(symlinkFilename)
+            newMusicFiles.insert(symlinkFilename)
+
+            var shouldCreateSymlink = true
+            if FileManager.default.fileExists(atPath: symlinkURL.path) {
+                do {
+                    let destination = try FileManager.default.destinationOfSymbolicLink(atPath: symlinkURL.path)
+                    if destination == location.path {
+                        shouldCreateSymlink = false
+                    } else {
+                        print("Symlink points to wrong file: \(location.path) vs \(destination), removing symlink")
+                    }
+                } catch {
+                    print("Unable to resolve symlink \(symlinkURL.path), removing file")
+                    try FileManager.default.removeItem(at: symlinkURL)
+                }
+            }
+            if shouldCreateSymlink {
+                try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: location)
+            }
 
             if artworkFilename == nil {
                 artworkFilename = try await getArtworkFilename(item, artworkDirURL, &artworkDuration)
@@ -307,7 +339,7 @@ class Library {
                 id: persistentId, name: title, sortName: sortTitle, artistId: artistId, albumArtistId: albumArtistId,
                 albumId: albumId, genreId: genreId, year: item.year, duration: totalTime, start: startTime, finish: finishTime,
                 trackNumber: item.trackNumber, discNumber: item.album.discNumber, playCount: item.playCount, rating: rating,
-                ext: fileExt, file: normalizeUTF(filePath.subpath!), fileMd5: fileMD5!, artworkFilename: artworkFilename
+                ext: fileExt, fileMd5: fileMD5!, artworkFilename: artworkFilename
             ))
             trackIds.insert(persistentId)
 
@@ -390,8 +422,11 @@ class Library {
         try await client.query(insertExportFinished())
     }
 
-    private func cleanupArtwork(_ artworkDirURL: URL) throws {
-        existingArtwork.subtracting(seenArtworks).forEach {
+    private func removeOldFiles() throws {
+        oldMusicFiles.subtracting(newMusicFiles).forEach {
+            try? FileManager.default.removeItem(at: musicDirURL.appendingPathComponent($0))
+        }
+        oldArtworkFiles.subtracting(newArtworkFiles).forEach {
             try? FileManager.default.removeItem(at: artworkDirURL.appendingPathComponent($0))
         }
     }
@@ -417,8 +452,8 @@ class Library {
             if !FileManager().fileExists(atPath: fullPath.path) {
                 try imageData.write(to: fullPath)
             }
-            if !seenArtworks.contains(artworkFilename!) {
-                seenArtworks.insert(artworkFilename!)
+            if !newArtworkFiles.contains(artworkFilename!) {
+                newArtworkFiles.insert(artworkFilename!)
                 totalArtworkFileSize += try getFileSize(fullPath)
             }
             duration += Date().timeIntervalSince(start)
@@ -456,11 +491,7 @@ class Library {
         // there are two ways to represent multi-byte characters in utf-8:
         //   NFC (Normalization Form C): Composed form (single codepoints).
         //   NFD (Normalization Form D): Decomposed form (base characters + combining diacritics).
-        // on macos, the file system automatically normalizes filenames to NFD, but on linux, the
-        // filenames are used exactly as given. the values coming out of ITLibrary seem to be in
-        // NFC, but the files are NFD. on macos this isn't a problem, but if the files and database
-        // are synced to linux as is, the server won't be able to find the files. so we convert
-        // all string values to NFD to be safe (even if they aren't used in the filename).
+        // it doesn't seem to matter in the browser, but psql likes this more
         return str.precomposedStringWithCanonicalMapping
     }
 

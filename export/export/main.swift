@@ -30,12 +30,21 @@ if args.headless {
 
     let configFileURL = workspaceDirURL.appendingPathComponent(CONFIG_FILE_NAME)
     printToStderr("Config file: \(configFileURL)")
+
+    let music = Config.checkMusicPath(workspaceDirURL: workspaceDirURL, configFileURL: configFileURL)
+    if !music.success {
+        printToStderr("Error with music directory: \(music.errorMsg!)")
+        exit(1)
+    }
+
     let artwork = Config.checkArtworkPath(workspaceDirURL: workspaceDirURL, configFileURL: configFileURL)
     if !artwork.success {
         printToStderr("Error with artwork directory: \(artwork.errorMsg!)")
         exit(1)
     }
 
+    let musicDirURL = workspaceDirURL.appendingPathComponent(music.subpath!)
+    printToStderr("Music dir: \(musicDirURL)")
     let artworkDirURL = workspaceDirURL.appendingPathComponent(artwork.subpath!)
     printToStderr("Artwork dir: \(artworkDirURL)")
 
@@ -45,9 +54,8 @@ if args.headless {
         exit(1)
     }
 
-    let musicPath = try Config.getMusicPath(configFileURL: configFileURL)
     let pgConfig = try Config.getDatabaseConfig(configFileURL: configFileURL)
-    let library = Library(pgConfig: pgConfig!)
+    let library = Library(pgConfig: pgConfig!, musicDirURL: musicDirURL, artworkDirURL: artworkDirURL)
 
     let exportProgress = ExportProgressModel()
     let progressReporter = Task {
@@ -59,7 +67,7 @@ if args.headless {
         }
     }
 
-    let error = try await library.export(musicPath: musicPath, artworkDirURL: artworkDirURL, progress: exportProgress, fast: args.fast)
+    let error = try await library.export(progress: exportProgress, fast: args.fast)
     progressReporter.cancel()
     if error != nil {
         printToStderr("Failed to export: export failed with \(error!)")

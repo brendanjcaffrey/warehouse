@@ -8,3 +8,7 @@
 /artwork/*.png
 /export.log
 /export/warehouse-export.xcodeproj/project.xcworkspace/xcuserdata
+/music/*.mp3
+/music/*.m4a
+/music/*.mp4
+/music/*.wav

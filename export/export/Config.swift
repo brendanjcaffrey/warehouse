@@ -20,38 +20,43 @@ class Config {
         return localConfig["music_path"] as! String
     }
 
-    static func checkMusicPath(musicPath: String, trackLocation: URL) -> SubpathCheck {
-        let trackFileURL = trackLocation.standardizedFileURL
-        let musicDirURL = URL(fileURLWithPath: musicPath).standardizedFileURL
-
-        guard trackFileURL.path.hasPrefix(musicDirURL.path + "/") else {
-            return SubpathCheck(success: false, errorMsg: "track location \(trackLocation.relativeString) is not a subdirectory of music_path \(musicPath)")
-        }
-
-        let relativePath = trackFileURL.path.replacingOccurrences(of: musicDirURL.path, with: "")
-        return SubpathCheck(success: true, subpath: relativePath)
-    }
-
     static func getArtworkPath(configFileURL: URL) throws -> String {
         let localConfig = try readLocalConfig(configFileURL: configFileURL)
         return localConfig["artwork_path"] as! String
     }
 
-    static func checkArtworkPath(workspaceDirURL: URL, configFileURL: URL) -> SubpathCheck {
+    static func checkMusicPath(workspaceDirURL: URL, configFileURL: URL) -> SubpathCheck {
         do {
-            let artworkPath = try getArtworkPath(configFileURL: configFileURL)
-            let artworkURL = URL(fileURLWithPath: artworkPath).standardizedFileURL
-            let workspaceURL = workspaceDirURL.standardizedFileURL
-
-            guard artworkURL.path.hasPrefix(workspaceURL.path + "/") else {
-                return SubpathCheck(success: false, errorMsg: "artwork_path \(artworkPath) is not a subdirectory of workspace_dir \(workspaceDirURL.relativeString) ")
-            }
-
-            let relativePath = artworkURL.path.replacingOccurrences(of: workspaceURL.path + "/", with: "")
-            return SubpathCheck(success: true, subpath: relativePath)
+            let musicPath = try getMusicPath(configFileURL: configFileURL)
+            return checkPath(path: musicPath, workspaceDirURL: workspaceDirURL, pathType: "music_path")
         } catch {
             return SubpathCheck(success: false, errorMsg: error.localizedDescription)
         }
+    }
+
+    static func checkArtworkPath(workspaceDirURL: URL, configFileURL: URL) -> SubpathCheck {
+        do {
+            let artworkPath = try getArtworkPath(configFileURL: configFileURL)
+            return checkPath(path: artworkPath, workspaceDirURL: workspaceDirURL, pathType: "artwork_path")
+        } catch {
+            return SubpathCheck(success: false, errorMsg: error.localizedDescription)
+        }
+    }
+
+    static private func checkPath(path: String, workspaceDirURL: URL, pathType: String) -> SubpathCheck {
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        let workspaceURL = workspaceDirURL.standardizedFileURL
+
+        if !url.path.hasPrefix(workspaceURL.path + "/") {
+            return SubpathCheck(success: false, errorMsg: "\(pathType) \(path) is not a subdirectory of workspace_dir \(workspaceDirURL.relativeString) ")
+        }
+
+        if !FileManager.default.fileExists(atPath: url.path) {
+            return SubpathCheck(success: false, errorMsg: "\(pathType) \(path) does not exist")
+        }
+
+        let relativePath = url.path.replacingOccurrences(of: workspaceURL.path + "/", with: "")
+        return SubpathCheck(success: true, subpath: relativePath)
     }
 
     static func getDatabaseConfig(configFileURL: URL) throws -> PostgresClient.Configuration? {

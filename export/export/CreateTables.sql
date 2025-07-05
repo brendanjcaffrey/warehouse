@@ -29,7 +29,6 @@ CREATE TABLE tracks (
     play_count INTEGER NOT NULL,
     rating INTEGER NOT NULL,
     ext TEXT NOT NULL,
-    file TEXT NOT NULL,
     file_md5 CHAR(32) NOT NULL,
     artwork_filename CHAR(36)
 );

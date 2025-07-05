@@ -30,8 +30,12 @@ USERNAMES = %w[test123 notrack]
 module Config
   module_function
 
+  def set_remote(remote)
+    @remote = remote
+  end
+
   def remote?
-    false
+    @remote
   end
 
   def local
@@ -107,6 +111,7 @@ describe 'Warehouse Server' do
     `echo "fake mp3 contents" > spec/__test.mp3`
     `echo "fake jpg contents" > spec/__artwork.jpg`
     `echo "fake png contents" > spec/__artwork.png`
+    File.symlink(File.expand_path('spec/__test.mp3'), 'spec/06dbe92c2a5dab2f7911e20a9e157521.mp3')
     @database = Update::Database.new(TEST_CONFIG.database_username, TEST_CONFIG.database_password, TEST_CONFIG.database_name)
     @db = @database.db
 
@@ -126,6 +131,7 @@ describe 'Warehouse Server' do
 
   after :all do
     `rm spec/__test.mp3`
+    `rm spec/06dbe92c2a5dab2f7911e20a9e157521.mp3`
     `rm spec/__artwork.jpg`
     `rm spec/__artwork.png`
   end
@@ -134,6 +140,7 @@ describe 'Warehouse Server' do
     Server.set :environment, :test
     Server.set :raise_errors, true
     Server.set :show_exceptions, false
+    Config.set_remote(false)
 
     @tables.each do |table|
       @db.exec("DELETE FROM #{@db.escape_string(table)}")
@@ -143,13 +150,11 @@ describe 'Warehouse Server' do
     @genre_id = 100_000
     @artist_id = 200_000
     @album_id = 300_000
-
-    file_path = '__test.mp3'
     @db.exec_params('INSERT INTO genres (id, name) VALUES ($1,$2)', [@genre_id, 'test_genre'])
     @db.exec_params('INSERT INTO artists (id, name, sort_name) VALUES ($1,$2,$3)', [@artist_id, 'test_artist', ''])
     @db.exec_params('INSERT INTO albums (id, name, sort_name) VALUES ($1,$2,$3)', [@album_id, 'test_album', ''])
-    @db.exec_params('INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,ext,file,file_md5,artwork_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19);',
-                    [@track_id, 'test_title', '', @artist_id, nil, @album_id, @genre_id, 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, 'mp3', file_path, '06dbe92c2a5dab2f7911e20a9e157521', '__artwork.jpg'])
+    @db.exec_params('INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,ext,file_md5,artwork_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18);',
+                    [@track_id, 'test_title', '', @artist_id, nil, @album_id, @genre_id, 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, 'mp3', '06dbe92c2a5dab2f7911e20a9e157521', '__artwork.jpg'])
 
     @track_id2 = '5E3FA18D81E469D2'
   end
@@ -177,6 +182,13 @@ describe 'Warehouse Server' do
       get '/tracks/06dbe92c2a5dab2f7911e20a9e157521', {}, get_auth_header
       expect(last_response.body).to eq("fake mp3 contents\n")
     end
+
+    it 'should send a path to the file in remote mode' do
+      Config.set_remote(true)
+      get '/tracks/06dbe92c2a5dab2f7911e20a9e157521', {}, get_auth_header
+      expect(last_response.headers['Content-Type']).to eq('audio/mpeg')
+      expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/music/06dbe92c2a5dab2f7911e20a9e157521.mp3')
+    end
   end
 
   describe '/artwork/*' do
@@ -199,6 +211,13 @@ describe 'Warehouse Server' do
     it 'should send the contents of the file if it is in the database' do
       get '/artwork/__artwork.jpg', {}, get_auth_header
       expect(last_response.body).to eq("fake jpg contents\n")
+    end
+
+    it 'should send a path to the file in remote mode' do
+      Config.set_remote(true)
+      get '/artwork/__artwork.jpg', {}, get_auth_header
+      expect(last_response.headers['Content-Type']).to eq('image/jpeg')
+      expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/artwork/__artwork.jpg')
     end
   end
 

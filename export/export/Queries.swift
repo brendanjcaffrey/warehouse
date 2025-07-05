@@ -48,7 +48,7 @@ func insertAlbumsQuery(_ albums: [InsertAlbumQuery]) -> PostgresQuery {
     return insertSortNamesQuery(table: "albums", sortNames: albums)
 }
 
-let NUM_TRACK_VALUES = 19
+let NUM_TRACK_VALUES = 18
 struct InsertTrackQuery {
     var id: String
     var name: String
@@ -66,7 +66,6 @@ struct InsertTrackQuery {
     var playCount: Int
     var rating: Int
     var ext: String
-    var file: String
     var fileMd5: String
     var artworkFilename: Optional<String>
 }
@@ -92,12 +91,11 @@ func insertTracksQuery(_ tracks: [InsertTrackQuery]) -> PostgresQuery {
         binds.append(track.playCount)
         binds.append(track.rating)
         binds.append(track.ext)
-        binds.append(track.file)
         binds.append(track.fileMd5)
         binds.append(track.artworkFilename)
     }
 
-    let query = "INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,ext,file,file_md5,artwork_filename) VALUES \(values.joined(separator: ","));"
+    let query = "INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,ext,file_md5,artwork_filename) VALUES \(values.joined(separator: ","));"
     return PostgresQuery(unsafeSQL: query, binds: binds)
 }
 

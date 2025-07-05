@@ -53,7 +53,7 @@ SQL
 LIBRARY_METADATA_SQL = 'SELECT total_file_size FROM library_metadata;'
 EXPORT_FINISHED_SQL = 'SELECT finished_at FROM export_finished;'
 
-TRACK_INFO_SQL = 'SELECT file, ext FROM tracks WHERE file_md5=$1;'
+TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE file_md5=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
 TRACK_HAS_ARTWORK_SQL = 'SELECT EXISTS(SELECT 1 FROM tracks WHERE artwork_filename=$1);'
 
@@ -198,21 +198,6 @@ class Server < Sinatra::Base
     count.positive?
   end
 
-  def send_track_if_exists(db, music_path, track_file_id)
-    file, ext = db.exec_params(TRACK_INFO_SQL, [track_file_id]).values.first
-    if file.nil? || !AUDIO_MIME_TYPES.key?(ext)
-      false
-    else
-      if Config.remote?
-        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{file}")
-        headers['Content-Type'] = AUDIO_MIME_TYPES[ext]
-      else
-        send_file(File.join(music_path, file), type: ext)
-      end
-      true
-    end
-  end
-
   get '/' do
     send_file File.join(settings.public_folder, 'index.html')
   end
@@ -220,8 +205,23 @@ class Server < Sinatra::Base
   get '/tracks/*' do
     if !authed?
       redirect to('/')
-    elsif !send_track_if_exists(db, Config.env.music_path, params['splat'][0])
-      raise Sinatra::NotFound
+    else
+      file = params['splat'][0]
+      row = db.exec_params(TRACK_EXT_SQL, [file]).values.first
+      raise Sinatra::NotFound if row.nil? || !AUDIO_MIME_TYPES.key?(row.first)
+
+      ext = row.first
+      filename = "#{file}.#{ext}"
+      full_path = File.expand_path(File.join(Config.env.music_path, filename))
+      raise Sinatra::NotFound unless File.exist?(full_path)
+
+      if Config.remote?
+        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{filename}")
+        headers['Content-Type'] = AUDIO_MIME_TYPES[ext]
+      else
+        send_file(full_path, type: ext)
+      end
+
     end
   end
 

@@ -42,6 +42,19 @@ struct ExportApp: App {
     }
 
     @discardableResult
+    func checkMusicDir() -> SubpathCheck? {
+        guard let workspaceDirURL = workspaceDirURL else { return nil }
+        guard let configFileURL = getConfigFileURL() else { return nil }
+        let music = Config.checkMusicPath(workspaceDirURL: workspaceDirURL, configFileURL: configFileURL)
+        if music.success {
+            return music
+        } else {
+            exportError = music.errorMsg
+            return nil
+        }
+    }
+
+    @discardableResult
     func checkArtworkDir() -> SubpathCheck? {
         guard let workspaceDirURL = workspaceDirURL else { return nil }
         guard let configFileURL = getConfigFileURL() else { return nil }
@@ -63,21 +76,23 @@ struct ExportApp: App {
     func exportLibrary() async {
         exportError = nil
         exportMsg = nil
-        exportRunning = true
 
         if !validateConfig() { return }
 
+        let music = checkMusicDir()
+        guard let music = music, music.success else { return }
         let artwork = checkArtworkDir()
         guard let artwork = artwork, artwork.success else { return }
 
+        exportRunning = true
         let configFileURL = getConfigFileURL()!
-        let musicPath = try! Config.getMusicPath(configFileURL: configFileURL)
+        let musicDirURL = workspaceDirURL!.appending(path: music.subpath!)
         let artworkDirURL = workspaceDirURL!.appending(path: artwork.subpath!)
 
         let databaseConfig = try! Config.getDatabaseConfig(configFileURL: configFileURL)
-        let library = Library(pgConfig: databaseConfig!)
+        let library = Library(pgConfig: databaseConfig!, musicDirURL: musicDirURL, artworkDirURL: artworkDirURL)
         do {
-            let error = try await library.export(musicPath: musicPath, artworkDirURL: artworkDirURL, progress: exportProgress, fast: fastExport)
+            let error = try await library.export(progress: exportProgress, fast: fastExport)
             exportError = error
             if exportError == nil {
                 exportMsg = exportProgress.status.toString()

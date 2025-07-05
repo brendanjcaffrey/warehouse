@@ -1,6 +1,6 @@
 local:
-  music_path: /Users/you/Music/iTunes/iTunes Music
-  artwork_path: /Users/you/Development/warehouse/artwork/
+  music_path: /Users/you/warehouse/music/
+  artwork_path: /Users/you/warehouse/artwork/
   database_username: user
   database_password:
   database_name: warehouse
