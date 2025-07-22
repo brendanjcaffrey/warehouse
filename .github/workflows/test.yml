@@ -37,6 +37,8 @@ jobs:
         bundle install --jobs 4 --retry 3
 
     - uses: arduino/setup-protoc@v2
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: npm ci
       run: cd web && npm ci
