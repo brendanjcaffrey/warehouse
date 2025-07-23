@@ -291,7 +291,7 @@ class Library {
             let finishTime = item.stopTime == 0 ? totalTime : Double(item.stopTime) / 1000.0
             let rating = item.rating == 1 || item.isRatingComputed ? 0 : item.rating
 
-            let fileExt = location.pathExtension
+            let fileExt = location.pathExtension.lowercased()
             var fileMD5: String?
             var artworkFilename: String?
             if fast, let existingMD5 = self.existingMD5s[persistentId] {
