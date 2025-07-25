@@ -14,3 +14,4 @@
 /music/*.wav
 /changes/tracks/*.json
 /changes/playlists/*.json
+/changes/updated_track_ids.json
