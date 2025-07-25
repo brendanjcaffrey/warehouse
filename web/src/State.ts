@@ -11,6 +11,7 @@ export const showTrackFnAtom = atom({ fn: (_: PlaylistEntry) => {} }); // eslint
 
 export const selectedPlaylistIdAtom = atom("");
 export const searchAtom = atom("");
+export const anyDownloadErrorsAtom = atom(false);
 export const typeToShowInProgressAtom = atom(false);
 
 export const stoppedAtom = atom(true);
@@ -27,6 +28,7 @@ export async function resetAllState() {
 
   store.set(selectedPlaylistIdAtom, "");
   store.set(searchAtom, "");
+  store.set(anyDownloadErrorsAtom, false);
 
   store.set(stoppedAtom, true);
   store.set(playingAtom, false);

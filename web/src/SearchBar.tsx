@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import {
   useTheme,
   useMediaQuery,
@@ -10,10 +10,11 @@ import {
   InputAdornment,
   Tooltip,
   IconButton,
+  Badge,
 } from "@mui/material";
 import { SettingsRounded, DownloadRounded } from "@mui/icons-material";
 import { SearchRounded } from "@mui/icons-material";
-import { searchAtom } from "./State";
+import { anyDownloadErrorsAtom, searchAtom } from "./State";
 import DownloadsPanel from "./DownloadsPanel";
 import SettingsPanel from "./SettingsPanel";
 
@@ -32,6 +33,9 @@ function SearchBar() {
   const handleClosePopover = () => {
     setPopoverAnchorEl(null);
   };
+
+  const haveSearchTerm = search.length > 0;
+  const anyDownloadErrors = useAtomValue(anyDownloadErrorsAtom);
 
   const [showDownloads, setShowDownloads] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -78,7 +82,9 @@ function SearchBar() {
       {isSmallScreen ? (
         <>
           <IconButton onClick={handleOpenPopover}>
-            <SearchRounded />
+            <Badge color="secondary" variant="dot" invisible={!haveSearchTerm}>
+              <SearchRounded />
+            </Badge>
           </IconButton>
           <Popover
             open={popoverOpen}
@@ -97,7 +103,9 @@ function SearchBar() {
       )}
       <Tooltip title="Download Status">
         <IconButton size="large" onClick={toggleShowDownloads} edge="start">
-          <DownloadRounded fontSize="inherit" />
+          <Badge color="error" variant="dot" invisible={!anyDownloadErrors}>
+            <DownloadRounded fontSize="inherit" />
+          </Badge>
         </IconButton>
       </Tooltip>
       <Tooltip title="Settings">

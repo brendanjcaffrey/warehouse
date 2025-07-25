@@ -8,6 +8,7 @@ import {
   FileType,
   DownloadStatus,
 } from "./WorkerTypes";
+import { store, anyDownloadErrorsAtom } from "./State";
 
 const DEFAULT_MAX_SIZE = 100;
 
@@ -69,6 +70,11 @@ export class DownloadsStore {
     if (this.downloads.length > this.maxSize) {
       this.downloads.pop();
     }
+
+    store.set(
+      anyDownloadErrorsAtom,
+      this.downloads.some((d) => d.status === DownloadStatus.ERROR)
+    );
   }
 
   getAll(): Download[] {
