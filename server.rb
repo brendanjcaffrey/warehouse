@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'connection_pool'
 require 'pg'
 require 'rack/utils'
 require 'sinatra/base'
@@ -131,8 +132,20 @@ def convert_cols_to_ints(rows, indices)
 end
 
 def timestamp_to_ns(time_str)
-  time = Time.strptime(time_str, '%Y-%m-%d %H:%M:%S.%N')
+  time = Time.strptime("#{time_str} UTC", '%Y-%m-%d %H:%M:%S.%N %Z')
   time.to_i * 1_000_000_000 + time.nsec
+end
+
+DB_POOL = ConnectionPool.new(size: 5, timeout: 5) do
+  PG.connect(
+    dbname: Config.env.database_name,
+    user: Config.env.database_username,
+    password: Config.env.database_password,
+    host: Config.env.database_host,
+    port: Config.env.database_port
+  ).tap do |conn|
+    conn.exec("SET TIME ZONE 'UTC'")
+  end
 end
 
 class Server < Sinatra::Base
@@ -155,16 +168,6 @@ class Server < Sinatra::Base
   else
     set :environment, :development
     set :port, Config.env.port
-  end
-
-  def db
-    db_connection_options = { user: Config.env.database_username, dbname: Config.env.database_name }
-    if ENV['CI']
-      db_connection_options[:host] = 'localhost'
-      db_connection_options[:password] = 'ci'
-    end
-
-    @db ||= PG.connect(db_connection_options)
   end
 
   def get_validated_username(allow_export_user: false)
@@ -193,9 +196,27 @@ class Server < Sinatra::Base
   end
 
   def track_exists?(track_id)
-    result = db.exec_params(TRACK_EXISTS_SQL, [track_id])
-    count = result.num_tuples.positive? ? result.getvalue(0, 0).to_i : 0
+    rows = query(TRACK_EXISTS_SQL, [track_id])
+    count = rows.empty? ? 0 : rows[0]['count'].to_i
     count.positive?
+  end
+
+  helpers do
+    def query(sql, params = [])
+      result = nil
+      DB_POOL.with do |conn|
+        result = conn.exec_params(sql, params)
+      end
+      result.to_a
+    end
+
+    def update_query(sql, params = [])
+      result = nil
+      DB_POOL.with do |conn|
+        result = conn.exec_params(sql, params)
+      end
+      result.cmd_tuples
+    end
   end
 
   get '/' do
@@ -207,10 +228,10 @@ class Server < Sinatra::Base
       redirect to('/')
     else
       file = params['splat'][0]
-      row = db.exec_params(TRACK_EXT_SQL, [file]).values.first
-      raise Sinatra::NotFound if row.nil? || !AUDIO_MIME_TYPES.key?(row.first)
+      rows = query(TRACK_EXT_SQL, [file])
+      raise Sinatra::NotFound if rows.empty? || !AUDIO_MIME_TYPES.key?(rows[0]['ext'])
 
-      ext = row.first
+      ext = rows[0]['ext']
       filename = "#{file}.#{ext}"
       full_path = File.expand_path(File.join(Config.env.music_path, filename))
       raise Sinatra::NotFound unless File.exist?(full_path)
@@ -231,7 +252,8 @@ class Server < Sinatra::Base
     else
       file = params['splat'][0]
       full_path = File.expand_path(File.join(Config.env.artwork_path, file))
-      valid_artwork = db.exec_params(TRACK_HAS_ARTWORK_SQL, [file]).values.first.first == 't'
+      rows = query(TRACK_HAS_ARTWORK_SQL, [file])
+      valid_artwork = !rows.empty? && rows[0]['exists'] == 't'
       raise Sinatra::NotFound unless valid_artwork && File.exist?(full_path)
 
       if Config.remote?
@@ -273,7 +295,9 @@ class Server < Sinatra::Base
     get '/version' do
       username = get_validated_username
       if !username.nil?
-        update_time_str = db.exec(EXPORT_FINISHED_SQL).getvalue(0, 0)
+        rows = query(EXPORT_FINISHED_SQL)
+        halt 500, 'export did not finish!' if rows.empty?
+        update_time_str = query(EXPORT_FINISHED_SQL)[0]['finished_at']
         proto(VersionResponse.new(updateTimeNs: timestamp_to_ns(update_time_str)))
       else
         proto(VersionResponse.new(error: NOT_AUTHED_ERROR))
@@ -284,53 +308,56 @@ class Server < Sinatra::Base
       username = get_validated_username
       if !username.nil?
         library = Library.new(trackUserChanges: Config.track_user_changes?(username))
-        library_playlist_ids = db.exec(LIBRARY_PLAYLIST_IDS_SQL).values.to_a.flatten
+        library_playlist_ids = query(LIBRARY_PLAYLIST_IDS_SQL).map(&:values).flatten
 
-        db.exec(GENRE_SQL).values.each do |genre|
-          library.genres[genre[0].to_i] = Name.new(name: genre[1])
+        query(GENRE_SQL).each do |genre|
+          library.genres[genre['id'].to_i] = Name.new(name: genre['name'])
         end
 
-        db.exec(ARTIST_SQL).values.each do |artist|
-          library.artists[artist[0].to_i] = SortName.new(name: artist[1], sortName: artist[2])
+        query(ARTIST_SQL).each do |artist|
+          library.artists[artist['id'].to_i] = SortName.new(name: artist['name'], sortName: artist['sort_name'])
         end
 
-        db.exec(ALBUM_SQL).values.each do |album|
-          library.albums[album[0].to_i] = SortName.new(name: album[1], sortName: album[2])
+        query(ALBUM_SQL).each do |album|
+          library.albums[album['id'].to_i] = SortName.new(name: album['name'], sortName: album['sort_name'])
         end
 
-        db.exec(TRACK_SQL).values.each do |track|
-          library.tracks << Track.new(id: track[0],
-                                      name: track[1],
-                                      sortName: track[2],
-                                      artistId: track[3].to_i,
-                                      albumArtistId: track[4].to_i,
-                                      albumId: track[5].to_i,
-                                      genreId: track[6].to_i,
-                                      year: track[7].to_i,
-                                      duration: track[8].to_f,
-                                      start: track[9].to_f,
-                                      finish: track[10].to_f,
-                                      trackNumber: track[11].to_i,
-                                      discNumber: track[12].to_i,
-                                      playCount: track[13].to_i,
-                                      rating: track[14].to_i,
-                                      ext: track[15],
-                                      fileMd5: track[16].strip,
-                                      artworkFilename: track[17],
-                                      playlistIds: (track[18] || '').split(',').concat(library_playlist_ids))
+        query(TRACK_SQL).each do |track|
+          library.tracks << Track.new(id: track['id'],
+                                      name: track['name'],
+                                      sortName: track['sort_name'],
+                                      artistId: track['artist_id'].to_i,
+                                      albumArtistId: track['album_artist_id'].to_i,
+                                      albumId: track['album_id'].to_i,
+                                      genreId: track['genre_id'].to_i,
+                                      year: track['year'].to_i,
+                                      duration: track['duration'].to_f,
+                                      start: track['start'].to_f,
+                                      finish: track['finish'].to_f,
+                                      trackNumber: track['track_number'].to_i,
+                                      discNumber: track['disc_number'].to_i,
+                                      playCount: track['play_count'].to_i,
+                                      rating: track['rating'].to_i,
+                                      ext: track['ext'],
+                                      fileMd5: track['file_md5'].strip,
+                                      artworkFilename: track['artwork_filename'],
+                                      playlistIds: (track['playlist_ids'] || '').split(',').concat(library_playlist_ids))
         end
 
-        db.exec(PLAYLIST_SQL).values.each do |playlist|
-          library.playlists << Playlist.new(id: playlist[0],
-                                            name: playlist[1],
-                                            parentId: playlist[2],
-                                            isLibrary: playlist[3] == '1',
-                                            trackIds: (playlist[4] || '').split(','))
+        query(PLAYLIST_SQL).each do |playlist|
+          library.playlists << Playlist.new(id: playlist['id'],
+                                            name: playlist['name'],
+                                            parentId: playlist['parent_id'],
+                                            isLibrary: playlist['is_library'] == '1',
+                                            trackIds: (playlist['track_ids'] || '').split(','))
         end
 
-        library.totalFileSize = db.exec(LIBRARY_METADATA_SQL).getvalue(0, 0).to_i
-        library.updateTimeNs = timestamp_to_ns(db.exec(EXPORT_FINISHED_SQL).getvalue(0, 0))
+        metadata_rows = query(LIBRARY_METADATA_SQL)
+        export_finished_rows = query(EXPORT_FINISHED_SQL)
+        halt 500, 'export did not finish!' if metadata_rows.empty? || export_finished_rows.empty?
 
+        library.totalFileSize = metadata_rows[0]['total_file_size'].to_i
+        library.updateTimeNs = timestamp_to_ns(export_finished_rows[0]['finished_at'])
         proto(LibraryResponse.new(library: library))
       else
         proto(LibraryResponse.new(error: NOT_AUTHED_ERROR))
@@ -340,38 +367,38 @@ class Server < Sinatra::Base
     get '/updates' do
       if authed?(allow_export_user: true)
         updates = Updates.new
-        db.exec(Update::Database::GET_PLAYS_SQL).values.each do |play|
-          updates.plays << IncrementUpdate.new(trackId: play[0])
+        query(Update::Database::GET_PLAYS_SQL).each do |play|
+          updates.plays << IncrementUpdate.new(trackId: play['track_id'])
         end
-        db.exec(Update::Database::GET_RATING_UPDATES_SQL).values.each do |rating|
-          updates.ratings << IntUpdate.new(trackId: rating[0], value: rating[1].to_i)
+        query(Update::Database::GET_RATING_UPDATES_SQL).each do |rating|
+          updates.ratings << IntUpdate.new(trackId: rating['track_id'], value: rating['rating'].to_i)
         end
-        db.exec(Update::Database::GET_NAME_UPDATES_SQL).values.each do |name|
-          updates.names << StringUpdate.new(trackId: name[0], value: name[1])
+        query(Update::Database::GET_NAME_UPDATES_SQL).each do |name|
+          updates.names << StringUpdate.new(trackId: name['track_id'], value: name['name'])
         end
-        db.exec(Update::Database::GET_ARTIST_UPDATES_SQL).values.each do |artist|
-          updates.artists << StringUpdate.new(trackId: artist[0], value: artist[1])
+        query(Update::Database::GET_ARTIST_UPDATES_SQL).each do |artist|
+          updates.artists << StringUpdate.new(trackId: artist['track_id'], value: artist['artist'])
         end
-        db.exec(Update::Database::GET_ALBUM_UPDATES_SQL).values.each do |album|
-          updates.albums << StringUpdate.new(trackId: album[0], value: album[1])
+        query(Update::Database::GET_ALBUM_UPDATES_SQL).each do |album|
+          updates.albums << StringUpdate.new(trackId: album['track_id'], value: album['album'])
         end
-        db.exec(Update::Database::GET_ALBUM_ARTIST_UPDATES_SQL).values.each do |album_artist|
-          updates.albumArtists << StringUpdate.new(trackId: album_artist[0], value: album_artist[1])
+        query(Update::Database::GET_ALBUM_ARTIST_UPDATES_SQL).each do |album_artist|
+          updates.albumArtists << StringUpdate.new(trackId: album_artist['track_id'], value: album_artist['album_artist'])
         end
-        db.exec(Update::Database::GET_GENRE_UPDATES_SQL).values.each do |genre|
-          updates.genres << StringUpdate.new(trackId: genre[0], value: genre[1])
+        query(Update::Database::GET_GENRE_UPDATES_SQL).each do |genre|
+          updates.genres << StringUpdate.new(trackId: genre['track_id'], value: genre['genre'])
         end
-        db.exec(Update::Database::GET_YEAR_UPDATES_SQL).values.each do |year|
-          updates.years << IntUpdate.new(trackId: year[0], value: year[1].to_i)
+        query(Update::Database::GET_YEAR_UPDATES_SQL).each do |year|
+          updates.years << IntUpdate.new(trackId: year['track_id'], value: year['year'].to_i)
         end
-        db.exec(Update::Database::GET_START_UPDATES_SQL).values.each do |start|
-          updates.starts << FloatUpdate.new(trackId: start[0], value: start[1].to_f)
+        query(Update::Database::GET_START_UPDATES_SQL).each do |start|
+          updates.starts << FloatUpdate.new(trackId: start['track_id'], value: start['start'].to_f)
         end
-        db.exec(Update::Database::GET_FINISH_UPDATES_SQL).values.each do |finish|
-          updates.finishes << FloatUpdate.new(trackId: finish[0], value: finish[1].to_f)
+        query(Update::Database::GET_FINISH_UPDATES_SQL).each do |finish|
+          updates.finishes << FloatUpdate.new(trackId: finish['track_id'], value: finish['finish'].to_f)
         end
-        db.exec(Update::Database::GET_ARTWORK_UPDATES_SQL).values.each do |artwork|
-          updates.artworks << StringUpdate.new(trackId: artwork[0], value: artwork[1])
+        query(Update::Database::GET_ARTWORK_UPDATES_SQL).each do |artwork|
+          updates.artworks << StringUpdate.new(trackId: artwork['track_id'], value: artwork['artwork_filename'])
         end
         proto(UpdatesResponse.new(updates: updates))
       else
@@ -388,17 +415,19 @@ class Server < Sinatra::Base
       elsif !track_exists?(track_id)
         proto(OperationResponse.new(success: false, error: INVALID_TRACK_ERROR))
       else
-        block.call
+        DB_POOL.with do |conn|
+          block.call(conn)
+        end
         proto(OperationResponse.new(success: true))
       end
     end
 
     post '/play/*' do
       id = params['splat'][0]
-      perform_updates_if_should_track_changes(id) do
-        db.exec_params(CREATE_PLAY_SQL, [id])
-        db.exec_params(INCREMENT_PLAY_SQL, [id])
-        db.exec(UPDATE_EXPORT_FINISHED_SQL)
+      perform_updates_if_should_track_changes(id) do |conn|
+        conn.exec_params(CREATE_PLAY_SQL, [id])
+        conn.exec_params(INCREMENT_PLAY_SQL, [id])
+        conn.exec(UPDATE_EXPORT_FINISHED_SQL)
       end
     end
 
@@ -413,11 +442,11 @@ class Server < Sinatra::Base
       if rating.negative? || rating > 100
         proto(OperationResponse.new(success: false, error: INVALID_RATING_ERROR))
       else
-        perform_updates_if_should_track_changes(id) do
-          db.exec_params(DELETE_RATING_UPDATE_SQL, [id])
-          db.exec_params(CREATE_RATING_UPDATE_SQL, [id, rating])
-          db.exec_params(UPDATE_RATING_SQL, [rating, id])
-          db.exec(UPDATE_EXPORT_FINISHED_SQL)
+        perform_updates_if_should_track_changes(id) do |conn|
+          conn.exec_params(DELETE_RATING_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_RATING_UPDATE_SQL, [id, rating])
+          conn.exec_params(UPDATE_RATING_SQL, [rating, id])
+          conn.exec(UPDATE_EXPORT_FINISHED_SQL)
         end
       end
     end
@@ -442,77 +471,77 @@ class Server < Sinatra::Base
 
       return proto(OperationResponse.new(success: false, error: MISSING_FILE_ERROR)) if params.key?('artwork') && params['artwork'] != '' && !File.exist?(File.join(Config.env.artwork_path, params['artwork']))
 
-      perform_updates_if_should_track_changes(id) do
+      perform_updates_if_should_track_changes(id) do |conn|
         if (name = params['name'])
-          db.exec_params(DELETE_NAME_UPDATE_SQL, [id])
-          db.exec_params(CREATE_NAME_UPDATE_SQL, [id, name])
-          db.exec_params(UPDATE_NAME_SQL, [name, id])
+          conn.exec_params(DELETE_NAME_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_NAME_UPDATE_SQL, [id, name])
+          conn.exec_params(UPDATE_NAME_SQL, [name, id])
         end
         if (year = params['year'])
-          db.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
-          db.exec_params(CREATE_YEAR_UPDATE_SQL, [id, year])
-          db.exec_params(UPDATE_YEAR_SQL, [year, id])
+          conn.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_YEAR_UPDATE_SQL, [id, year])
+          conn.exec_params(UPDATE_YEAR_SQL, [year, id])
         end
         if (start = params['start'])
-          db.exec_params(DELETE_START_UPDATE_SQL, [id])
-          db.exec_params(CREATE_START_UPDATE_SQL, [id, start])
-          db.exec_params(UPDATE_START_SQL, [start, id])
+          conn.exec_params(DELETE_START_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_START_UPDATE_SQL, [id, start])
+          conn.exec_params(UPDATE_START_SQL, [start, id])
         end
         if (finish = params['finish'])
-          db.exec_params(DELETE_FINISH_UPDATE_SQL, [id])
-          db.exec_params(CREATE_FINISH_UPDATE_SQL, [id, finish])
-          db.exec_params(UPDATE_FINISH_SQL, [finish, id])
+          conn.exec_params(DELETE_FINISH_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_FINISH_UPDATE_SQL, [id, finish])
+          conn.exec_params(UPDATE_FINISH_SQL, [finish, id])
         end
         if (artist = params['artist'])
-          db.exec_params(DELETE_ARTIST_UPDATE_SQL, [id])
-          db.exec_params(CREATE_ARTIST_UPDATE_SQL, [id, artist])
-          result = db.exec_params(ARTIST_ID_SQL, [artist])
+          conn.exec_params(DELETE_ARTIST_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_ARTIST_UPDATE_SQL, [id, artist])
+          result = conn.exec_params(ARTIST_ID_SQL, [artist])
           artist_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-          artist_id ||= db.exec_params(CREATE_ARTIST_SQL, [artist]).getvalue(0, 0)
-          db.exec_params(UPDATE_ARTIST_SQL, [artist_id.to_i, id])
+          artist_id ||= conn.exec_params(CREATE_ARTIST_SQL, [artist]).getvalue(0, 0)
+          conn.exec_params(UPDATE_ARTIST_SQL, [artist_id.to_i, id])
         end
         if (genre = params['genre'])
-          db.exec_params(DELETE_GENRE_UPDATE_SQL, [id])
-          db.exec_params(CREATE_GENRE_UPDATE_SQL, [id, genre])
+          conn.exec_params(DELETE_GENRE_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_GENRE_UPDATE_SQL, [id, genre])
 
-          result = db.exec_params(GENRE_ID_SQL, [genre])
+          result = conn.exec_params(GENRE_ID_SQL, [genre])
           genre_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-          genre_id ||= db.exec_params(CREATE_GENRE_SQL, [genre]).getvalue(0, 0)
-          db.exec_params(UPDATE_GENRE_SQL, [genre_id.to_i, id])
+          genre_id ||= conn.exec_params(CREATE_GENRE_SQL, [genre]).getvalue(0, 0)
+          conn.exec_params(UPDATE_GENRE_SQL, [genre_id.to_i, id])
         end
         if (album_artist = params['album_artist'])
-          db.exec_params(DELETE_ALBUM_ARTIST_UPDATE_SQL, [id])
-          db.exec_params(CREATE_ALBUM_ARTIST_UPDATE_SQL, [id, album_artist])
+          conn.exec_params(DELETE_ALBUM_ARTIST_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_ALBUM_ARTIST_UPDATE_SQL, [id, album_artist])
           if album_artist.empty?
             album_artist_id = nil
           else
-            result = db.exec_params(ARTIST_ID_SQL, [album_artist])
+            result = conn.exec_params(ARTIST_ID_SQL, [album_artist])
             album_artist_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-            album_artist_id ||= db.exec_params(CREATE_ARTIST_SQL, [album_artist]).getvalue(0, 0)
+            album_artist_id ||= conn.exec_params(CREATE_ARTIST_SQL, [album_artist]).getvalue(0, 0)
             album_artist_id = album_artist_id.to_i
           end
-          db.exec_params(UPDATE_ALBUM_ARTIST_SQL, [album_artist_id, id])
+          conn.exec_params(UPDATE_ALBUM_ARTIST_SQL, [album_artist_id, id])
         end
         if (album = params['album'])
-          db.exec_params(DELETE_ALBUM_UPDATE_SQL, [id])
-          db.exec_params(CREATE_ALBUM_UPDATE_SQL, [id, album])
+          conn.exec_params(DELETE_ALBUM_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_ALBUM_UPDATE_SQL, [id, album])
           if album.empty?
             album_id = nil
           else
-            result = db.exec_params(ALBUM_ID_SQL, [album])
+            result = conn.exec_params(ALBUM_ID_SQL, [album])
             album_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-            album_id ||= db.exec_params(CREATE_ALBUM_SQL, [album]).getvalue(0, 0)
+            album_id ||= conn.exec_params(CREATE_ALBUM_SQL, [album]).getvalue(0, 0)
             album_id = album_id.to_i
           end
-          db.exec_params(UPDATE_ALBUM_SQL, [album_id, id])
+          conn.exec_params(UPDATE_ALBUM_SQL, [album_id, id])
         end
         if (artwork = params['artwork'])
           artwork = nil if artwork == ''
-          db.exec_params(DELETE_ARTWORK_UPDATE_SQL, [id])
-          db.exec_params(CREATE_ARTWORK_UPDATE_SQL, [id, artwork])
-          db.exec_params(UPDATE_ARTWORK_SQL, [artwork, id])
+          conn.exec_params(DELETE_ARTWORK_UPDATE_SQL, [id])
+          conn.exec_params(CREATE_ARTWORK_UPDATE_SQL, [id, artwork])
+          conn.exec_params(UPDATE_ARTWORK_SQL, [artwork, id])
         end
-        db.exec(UPDATE_EXPORT_FINISHED_SQL)
+        conn.exec(UPDATE_EXPORT_FINISHED_SQL)
       end
     end
 

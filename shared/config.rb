@@ -1,7 +1,7 @@
 require 'yaml'
 
-LocalConfig = Struct.new(:music_path, :artwork_path, :database_username, :database_password, :database_name, :update_library, :secret, :port, keyword_init: true)
-RemoteConfig = Struct.new(:base_url, :music_path, :artwork_path, :database_username, :database_password, :database_name, :update_library, :secret, :socket_path, keyword_init: true)
+LocalConfig = Struct.new(:music_path, :artwork_path, :database_host, :database_port, :database_username, :database_password, :database_name, :update_library, :secret, :port, keyword_init: true)
+RemoteConfig = Struct.new(:base_url, :music_path, :artwork_path, :database_host, :database_port, :database_username, :database_password, :database_name, :update_library, :secret, :socket_path, keyword_init: true)
 UserConfig = Struct.new(:username, :password, :track_updates)
 
 module Config

@@ -1,6 +1,7 @@
 source 'https://rubygems.org'
 
 gem 'algorithms'
+gem 'connection_pool'
 gem 'google-protobuf'
 gem 'jwt'
 gem 'pg'
