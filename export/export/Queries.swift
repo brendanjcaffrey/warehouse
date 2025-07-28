@@ -1,8 +1,19 @@
+import Foundation
 import PostgresNIO
 
 let GET_TABLES_SQL = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';"
-let DROP_TABLE_SQL = "DROP TABLE IF EXISTS \"%@\";"
+let DROP_TABLE_SQL = "DROP TABLE IF EXISTS \"%@\" CASCADE;"
 let GET_TRACK_MD5S_SQL = "SELECT id,file_md5,artwork_filename FROM tracks;"
+
+func loadQueriesFromFile(_ name: String) throws -> [String] {
+    guard let url = Bundle.main.url(forResource: name, withExtension: "sql") else {
+        throw NSError(domain: "SQLLoader", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not find SQL file in bundle."])
+    }
+    return try String(contentsOf: url)
+            .components(separatedBy: ";")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+}
 
 let NUM_GENRE_VALUES = 2
 struct InsertGenreQuery {
@@ -142,3 +153,4 @@ func insertLibraryMetadata(totalFileSize: Int64) -> PostgresQuery {
 func insertExportFinished() -> PostgresQuery {
     return PostgresQuery(stringLiteral: "INSERT INTO export_finished (finished_at) VALUES (current_timestamp)")
 }
+

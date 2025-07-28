@@ -1,0 +1,5 @@
+REFRESH MATERIALIZED VIEW track_name_search_view;
+REFRESH MATERIALIZED VIEW artist_name_search_view;
+REFRESH MATERIALIZED VIEW album_name_search_view;
+REFRESH MATERIALIZED VIEW genre_name_search_view;
+REFRESH MATERIALIZED VIEW playlist_name_search_view;

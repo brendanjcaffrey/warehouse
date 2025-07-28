@@ -91,3 +91,42 @@ CREATE TABLE library_metadata (
 CREATE TABLE export_finished (
     finished_at TIMESTAMP NOT NULL
 );
+
+CREATE INDEX idx_tracks_file_md5 ON tracks (file_md5);
+CREATE INDEX idx_tracks_artwork_filename ON tracks (artwork_filename);
+
+CREATE MATERIALIZED VIEW track_name_search_view AS
+SELECT
+  tracks.id AS track_id,
+  tracks.name AS track_name,
+  to_tsvector('english', tracks.name) AS search_vector
+FROM tracks;
+CREATE INDEX idx_track_name_search_view ON track_name_search_view USING GIN (search_vector);
+CREATE MATERIALIZED VIEW artist_name_search_view AS
+SELECT
+  artists.id AS artist_id,
+  artists.name AS artist_name,
+  to_tsvector('english', artists.name) AS search_vector
+FROM artists;
+CREATE INDEX idx_artist_name_search_view ON artist_name_search_view USING GIN (search_vector);
+CREATE MATERIALIZED VIEW album_name_search_view AS
+SELECT
+  albums.id AS album_id,
+  albums.name AS album_name,
+  to_tsvector('english', albums.name) AS search_vector
+FROM albums;
+CREATE INDEX idx_album_name_search_view ON album_name_search_view USING GIN (search_vector);
+CREATE MATERIALIZED VIEW genre_name_search_view AS
+SELECT
+  genres.id AS genre_id,
+  genres.name AS genre_name,
+  to_tsvector('english', genres.name) AS search_vector
+FROM genres;
+CREATE INDEX idx_genre_name_search_view ON genre_name_search_view USING GIN (search_vector);
+CREATE MATERIALIZED VIEW playlist_name_search_view AS
+SELECT
+  playlists.id AS playlist_id,
+  playlists.name AS playlist_name,
+  to_tsvector('english', playlists.name) AS search_vector
+FROM playlists;
+CREATE INDEX idx_playlist_name_search_view ON playlist_name_search_view USING GIN (search_vector);

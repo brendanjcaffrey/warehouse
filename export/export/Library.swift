@@ -24,6 +24,7 @@ struct ExportProgress {
     var playlistTrackQueryTime: Double = 0.0
     var artworkTime: Double = 0.0
     var trackMd5Time: Double = 0.0
+    var materialViewTime: Double = 0.0
     var totalTime: Double = 0.0
 
     func toString() -> String {
@@ -38,6 +39,7 @@ struct ExportProgress {
         appendTime(&msg, "inserting playlist tracks", playlistTrackQueryTime, totalTime)
         appendTime(&msg, "artwork file md5", artworkTime, totalTime)
         appendTime(&msg, "track file md5", trackMd5Time, totalTime)
+        appendTime(&msg, "updating material views", materialViewTime, totalTime)
         return msg
     }
 
@@ -127,7 +129,7 @@ class Library {
                 try await self.exportAlbums(lib, client, progress)
                 try await self.exportTracks(lib, client, progress, fast)
                 try await self.exportPlaylists(lib, client, progress)
-                try await self.finishExport(client)
+                try await self.finishExport(client, progress)
                 if !fast { try self.removeOldFiles() }
                 await MainActor.run { progress.status.totalTime = Date().timeIntervalSince(start) }
                 return nil
@@ -159,8 +161,8 @@ class Library {
 
     private func dropTables(_ client: PostgresClient, _ progress: ExportProgressModel) async throws {
         let now = Date()
-        let result = try await client.query(PostgresQuery(stringLiteral: GET_TABLES_SQL))
-        for try await (tableName) in result.decode((String).self) {
+        let tableResult = try await client.query(PostgresQuery(stringLiteral: GET_TABLES_SQL))
+        for try await (tableName) in tableResult.decode((String).self) {
             let escapedTableName = tableName.replacingOccurrences(of: "\"", with: "\"\"")
             let query = String(format: DROP_TABLE_SQL, escapedTableName)
             try await client.query(PostgresQuery(stringLiteral: query))
@@ -170,13 +172,7 @@ class Library {
 
     private func createTables(_ client: PostgresClient, _ progress: ExportProgressModel) async throws {
         let now = Date()
-        guard let url = Bundle.main.url(forResource: "CreateTables", withExtension: "sql") else {
-            throw NSError(domain: "SQLLoader", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not find SQL file in bundle."])
-        }
-        let queries = try String(contentsOf: url)
-                .components(separatedBy: ";")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+        let queries = try loadQueriesFromFile("CreateTables")
         for query in queries {
             try await client.query(PostgresQuery(stringLiteral: query))
         }
@@ -417,7 +413,17 @@ class Library {
         }
     }
 
-    private func finishExport(_ client: PostgresClient) async throws {
+    private func finishExport(_ client: PostgresClient, _ progress: ExportProgressModel) async throws {
+        let start = Date()
+        let queries = try loadQueriesFromFile("UpdateMaterialViews")
+        for query in queries {
+            try await client.query(PostgresQuery(stringLiteral: query))
+        }
+        let materialViewDuration = Date().timeIntervalSince(start)
+        await MainActor.run {
+            progress.status.materialViewTime = materialViewDuration
+        }
+
         try await client.query(insertLibraryMetadata(totalFileSize: totalTrackFileSize + totalArtworkFileSize))
         try await client.query(insertExportFinished())
     }
