@@ -27,9 +27,8 @@ export interface Track {
   discNumber: number;
   playCount: number;
   rating: number;
-  ext: string;
-  fileMd5: string;
-  artwork: string | null;
+  musicFilename: string;
+  artworkFilename: string | null;
   playlistIds: string[];
 }
 
@@ -307,7 +306,7 @@ class Library {
     const tx = this.db.transaction("tracks", "readonly");
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
-    return new Set(tracks.flatMap((t) => t.fileMd5));
+    return new Set(tracks.flatMap((t) => t.musicFilename));
   }
 
   public async getTrackMusicIds(): Promise<Array<TrackFileIds> | undefined> {
@@ -323,7 +322,7 @@ class Library {
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
     return tracks.flatMap((t) => {
-      return { trackId: t.id, fileId: t.fileMd5 };
+      return { trackId: t.id, fileId: t.musicFilename };
     });
   }
 
@@ -339,7 +338,9 @@ class Library {
     const tx = this.db.transaction("tracks", "readonly");
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
-    return new Set(tracks.filter((t) => t.artwork).map((t) => t.artwork!));
+    return new Set(
+      tracks.filter((t) => t.artworkFilename).map((t) => t.artworkFilename!)
+    );
   }
 
   public async getTrackArtworkIds(): Promise<Array<TrackFileIds> | undefined> {
@@ -357,16 +358,16 @@ class Library {
     const store = tx.objectStore("tracks");
     const tracks = await store.getAll();
     for (const track of tracks) {
-      if (!track.artwork) {
+      if (!track.artworkFilename) {
         continue;
       }
 
-      if (!seen.has(track.artwork)) {
+      if (!seen.has(track.artworkFilename)) {
         trackArtworkIds.push({
           trackId: track.id,
-          fileId: track.artwork,
+          fileId: track.artworkFilename,
         });
-        seen.add(track.artwork);
+        seen.add(track.artworkFilename);
       }
     }
 

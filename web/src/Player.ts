@@ -368,14 +368,17 @@ class Player {
     }
     const ids: TrackFileIds = {
       trackId: track.id,
-      fileId: track.fileMd5,
+      fileId: track.musicFilename,
     };
 
-    const url = await files().tryGetFileURL(FileType.MUSIC, track.fileMd5);
+    const url = await files().tryGetFileURL(
+      FileType.MUSIC,
+      track.musicFilename
+    );
     if (url) {
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${track.artistName} - ${track.name}.${track.ext}`;
+      a.download = `${track.artistName} - ${track.name}.${track.musicFilename.split(".")[-1]}`;
       a.click();
       this.pendingDownloads.delete(ids);
       setTimeout(() => {
@@ -394,7 +397,7 @@ class Player {
 
   // helpers
   private handleMusicFetched(data: FileFetchedMessage) {
-    if (data.ids.fileId === this.playingTrack?.track.fileMd5) {
+    if (data.ids.fileId === this.playingTrack?.track.musicFilename) {
       this.trySetPlayingMusicFile();
     }
     if (this.pendingDownloads.has(data.ids)) {
@@ -405,7 +408,7 @@ class Player {
   private handleArtworkFetched(data: FileFetchedMessage) {
     if (
       this.playingTrack &&
-      this.playingTrack.track.artwork === data.ids.fileId
+      this.playingTrack.track.artworkFilename === data.ids.fileId
     ) {
       this.trySetMediaMetadata();
     }
@@ -422,7 +425,7 @@ class Player {
 
     const url = await files().tryGetFileURL(
       FileType.MUSIC,
-      this.playingTrack.track.fileMd5
+      this.playingTrack.track.musicFilename
     );
     if (url) {
       store.set(waitingForMusicDownloadAtom, false);
@@ -510,14 +513,14 @@ class Player {
     });
 
     // NB: media metadata artwork not working in Firefox but does in Chrome
-    const url = this.playingTrack.track.artwork
+    const url = this.playingTrack.track.artworkFilename
       ? await files().tryGetFileURL(
           FileType.ARTWORK,
-          this.playingTrack.track.artwork
+          this.playingTrack.track.artworkFilename
         )
       : null;
     if (url) {
-      const ext = this.playingTrack.track.artwork!.split(".").pop();
+      const ext = this.playingTrack.track.artworkFilename!.split(".").pop();
       const mime = ext ? IMAGE_EXTENSION_TO_MIME.get(ext) : null;
       if (mime) {
         metadata.artwork = [{ src: url, type: mime }];
@@ -548,9 +551,9 @@ class Player {
     for (const trackId of trackIds) {
       const track = await library().getTrack(trackId);
       if (track) {
-        musicIds.push({ trackId: track.id, fileId: track.fileMd5 });
-        if (track.artwork) {
-          artworkIds.push({ trackId: track.id, fileId: track.artwork });
+        musicIds.push({ trackId: track.id, fileId: track.musicFilename });
+        if (track.artworkFilename) {
+          artworkIds.push({ trackId: track.id, fileId: track.artworkFilename });
         }
       }
     }

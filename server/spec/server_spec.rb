@@ -8,7 +8,7 @@ require 'pg'
 require 'yaml'
 
 GET_TABLES_SQL = 'SELECT table_name FROM information_schema.tables WHERE table_schema = \'public\';'
-DROP_TABLE_SQL = 'DROP TABLE IF EXISTS %s;'
+DROP_TABLE_SQL = 'DROP TABLE IF EXISTS %s CASCADE;'
 INSERT_EXPORT_FINISHED_SQL = 'INSERT INTO export_finished (finished_at) VALUES (current_timestamp)'
 
 TestConfig = Struct.new(:music_path, :artwork_path, :database_host, :database_port, :database_username, :database_password, :database_name, :port, :secret)
@@ -147,7 +147,7 @@ describe 'Warehouse Server' do
   let(:playlist0) { '0000000000000000' }
   let(:playlist1) { '1111111111111111' }
   let(:playlist2) { '2222222222222222' }
-  let(:music_md5) { '06dbe92c2a5dab2f7911e20a9e157521' }
+  let(:music_filename) { '06dbe92c2a5dab2f7911e20a9e157521.mp3' }
   let(:artwork_filename) { '__artwork.jpg' }
 
   before do
@@ -161,8 +161,8 @@ describe 'Warehouse Server' do
       conn.exec_params('INSERT INTO genres (id, name) VALUES ($1,$2)', [genre_id, 'test_genre'])
       conn.exec_params('INSERT INTO artists (id, name, sort_name) VALUES ($1,$2,$3)', [artist_id, 'test_artist', ''])
       conn.exec_params('INSERT INTO albums (id, name, sort_name) VALUES ($1,$2,$3)', [album_id, 'test_album', ''])
-      conn.exec_params('INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,ext,file_md5,artwork_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18);',
-                       [track_id1, 'test_title', '', artist_id, nil, album_id, genre_id, 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, 'mp3', music_md5, artwork_filename])
+      conn.exec_params('INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,music_filename,artwork_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17);',
+                       [track_id1, 'test_title', '', artist_id, nil, album_id, genre_id, 2018, 1.23, 0.1, 1.22, 2, 1, 5, 100, music_filename, artwork_filename])
     end
   end
 
@@ -179,7 +179,7 @@ describe 'Warehouse Server' do
 
   describe '/tracks/*' do
     it 'redirects if not logged in' do
-      get "/tracks/#{music_md5}"
+      get "/tracks/#{music_filename}"
       follow_redirect!
       expect(last_request.url).to eq('http://localhost/')
     end
@@ -190,13 +190,13 @@ describe 'Warehouse Server' do
     end
 
     it 'sends the contents of the file' do
-      get "/tracks/#{music_md5}", {}, get_auth_header
+      get "/tracks/#{music_filename}", {}, get_auth_header
       expect(last_response.body).to eq("fake mp3 contents\n")
     end
 
     it 'sends a path to the file in remote mode' do
       Config.set_remote(true)
-      get "/tracks/#{music_md5}", {}, get_auth_header
+      get "/tracks/#{music_filename}", {}, get_auth_header
       expect(last_response.headers['Content-Type']).to eq('audio/mpeg')
       expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/music/06dbe92c2a5dab2f7911e20a9e157521.mp3')
     end
@@ -389,9 +389,8 @@ describe 'Warehouse Server' do
       expect(track.discNumber).to eq(1)
       expect(track.playCount).to eq(5)
       expect(track.rating).to eq(100)
-      expect(track.ext).to eq('mp3')
-      expect(track.fileMd5).to eq('06dbe92c2a5dab2f7911e20a9e157521')
-      expect(track.artworkFilename.strip).to eq('__artwork.jpg')
+      expect(track.musicFilename).to eq('06dbe92c2a5dab2f7911e20a9e157521.mp3')
+      expect(track.artworkFilename).to eq('__artwork.jpg')
       expect(track.playlistIds).to eq([playlist2, playlistX])
 
       expect(library.playlists.length).to eq(4)

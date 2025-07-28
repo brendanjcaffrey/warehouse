@@ -29,7 +29,7 @@ export function useArtworkFileURL(track: Track | undefined) {
       if (
         IsFileFetchedMessage(data) &&
         data.fileType === FileType.ARTWORK &&
-        data.ids.fileId === track?.artwork
+        data.ids.fileId === track?.artworkFilename
       ) {
         showFetchedArtwork(data.ids.fileId);
       }
@@ -48,13 +48,13 @@ export function useArtworkFileURL(track: Track | undefined) {
   }, [handleDownloadWorkerMessage]);
 
   useEffect(() => {
-    if (track && track.artwork !== shownArtwork) {
+    if (track && track.artworkFilename !== shownArtwork) {
       if (artworkFileURL) {
         URL.revokeObjectURL(artworkFileURL);
         setArtworkFileURL(null);
       }
 
-      const artworkId = track.artwork;
+      const artworkId = track.artworkFilename;
       if (artworkId) {
         setShownArtwork(artworkId);
         showFetchedArtwork(artworkId);

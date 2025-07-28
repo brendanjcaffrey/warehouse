@@ -6,8 +6,8 @@ ALBUM_SQL = 'SELECT id, name, sort_name FROM albums;'
 TRACK_SQL = <<~SQL
   SELECT
       t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
-      t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, t.ext,
-      t.file_md5, t.artwork_filename, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
+      t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating,
+      t.music_filename, t.artwork_filename, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
   FROM
       tracks t
   LEFT JOIN
@@ -34,8 +34,8 @@ SQL
 LIBRARY_METADATA_SQL = 'SELECT total_file_size FROM library_metadata;'
 EXPORT_FINISHED_SQL = 'SELECT finished_at FROM export_finished;'
 
-TRACK_EXT_SQL = 'SELECT ext FROM tracks WHERE file_md5=$1;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
+TRACK_HAS_MUSIC_SQL = 'SELECT EXISTS(SELECT 1 FROM tracks WHERE music_filename=$1);'
 TRACK_HAS_ARTWORK_SQL = 'SELECT EXISTS(SELECT 1 FROM tracks WHERE artwork_filename=$1);'
 
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'

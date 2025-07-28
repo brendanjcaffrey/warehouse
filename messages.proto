@@ -45,11 +45,10 @@ message Track {
   uint32 discNumber = 13;
   uint64 playCount = 14;
   int32 rating = 15;
-  string ext = 16;
-  // skip 17
-  string fileMd5 = 18;
+  // skip 16-18
   string artworkFilename = 19;
   repeated string playlistIds = 20;
+  string musicFilename = 21;
 }
 
 message Playlist {

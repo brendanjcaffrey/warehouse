@@ -237,8 +237,7 @@ describe("SyncManager", () => {
         discNumber: 0,
         playCount: 7,
         rating: 80,
-        ext: "mp3",
-        fileMd5: "md5hash1",
+        musicFilename: "md5hash1.mp3",
         artworkFilename: "",
         playlistIds: ["p1", "p2"],
       })
@@ -262,8 +261,7 @@ describe("SyncManager", () => {
         discNumber: 2,
         playCount: 9,
         rating: 100,
-        ext: "wav",
-        fileMd5: "md5hash2",
+        musicFilename: "md5hash2.wav",
         artworkFilename: "artwork1",
         playlistIds: ["p3", "p4"],
       })
@@ -293,10 +291,9 @@ describe("SyncManager", () => {
       trackNumber: 0,
       discNumber: 0,
       playCount: 7,
-      ext: "mp3",
-      fileMd5: "md5hash1",
       rating: 80,
-      artwork: null,
+      musicFilename: "md5hash1.mp3",
+      artworkFilename: null,
       playlistIds: ["p1", "p2"],
     });
     expect(library().putTrack).toHaveBeenCalledWith({
@@ -317,10 +314,9 @@ describe("SyncManager", () => {
       trackNumber: 1,
       discNumber: 2,
       playCount: 9,
-      ext: "wav",
-      fileMd5: "md5hash2",
       rating: 100,
-      artwork: "artwork1",
+      musicFilename: "md5hash2.wav",
+      artworkFilename: "artwork1",
       playlistIds: ["p3", "p4"],
     });
   });

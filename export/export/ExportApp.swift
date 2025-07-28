@@ -126,7 +126,7 @@ struct ExportApp: App {
             Spacer()
 
             Toggle(isOn: $fastExport) {
-                Text("fast export (this will assume track file and artwork file md5s have not changed)")
+                Text("fast export (this will assume track music file and artwork file md5s have not changed)")
             }
 
             Spacer()

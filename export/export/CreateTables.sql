@@ -28,9 +28,8 @@ CREATE TABLE tracks (
     disc_number INTEGER NOT NULL,
     play_count INTEGER NOT NULL,
     rating INTEGER NOT NULL,
-    ext TEXT NOT NULL,
-    file_md5 CHAR(32) NOT NULL,
-    artwork_filename CHAR(36)
+    music_filename TEXT NOT NULL,
+    artwork_filename TEXT
 );
 CREATE TABLE playlists (
     id CHAR(16) PRIMARY KEY NOT NULL,
@@ -92,7 +91,7 @@ CREATE TABLE export_finished (
     finished_at TIMESTAMP NOT NULL
 );
 
-CREATE INDEX idx_tracks_file_md5 ON tracks (file_md5);
+CREATE INDEX idx_tracks_music_filename ON tracks (music_filename);
 CREATE INDEX idx_tracks_artwork_filename ON tracks (artwork_filename);
 
 CREATE MATERIALIZED VIEW track_name_search_view AS

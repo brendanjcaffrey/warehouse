@@ -23,7 +23,7 @@ function Artwork() {
     files(); // initialize it
   }, []);
 
-  if (showArtwork && playingTrack && playingTrack.track.artwork) {
+  if (showArtwork && playingTrack && playingTrack.track.artworkFilename) {
     return (
       <Box
         sx={{

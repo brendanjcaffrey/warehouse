@@ -52,7 +52,7 @@ class ExportProgressModel: ObservableObject {
     @Published var status = ExportProgress()
 }
 
-struct ExistingMD5s {
+struct ExistingFilenames {
     var music: String
     var artwork: String?
 }
@@ -77,7 +77,7 @@ class Library {
     var oldArtworkFiles: Set<String> = []
     var newArtworkFiles: Set<String> = []
 
-    var existingMD5s: Dictionary<String, ExistingMD5s> = [:]
+    var existingFilenames: Dictionary<String, ExistingFilenames> = [:]
 
     let allowedDistinguisedKinds: Set<ITLibDistinguishedPlaylistKind> = [.kindNone, .kindMusic]
     let allowedPlaylistKinds: Set<ITLibPlaylistKind> = [.smart, .regular, .folder]
@@ -121,7 +121,7 @@ class Library {
             do {
                 let lib = try! ITLibrary(apiVersion: "1.1")
                 if !fast { try self.gatherOldFiles() }
-                if fast { try await self.gatherExistingMD5s(client) }
+                if fast { try await self.gatherExistingFilenames(client) }
                 try await self.dropTables(client, progress)
                 try await self.createTables(client, progress)
                 try await self.exportGenres(lib, client, progress)
@@ -152,10 +152,10 @@ class Library {
         ).map { $0.lastPathComponent })
     }
 
-    private func gatherExistingMD5s(_ client: PostgresClient) async throws {
-        let result = try await client.query(PostgresQuery(stringLiteral: GET_TRACK_MD5S_SQL))
+    private func gatherExistingFilenames(_ client: PostgresClient) async throws {
+        let result = try await client.query(PostgresQuery(stringLiteral: GET_TRACK_FILENAMES_SQL))
         for try await (id, music, artwork) in result.decode((String, String, String?).self) {
-            existingMD5s[id] = ExistingMD5s(music: music, artwork: artwork)
+            existingFilenames[id] = ExistingFilenames(music: music, artwork: artwork)
         }
     }
 
@@ -287,11 +287,11 @@ class Library {
             let finishTime = item.stopTime == 0 ? totalTime : Double(item.stopTime) / 1000.0
             let rating = item.rating == 1 || item.isRatingComputed ? 0 : item.rating
 
-            let fileExt = location.pathExtension.lowercased()
-            var fileMD5: String?
+            let musicExt = location.pathExtension.lowercased()
+            var musicMD5: String?
             var artworkFilename: String?
-            if fast, let existingMD5 = self.existingMD5s[persistentId] {
-                fileMD5 = existingMD5.music
+            if fast, let existingMD5 = self.existingFilenames[persistentId] {
+                musicMD5 = String(existingMD5.music.split(separator: ".", maxSplits: 2)[0])
                 artworkFilename = existingMD5.artwork
                 if let af = artworkFilename, !af.isEmpty {
                     newArtworkFiles.insert(af)
@@ -299,16 +299,16 @@ class Library {
                     totalArtworkFileSize += try getFileSize(fullPath)
                 }
             }
-            if fileMD5 == nil {
+            if musicMD5 == nil {
                 let start = Date()
-                fileMD5 = try getFileMD5(file: location)
+                musicMD5 = try getFileMD5(file: location)
                 trackMd5Duration += Date().timeIntervalSince(start)
             }
             totalTrackFileSize += try getFileSize(location)
 
-            let symlinkFilename = "\(fileMD5!).\(fileExt)"
-            let symlinkURL = musicDirURL.appendingPathComponent(symlinkFilename)
-            newMusicFiles.insert(symlinkFilename)
+            let musicFilename = "\(musicMD5!).\(musicExt)"
+            let symlinkURL = musicDirURL.appendingPathComponent(musicFilename)
+            newMusicFiles.insert(musicFilename)
 
             var shouldCreateSymlink = true
             if FileManager.default.fileExists(atPath: symlinkURL.path) {
@@ -335,7 +335,7 @@ class Library {
                 id: persistentId, name: title, sortName: sortTitle, artistId: artistId, albumArtistId: albumArtistId,
                 albumId: albumId, genreId: genreId, year: item.year, duration: totalTime, start: startTime, finish: finishTime,
                 trackNumber: item.trackNumber, discNumber: item.album.discNumber, playCount: item.playCount, rating: rating,
-                ext: fileExt, fileMd5: fileMD5!, artworkFilename: artworkFilename
+                musicFilename: musicFilename, artworkFilename: artworkFilename
             ))
             trackIds.insert(persistentId)
 

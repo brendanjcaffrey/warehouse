@@ -132,7 +132,7 @@ export function EditTrackArtwork({
     setArtworkSelected(false);
     setUploadedImageFilename(null);
 
-    PostArtworkRequest(track, track?.artwork ?? null);
+    PostArtworkRequest(track, track?.artworkFilename ?? null);
   }, [track, setArtworkCleared, setUploadedImageFilename]);
 
   useEffect(() => {
@@ -242,7 +242,7 @@ export function EditTrackArtwork({
   if (track) {
     if (uploadedImageFileURL) {
       artworkDisplayState = ArtworkDisplayState.LOADED;
-    } else if (track.artwork && !artworkCleared) {
+    } else if (track.artworkFilename && !artworkCleared) {
       artworkDisplayState = artworkFileURL
         ? ArtworkDisplayState.LOADED
         : ArtworkDisplayState.LOADING;

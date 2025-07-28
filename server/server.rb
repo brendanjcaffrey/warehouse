@@ -69,16 +69,15 @@ class Server < Sinatra::Base
   get '/tracks/*' do
     if authed?
       file = params['splat'][0]
-      rows = query(TRACK_EXT_SQL, [file])
-      raise Sinatra::NotFound if rows.empty? || !AUDIO_MIME_TYPES.key?(rows[0]['ext'])
+      full_path = File.expand_path(File.join(Config.env.music_path, file))
+      ext = File.extname(file).delete('.').downcase
 
-      ext = rows[0]['ext']
-      filename = "#{file}.#{ext}"
-      full_path = File.expand_path(File.join(Config.env.music_path, filename))
-      raise Sinatra::NotFound unless File.exist?(full_path)
+      rows = query(TRACK_HAS_MUSIC_SQL, [file])
+      valid_music = !rows.empty? && rows[0]['exists'] == 't'
+      raise Sinatra::NotFound unless valid_music && File.exist?(full_path) && AUDIO_MIME_TYPES.key?(ext)
 
       if Config.remote?
-        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{filename}")
+        headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/music/#{file}")
         headers['Content-Type'] = AUDIO_MIME_TYPES[ext]
       else
         send_file(full_path, type: ext)
@@ -92,9 +91,11 @@ class Server < Sinatra::Base
     if authed?(allow_export_user: true)
       file = params['splat'][0]
       full_path = File.expand_path(File.join(Config.env.artwork_path, file))
+      ext = File.extname(file).delete('.').downcase
+
       rows = query(TRACK_HAS_ARTWORK_SQL, [file])
       valid_artwork = !rows.empty? && rows[0]['exists'] == 't'
-      raise Sinatra::NotFound unless valid_artwork && File.exist?(full_path)
+      raise Sinatra::NotFound unless valid_artwork && File.exist?(full_path) && IMAGE_MIME_TYPES.key?(ext)
 
       if Config.remote?
         headers['X-Accel-Redirect'] = Rack::Utils.escape_path("/accel/artwork/#{file}")
@@ -182,9 +183,8 @@ class Server < Sinatra::Base
                                       discNumber: track['disc_number'].to_i,
                                       playCount: track['play_count'].to_i,
                                       rating: track['rating'].to_i,
-                                      ext: track['ext'],
-                                      fileMd5: track['file_md5'].strip,
-                                      artworkFilename: track['artwork_filename'],
+                                      musicFilename: track['music_filename'].strip,
+                                      artworkFilename: (track['artwork_filename'] || '').strip,
                                       playlistIds: (track['playlist_ids'] || '').split(',').concat(library_playlist_ids))
         end
 

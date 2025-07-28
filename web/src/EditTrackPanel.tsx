@@ -86,12 +86,12 @@ function EditTrackPanel({
     }
 
     if (uploadedImageFilename) {
-      if (updatedTrack.artwork !== uploadedImageFilename) {
-        updatedTrack.artwork = uploadedImageFilename;
+      if (updatedTrack.artworkFilename !== uploadedImageFilename) {
+        updatedTrack.artworkFilename = uploadedImageFilename;
         updatedFields.artwork = uploadedImageFilename;
       }
     } else if (artworkCleared) {
-      updatedTrack.artwork = null;
+      updatedTrack.artworkFilename = null;
       updatedFields.artwork = "";
     }
 

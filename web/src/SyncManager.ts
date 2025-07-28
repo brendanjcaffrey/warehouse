@@ -197,9 +197,9 @@ export class SyncManager {
         discNumber: track.discNumber,
         playCount: track.playCount,
         rating: track.rating,
-        ext: track.ext,
-        fileMd5: track.fileMd5,
-        artwork: track.artworkFilename === "" ? null : track.artworkFilename,
+        musicFilename: track.musicFilename,
+        artworkFilename:
+          track.artworkFilename === "" ? null : track.artworkFilename,
         playlistIds: track.playlistIds,
       };
       await library().putTrack(dto);

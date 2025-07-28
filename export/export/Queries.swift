@@ -3,7 +3,7 @@ import PostgresNIO
 
 let GET_TABLES_SQL = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';"
 let DROP_TABLE_SQL = "DROP TABLE IF EXISTS \"%@\" CASCADE;"
-let GET_TRACK_MD5S_SQL = "SELECT id,file_md5,artwork_filename FROM tracks;"
+let GET_TRACK_FILENAMES_SQL = "SELECT id,music_filename,artwork_filename FROM tracks;"
 
 func loadQueriesFromFile(_ name: String) throws -> [String] {
     guard let url = Bundle.main.url(forResource: name, withExtension: "sql") else {
@@ -59,7 +59,7 @@ func insertAlbumsQuery(_ albums: [InsertAlbumQuery]) -> PostgresQuery {
     return insertSortNamesQuery(table: "albums", sortNames: albums)
 }
 
-let NUM_TRACK_VALUES = 18
+let NUM_TRACK_VALUES = 17
 struct InsertTrackQuery {
     var id: String
     var name: String
@@ -76,8 +76,7 @@ struct InsertTrackQuery {
     var discNumber: Int
     var playCount: Int
     var rating: Int
-    var ext: String
-    var fileMd5: String
+    var musicFilename: String
     var artworkFilename: Optional<String>
 }
 func insertTracksQuery(_ tracks: [InsertTrackQuery]) -> PostgresQuery {
@@ -101,12 +100,11 @@ func insertTracksQuery(_ tracks: [InsertTrackQuery]) -> PostgresQuery {
         binds.append(track.discNumber)
         binds.append(track.playCount)
         binds.append(track.rating)
-        binds.append(track.ext)
-        binds.append(track.fileMd5)
+        binds.append(track.musicFilename)
         binds.append(track.artworkFilename)
     }
 
-    let query = "INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,ext,file_md5,artwork_filename) VALUES \(values.joined(separator: ","));"
+    let query = "INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,music_filename,artwork_filename) VALUES \(values.joined(separator: ","));"
     return PostgresQuery(unsafeSQL: query, binds: binds)
 }
 

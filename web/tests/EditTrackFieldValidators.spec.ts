@@ -26,9 +26,8 @@ const TRACK: Track = {
   discNumber: 0,
   playCount: 50,
   rating: 100,
-  ext: "mp3",
-  fileMd5: "md5",
-  artwork: null,
+  musicFilename: "md5.mp3",
+  artworkFilename: null,
   playlistIds: [],
 };
 
