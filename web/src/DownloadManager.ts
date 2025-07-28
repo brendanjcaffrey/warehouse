@@ -82,6 +82,9 @@ export class DownloadManager {
     if (artworkIds) {
       await this.removeArtworkFilesExcept(artworkIds);
     }
+    if (this.downloadMode && this.libraryInitialized) {
+      await this.gatherMissingFiles();
+    }
   }
 
   public setAuthToken(authToken: string) {

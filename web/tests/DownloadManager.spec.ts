@@ -959,4 +959,52 @@ describe("DownloadManager", () => {
     expectOneTryWriteFileCall(FileType.MUSIC, "456");
     expectOnlyFileDonePostMessageCalls(FileType.MUSIC, FILE_456);
   });
+
+  it("should start download mode requests when sync succeeds", async () => {
+    vi.mocked(library().getTrackMusicIds).mockReturnValue(
+      Promise.resolve([FILE_123])
+    );
+    vi.mocked(library().getTrackArtworkIds).mockReturnValue(
+      Promise.resolve([FILE_ABC])
+    );
+
+    downloadManager.setAuthToken("test-token");
+    mockFilesExistsAndWriteMethods();
+    tracksExist.set("123", true);
+    artworksExist.set("abc", true);
+    await downloadManager.setKeepMode(true);
+    await downloadManager.setDownloadMode(true);
+    await setInitializedListenerCallback();
+
+    expect(axios.get).toHaveBeenCalledTimes(0);
+
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 100);
+    mockAxiosGetResolveAfterDelay(TEST_FILE_DATA, 200);
+
+    vi.mocked(library().getTrackMusicIds).mockReturnValue(
+      Promise.resolve([FILE_123, FILE_456])
+    );
+    vi.mocked(library().getTrackArtworkIds).mockReturnValue(
+      Promise.resolve([FILE_ABC, FILE_DEF])
+    );
+
+    await downloadManager.syncSucceeded();
+
+    expectOnlyFileInProgressPostMessageCalls(FileType.MUSIC, FILE_456);
+    expectOneAxiosGetCall("/tracks/456");
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.MUSIC, "456");
+    expectOneAxiosGetCall("/artwork/def");
+    expectFileDoneAndFileInProgressPostMessageCalls(
+      FileType.MUSIC,
+      FILE_456,
+      FILE_DEF,
+      FileType.ARTWORK
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    expectOneTryWriteFileCall(FileType.ARTWORK, "def");
+    expectOnlyFileDonePostMessageCalls(FileType.ARTWORK, FILE_DEF);
+  });
 });
