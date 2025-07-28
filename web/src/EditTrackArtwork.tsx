@@ -42,7 +42,7 @@ function PostArtworkRequest(
   track: Track | undefined,
   artworkId: string | null
 ) {
-  var preloadArtworkIds: TrackFileIds[] = [];
+  let preloadArtworkIds: TrackFileIds[] = [];
   if (track && artworkId) {
     preloadArtworkIds = [{ trackId: track.id, fileId: artworkId }];
   }
@@ -133,7 +133,7 @@ export function EditTrackArtwork({
     setUploadedImageFilename(null);
 
     PostArtworkRequest(track, track?.artwork ?? null);
-  }, [track]);
+  }, [track, setArtworkCleared, setUploadedImageFilename]);
 
   useEffect(() => {
     if (uploadedImageFilename) {
@@ -149,7 +149,7 @@ export function EditTrackArtwork({
     } else {
       setAndClearUploadedImageFileURL(null);
     }
-  }, [uploadedImageFilename]);
+  }, [uploadedImageFilename, setAndClearUploadedImageFileURL]);
 
   const clearOnDelete = useCallback(
     (event: KeyboardEvent) => {
@@ -201,33 +201,44 @@ export function EditTrackArtwork({
     }
   };
 
-  const handleFileChange = async (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
-      enqueueSnackbar("File size exceeds 100 MB limit.", { variant: "error" });
-      return;
-    }
-    const filename = await TryStoreArtwork(file);
-    setUploadedImageFilename(filename);
-    PostArtworkRequest(track, filename);
-  };
+  const handleFileChange = useCallback(
+    async (file: File) => {
+      if (file.size > MAX_FILE_SIZE) {
+        enqueueSnackbar("File size exceeds 100 MB limit.", {
+          variant: "error",
+        });
+        return;
+      }
+      const filename = await TryStoreArtwork(file);
+      setUploadedImageFilename(filename);
+      PostArtworkRequest(track, filename);
+    },
+    [setUploadedImageFilename, track]
+  );
 
-  const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files[0]) {
-      handleFileChange(files[0]);
-    }
-  }, []);
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (files && files[0]) {
+        handleFileChange(files[0]);
+      }
+    },
+    [handleFileChange]
+  );
 
-  const handleDrop = useCallback((event: DragEvent) => {
-    event.preventDefault();
-    setDragHovering(false);
-    const files = event.dataTransfer.files;
-    if (files && files[0]) {
-      handleFileChange(files[0]);
-    }
-  }, []);
+  const handleDrop = useCallback(
+    (event: DragEvent) => {
+      event.preventDefault();
+      setDragHovering(false);
+      const files = event.dataTransfer.files;
+      if (files && files[0]) {
+        handleFileChange(files[0]);
+      }
+    },
+    [handleFileChange]
+  );
 
-  var artworkDisplayState = ArtworkDisplayState.NONE;
+  let artworkDisplayState = ArtworkDisplayState.NONE;
   if (track) {
     if (uploadedImageFileURL) {
       artworkDisplayState = ArtworkDisplayState.LOADED;

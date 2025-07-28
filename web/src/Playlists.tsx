@@ -206,7 +206,7 @@ function Playlists() {
         return newOpenedFolders;
       });
     }
-  }, [playlistParentIds, selectedPlaylistId]);
+  }, [playlistParentIds, selectedPlaylistId, setOpenedFolders]);
 
   return (
     <Box sx={{ height: "100vh", overflowY: "auto" }}>

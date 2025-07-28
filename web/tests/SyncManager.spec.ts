@@ -47,9 +47,18 @@ function mockAxiosGetResolve<T>(data: T) {
   });
 }
 
+class SyncManagerSpecError extends Error {
+  code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "SyncManagerSpecError";
+    this.code = code;
+  }
+}
 function mockAxiosGetError(code: string = "ERR_UNKNOWN") {
   vi.mocked(axios.get).mockImplementationOnce(() => {
-    return Promise.reject({ message: "mock error", code: code });
+    return Promise.reject(new SyncManagerSpecError("mock error", code));
   });
 }
 
@@ -83,12 +92,12 @@ function expectErrorPostMessage() {
 }
 
 describe("SyncManager", () => {
-  let syncManager = new SyncManager();
-  let genres = new Map<number, Name>();
-  let artists = new Map<number, SortName>();
-  let albums = new Map<number, SortName>();
-  let tracks: Track[] = [];
-  let playlists: Playlist[] = [];
+  const syncManager = new SyncManager();
+  const genres = new Map<number, Name>();
+  const artists = new Map<number, SortName>();
+  const albums = new Map<number, SortName>();
+  const tracks: Track[] = [];
+  const playlists: Playlist[] = [];
 
   beforeEach(() => {
     vi.mocked(postMessage).mockClear();

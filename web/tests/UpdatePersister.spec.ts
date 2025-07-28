@@ -97,7 +97,7 @@ function expectArtworkPostRequest() {
 
   const call = vi
     .mocked(axios.post)
-    .mock.calls.filter((c) => c[0] == "/api/artwork")[0];
+    .mock.calls.filter((c) => c[0] === "/api/artwork")[0];
   const file = (call[1] as FormData).get("file") as File;
   expect(file.name).toBe("hello.jpg");
   expect(file.size).toBe(IMAGE_BLOB.size);
@@ -208,7 +208,7 @@ describe("UpdatePersister", () => {
 
     vi.mocked(files().tryReadFile).mockImplementation(
       (type: FileType, id: string) => {
-        if (type === FileType.ARTWORK && id == "hello.jpg") {
+        if (type === FileType.ARTWORK && id === "hello.jpg") {
           return Promise.resolve(IMAGE_BLOB as File);
         } else {
           return Promise.resolve(null);

@@ -132,7 +132,7 @@ function TrackTable() {
           offsetToShowAfterPlaylistSwitch.current = newSelectedOffset;
         }
       });
-  }, [selectedPlaylistId]);
+  }, [selectedPlaylistId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     player().setDisplayedTrackIds(
@@ -213,7 +213,7 @@ function TrackTable() {
         mouseY: event.clientY,
       });
     },
-    [setContextMenuData]
+    [setContextMenuData, setSelectedPlaylistOffset]
   );
 
   const handleTrackAction = useCallback(
@@ -253,7 +253,7 @@ function TrackTable() {
         return;
       }
 
-      var adjustment: number | undefined = undefined;
+      let adjustment: number | undefined = undefined;
       if (event.key === "ArrowUp") {
         adjustment = -1;
       } else if (event.key === "ArrowDown") {
@@ -262,7 +262,7 @@ function TrackTable() {
 
       if (adjustment) {
         if (state.selectedPlaylistEntry) {
-          let index = state.sortedFilteredPlaylistOffsets.findIndex(
+          const index = state.sortedFilteredPlaylistOffsets.findIndex(
             (o) => o === state.selectedPlaylistEntry!.playlistOffset
           );
           if (index === -1) {

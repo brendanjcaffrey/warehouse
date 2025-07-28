@@ -36,6 +36,7 @@ function EditTrackPanel({
   closeEditTrackPanel,
 }: EditTrackPanelProps) {
   const fields: Field[] = EDIT_TRACK_FIELDS.map((definition) => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     const [stateValue, setStateValue] = useState("");
     return {
       definition,
@@ -53,7 +54,7 @@ function EditTrackPanel({
     for (const field of fields) {
       field.setStateValue(field.definition.getDisplayTrackValue(track));
     }
-  }, [track]);
+  }, [track]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [artworkCleared, setArtworkCleared] = useState(false);
   const [uploadedImageFilename, setUploadedImageFilename] = useState<
@@ -73,9 +74,9 @@ function EditTrackPanel({
       return;
     }
 
-    let updatedFields: { [key: string]: string } = {};
+    const updatedFields: { [key: string]: string } = {};
     for (const field of fields) {
-      if (field.stateValue != field.definition.getDisplayTrackValue(track)) {
+      if (field.stateValue !== field.definition.getDisplayTrackValue(track)) {
         field.definition.setTrackValue(updatedTrack, field.stateValue);
         const getter =
           field.definition.getApiTrackValue ??
@@ -85,7 +86,7 @@ function EditTrackPanel({
     }
 
     if (uploadedImageFilename) {
-      if (updatedTrack.artwork != uploadedImageFilename) {
+      if (updatedTrack.artwork !== uploadedImageFilename) {
         updatedTrack.artwork = uploadedImageFilename;
         updatedFields.artwork = uploadedImageFilename;
       }

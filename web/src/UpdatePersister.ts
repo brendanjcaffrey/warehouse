@@ -49,8 +49,8 @@ function IsUpdate(value: object): value is Update {
     typeof value === "object" &&
     value !== null &&
     "type" in value &&
-    (value.type == "artwork" || "trackId" in value) &&
-    (value.type == "play" || "params" in value)
+    (value.type === "artwork" || "trackId" in value) &&
+    (value.type === "play" || "params" in value)
   );
 }
 
@@ -220,7 +220,7 @@ export class UpdatePersister {
       throw new Error("Can't read artwork file");
     }
 
-    var formData = new FormData();
+    const formData = new FormData();
     formData.append("file", file, upload.params.filename);
     const { data } = await axios.post(requestPath, formData, {
       responseType: "arraybuffer",

@@ -170,4 +170,8 @@ end
 desc 'run linting and formatting checks'
 task :checks do
   command.run('bundle exec rubocop Rakefile server/ shared/ update/ changes/')
+  Dir.chdir('web') do
+    command.run('npm run lint')
+    command.run('npm run format:check')
+  end
 end

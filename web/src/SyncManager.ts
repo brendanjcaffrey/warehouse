@@ -57,7 +57,7 @@ export class SyncManager {
     this.syncInProgress = true;
 
     // check if we have the most update to date version of the library, if so don't sync
-    let response = await this.fetchLibraryStatus(
+    const response = await this.fetchLibraryStatus(
       authToken,
       updateTimeNs,
       browserOnline
@@ -90,7 +90,7 @@ export class SyncManager {
     }
 
     try {
-      let { data } = await axios.get("/api/version", {
+      const { data } = await axios.get("/api/version", {
         responseType: "arraybuffer",
         headers: { Authorization: `Bearer ${authToken}` },
       });
@@ -104,7 +104,7 @@ export class SyncManager {
       } else {
         return { status: LibraryStatus.NEEDS_UPDATE };
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
       // if we're offline, pretend we have the latest version
       if (
@@ -112,8 +112,10 @@ export class SyncManager {
         (!browserOnline || error.code === "ERR_NETWORK")
       ) {
         return { status: LibraryStatus.HAVE_LATEST_VERSION };
-      } else {
+      } else if (error instanceof Error) {
         return { status: LibraryStatus.ERROR, error: error.message };
+      } else {
+        return { status: LibraryStatus.ERROR, error: "unknown error" };
       }
     }
   }
@@ -131,9 +133,16 @@ export class SyncManager {
 
       await this.processSyncResponse(msg.library);
       postMessage({ type: SYNC_SUCCEEDED_TYPE } as TypedMessage);
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
-      postMessage({ type: ERROR_TYPE, error: error.message } as ErrorMessage);
+      if (error instanceof Error) {
+        postMessage({ type: ERROR_TYPE, error: error.message } as ErrorMessage);
+      } else {
+        postMessage({
+          type: ERROR_TYPE,
+          error: "unknown error",
+        } as ErrorMessage);
+      }
     } finally {
       this.syncInProgress = false;
     }
@@ -231,7 +240,7 @@ export class SyncManager {
     parentPlaylistId: Map<string, string | null>,
     out: string[] = []
   ): string[] {
-    let parentId = parentPlaylistId.get(playlistId);
+    const parentId = parentPlaylistId.get(playlistId);
     if (parentId) {
       out.push(parentId);
       return this.gatherParentPlaylistIds(parentId, parentPlaylistId, out);
