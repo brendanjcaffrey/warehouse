@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
-require_relative './pretty_on_failure'
+require_relative 'pretty_on_failure'
 
 module Update
   class Library

@@ -1,5 +1,12 @@
+plugins:
+  - rubocop-rake
+  - rubocop-rspec
+
 AllCops:
-  TargetRubyVersion: '3.3'
+  TargetRubyVersion: 3.3
+  NewCops: enable
+  Exclude:
+    - shared/messages_pb.rb
 Style/FrozenStringLiteralComment:
   Enabled: false
 Naming/AccessorMethodName:
@@ -19,4 +26,23 @@ Metrics/BlockLength:
 Metrics/PerceivedComplexity:
   Enabled: false
 Metrics/CyclomaticComplexity:
+  Enabled: false
+Metrics/BlockNesting:
+  Enabled: true
+  Exclude:
+    - changes/diff.rb
+
+RSpec/DescribeClass:
+  Enabled: false
+RSpec/MultipleExpectations:
+  Enabled: false
+RSpec/ExampleLength:
+  Enabled: false
+RSpec/MultipleMemoizedHelpers:
+  Enabled: false
+RSpec/IndexedLet:
+  Enabled: false
+RSpec/VariableName:
+  Enabled: false
+RSpec/BeforeAfterAll:
   Enabled: false

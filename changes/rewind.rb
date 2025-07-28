@@ -2,8 +2,8 @@ require 'json'
 require 'algorithms'
 
 year = Time.now.year
-old_tracks_file = Dir.glob("tracks/#{year - 1}*.json").sort[-1]
-new_tracks_file = Dir.glob("tracks/#{year}*.json").sort[-1]
+old_tracks_file = Dir.glob("tracks/#{year - 1}*.json")[-1]
+new_tracks_file = Dir.glob("tracks/#{year}*.json")[-1]
 puts "Comparing iTunes libarary on #{old_tracks_file.split('/').last.split('.').first} and #{new_tracks_file.split('/').last.split('.').first}"
 old_tracks = JSON.parse(File.read(old_tracks_file))
 new_tracks = JSON.parse(File.read(new_tracks_file))
@@ -60,9 +60,8 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
   if old_track['id'] == new_track['id']
     track = Track.build(new_track, old_track['play_count'])
     tracks.push(track, track.plays)
-
-    old_idx += 1
-    new_idx += 1
+    old_idx += 1 # rubocop:disable Lint/UselessAssignment
+    new_idx += 1 # rubocop:disable Lint/UselessAssignment
   elsif old_track['id'] < new_track['id']
     old_idx += 1 # deleted, ignore
   else

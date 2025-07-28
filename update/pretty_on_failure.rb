@@ -51,7 +51,7 @@ class PrettyOnFailure < TTY::Command::Printers::Abstract
     out = []
     out << "[#{decorate(cmd.uuid, :green)}] " if uuid_needed && !cmd.uuid.nil?
     out << "#{message}\n"
-    target = !data.nil? ? data : output
+    target = data.nil? ? output : data
     target << out.join
   end
 

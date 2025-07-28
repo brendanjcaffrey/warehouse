@@ -1,10 +1,14 @@
 require 'rubygems'
 require 'require_all'
+require 'rspec/core/rake_task'
 require 'sinatra'
 require 'tty-command'
 require_relative 'shared/config'
 
+command = TTY::Command.new
+
 namespace :export do
+  desc 'export tracks via the Warehouse Export app'
   task :run do
     task_name = Rake.application.top_level_tasks.first
     extra_args = task_name.include?('fast') ? ' --fast' : ''
@@ -37,7 +41,7 @@ namespace :export do
 
     last_outfile_mod = File.mtime(outfile)
     no_changes_count = 0
-    while true
+    loop do
       no_changes = true
       new_outfile_mod = File.mtime(outfile)
       if last_outfile_mod != new_outfile_mod
@@ -45,7 +49,7 @@ namespace :export do
         no_changes = false
         contents = File.read(outfile)
         if contents.include?('Export finished successfully')
-          puts(contents.lines.select { !_1.include?('tracks processed:') })
+          puts(contents.lines.reject { _1.include?('tracks processed:') })
           exit(0)
         elsif contents.include?('Failed to export')
           warn 'Export failed!'
@@ -70,11 +74,13 @@ namespace :export do
     end
   end
 
+  desc 'fast export tracks via the Warehouse Export app'
   task :fast do
     Rake::Task['export:run'].invoke
   end
 end
 
+desc 'update iTunes library with any changes in the database'
 task :update do
   Config.set_env('local')
   require_all 'update'
@@ -84,50 +90,59 @@ task :update do
   Update::Updater.new(database, library).update_library!
 end
 
+desc 'compile the protobuf definitions'
 task :proto do
-  command = TTY::Command.new
   command.run('protoc --ruby_out=./shared messages.proto')
   command.run('protoc --plugin="protoc-gen-ts=./web/node_modules/.bin/protoc-gen-ts" --ts_out="./web/src/generated" ./messages.proto')
 end
 
 namespace :server do
+  desc 'install the server dependencies'
   task :install do
-    command = TTY::Command.new
     command.run('bundle')
   end
 
+  desc 'run the server with local config'
   task :local do
     Config.set_env('local')
-    require_relative 'server'
+    require_relative 'server/server'
 
     Server.run!
   end
 
+  desc 'run the server with remote config'
   task :remote do
     Config.set_env('remote')
-    require_relative 'server'
+    require_relative 'server/server'
 
     Server.run!
+  end
+
+  desc 'run the server specs'
+  RSpec::Core::RakeTask.new(:spec) do |t|
+    t.pattern = Dir.glob('server/spec/*_spec.rb')
   end
 end
 
 namespace :web do
+  desc 'install the web dependencies'
   task :install do
-    command = TTY::Command.new
     command.run('cd web && npm install')
   end
 
+  desc 'build the web app for distribution'
   task build: %i[web:install proto] do
-    command = TTY::Command.new
     command.run('cd web && npm run build')
   end
 
+  desc 'run the web app in development mode'
   task :vite do
     Dir.chdir('web') do
       exec('node_modules/.bin/vite')
     end
   end
 
+  desc 'run the web tests'
   task :vitest do
     Dir.chdir('web') do
       exec('npx vitest')
@@ -136,18 +151,23 @@ namespace :web do
 end
 
 namespace :changes do
+  desc 'archive the database with today\'s date'
   task :archive do
-    command = TTY::Command.new
     command.run('cd changes && ruby archive.rb')
   end
 
+  desc 'diff the two newest archives'
   task :diff do
-    command = TTY::Command.new
     command.run('cd changes && ruby diff.rb')
   end
 
+  desc 'print out the most played tracks this year by diffing the latest archive with the first archive from this calendar year'
   task :rewind do
-    command = TTY::Command.new
     command.run('cd changes && ruby rewind.rb')
   end
+end
+
+desc 'run linting and formatting checks'
+task :checks do
+  command.run('bundle exec rubocop Rakefile server/ shared/ update/ changes/')
 end

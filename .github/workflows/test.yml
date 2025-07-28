@@ -85,3 +85,17 @@ jobs:
         webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
         username: "github"
         message: "Vitest tests failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/warehouse/actions/runs/${{ github.run_id }}"
+
+    - name: checks
+      id: checks
+      run: bundle exec rake checks
+
+    - name: discord checks
+      id: discord_checks
+      if: ${{ failure() && steps.checks.conclusion == 'failure' }}
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.WEBHOOK_ID }}
+        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
+        username: "github"
+        message: "Checks failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/warehouse/actions/runs/${{ github.run_id }}"

@@ -61,8 +61,8 @@ module Update
       finish_updates(flatten_updates(updates.finishes))
 
       flat_artwork_updates = flatten_updates(updates.artworks)
-      flat_artwork_updates.each do |_, artwork_filename|
-        next if has_artwork?(artwork_filename)
+      flat_artwork_updates.each do |_, artwork_filename| # rubocop:disable Style/HashEachMethods
+        next if artwork_exists?(artwork_filename)
 
         response = execute_remote_request("/artwork/#{artwork_filename}", jwt)
         if response.is_a?(Net::HTTPSuccess)
@@ -180,14 +180,12 @@ module Update
       end
     end
 
-    def has_artwork?(filename)
+    def artwork_exists?(filename)
       File.exist?(File.join(@local_artwork_dir, filename))
     end
 
     def put_artwork(filename, contents)
-      File.open(File.join(@local_artwork_dir, filename), 'wb') do |file|
-        file.write(contents)
-      end
+      File.binwrite(File.join(@local_artwork_dir, filename), contents)
     end
   end
 end

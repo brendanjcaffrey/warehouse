@@ -6,7 +6,6 @@ require 'rspec'
 require 'rack/test'
 require 'pg'
 require 'yaml'
-require_relative '../shared/messages_pb'
 
 GET_TABLES_SQL = 'SELECT table_name FROM information_schema.tables WHERE table_schema = \'public\';'
 DROP_TABLE_SQL = 'DROP TABLE IF EXISTS %s;'
@@ -23,9 +22,9 @@ else
 end
 database_name = 'warehouse_test'
 
-TEST_CONFIG = TestConfig.new("#{Dir.pwd}/spec/", "#{Dir.pwd}/spec/", 'localhost', 5432, database_username, database_password, database_name,
+TEST_CONFIG = TestConfig.new(__dir__, __dir__, 'localhost', 5432, database_username, database_password, database_name,
                              8046, '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0')
-USERNAMES = %w[test123 notrack]
+USERNAMES = %w[test123 notrack].freeze
 
 module Config
   module_function
@@ -60,7 +59,6 @@ module Config
 end
 
 require_relative '../server'
-require_relative '../update/database'
 
 module Update
   class Database
@@ -70,6 +68,7 @@ end
 
 describe 'Warehouse Server' do
   include Rack::Test::Methods
+  include Helpers
 
   def app
     Server
@@ -112,10 +111,10 @@ describe 'Warehouse Server' do
   end
 
   before :all do
-    `echo "fake mp3 contents" > spec/__test.mp3`
-    `echo "fake jpg contents" > spec/__artwork.jpg`
-    `echo "fake png contents" > spec/__artwork.png`
-    File.symlink(File.expand_path('spec/__test.mp3'), 'spec/06dbe92c2a5dab2f7911e20a9e157521.mp3')
+    `echo "fake mp3 contents" > "#{__dir__}/__test.mp3"`
+    `echo "fake jpg contents" > "#{__dir__}/__artwork.jpg"`
+    `echo "fake png contents" > "#{__dir__}/__artwork.png"`
+    File.symlink(File.expand_path("#{__dir__}/__test.mp3"), "#{__dir__}/06dbe92c2a5dab2f7911e20a9e157521.mp3")
 
     DB_POOL.with do |conn|
       orig_tables = conn.exec(GET_TABLES_SQL).map(&:values).flatten
@@ -123,7 +122,7 @@ describe 'Warehouse Server' do
         conn.exec(DROP_TABLE_SQL % conn.escape_string(table))
       end
 
-      sql_file = "#{Dir.pwd}/export/export/CreateTables.sql"
+      sql_file = "#{__dir__}/../../export/export/CreateTables.sql"
       queries = File.read(sql_file).split(';').map(&:strip).reject(&:empty?)
       queries.each do |query|
         conn.exec(query)
@@ -132,10 +131,10 @@ describe 'Warehouse Server' do
   end
 
   after :all do
-    `rm spec/__test.mp3`
-    `rm spec/06dbe92c2a5dab2f7911e20a9e157521.mp3`
-    `rm spec/__artwork.jpg`
-    `rm spec/__artwork.png`
+    `rm "#{__dir__}/__test.mp3"`
+    `rm "#{__dir__}/06dbe92c2a5dab2f7911e20a9e157521.mp3"`
+    `rm "#{__dir__}/__artwork.jpg"`
+    `rm "#{__dir__}/__artwork.png"`
   end
 
   let(:track_id1) { '21D8E2441A5E2204' }
@@ -179,23 +178,23 @@ describe 'Warehouse Server' do
   end
 
   describe '/tracks/*' do
-    it 'should redirect if not logged in' do
+    it 'redirects if not logged in' do
       get "/tracks/#{music_md5}"
       follow_redirect!
       expect(last_request.url).to eq('http://localhost/')
     end
 
-    it 'should 404 if the track doesn\'t exist in the database' do
+    it 'returns 404 if the track does not exist in the database' do
       get '/tracks/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ', {}, get_auth_header
       expect(last_response.status).to eq(404)
     end
 
-    it 'should send the contents of the file' do
+    it 'sends the contents of the file' do
       get "/tracks/#{music_md5}", {}, get_auth_header
       expect(last_response.body).to eq("fake mp3 contents\n")
     end
 
-    it 'should send a path to the file in remote mode' do
+    it 'sends a path to the file in remote mode' do
       Config.set_remote(true)
       get "/tracks/#{music_md5}", {}, get_auth_header
       expect(last_response.headers['Content-Type']).to eq('audio/mpeg')
@@ -204,28 +203,28 @@ describe 'Warehouse Server' do
   end
 
   describe '/artwork/*' do
-    it 'should redirect if not logged in' do
+    it 'redirects if not logged in' do
       get "/artwork/#{artwork_filename}"
       follow_redirect!
       expect(last_request.url).to eq('http://localhost/')
     end
 
-    it 'should 404 if the artwork doesn\'t exist' do
+    it 'returns 404 if the artwork does not exist' do
       get '/artwork/__notfound.jpg', {}, get_auth_header
       expect(last_response.status).to eq(404)
     end
 
-    it 'should 404 if the file exists but isn\'t in the database' do
+    it 'returns 404 if the file exists but is not in the database' do
       get '/artwork/__fake_artwork.jpg', {}, get_auth_header
       expect(last_response.status).to eq(404)
     end
 
-    it 'should send the contents of the file if it is in the database' do
+    it 'sends the contents of the file if it is in the database' do
       get "/artwork/#{artwork_filename}", {}, get_auth_header
       expect(last_response.body).to eq("fake jpg contents\n")
     end
 
-    it 'should send a path to the file in remote mode' do
+    it 'sends a path to the file in remote mode' do
       Config.set_remote(true)
       get "/artwork/#{artwork_filename}", {}, get_auth_header
       expect(last_response.headers['Content-Type']).to eq('image/jpeg')
@@ -243,13 +242,13 @@ describe 'Warehouse Server' do
       expect(payload['username']).to eq('test123')
     end
 
-    it 'should reject an invalid username' do
+    it 'rejects an invalid username' do
       post '/api/auth', { username: 'invalid', password: 'test123' }
       response = AuthResponse.decode(last_response.body)
       expect(response.response).to eq(:error)
     end
 
-    it 'should reject an invalid password' do
+    it 'rejects an invalid password' do
       post '/api/auth', { username: 'test', password: 'invalid' }
       response = AuthResponse.decode(last_response.body)
       expect(response.response).to eq(:error)
@@ -257,7 +256,7 @@ describe 'Warehouse Server' do
   end
 
   describe 'put /api/auth' do
-    it 'should return a new token if valid jwt' do
+    it 'returns a new token if valid jwt' do
       auth_header = get_auth_header
       put '/api/auth', {}, auth_header
       response = AuthResponse.decode(last_response.body)
@@ -269,44 +268,44 @@ describe 'Warehouse Server' do
       expect(payload['username']).to eq('test123')
     end
 
-    it 'should return an error if no auth header' do
+    it 'returns an error if no auth header' do
       put '/api/auth'
       expect(AuthResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return false if expired jwt' do
+    it 'returns false if expired jwt' do
       put '/api/auth', {}, get_expired_auth_header
       expect(AuthResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return false if invalid jwt' do
+    it 'returns false if invalid jwt' do
       put '/api/auth', {}, get_invalid_auth_header
       expect(AuthResponse.decode(last_response.body).response).to eq(:error)
     end
   end
 
   describe 'get /api/version' do
-    it 'should return an error if no jwt' do
+    it 'returns an error if no jwt' do
       get '/api/version'
       expect(VersionResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       get '/api/version', {}, get_invalid_auth_header
       expect(VersionResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       get '/api/version', {}, get_expired_auth_header
       expect(VersionResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return 500 if the export didn\'t finish' do
+    it 'returns 500 if the export did not finish' do
       get '/api/version', {}, get_auth_header
       expect(last_response.status).to eq(500)
     end
 
-    it 'should return the time if the export did finish' do
+    it 'returns the time if the export did finish' do
       DB_POOL.with do |conn|
         conn.exec(INSERT_EXPORT_FINISHED_SQL)
       end
@@ -319,33 +318,33 @@ describe 'Warehouse Server' do
   end
 
   describe 'get /api/library' do
-    before :each do
+    before do
       DB_POOL.with do |conn|
         conn.exec_params('INSERT INTO library_metadata (total_file_size) VALUES ($1)', [1001])
       end
     end
 
-    it 'should return an error if no jwt' do
+    it 'returns an error if no jwt' do
       get '/api/library'
       expect(LibraryResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       get '/api/library', {}, get_invalid_auth_header
       expect(LibraryResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       get '/api/library', {}, get_expired_auth_header
       expect(LibraryResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return a 500 if the export did not finish' do
+    it 'returns a 500 if the export did not finish' do
       get '/api/library', {}, get_auth_header
       expect(last_response.status).to eq(500)
     end
 
-    it 'should dump all genres, artists, albums and tracks' do
+    it 'dumps all genres, artists, albums and tracks' do
       DB_POOL.with do |conn|
         conn.exec(INSERT_EXPORT_FINISHED_SQL)
         conn.exec_params('INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4),($5,$6,$7,$8),($9,$10,$11,$12),($13,$14,$15,$16)',
@@ -428,7 +427,7 @@ describe 'Warehouse Server' do
       expect(library.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should include whether to track changes or not' do
+    it 'includes whether to track changes or not' do
       DB_POOL.with do |conn|
         conn.exec(INSERT_EXPORT_FINISHED_SQL)
       end
@@ -441,7 +440,7 @@ describe 'Warehouse Server' do
       expect(library.trackUserChanges).to be false
     end
 
-    it 'should support missing artwork' do
+    it 'supports missing artwork' do
       DB_POOL.with do |conn|
         conn.exec(INSERT_EXPORT_FINISHED_SQL)
         conn.exec('UPDATE tracks SET artwork_filename=NULL')
@@ -453,22 +452,22 @@ describe 'Warehouse Server' do
   end
 
   describe '/api/updates' do
-    it 'should return an error if no jwt' do
+    it 'returns an error if no jwt' do
       get '/api/updates'
       expect(UpdatesResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       get '/api/updates', {}, get_invalid_auth_header
       expect(UpdatesResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       get '/api/updates', {}, get_expired_auth_header
       expect(UpdatesResponse.decode(last_response.body).response).to eq(:error)
     end
 
-    it 'should include all plays' do
+    it 'includes all plays' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO plays (track_id) VALUES ($1);', [track_id2])
         conn.exec('INSERT INTO plays (track_id) VALUES ($1);', [track_id1])
@@ -480,7 +479,7 @@ describe 'Warehouse Server' do
       expect(updates.plays.map(&:trackId)).to eq([track_id2, track_id1, track_id2])
     end
 
-    it 'should include all ratings' do
+    it 'includes all ratings' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO rating_updates (track_id, rating) VALUES ($1, $2);', [track_id2, 100])
         conn.exec('INSERT INTO rating_updates (track_id, rating) VALUES ($1, $2);', [track_id1, 80])
@@ -493,7 +492,7 @@ describe 'Warehouse Server' do
       expect(ratings.map(&:value)).to eq([100, 80, 60])
     end
 
-    it 'should include all names' do
+    it 'includes all names' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', [track_id2, 'abc'])
         conn.exec('INSERT INTO name_updates (track_id, name) VALUES ($1, $2);', [track_id1, 'def'])
@@ -506,7 +505,7 @@ describe 'Warehouse Server' do
       expect(names.map(&:value)).to eq(%w[abc def ghi])
     end
 
-    it 'should include all artists' do
+    it 'includes all artists' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', [track_id2, 'abc'])
         conn.exec('INSERT INTO artist_updates (track_id, artist) VALUES ($1, $2);', [track_id1, 'def'])
@@ -519,7 +518,7 @@ describe 'Warehouse Server' do
       expect(artists.map(&:value)).to eq(%w[abc def ghi])
     end
 
-    it 'should include all albums' do
+    it 'includes all albums' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', [track_id2, 'abc'])
         conn.exec('INSERT INTO album_updates (track_id, album) VALUES ($1, $2);', [track_id1, 'def'])
@@ -532,7 +531,7 @@ describe 'Warehouse Server' do
       expect(albums.map(&:value)).to eq(%w[abc def ghi])
     end
 
-    it 'should include all album artists' do
+    it 'includes all album artists' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', [track_id2, 'abc'])
         conn.exec('INSERT INTO album_artist_updates (track_id, album_artist) VALUES ($1, $2);', [track_id1, 'def'])
@@ -545,7 +544,7 @@ describe 'Warehouse Server' do
       expect(album_artists.map(&:value)).to eq(%w[abc def ghi])
     end
 
-    it 'should include all genres' do
+    it 'includes all genres' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', [track_id2, 'abc'])
         conn.exec('INSERT INTO genre_updates (track_id, genre) VALUES ($1, $2);', [track_id1, 'def'])
@@ -558,7 +557,7 @@ describe 'Warehouse Server' do
       expect(genres.map(&:value)).to eq(%w[abc def ghi])
     end
 
-    it 'should include all years' do
+    it 'includes all years' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO year_updates (track_id, year) VALUES ($1, $2);', [track_id2, 100])
         conn.exec('INSERT INTO year_updates (track_id, year) VALUES ($1, $2);', [track_id1, 200])
@@ -571,7 +570,7 @@ describe 'Warehouse Server' do
       expect(years.map(&:value)).to eq([100, 200, 300])
     end
 
-    it 'should include all starts' do
+    it 'includes all starts' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO start_updates (track_id, start) VALUES ($1, $2);', [track_id2, 1.1])
         conn.exec('INSERT INTO start_updates (track_id, start) VALUES ($1, $2);', [track_id1, 1.2])
@@ -586,7 +585,7 @@ describe 'Warehouse Server' do
       expect(starts[2].value).to be_within(0.001).of(1.3)
     end
 
-    it 'should include all finishes' do
+    it 'includes all finishes' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO finish_updates (track_id, finish) VALUES ($1, $2);', [track_id2, 1.1])
         conn.exec('INSERT INTO finish_updates (track_id, finish) VALUES ($1, $2);', [track_id1, 1.2])
@@ -601,7 +600,7 @@ describe 'Warehouse Server' do
       expect(finishes[2].value).to be_within(0.001).of(1.3)
     end
 
-    it 'should include all artwork updates' do
+    it 'includes all artwork updates' do
       DB_POOL.with do |conn|
         conn.exec('INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);', [track_id2, 'hi.jpg'])
         conn.exec('INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);', [track_id1, nil])
@@ -618,42 +617,42 @@ describe 'Warehouse Server' do
   end
 
   describe '/api/play/*' do
-    it 'should return an error if no jwt' do
+    it 'returns an error if no jwt' do
       post "/api/play/#{track_id1}"
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       post "/api/play/#{track_id1}", {}, get_invalid_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       post "/api/play/#{track_id1}", {}, get_expired_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if not tracking the user\'s changes' do
+    it 'returns an error if not tracking this users changes' do
       post "/api/play/#{track_id1}", {}, get_auth_header('notrack')
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_TRACKING_ERROR)
     end
 
-    it 'should return an error if track doesn\'t exist' do
+    it 'returns an error if track does not exist' do
       post '/api/play/ABCD', {}, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_TRACK_ERROR)
     end
 
-    it 'should create a play if tracking this user\'s changes is enabled' do
+    it 'creates a play if tracking this users changes is enabled' do
       insert_old_export_finished_at
       expect(get_first_value("SELECT play_count FROM tracks WHERE id='#{track_id1}'")).to eq('5')
 
@@ -668,77 +667,77 @@ describe 'Warehouse Server' do
   end
 
   describe '/api/rating/*' do
-    it 'should return an error if rating is missing' do
+    it 'returns an error if rating is missing' do
       post "/api/rating/#{track_id1}", {}, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_RATING_ERROR)
     end
 
-    it 'should return an error if rating is non-numeric' do
+    it 'returns an error if rating is non-numeric' do
       post "/api/rating/#{track_id1}", { rating: 'abcd' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_RATING_ERROR)
     end
 
-    it 'should return an error if rating is empty' do
+    it 'returns an error if rating is empty' do
       post "/api/rating/#{track_id1}", { rating: '' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_RATING_ERROR)
     end
 
-    it 'should return an error if rating is too high' do
+    it 'returns an error if rating is too high' do
       post "/api/rating/#{track_id1}", { rating: '120' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_RATING_ERROR)
     end
 
-    it 'should return an error if rating is too low' do
+    it 'returns an error if rating is too low' do
       post "/api/rating/#{track_id1}", { rating: '-1' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_RATING_ERROR)
     end
 
-    it 'should return an error if no jwt' do
+    it 'returns an error if no jwt' do
       post "/api/rating/#{track_id1}", { rating: '80' }
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       post "/api/rating/#{track_id1}", { rating: '80' }, get_invalid_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       post "/api/rating/#{track_id1}", { rating: '80' }, get_expired_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if not tracking the user\'s changes' do
+    it 'returns an error if not tracking this users changes' do
       post "/api/rating/#{track_id1}", { rating: '80' }, get_auth_header('notrack')
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_TRACKING_ERROR)
     end
 
-    it 'should return an error if track doesn\'t exist' do
+    it 'returns an error if track does not exist' do
       post '/api/rating/ABCD', { rating: '80' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_TRACK_ERROR)
     end
 
-    it 'should create a rating update if tracking this user\'s changes is enabled' do
+    it 'creates a rating update if tracking this users changes is enabled' do
       insert_old_export_finished_at
       expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('100')
 
@@ -767,84 +766,84 @@ describe 'Warehouse Server' do
       insert_old_export_finished_at
     end
 
-    it 'should return an error if no jwt' do
+    it 'returns an error if no jwt' do
       post "/api/track-info/#{track_id1}"
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       post "/api/track-info/#{track_id1}", {}, get_invalid_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       post "/api/track-info/#{track_id1}", {}, get_expired_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if not tracking the user\'s changes' do
+    it 'returns an error if not tracking the users changes' do
       post "/api/track-info/#{track_id1}", {}, get_auth_header('notrack')
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_TRACKING_ERROR)
     end
 
-    it 'should return an error if track doesn\'t exist' do
+    it 'returns an error if track does not exist' do
       post '/api/track-info/ABCD', {}, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_TRACK_ERROR)
     end
 
-    it 'should return an error if name is empty' do
+    it 'returns an error if name is empty' do
       post '/api/track-info/ABCD', { name: '' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'should return an error if year is empty' do
+    it 'returns an error if year is empty' do
       post '/api/track-info/ABCD', { year: '' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'should return an error if artist is empty' do
+    it 'returns an error if artist is empty' do
       post '/api/track-info/ABCD', { artist: '' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'should return an error if genre is empty' do
+    it 'returns an error if genre is empty' do
       post '/api/track-info/ABCD', { genre: '' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'should return an error if year is non-numeric' do
+    it 'returns an error if year is non-numeric' do
       post '/api/track-info/ABCD', { year: 'abcd' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_YEAR_ERROR)
     end
 
-    it 'should return an error if artwork file does not exist' do
+    it 'returns an error if artwork file does not exist' do
       post '/api/track-info/ABCD', { artwork: 'abcd.png' }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(MISSING_FILE_ERROR)
     end
 
-    it 'should create a name update if tracking this user\'s changes is enabled' do
+    it 'creates a name update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT name FROM tracks WHERE id='#{track_id1}'")).to eq('test_title')
 
       post "/api/track-info/#{track_id1}", { name: 'abc' }, get_auth_header
@@ -864,7 +863,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create a year update if tracking this user\'s changes is enabled' do
+    it 'creates a year update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT year FROM tracks WHERE id='#{track_id1}'")).to eq('2018')
 
       post "/api/track-info/#{track_id1}", { year: '1970' }, get_auth_header
@@ -884,7 +883,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create a start update if tracking this user\'s changes is enabled' do
+    it 'creates a start update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT start FROM tracks WHERE id='#{track_id1}'")).to eq('0.1')
 
       post "/api/track-info/#{track_id1}", { start: '1.2' }, get_auth_header
@@ -904,7 +903,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create a finish update if tracking this user\'s changes is enabled' do
+    it 'creates a finish update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT finish FROM tracks WHERE id='#{track_id1}'")).to eq('1.22')
 
       post "/api/track-info/#{track_id1}", { finish: '2.3' }, get_auth_header
@@ -924,7 +923,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create an artist update if tracking this user\'s changes is enabled' do
+    it 'creates an artist update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id='#{track_id1}'")).to eq('test_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('1')
 
@@ -947,7 +946,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create an genre update if tracking this user\'s changes is enabled' do
+    it 'creates an genre update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id='#{track_id1}'")).to eq('test_genre')
       expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('1')
 
@@ -970,8 +969,8 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create an album artist update if tracking this user\'s changes is enabled' do
-      expect(get_first_value("SELECT album_artist_id FROM tracks WHERE tracks.id='#{track_id1}'")).to eq(nil)
+    it 'creates an album artist update if tracking this users changes is enabled' do
+      expect(get_first_value("SELECT album_artist_id FROM tracks WHERE tracks.id='#{track_id1}'")).to be_nil
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('1')
 
       post "/api/track-info/#{track_id1}", { album_artist: 'new_album_artist' }, get_auth_header
@@ -988,7 +987,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq(track_id1)
       expect(get_first_value('SELECT album_artist FROM album_artist_updates')).to eq('')
-      expect(get_first_value("SELECT album_artist_id FROM tracks WHERE id='#{track_id1}'")).to eq(nil)
+      expect(get_first_value("SELECT album_artist_id FROM tracks WHERE id='#{track_id1}'")).to be_nil
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
@@ -1002,7 +1001,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create an album update if tracking this user\'s changes is enabled' do
+    it 'creates an album update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id='#{track_id1}'")).to eq('test_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('1')
 
@@ -1020,7 +1019,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_updates')).to eq(track_id1)
       expect(get_first_value('SELECT album FROM album_updates')).to eq('')
-      expect(get_first_value("SELECT album_id FROM tracks WHERE id='#{track_id1}'")).to eq(nil)
+      expect(get_first_value("SELECT album_id FROM tracks WHERE id='#{track_id1}'")).to be_nil
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
@@ -1034,7 +1033,7 @@ describe 'Warehouse Server' do
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
 
-    it 'should create an artwork update if tracking this user\'s changes' do
+    it 'creates an artwork update if tracking this users changes' do
       expect(get_first_value("SELECT artwork_filename FROM tracks WHERE id='#{track_id1}'").strip).to eq('__artwork.jpg')
 
       post "/api/track-info/#{track_id1}", { artwork: '__artwork.png' }, get_auth_header
@@ -1049,8 +1048,8 @@ describe 'Warehouse Server' do
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM artwork_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM artwork_updates')).to eq(track_id1)
-      expect(get_first_value('SELECT artwork_filename FROM artwork_updates')).to eq(nil)
-      expect(get_first_value("SELECT artwork_filename FROM tracks WHERE id='#{track_id1}'")).to eq(nil)
+      expect(get_first_value('SELECT artwork_filename FROM artwork_updates')).to be_nil
+      expect(get_first_value("SELECT artwork_filename FROM tracks WHERE id='#{track_id1}'")).to be_nil
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
   end
@@ -1059,78 +1058,78 @@ describe 'Warehouse Server' do
     let(:artwork_filename1) { '27a8d4658b73d9533c1db34ee2350da0.jpg' }
     let(:artwork_filename2) { 'f693282ce0329b1fb9ec383feae8088b.png' }
 
-    after :each do
-      FileUtils.rm_f("spec/#{artwork_filename1}")
-      FileUtils.rm_f("spec/#{artwork_filename2}")
+    after do
+      FileUtils.rm_f("#{__dir__}/#{artwork_filename1}")
+      FileUtils.rm_f("#{__dir__}/#{artwork_filename2}")
     end
 
-    it 'should return an error if no jwt' do
-      post '/api/artwork', 'file' => Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/jpeg')
+    it 'returns an error if no jwt' do
+      post '/api/artwork', 'file' => Rack::Test::UploadedFile.new("#{__dir__}/__artwork.jpg", 'image/jpeg')
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if invalid jwt' do
+    it 'returns an error if invalid jwt' do
       post '/api/artwork', {}, get_invalid_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if expired jwt' do
+    it 'returns an error if expired jwt' do
       post '/api/artwork', {}, get_expired_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
-    it 'should return an error if not tracking the user\'s changes' do
+    it 'returns an error if not tracking the users changes' do
       post '/api/artwork', {}, get_auth_header('notrack')
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_TRACKING_ERROR)
     end
 
-    it 'should return an error if missing the file' do
+    it 'returns an error if missing the file' do
       post '/api/artwork', {}, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(MISSING_FILE_ERROR)
     end
 
-    it 'should return an error if an invalid extension' do
-      invalid_ext_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/wav', true, original_filename: 'artwork.wav')
+    it 'returns an error if an invalid extension' do
+      invalid_ext_uploaded_file = Rack::Test::UploadedFile.new("#{__dir__}/__artwork.jpg", 'image/wav', true, original_filename: 'artwork.wav')
       post '/api/artwork', { 'file' => invalid_ext_uploaded_file }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_MIME_ERROR)
     end
 
-    it 'should return an error if the md5 doesn\'t match the filename' do
-      invalid_md5_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/jpeg', true, original_filename: '49f68a5c8493ec2c0bf489821c21fc3b.jpg')
+    it 'returns an error if the md5 does not match the filename' do
+      invalid_md5_uploaded_file = Rack::Test::UploadedFile.new("#{__dir__}/__artwork.jpg", 'image/jpeg', true, original_filename: '49f68a5c8493ec2c0bf489821c21fc3b.jpg')
       post '/api/artwork', { 'file' => invalid_md5_uploaded_file }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_MD5_ERROR)
     end
 
-    it 'should accept a valid jpg' do
-      expect(File.exist?("spec/#{artwork_filename1}")).to be false
-      jpg_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.jpg', 'image/jpeg', true, original_filename: artwork_filename1)
+    it 'accepts a valid jpg' do
+      expect(File.exist?("#{__dir__}/#{artwork_filename1}")).to be false
+      jpg_uploaded_file = Rack::Test::UploadedFile.new("#{__dir__}/__artwork.jpg", 'image/jpeg', true, original_filename: artwork_filename1)
       post '/api/artwork', { 'file' => jpg_uploaded_file }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be true
-      expect(File.read("spec/#{artwork_filename1}")).to eq("fake jpg contents\n")
+      expect(File.read("#{__dir__}/#{artwork_filename1}")).to eq("fake jpg contents\n")
     end
 
-    it 'should accept a valid png' do
-      expect(File.exist?("spec/#{artwork_filename2}")).to be false
-      png_uploaded_file = Rack::Test::UploadedFile.new('spec/__artwork.png', 'image/png', true, original_filename: artwork_filename2)
+    it 'accepts a valid png' do
+      expect(File.exist?("#{__dir__}/#{artwork_filename2}")).to be false
+      png_uploaded_file = Rack::Test::UploadedFile.new("#{__dir__}/__artwork.png", 'image/png', true, original_filename: artwork_filename2)
       post '/api/artwork', { 'file' => png_uploaded_file }, get_auth_header
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be true
-      expect(File.read("spec/#{artwork_filename2}")).to eq("fake png contents\n")
+      expect(File.read("#{__dir__}/#{artwork_filename2}")).to eq("fake png contents\n")
     end
   end
 end

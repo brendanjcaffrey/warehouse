@@ -7,17 +7,17 @@ map_removed_track_keys = { 'disc' => 'disc_number', 'track' => 'track_number' }
 # keys that were added at some point for tracks
 added_track_keys = %w[ext file_md5 artwork_filename]
 
-tracks = Dir.glob('tracks/*.json').sort[-2..-1]
-playlists = Dir.glob('playlists/*.json').sort[-2..-1]
+tracks = Dir.glob('tracks/*.json')[-2..]
+playlists = Dir.glob('playlists/*.json')[-2..]
 
-old_tracks = JSON.load(File.read(tracks.first))
-new_tracks = JSON.load(File.read(tracks.last))
+old_tracks = JSON.parse(File.read(tracks.first))
+new_tracks = JSON.parse(File.read(tracks.last))
 
 old_idx = 0
 new_idx = 0
 
 def desc(track)
-  track['name'] + ' - ' + track['artist']
+  "#{track['name']} - #{track['artist']}"
 end
 
 def desc_id(track_id, list)
@@ -31,21 +31,21 @@ end
 
 puts '====== TRACKS ======'
 
-Changeset = Struct.new(:desc, :changed, :values) do
+Changeset = Struct.new(:desc, :change_type, :changed) do
   def <=>(other)
     return desc <=> other.desc if desc != other.desc
-    return changed <=> other.changed if changed != other.changed
+    return change_type <=> other.change_type if change_type != other.change_type
 
-    values.count <=> other.values.count
+    changed.count <=> other.changed.count
   end
 end
 changesets = []
 deleted_count = 0
 while old_idx < old_tracks.size || new_idx < new_tracks.size
   old_track = old_tracks[old_idx]
-  old_track = old_track.reject { |k, _v| k == 'play_count' } if old_track
+  old_track = old_track.except('play_count') if old_track
   new_track = new_tracks[new_idx]
-  new_track = new_track.reject { |k, _v| k == 'play_count' } if new_track
+  new_track = new_track.except('play_count') if new_track
 
   if old_idx >= old_tracks.size
     changesets.push(Changeset.new(desc(new_track), 'Added', []))
@@ -74,20 +74,20 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
       end
 
       if old_track_keys != new_track_keys
-        puts desc(old_track) + ': keys don\'t match! Aborting!'
+        puts "#{desc(old_track)}: keys don't match! Aborting!"
         exit
       end
 
       changeset = Changeset.new(desc(old_track), 'Changed', [])
-      old_track_keys.select { |key| old_track[key] != new_track[key] }.each do |key|
-        changeset.values.push("  #{key}: #{old_track[key]} → #{new_track[key]}")
+      old_track_keys.reject { |key| old_track[key] == new_track[key] }.each do |key|
+        changeset.changed.push("  #{key}: #{old_track[key]} → #{new_track[key]}")
       end
 
-      changesets.push(changeset) unless changeset.values.empty?
+      changesets.push(changeset) unless changeset.changed.empty?
     end
 
-    old_idx += 1
-    new_idx += 1
+    old_idx += 1 # rubocop:disable Lint/UselessAssignment
+    new_idx += 1 # rubocop:disable Lint/UselessAssignment
   elsif old_track['id'] < new_track['id']
     changesets.push(Changeset.new(desc(old_track), 'Deleted', []))
     old_idx += 1
@@ -104,15 +104,15 @@ if deleted_count >= 1000
 end
 
 changesets.sort.each do |changeset|
-  puts changeset.changed + ': ' + changeset.desc
-  changeset.values.each do |value|
+  puts "#{changeset.change_type}: #{changeset.desc}"
+  changeset.changed.each do |value|
     puts value
   end
   puts ''
 end
 
-old_playlists = JSON.load(File.read(playlists.first))
-new_playlists = JSON.load(File.read(playlists.last))
+old_playlists = JSON.parse(File.read(playlists.first))
+new_playlists = JSON.parse(File.read(playlists.last))
 
 old_idx = 0
 new_idx = 0
@@ -125,7 +125,7 @@ while old_idx < old_playlists.size && new_idx < new_playlists.size
 
   if old_playlist['id'] == new_playlist['id']
     if old_playlist != new_playlist
-      puts 'Changed: ' + old_playlist['name']
+      puts "Changed: #{old_playlist['name']}"
 
       if old_playlist.keys != new_playlist.keys
         puts 'Keys don\'t match! Aborting!'
@@ -133,7 +133,7 @@ while old_idx < old_playlists.size && new_idx < new_playlists.size
       end
       keys = old_playlist.keys - ['tracks']
 
-      keys.select { |key| old_playlist[key] != new_playlist[key] }.each do |key|
+      keys.reject { |key| old_playlist[key] == new_playlist[key] }.each do |key|
         puts "  #{key}: #{old_playlist[key]} → #{new_playlist[key]}"
       end
 
@@ -157,8 +157,8 @@ while old_idx < old_playlists.size && new_idx < new_playlists.size
         new_track_id = new_track_ids[new_track_idx]
 
         if old_track_id == new_track_id
-          old_track_idx += 1
-          new_track_idx += 1
+          old_track_idx += 1 # rubocop:disable Lint/UselessAssignment
+          new_track_idx += 1 # rubocop:disable Lint/UselessAssignment
         elsif old_track_id < new_track_id
           changesets.push(Changeset.new(desc_id(old_track_id, old_tracks), 'Removed', []))
           old_track_idx += 1
@@ -169,18 +169,18 @@ while old_idx < old_playlists.size && new_idx < new_playlists.size
       end
 
       changesets.sort.each do |changeset|
-        puts " #{changeset.changed}: #{changeset.desc}"
+        puts " #{changeset.change_type}: #{changeset.desc}"
       end
       puts "\n"
     end
 
-    old_idx += 1
-    new_idx += 1
+    old_idx += 1 # rubocop:disable Lint/UselessAssignment
+    new_idx += 1 # rubocop:disable Lint/UselessAssignment
   elsif old_playlist['id'] < new_playlist['id']
-    puts 'Deleted: ' + old_playlist['name'] + "\n\n"
+    puts "Deleted: #{old_playlist['name']}\n\n"
     old_idx += 1
   else
-    puts 'Added: ' + new_playlist['name'] + "\n\n"
+    puts "Added: #{new_playlist['name']}\n\n"
     new_idx += 1
   end
 end
@@ -192,8 +192,8 @@ old_idx = 0
 new_idx = 0
 while old_idx < old_tracks.size || new_idx < new_tracks.size
   if old_idx >= old_tracks.size
-    new_track = new_tracks[new_idx].select { |k, _v| %w[play_count id].include?(k) }
-    plays.push("#{desc_id(new_track['id'], new_tracks)}: 0 → #{new_track['play_count']}") if new_track['play_count'] > 0
+    new_track = new_tracks[new_idx].slice('play_count', 'id')
+    plays.push("#{desc_id(new_track['id'], new_tracks)}: 0 → #{new_track['play_count']}") if new_track['play_count'].positive?
     new_idx += 1
     next
   end
@@ -202,8 +202,8 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
     next
   end
 
-  old_track = old_tracks[old_idx].select { |k, _v| %w[play_count id].include?(k) }
-  new_track = new_tracks[new_idx].select { |k, _v| %w[play_count id].include?(k) }
+  old_track = old_tracks[old_idx].slice('play_count', 'id')
+  new_track = new_tracks[new_idx].slice('play_count', 'id')
 
   if old_track['id'] == new_track['id']
     if old_track != new_track
@@ -214,13 +214,12 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
 
       plays.push("#{desc_id(new_track['id'], new_tracks)}: #{old_track['play_count']} → #{new_track['play_count']}")
     end
-
-    old_idx += 1
-    new_idx += 1
+    old_idx += 1 # rubocop:disable Lint/UselessAssignment
+    new_idx += 1 # rubocop:disable Lint/UselessAssignment
   elsif old_track['id'] < new_track['id']
     old_idx += 1
   else
-    plays.push("#{desc_id(new_track['id'], new_tracks)}: 0 → #{new_track['play_count']}") if new_track['play_count'] > 0
+    plays.push("#{desc_id(new_track['id'], new_tracks)}: 0 → #{new_track['play_count']}") if new_track['play_count'].positive?
     new_idx += 1
   end
 end

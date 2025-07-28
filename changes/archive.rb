@@ -45,7 +45,7 @@ end
 
 f = File.open(tracks_out, 'w')
 db.copy_data(tracks) do
-  while row = db.get_copy_data
+  while (row = db.get_copy_data)
     f.puts(row)
   end
 end
@@ -53,7 +53,7 @@ f.close
 
 f = File.open(playlists_out, 'w')
 db.copy_data(playlists) do
-  while row = db.get_copy_data
+  while (row = db.get_copy_data)
     f.puts(row)
   end
 end
