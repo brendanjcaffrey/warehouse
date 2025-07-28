@@ -194,7 +194,7 @@ module Update
 
     def update_start(persistent_id, new_start)
       start_start = get_start(persistent_id)
-      @command.run("osascript -e '#{format(UPDATE_START, escape(persistent_id), new_start.to_i)}'")
+      @command.run("osascript -e '#{format(UPDATE_START, escape(persistent_id), new_start.to_f)}'")
       end_start = get_start(persistent_id)
       puts "#{start_start} -> #{end_start}"
     end
@@ -205,7 +205,7 @@ module Update
 
     def update_finish(persistent_id, new_finish)
       start_finish = get_finish(persistent_id)
-      @command.run("osascript -e '#{format(UPDATE_FINISH, escape(persistent_id), new_finish.to_i)}'")
+      @command.run("osascript -e '#{format(UPDATE_FINISH, escape(persistent_id), new_finish.to_f)}'")
       end_finish = get_finish(persistent_id)
       puts "#{start_finish} -> #{end_finish}"
     end
