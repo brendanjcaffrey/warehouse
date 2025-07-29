@@ -8,7 +8,7 @@ server {
     ssl_certificate     /path/to/ssl.crt;
     ssl_certificate_key /path/to/ssl.key;
 
-    root /home/user/warehouse/server;
+    root /home/user/warehouse/public;
     listen 20600 ssl;
     client_max_body_size 1G;
     keepalive_timeout 5;
