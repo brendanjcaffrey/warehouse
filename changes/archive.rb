@@ -12,7 +12,7 @@ SQL
 tracks = <<~SQL
   COPY (
     SELECT array_to_json(array_agg(row_to_json(data))) FROM (
-      SELECT t.id, t.name, t.sort_name, a.name AS artist, COALESCE(aa.name,'') AS album_artist, COALESCE(al.name,'') AS album, g.name AS genre, t.year, t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, ext, file_md5, artwork_filename
+      SELECT t.id, t.name, t.sort_name, a.name AS artist, COALESCE(aa.name,'') AS album_artist, COALESCE(al.name,'') AS album, g.name AS genre, t.year, t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating, music_filename, artwork_filename
         FROM tracks AS t
           JOIN artists AS a ON t.artist_id = a.id
           FULL OUTER JOIN artists AS aa ON t.album_artist_id = aa.id

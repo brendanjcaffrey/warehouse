@@ -1,11 +1,11 @@
 require 'json'
 
 # keys that were once archived for tracks but are no longer
-removed_track_keys = ['file']
+removed_track_keys = %w[file ext file_md5]
 # keys that were renamed for tracks
 map_removed_track_keys = { 'disc' => 'disc_number', 'track' => 'track_number' }
 # keys that were added at some point for tracks
-added_track_keys = %w[ext file_md5 artwork_filename]
+added_track_keys = %w[artwork_filename music_filename]
 
 tracks = Dir.glob('tracks/*.json')[-2..]
 playlists = Dir.glob('playlists/*.json')[-2..]
