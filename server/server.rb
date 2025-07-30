@@ -66,7 +66,7 @@ class Server < Sinatra::Base
     send_file File.join(settings.public_folder, 'index.html')
   end
 
-  get '/tracks/*' do
+  get '/music/*' do
     if authed?
       file = params['splat'][0]
       full_path = File.expand_path(File.join(Config.env.music_path, file))

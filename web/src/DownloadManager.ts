@@ -264,7 +264,7 @@ export class DownloadManager {
     this.postStatus(request, DownloadStatus.IN_PROGRESS);
 
     try {
-      const urlPrefix = request.type === FileType.MUSIC ? "tracks" : "artwork";
+      const urlPrefix = request.type === FileType.MUSIC ? "music" : "artwork";
       const requestPath = `/${urlPrefix}/${request.ids.fileId}`;
       const { data } = await axios.get(requestPath, {
         signal: inflightRequest.abortController.signal,
