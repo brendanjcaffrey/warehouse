@@ -23,6 +23,7 @@ GEM
     mustermann (3.0.4)
       ruby2_keywords (~> 0.0.1)
     nio4r (2.7.4)
+    openssl (3.3.2)
     parallel (1.27.0)
     parser (3.3.9.0)
       ast (~> 2.4.1)
@@ -117,6 +118,7 @@ DEPENDENCIES
   connection_pool
   google-protobuf
   jwt
+  openssl
   pg
   puma
   rack-test
