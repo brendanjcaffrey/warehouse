@@ -169,6 +169,8 @@ end
 
 desc 'run linting and formatting checks'
 task :checks do
+  # ensure a .rubocop.yml file exists to avoid RuboCop complaining
+  FileUtils.touch(File.expand_path('~/.rubocop.yml'))
   command.run('bundle exec rubocop Rakefile server/ shared/ update/ changes/')
   Dir.chdir('web') do
     command.run('npm run lint')
