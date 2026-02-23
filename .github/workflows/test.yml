@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
 
     - name: start postgres
       run: |
@@ -22,11 +22,11 @@ jobs:
         sudo -u postgres psql --command="CREATE USER ci PASSWORD 'ci' SUPERUSER" --command="\du"
         sudo -u postgres psql --command="CREATE DATABASE warehouse_test WITH OWNER=ci" --command="\du"
 
-    - uses: ruby/setup-ruby@v1
+    - uses: ruby/setup-ruby@19a9babd0096de1a2aa716cac395f01253934999
       with:
         ruby-version: 3.3.4
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@efcb663fc60e97218a2b2d6d827f7830f164739e
       with:
         node-version: '22.14.0'
 
@@ -36,7 +36,7 @@ jobs:
         gem install bundler
         bundle install --jobs 4 --retry 3
 
-    - uses: arduino/setup-protoc@v2
+    - uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -46,56 +46,27 @@ jobs:
     - name: compile protobufs & build web
       run: bundle exec rake web:build
 
-    - name: discord prerequisites
-      id: discord_prerequisites
-      if: failure()
-      uses: appleboy/discord-action@master
-      with:
-        webhook_id: ${{ secrets.WEBHOOK_ID }}
-        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
-        username: "github"
-        message: "Prerequisites failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/warehouse/actions/runs/${{ github.run_id }}"
-
     - name: rspec
       id: rspec
       timeout-minutes: 1
       run: bundle exec rspec
-
-    - name: discord rspec
-      id: discord_rspec
-      if: ${{ failure() && steps.rspec.conclusion == 'failure' }}
-      uses: appleboy/discord-action@master
-      with:
-        webhook_id: ${{ secrets.WEBHOOK_ID }}
-        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
-        username: "github"
-        message: "Rspec tests failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/warehouse/actions/runs/${{ github.run_id }}"
 
     - name: vitest
       id: vitest
       timeout-minutes: 1
       run: cd web && npx vitest run
 
-    - name: discord vitest
-      id: discord_vitest
-      if: ${{ failure() && steps.vitest.conclusion == 'failure' }}
-      uses: appleboy/discord-action@master
-      with:
-        webhook_id: ${{ secrets.WEBHOOK_ID }}
-        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
-        username: "github"
-        message: "Vitest tests failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/warehouse/actions/runs/${{ github.run_id }}"
-
     - name: checks
       id: checks
       run: bundle exec rake checks
 
-    - name: discord checks
-      id: discord_checks
-      if: ${{ failure() && steps.checks.conclusion == 'failure' }}
-      uses: appleboy/discord-action@master
+    - name: pushover-actions
+      if: failure()
+      uses: umahmood/pushover-actions@0582cb24dccd1fe77aeb35e6fb8027ddbca8af35
+      env:
+        PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+        PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
       with:
-        webhook_id: ${{ secrets.WEBHOOK_ID }}
-        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
-        username: "github"
-        message: "Checks failed for ${{ github.repository }} on commit ${{ github.sha }}. https://github.com/brendanjcaffrey/warehouse/actions/runs/${{ github.run_id }}"
+        status: ${{ job.status }}
+        title: "${{ github.repository }} CI failed (${{ github.workflow }})"
+        url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
