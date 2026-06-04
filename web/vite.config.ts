@@ -1,12 +1,9 @@
-import { defineConfig } from "vite";
-import type { InlineConfig } from "vitest";
-import type { UserConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vite.dev/config/
-type ViteConfig = UserConfig & { test: InlineConfig };
-const config: ViteConfig = {
+export default defineConfig({
   plugins: [
     react(),
     VitePWA({
@@ -50,6 +47,4 @@ const config: ViteConfig = {
       "/artwork": "http://localhost:20601",
     },
   },
-};
-
-export default defineConfig(config);
+});

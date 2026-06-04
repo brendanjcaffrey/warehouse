@@ -205,6 +205,9 @@ describe("UpdatePersister", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     vi.clearAllTimers();
+    // clearAllMocks does not drain queued mock*ValueOnce values (vitest 4),
+    // so reset axios.post to avoid leaking unconsumed responses across tests
+    vi.mocked(axios.post).mockReset();
 
     vi.mocked(files().tryReadFile).mockImplementation(
       (type: FileType, id: string) => {
