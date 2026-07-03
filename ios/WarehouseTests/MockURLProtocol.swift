@@ -25,6 +25,38 @@ final class MockURLProtocol: URLProtocol {
         requests = []
     }
 
+    /// Handlers keyed by URL host, so suites that give each test a unique host
+    /// can run in parallel without racing on the shared `requestHandler`.
+    private static var hostHandlers: [String: (URLRequest) throws -> (HTTPURLResponse, Data)] = [:]
+    private static var hostRequests: [String: [URLRequest]] = [:]
+    private static let lock = NSLock()
+
+    static func setHandler(forHost host: String, _ handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)) {
+        lock.lock()
+        defer { lock.unlock() }
+        hostHandlers[host] = handler
+        hostRequests[host] = []
+    }
+
+    static func requests(forHost host: String) -> [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return hostRequests[host] ?? []
+    }
+
+    private static func handler(forHost host: String?) -> ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let host else { return nil }
+        return hostHandlers[host]
+    }
+
+    private static func record(_ request: URLRequest, forHost host: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        hostRequests[host, default: []].append(request)
+    }
+
     /// A session that routes all traffic through this protocol.
     static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
@@ -37,9 +69,15 @@ final class MockURLProtocol: URLProtocol {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        MockURLProtocol.requests.append(Self.normalized(request))
-
-        guard let handler = MockURLProtocol.requestHandler else {
+        let handler: (URLRequest) throws -> (HTTPURLResponse, Data)
+        if let host = request.url?.host, let hostHandler = Self.handler(forHost: host) {
+            Self.record(Self.normalized(request), forHost: host)
+            handler = hostHandler
+        } else if let globalHandler = MockURLProtocol.requestHandler {
+            MockURLProtocol.requests.append(Self.normalized(request))
+            handler = globalHandler
+        } else {
+            MockURLProtocol.requests.append(Self.normalized(request))
             client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
             return
         }

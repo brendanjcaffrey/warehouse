@@ -71,7 +71,7 @@ final class AuthStore {
             case .error, .empty:
                 logOut()
             }
-        } catch let error as URLError where Self.isOffline(error) {
+        } catch let error as URLError where error.isOfflineError {
             verified = true
         } catch {
             verifyError = "An error occurred while trying to verify authentication."
@@ -94,7 +94,7 @@ final class AuthStore {
         UserDefaults.standard.set(url, forKey: Self.serverURLKey)
     }
 
-    private func baseURL() -> URL? {
+    func baseURL() -> URL? {
         var trimmed = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if !trimmed.contains("://") {
@@ -102,19 +102,5 @@ final class AuthStore {
         }
         guard let url = URL(string: trimmed), url.host != nil else { return nil }
         return url
-    }
-
-    private static func isOffline(_ error: URLError) -> Bool {
-        switch error.code {
-        case .notConnectedToInternet,
-             .networkConnectionLost,
-             .cannotConnectToHost,
-             .cannotFindHost,
-             .timedOut,
-             .dnsLookupFailed:
-            return true
-        default:
-            return false
-        }
     }
 }
