@@ -134,16 +134,32 @@ class Player {
       const currentTime = this.audioRef!.currentTime;
       store.set(currentTimeAtom, currentTime);
 
-      if (!this.playingTrack) {
+      if (!this.playingTrack || !this.audioSettledOnPlayingTrack()) {
         return;
       }
-      if (
-        currentTime >= this.playingTrack.track.finish ||
-        currentTime >= this.playingTrack.track.duration
-      ) {
+      const track = this.playingTrack.track;
+      // finish can be 0/unset in the library data - fall back to the duration
+      const finish = track.finish > 0 ? track.finish : track.duration;
+      // require that we've actually played past the start point, so a transient
+      // timeupdate during a track switch/seek can't trigger an immediate skip
+      if (currentTime > track.start && currentTime >= finish) {
         this.trackFinished();
       }
     };
+  }
+
+  // true only once the audio element has settled on the currently playing
+  // track's source - src matches, not mid-seek, and has data at the current
+  // position. guards finish-detection against stale readings while a new track
+  // is still loading/seeking.
+  private audioSettledOnPlayingTrack(): boolean {
+    return (
+      this.audioRef !== undefined &&
+      this.playingTrack !== undefined &&
+      this.lastSetAudioSrcTrackId === this.playingTrack.track.id &&
+      !this.audioRef.seeking &&
+      this.audioRef.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+    );
   }
 
   trackInfoUpdated(track: Track) {
