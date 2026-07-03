@@ -5,6 +5,8 @@ require 'sinatra'
 require 'tty-command'
 require_relative 'shared/config'
 
+ROOT = __dir__
+SIMULATOR = 'iPhone 17 Pro'
 command = TTY::Command.new
 
 namespace :export do
@@ -94,6 +96,7 @@ desc 'compile the protobuf definitions'
 task :proto do
   command.run('protoc --ruby_out=./shared messages.proto')
   command.run('protoc --plugin="protoc-gen-ts=./web/node_modules/.bin/protoc-gen-ts" --ts_out="./web/src/generated" ./messages.proto')
+  command.run('protoc --swift_out=./ios/Warehouse messages.proto')
 end
 
 namespace :server do
@@ -147,6 +150,156 @@ namespace :web do
     Dir.chdir('web') do
       exec('npx vitest')
     end
+  end
+
+  desc 'regenerate the web favicons from logo.png (needs imagemagick)'
+  task :favicon do
+    source = "#{ROOT}/logo.png"
+    dest   = "#{ROOT}/web/public/favicon"
+    abort "missing #{source}" unless File.exist?(source)
+
+    # transparent glyph favicons for browser tabs and the android/pwa icons.
+    { 'favicon-16x16.png' => 16, 'favicon-32x32.png' => 32,
+      'android-chrome-192x192.png' => 192, 'android-chrome-512x512.png' => 512 }.each do |name, px|
+      command.run('magick', source, '-background', 'none', '-resize', "#{px}x#{px}",
+                  '-depth', '8', '-strip', "PNG32:#{dest}/#{name}")
+    end
+
+    # the apple-touch icon shows on the ios home screen, which rejects alpha, so
+    # flatten the glyph onto an opaque white background.
+    command.run('magick', source, '-background', '#ffffff', '-resize', '180x180',
+                '-flatten', '-alpha', 'off', '-depth', '8', '-strip', "PNG24:#{dest}/apple-touch-icon.png")
+
+    # multi-resolution .ico fallback for legacy browsers.
+    command.run('magick', source, '-background', 'none',
+                '-define', 'icon:auto-resize=16,32,48', "#{dest}/favicon.ico")
+
+    puts "regenerated favicons in #{dest}"
+  end
+end
+
+namespace :ios do
+  task :list_schemas do
+    sh "xcodebuild -project #{ROOT}/ios/Warehouse.xcodeproj -list"
+  end
+
+  task :build do
+    sh "xcodebuild -project #{ROOT}/ios/Warehouse.xcodeproj " \
+       '-scheme Warehouse ' \
+       "-destination 'generic/platform=iOS Simulator' " \
+       '-configuration Debug ' \
+       'build'
+  end
+
+  # `xcodebuild test` needs a concrete, bootable simulator (unlike :build's
+  # generic destination). override the device with SIMULATOR=... if the default
+  # isn't installed (`xcrun simctl list devices available` to see options).
+  desc 'run the iOS unit tests (override the sim with SIMULATOR=...)'
+  task :test do
+    simulator = ENV.fetch('SIMULATOR', SIMULATOR)
+    sh "xcodebuild test -project #{ROOT}/ios/Warehouse.xcodeproj " \
+       '-scheme Warehouse ' \
+       "-destination 'platform=iOS Simulator,name=#{simulator}' " \
+       '-only-testing:WarehouseTests'
+  end
+
+  # UI tests launch the app in the simulator and drive it, so they're slower
+  # than the unit tests and kept as a separate task.
+  desc 'run the iOS UI tests (override the sim with SIMULATOR=...)'
+  task :uitest do
+    simulator = ENV.fetch('SIMULATOR', SIMULATOR)
+    sh "xcodebuild test -project #{ROOT}/ios/Warehouse.xcodeproj " \
+       '-scheme Warehouse ' \
+       "-destination 'platform=iOS Simulator,name=#{simulator}' " \
+       '-only-testing:WarehouseUITests'
+  end
+
+  # archive the app and upload it to testflight (internal testers). runs on the
+  # host, not in a container (no xcode in the build image), same as :build.
+  #
+  # requires an app store connect api key. generate one at
+  # appstoreconnect.apple.com -> users and access -> integrations -> app store
+  # connect api, drop the .p8 at
+  # ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8, and export the ids:
+  #   ASC_KEY_ID=... ASC_ISSUER_ID=... rake ios:testflight
+  desc 'archive the iOS app and upload to testflight (internal testers)'
+  task :testflight do
+    key_id    = ENV['ASC_KEY_ID'].to_s
+    issuer_id = ENV['ASC_ISSUER_ID'].to_s
+    abort 'set ASC_KEY_ID and ASC_ISSUER_ID in the environment first' if key_id.empty? || issuer_id.empty?
+
+    archive = "#{ROOT}/ios/build/Warehouse.xcarchive"
+    export  = "#{ROOT}/ios/build/export"
+    opts    = "#{ROOT}/ios/ExportOptions.plist"
+
+    # unlock the login keychain so codesign can read the signing key
+    # (otherwise the archive fails with errSecInternalComponent)
+    require 'io/console'
+    pw = $stdin.getpass('login keychain password: ')
+    sh 'security', 'unlock-keychain', '-p', pw,
+       "#{Dir.home}/Library/Keychains/login.keychain-db", verbose: false
+
+    # derive a fresh build number from the unix timestamp so testflight accepts
+    # a new upload. passed as a build-setting override so the pbxproj is never
+    # mutated (no git diff), and unique per run even between commits.
+    build_no = Time.now.to_i
+
+    sh 'xcodebuild archive ' \
+       "-project #{ROOT}/ios/Warehouse.xcodeproj " \
+       '-scheme Warehouse -configuration Release ' \
+       "-destination 'generic/platform=iOS' " \
+       "-archivePath #{archive} " \
+       "CURRENT_PROJECT_VERSION=#{build_no} " \
+       '-allowProvisioningUpdates'
+
+    sh 'xcodebuild -exportArchive ' \
+       "-archivePath #{archive} " \
+       "-exportPath #{export} " \
+       "-exportOptionsPlist #{opts} " \
+       '-allowProvisioningUpdates'
+
+    sh "xcrun altool --upload-app -f #{export}/Warehouse.ipa --type ios " \
+       "--apiKey #{key_id} --apiIssuer #{issuer_id}"
+  end
+
+  desc 'regenerate the iOS app icons from logo.png (needs imagemagick)'
+  task :icons do
+    require 'json'
+
+    source  = "#{ROOT}/logo.png"
+    iconset = "#{ROOT}/ios/Warehouse/Assets.xcassets/AppIcon.appiconset"
+    abort "missing #{source}" unless File.exist?(source)
+
+    # ios rejects icons with an alpha channel, so every variant is flattened onto
+    # an opaque fill. the source glyph is black-on-transparent, so the dark and
+    # tinted variants negate the rgb channels to make it white and keep it
+    # visible against a dark fill. [negate?, background]
+    variants = {
+      'logo.png' => [false, '#ffffff'], # light: black glyph on white
+      'logo-dark.png' => [true, '#1c1c1e'], # dark:  white glyph on near-black
+      'logo-tinted.png' => [true, '#000000'] # tinted: ios applies the user's tint
+    }
+
+    variants.each do |name, (negate, bg)|
+      args = ['magick', source, '-background', bg, '-resize', '1024x1024']
+      args += ['-channel', 'RGB', '-negate', '+channel'] if negate
+      args += ['-flatten', '-alpha', 'off', '-depth', '8', '-strip', "PNG24:#{iconset}/#{name}"]
+      command.run(*args)
+    end
+
+    # point each appearance slot at its generated file.
+    contents_path = "#{iconset}/Contents.json"
+    contents = JSON.parse(File.read(contents_path))
+    contents['images'].each do |img|
+      img['filename'] = case img.dig('appearances', 0, 'value')
+                        when 'dark'   then 'logo-dark.png'
+                        when 'tinted' then 'logo-tinted.png'
+                        else 'logo.png'
+                        end
+    end
+    File.write(contents_path, JSON.pretty_generate(contents) + "\n")
+
+    puts "regenerated app icons in #{iconset}"
   end
 end
 
