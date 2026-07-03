@@ -42,7 +42,7 @@ export default defineConfig({
     port: 20602,
     proxy: {
       "/api": "http://localhost:20601",
-      "/tracks": "http://localhost:20601",
+      "/music": "http://localhost:20601",
       "/download": "http://localhost:20601",
       "/artwork": "http://localhost:20601",
     },

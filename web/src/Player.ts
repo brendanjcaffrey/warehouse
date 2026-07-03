@@ -44,15 +44,12 @@ class Player {
   playingPlaylistId: string | undefined = undefined;
   // tracks sorted in the order they are displayed in
   sortedPlayingTracks: DisplayedTrack[] = [];
-  // tracks sorted in the order we are playing them - can be different than above if shuffle is on
-  playingTracks: DisplayedTrack[] = [];
-
-  // a list of songs to play next, distinct from the playing playlist
-  playNextTracks: PlaylistTrack[] = [];
+  // tracks sorted in the order we are playing them - can be different than above
+  // if shuffle is on, or if tracks have been queued to play next
+  playingTracks: PlaylistTrack[] = [];
 
   // index into playingTracks
   playingTrackIdx: number = 0;
-  inPlayNextList: boolean = false;
   playingTrack: PlayingTrack | undefined = undefined;
   // last track we set the audio src to, here to avoid setting it to the same thing
   lastSetAudioSrcTrackId: string | undefined = undefined;
@@ -118,9 +115,7 @@ class Player {
     this.playingPlaylistId = undefined;
     this.sortedPlayingTracks = [];
     this.playingTracks = [];
-    this.playNextTracks = [];
     this.playingTrackIdx = 0;
-    this.inPlayNextList = false;
     this.playingTrack = undefined;
     this.lastSetAudioSrcTrackId = undefined;
     this.stopped = true;
@@ -223,7 +218,16 @@ class Player {
 
     this.displayedPlaylistId = displayedPlaylistId;
     this.displayedTracks = displayedTracks;
-    if (this.stopped || this.displayedPlaylistId === this.playingPlaylistId) {
+    if (this.stopped) {
+      this.rebuildPlayingTracks();
+    } else if (
+      this.displayedPlaylistId === this.playingPlaylistId &&
+      !isEqual(this.sortedPlayingTracks, this.displayedTracks)
+    ) {
+      // the displayed playlist is the one playing and its ordering changed
+      // (a re-sort or edit) - rebuild to match. when the ordering is unchanged
+      // we skip the rebuild so that any play-next tracks queued while viewing
+      // another playlist aren't discarded when we navigate back here.
       this.rebuildPlayingTracks();
     }
   }
@@ -240,22 +244,28 @@ class Player {
     overwritePlayingTrack: DisplayedTrack | undefined = undefined
   ) {
     const savedPlaying = this.playingTracks[this.playingTrackIdx];
-    this.playingTracks = [...this.sortedPlayingTracks];
+    this.playingTracks = this.sortedPlayingTracks.map((dt) => ({
+      playlistId: this.playingPlaylistId!,
+      trackId: dt.trackId,
+      playlistOffset: dt.playlistOffset,
+    }));
     if (store.get(shuffleAtom)) {
       this.playingTracks = shuffle(this.playingTracks);
     }
 
     if (overwritePlayingTrack) {
-      this.playingTrackIdx = this.playingTracks.findIndex((dt) =>
-        isEqual(dt, overwritePlayingTrack)
+      this.playingTrackIdx = this.playingTracks.findIndex(
+        (pt) =>
+          pt.trackId === overwritePlayingTrack.trackId &&
+          pt.playlistOffset === overwritePlayingTrack.playlistOffset
       );
       await this.updatePlayingTrack();
     } else if (this.stopped) {
       this.playingTrackIdx = 0;
       await this.updatePlayingTrack();
     } else {
-      this.playingTrackIdx = this.playingTracks.findIndex((dt) =>
-        isEqual(dt, savedPlaying)
+      this.playingTrackIdx = this.playingTracks.findIndex((pt) =>
+        isEqual(pt, savedPlaying)
       );
     }
   }
@@ -297,11 +307,7 @@ class Player {
       return;
     }
 
-    if (this.inPlayNextList) {
-      this.playNextTracks.shift();
-      this.inPlayNextList = false;
-      await this.updatePlayingTrack();
-    } else if (this.shouldRewind()) {
+    if (this.shouldRewind()) {
       this.audioRef.currentTime = this.playingTrack.start;
       this.audioPlay();
     } else {
@@ -320,18 +326,7 @@ class Player {
       return;
     }
 
-    const wasInPlayNextList = this.inPlayNextList;
-    if (this.inPlayNextList) {
-      this.playNextTracks.shift();
-    }
-    this.inPlayNextList = this.playNextTracks.length > 0;
-
-    if (this.inPlayNextList) {
-      await this.updatePlayingTrack();
-    } else if (this.shouldRewind()) {
-      if (wasInPlayNextList) {
-        await this.updatePlayingTrack();
-      }
+    if (this.shouldRewind()) {
       this.audioRef.currentTime = this.playingTrack.start;
       this.audioPlay();
     } else {
@@ -344,20 +339,15 @@ class Player {
 
   // actions
   async playTrack(track: DisplayedTrack) {
-    this.inPlayNextList = false;
-    this.playNextTracks = [];
     this.playingTracks = [];
     await this.rebuildPlayingTracks(track);
     this.play();
   }
 
   async playTrackNext(playlistTrack: PlaylistTrack) {
-    if (this.inPlayNextList) {
-      // add after the current play next track
-      this.playNextTracks.splice(1, 0, playlistTrack);
-    } else {
-      this.playNextTracks.unshift(playlistTrack);
-    }
+    // insert right after the current track so it plays next, but stays in the
+    // playing tracks so you can go back to it
+    this.playingTracks.splice(this.playingTrackIdx + 1, 0, playlistTrack);
     await this.preloadTracks();
   }
 
@@ -471,27 +461,17 @@ class Player {
   }
 
   private async updatePlayingTrack() {
-    if (this.playingTracks.length === 0 && this.playNextTracks.length === 0) {
+    if (this.playingTracks.length === 0) {
       return;
     }
 
-    if (this.inPlayNextList) {
-      const playNextTrack = this.playNextTracks[0];
-      const track = await library().getTrack(playNextTrack.trackId);
-      this.playingTrack = {
-        track: track!,
-        playlistId: playNextTrack.playlistId,
-        playlistOffset: playNextTrack.playlistOffset,
-      };
-    } else {
-      const displayedTrack = this.playingTracks[this.playingTrackIdx];
-      const track = await library().getTrack(displayedTrack.trackId);
-      this.playingTrack = {
-        track: track!,
-        playlistId: this.playingPlaylistId!,
-        playlistOffset: displayedTrack.playlistOffset,
-      };
-    }
+    const playlistTrack = this.playingTracks[this.playingTrackIdx];
+    const track = await library().getTrack(playlistTrack.trackId);
+    this.playingTrack = {
+      track: track!,
+      playlistId: playlistTrack.playlistId,
+      playlistOffset: playlistTrack.playlistOffset,
+    };
 
     store.set(playingTrackAtom, this.playingTrack);
     store.set(currentTimeAtom, this.playingTrack!.track.start);
@@ -536,15 +516,12 @@ class Player {
   }
 
   private async preloadTracks() {
-    const displayedTracks = circularArraySlice(
+    const preloadTracks = circularArraySlice(
       this.playingTracks,
       this.playingTrackIdx,
       TRACKS_TO_PRELOAD
     );
-    const trackIds = [
-      ...displayedTracks.map((dt) => dt.trackId),
-      ...this.playNextTracks.map((pt) => pt.trackId),
-    ];
+    const trackIds = preloadTracks.map((pt) => pt.trackId);
 
     const musicIds: TrackFileIds[] = [];
     const artworkIds: TrackFileIds[] = [];
