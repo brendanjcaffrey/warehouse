@@ -12,6 +12,7 @@ struct MainTabView: View {
     @Environment(PlayerStore.self) private var player
 
     @State private var selectedTab = TabId.library
+    @State private var showingNowPlaying = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -29,7 +30,10 @@ struct MainTabView: View {
         // so it doesn't reset navigation state the way conditionally attaching
         // the accessory would
         .tabViewBottomAccessory(isEnabled: player.song != nil) {
-            NowPlayingBar()
+            NowPlayingBar(showingNowPlaying: $showingNowPlaying)
+        }
+        .sheet(isPresented: $showingNowPlaying) {
+            NowPlayingView()
         }
         .task {
             // only check whether there's anything to sync, downloading starts manually

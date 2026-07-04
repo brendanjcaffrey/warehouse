@@ -26,17 +26,17 @@ extension View {
         }
     }
 
-    /// hold on an album: playback stubs plus a shortcut to its artist view
+    /// hold on an album: play or shuffle it plus a shortcut to its artist view
     func albumContextMenu(
         _ album: Album,
         library: [Song],
+        play: @escaping () -> Void,
+        shuffle: @escaping () -> Void,
         artistDestination: Binding<Artist?>
     ) -> some View {
         contextMenu {
-            Button("Play", systemImage: "play") {}
-                .disabled(true)
-            Button("Shuffle", systemImage: "shuffle") {}
-                .disabled(true)
+            Button("Play", systemImage: "play", action: play)
+            Button("Shuffle", systemImage: "shuffle", action: shuffle)
             if !album.artistName.isEmpty {
                 Button("Go to Artist", systemImage: "music.microphone") {
                     artistDestination.wrappedValue = ArtistListBuilder.artist(for: album, in: library)
@@ -46,13 +46,14 @@ extension View {
     }
 
     /// hold on an artist, playlist or an album already inside its artist view:
-    /// playback stubs only
-    func playbackContextMenu() -> some View {
+    /// play or shuffle it
+    func playbackContextMenu(
+        play: @escaping () -> Void,
+        shuffle: @escaping () -> Void
+    ) -> some View {
         contextMenu {
-            Button("Play", systemImage: "play") {}
-                .disabled(true)
-            Button("Shuffle", systemImage: "shuffle") {}
-                .disabled(true)
+            Button("Play", systemImage: "play", action: play)
+            Button("Shuffle", systemImage: "shuffle", action: shuffle)
         }
     }
 }

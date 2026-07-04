@@ -7,14 +7,19 @@ import UIKit
 @MainActor
 @Observable
 final class PlayerStore {
-    private(set) var song: Song?
+    private(set) var queue = PlayQueue(songs: [])
     private(set) var isPlaying = false
     private(set) var window = PlaybackWindow()
     /// the playhead position within the file, not the window
     private(set) var currentTime: TimeInterval = 0
 
+    var song: Song? { queue.current?.song }
+
     private let fileStore: FileStore
     private let player = AVPlayer()
+    /// kept from the last play call for loading later tracks in the queue
+    private var token: String?
+    private var baseURL: URL?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var audioSessionConfigured = false
@@ -30,14 +35,39 @@ final class PlayerStore {
         self.fileStore = fileStore
     }
 
-    /// starts playing a single track, from disk when downloaded or streamed
-    /// from the server otherwise
-    func play(_ song: Song, token: String?, baseURL: URL?) {
-        guard let item = makeItem(for: song, token: token, baseURL: baseURL) else { return }
+    /// starts playing songs in order, positioned at the tapped one so previous
+    /// walks back through the earlier tracks; replaces the current queue
+    func play(_ songs: [Song], startingAt index: Int = 0, token: String?, baseURL: URL?) {
+        start(PlayQueue(songs: songs, startingAt: index), token: token, baseURL: baseURL)
+    }
+
+    /// starts playing songs in a random order; replaces the current queue
+    func playShuffled(_ songs: [Song], token: String?, baseURL: URL?) {
+        start(PlayQueue(shuffling: songs), token: token, baseURL: baseURL)
+    }
+
+    private func start(_ newQueue: PlayQueue, token: String?, baseURL: URL?) {
+        guard newQueue.current != nil else { return }
+        self.token = token
+        self.baseURL = baseURL
+        var replacement = newQueue
+        replacement.inheritHistory(from: queue)
+        queue = replacement
+        startCurrent()
+    }
+
+    /// loads & plays the queue's current track, from disk when downloaded or
+    /// streamed from the server otherwise
+    private func startCurrent() {
+        guard let song else { return }
+        guard let item = makeItem(for: song, token: token, baseURL: baseURL) else {
+            player.pause()
+            isPlaying = false
+            return
+        }
         configureAudioSessionIfNeeded()
         configureRemoteCommandsIfNeeded()
 
-        self.song = song
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
         currentTime = window.start
         ignoresFinish = false
@@ -82,14 +112,36 @@ final class PlayerStore {
         updateNowPlayingPlaybackState()
     }
 
-    /// jumps back to the start of the track
+    /// steps back through the queue, wrapping around at the start, when near
+    /// the beginning of the current track; otherwise restarts it
     func skipToPrevious() {
         guard song != nil else { return }
-        seek(to: window.start)
+        if currentTime - window.start <= 3, queue.goBack() {
+            startCurrent()
+        } else {
+            seek(to: window.start)
+        }
     }
 
     func skipToNext() {
-        // up next isn't implemented yet
+        guard queue.advance() else { return }
+        startCurrent()
+    }
+
+    /// jumps ahead to an upcoming track picked in the queue view
+    func playFromUpcoming(at index: Int) {
+        guard queue.jump(toUpcomingIndex: index) else { return }
+        startCurrent()
+    }
+
+    /// shuffles the upcoming tracks or restores their original order
+    func setShuffled(_ shuffled: Bool) {
+        queue.setShuffled(shuffled)
+    }
+
+    /// reorders the upcoming tracks from the queue view
+    func moveUpcoming(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        queue.moveUpcoming(fromOffsets: offsets, toOffset: destination)
     }
 
     func seek(to time: TimeInterval) {
@@ -198,8 +250,10 @@ final class PlayerStore {
             Task { @MainActor in self?.skipToPrevious() }
             return .success
         }
-        // up next isn't implemented yet
-        center.nextTrackCommand.isEnabled = false
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skipToNext() }
+            return .success
+        }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let position = event.positionTime
@@ -249,9 +303,13 @@ final class PlayerStore {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.isPlaying = false
-                self.currentTime = self.effectiveEnd
-                self.updateNowPlayingPlaybackState()
+                if self.queue.advance() {
+                    self.startCurrent()
+                } else {
+                    self.isPlaying = false
+                    self.currentTime = self.effectiveEnd
+                    self.updateNowPlayingPlaybackState()
+                }
             }
         }
     }

@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct AlbumsView: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
     @Environment(SyncStore.self) private var sync
+    @Environment(PlayerStore.self) private var player
 
     @AppStorage("albumsSortOption") private var sortRaw = AlbumSortOption.title.rawValue
     @State private var search = ""
@@ -68,7 +70,12 @@ struct AlbumsView: View {
                                 album: album,
                                 artworkURL: store.artworkURL(filename: album.artworkFilename))
                         }
-                        .albumContextMenu(album, library: store.songs, artistDestination: $artistDestination)
+                        .albumContextMenu(
+                            album,
+                            library: store.songs,
+                            play: { player.play(album.songs, token: auth.token, baseURL: auth.baseURL()) },
+                            shuffle: { player.playShuffled(album.songs, token: auth.token, baseURL: auth.baseURL()) },
+                            artistDestination: $artistDestination)
                     }
                 }
                 .sectionIndexLabel(Text(section.title))

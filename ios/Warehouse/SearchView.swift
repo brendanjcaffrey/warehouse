@@ -82,7 +82,17 @@ struct SearchView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
-                    .playbackContextMenu()
+                    .playbackContextMenu(
+                        play: {
+                            player.play(
+                                artist.albums.flatMap(\.songs),
+                                token: auth.token, baseURL: auth.baseURL())
+                        },
+                        shuffle: {
+                            player.playShuffled(
+                                artist.albums.flatMap(\.songs),
+                                token: auth.token, baseURL: auth.baseURL())
+                        })
                 }
             case .albums:
                 ForEach(results.albums) { album in
@@ -93,12 +103,17 @@ struct SearchView: View {
                             album: album,
                             artworkURL: store.artworkURL(filename: album.artworkFilename))
                     }
-                    .albumContextMenu(album, library: store.songs, artistDestination: $artistDestination)
+                    .albumContextMenu(
+                        album,
+                        library: store.songs,
+                        play: { player.play(album.songs, token: auth.token, baseURL: auth.baseURL()) },
+                        shuffle: { player.playShuffled(album.songs, token: auth.token, baseURL: auth.baseURL()) },
+                        artistDestination: $artistDestination)
                 }
             case .songs:
                 ForEach(results.songs) { song in
                     Button {
-                        player.play(song, token: auth.token, baseURL: auth.baseURL())
+                        play(song)
                     } label: {
                         SongRow(
                             song: song,
@@ -109,12 +124,19 @@ struct SearchView: View {
                     .songContextMenu(
                         song,
                         library: store.songs,
-                        play: { player.play(song, token: auth.token, baseURL: auth.baseURL()) },
+                        play: { play(song) },
                         artistDestination: $artistDestination,
                         albumDestination: $albumDestination)
                 }
             }
         }
         .listStyle(.plain)
+    }
+
+    /// plays a tapped song within the displayed search results
+    private func play(_ song: Song) {
+        player.play(
+            results.songs, startingAt: results.songs.firstIndex(of: song) ?? 0,
+            token: auth.token, baseURL: auth.baseURL())
     }
 }

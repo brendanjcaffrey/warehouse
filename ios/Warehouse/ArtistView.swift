@@ -1,16 +1,26 @@
 import SwiftUI
 
 struct ArtistView: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
+    @Environment(PlayerStore.self) private var player
 
     let artist: Artist
+
+    private var artistSongs: [Song] {
+        artist.albums.flatMap(\.songs)
+    }
 
     var body: some View {
         List {
             Section {
                 HStack(spacing: 12) {
-                    playbackButton("Play", systemImage: "play.fill")
-                    playbackButton("Shuffle", systemImage: "shuffle")
+                    playbackButton("Play", systemImage: "play.fill") {
+                        player.play(artistSongs, token: auth.token, baseURL: auth.baseURL())
+                    }
+                    playbackButton("Shuffle", systemImage: "shuffle") {
+                        player.playShuffled(artistSongs, token: auth.token, baseURL: auth.baseURL())
+                    }
                 }
             }
             .listRowSeparator(.hidden)
@@ -25,7 +35,9 @@ struct ArtistView: View {
                             artworkURL: store.artworkURL(filename: album.artworkFilename))
                     }
                     // no go to artist since we're already on it
-                    .playbackContextMenu()
+                    .playbackContextMenu(
+                        play: { player.play(album.songs, token: auth.token, baseURL: auth.baseURL()) },
+                        shuffle: { player.playShuffled(album.songs, token: auth.token, baseURL: auth.baseURL()) })
                 }
             }
         }
@@ -34,10 +46,8 @@ struct ArtistView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func playbackButton(_ title: String, systemImage: String) -> some View {
-        Button {
-            // playback isn't implemented yet
-        } label: {
+    private func playbackButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Label(title, systemImage: systemImage)
                 .frame(maxWidth: .infinity)
         }

@@ -100,8 +100,12 @@ struct SongsView: View {
         List {
             Section {
                 HStack(spacing: 12) {
-                    playbackButton("Play", systemImage: "play.fill")
-                    playbackButton("Shuffle", systemImage: "shuffle")
+                    playbackButton("Play", systemImage: "play.fill") {
+                        player.play(sections.flatMap(\.songs), token: auth.token, baseURL: auth.baseURL())
+                    }
+                    playbackButton("Shuffle", systemImage: "shuffle") {
+                        player.playShuffled(sections.flatMap(\.songs), token: auth.token, baseURL: auth.baseURL())
+                    }
                 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -127,7 +131,7 @@ struct SongsView: View {
     private func songRows(_ section: SongSection) -> some View {
         ForEach(section.songs) { song in
             Button {
-                player.play(song, token: auth.token, baseURL: auth.baseURL())
+                play(song)
             } label: {
                 SongRow(
                     song: song,
@@ -138,16 +142,20 @@ struct SongsView: View {
             .songContextMenu(
                 song,
                 library: store.songs,
-                play: { player.play(song, token: auth.token, baseURL: auth.baseURL()) },
+                play: { play(song) },
                 artistDestination: $artistDestination,
                 albumDestination: $albumDestination)
         }
     }
 
-    private func playbackButton(_ title: String, systemImage: String) -> some View {
-        Button {
-            // playback isn't implemented yet
-        } label: {
+    /// plays a tapped song within the whole displayed list
+    private func play(_ song: Song) {
+        let songs = sections.flatMap(\.songs)
+        player.play(songs, startingAt: songs.firstIndex(of: song) ?? 0, token: auth.token, baseURL: auth.baseURL())
+    }
+
+    private func playbackButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Label(title, systemImage: systemImage)
                 .frame(maxWidth: .infinity)
         }

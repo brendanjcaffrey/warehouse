@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct ArtistsView: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
     @Environment(SyncStore.self) private var sync
+    @Environment(PlayerStore.self) private var player
 
     @State private var search = ""
     @State private var sections = [ArtistSection]()
@@ -53,7 +55,17 @@ struct ArtistsView: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
-                        .playbackContextMenu()
+                        .playbackContextMenu(
+                            play: {
+                                player.play(
+                                    artist.albums.flatMap(\.songs),
+                                    token: auth.token, baseURL: auth.baseURL())
+                            },
+                            shuffle: {
+                                player.playShuffled(
+                                    artist.albums.flatMap(\.songs),
+                                    token: auth.token, baseURL: auth.baseURL())
+                            })
                     }
                 }
                 .sectionIndexLabel(Text(section.title))

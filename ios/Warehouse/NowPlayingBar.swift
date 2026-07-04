@@ -6,7 +6,9 @@ struct NowPlayingBar: View {
     @Environment(PlayerStore.self) private var player
     @Environment(SongsStore.self) private var songs
 
-    @State private var showingNowPlaying = false
+    /// owned by the tab view: the accessory gets recreated when the track
+    /// changes, so state kept here wouldn't survive a track change
+    @Binding var showingNowPlaying: Bool
 
     var body: some View {
         if let song = player.song {
@@ -50,9 +52,6 @@ struct NowPlayingBar: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 showingNowPlaying = true
-            }
-            .sheet(isPresented: $showingNowPlaying) {
-                NowPlayingView()
             }
         }
     }

@@ -15,8 +15,12 @@ struct AlbumView: View {
             Section {
                 header
                 HStack(spacing: 12) {
-                    playbackButton("Play", systemImage: "play.fill")
-                    playbackButton("Shuffle", systemImage: "shuffle")
+                    playbackButton("Play", systemImage: "play.fill") {
+                        player.play(album.songs, token: auth.token, baseURL: auth.baseURL())
+                    }
+                    playbackButton("Shuffle", systemImage: "shuffle") {
+                        player.playShuffled(album.songs, token: auth.token, baseURL: auth.baseURL())
+                    }
                 }
             }
             .listRowSeparator(.hidden)
@@ -24,7 +28,7 @@ struct AlbumView: View {
             Section {
                 ForEach(album.songs) { song in
                     Button {
-                        player.play(song, token: auth.token, baseURL: auth.baseURL())
+                        play(song)
                     } label: {
                         HStack {
                             Text(song.name)
@@ -45,7 +49,7 @@ struct AlbumView: View {
                     .songContextMenu(
                         song,
                         library: store.songs,
-                        play: { player.play(song, token: auth.token, baseURL: auth.baseURL()) },
+                        play: { play(song) },
                         artistDestination: $artistDestination)
                 }
             }
@@ -101,10 +105,15 @@ struct AlbumView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func playbackButton(_ title: String, systemImage: String) -> some View {
-        Button {
-            // playback isn't implemented yet
-        } label: {
+    /// plays a tapped song within its album
+    private func play(_ song: Song) {
+        player.play(
+            album.songs, startingAt: album.songs.firstIndex(of: song) ?? 0,
+            token: auth.token, baseURL: auth.baseURL())
+    }
+
+    private func playbackButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Label(title, systemImage: systemImage)
                 .frame(maxWidth: .infinity)
         }

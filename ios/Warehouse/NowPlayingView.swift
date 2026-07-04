@@ -2,8 +2,8 @@ import AVKit
 import MediaPlayer
 import SwiftUI
 
-/// full screen player: big artwork, track info, progress, transport controls
-/// and volume, presented as a sheet over the tab view
+/// full screen player: big artwork, track info, progress, transport controls,
+/// volume and the play queue, presented as a sheet over the tab view
 struct NowPlayingView: View {
     @Environment(PlayerStore.self) private var player
     @Environment(SongsStore.self) private var songs
@@ -12,6 +12,8 @@ struct NowPlayingView: View {
     @State private var albumDestination: Album?
     @State private var scrubTime: TimeInterval = 0
     @State private var isScrubbing = false
+    @State private var showingQueue = false
+    @State private var scrolledQueue = false
 
     var body: some View {
         NavigationStack {
@@ -32,19 +34,98 @@ struct NowPlayingView: View {
 
     private func content(_ song: Song) -> some View {
         VStack(spacing: 28) {
-            Spacer(minLength: 0)
-            ArtworkThumbnail(url: songs.artworkURL(song), maxPixelSize: 1320)
-                .aspectRatio(1, contentMode: .fit)
-                .frame(maxWidth: .infinity)
-            trackInfo(song)
+            if showingQueue {
+                trackInfo(song)
+                queueList
+            } else {
+                Spacer(minLength: 0)
+                ArtworkThumbnail(url: songs.artworkURL(song), maxPixelSize: 1320)
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                trackInfo(song)
+            }
             progress
             controls
             volume
             bottomButtons
-            Spacer(minLength: 0)
+            if !showingQueue {
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 16)
+    }
+
+    /// the history, current track & upcoming lists shown in place of the
+    /// artwork; the current track starts at the top with the history scrolled
+    /// away above it, upcoming rows drag to reorder and tap to jump ahead
+    private var queueList: some View {
+        ScrollViewReader { proxy in
+            List {
+                if !player.queue.history.isEmpty {
+                    Section("History") {
+                        ForEach(player.queue.history) { entry in
+                            queueRow(entry.song)
+                        }
+                    }
+                }
+                if let current = player.queue.current {
+                    Section("Now Playing") {
+                        queueRow(current.song)
+                            .id(current.id)
+                    }
+                }
+                Section("Playing Next") {
+                    if player.queue.upcoming.isEmpty {
+                        Text("The queue is empty.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(player.queue.upcoming.enumerated()), id: \.element.id) { index, entry in
+                            Button {
+                                player.playFromUpcoming(at: index)
+                            } label: {
+                                queueRow(entry.song)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onMove { offsets, destination in
+                            player.moveUpcoming(fromOffsets: offsets, toOffset: destination)
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            // always in edit mode so the upcoming rows show reorder handles
+            .environment(\.editMode, .constant(.active))
+            .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onScrollPhaseChange { _, newPhase in
+                // a touch means the user scrolled, so stop snapping the
+                // current track back to the top when it changes
+                if newPhase == .tracking || newPhase == .interacting {
+                    scrolledQueue = true
+                }
+            }
+            .onAppear {
+                scrolledQueue = false
+                scrollToCurrent(proxy)
+            }
+            .onChange(of: player.queue.current?.id) {
+                guard !scrolledQueue else { return }
+                withAnimation {
+                    scrollToCurrent(proxy)
+                }
+            }
+        }
+    }
+
+    private func scrollToCurrent(_ proxy: ScrollViewProxy) {
+        guard let id = player.queue.current?.id else { return }
+        proxy.scrollTo(id, anchor: .top)
+    }
+
+    private func queueRow(_ song: Song) -> some View {
+        SongRow(song: song, artworkURL: songs.artworkURL(song), downloaded: songs.isDownloaded(song))
     }
 
     private func trackInfo(_ song: Song) -> some View {
@@ -206,14 +287,22 @@ struct NowPlayingView: View {
                 .frame(width: 44, height: 44)
             Spacer()
             Button {
-                // history & up next aren't implemented yet
+                player.setShuffled(!player.queue.isShuffled)
+            } label: {
+                Image(systemName: "shuffle")
+                    .font(.title3)
+                    .foregroundStyle(player.queue.isShuffled ? Color.accentColor : Color.secondary)
+                    .frame(width: 44, height: 44)
+            }
+            Spacer()
+            Button {
+                showingQueue.toggle()
             } label: {
                 Image(systemName: "list.bullet")
                     .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(showingQueue ? Color.accentColor : Color.secondary)
                     .frame(width: 44, height: 44)
             }
-            .disabled(true)
         }
     }
 }
