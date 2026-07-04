@@ -17,6 +17,14 @@ struct SongListBuilderTests {
             sortName: sortName,
             artistName: artist,
             artistSortName: artistSortName,
+            albumArtistName: "",
+            albumArtistSortName: "",
+            albumName: "",
+            albumSortName: "",
+            genre: "",
+            year: 0,
+            discNumber: 0,
+            trackNumber: 0,
             musicFilename: "\(id).mp3",
             artworkFilename: nil)
     }

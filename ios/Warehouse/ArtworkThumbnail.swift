@@ -4,6 +4,7 @@ import SwiftUI
 /// downsampled off the main thread and cached
 struct ArtworkThumbnail: View {
     let url: URL?
+    var maxPixelSize = 132
 
     @State private var image: UIImage?
 
@@ -22,7 +23,7 @@ struct ArtworkThumbnail: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .task(id: url) {
-            image = await ArtworkLoader.thumbnail(for: url)
+            image = await ArtworkLoader.thumbnail(for: url, maxPixelSize: maxPixelSize)
         }
     }
 }
@@ -32,7 +33,8 @@ enum ArtworkLoader {
 
     static func thumbnail(for url: URL?, maxPixelSize: Int = 132) async -> UIImage? {
         guard let url else { return nil }
-        let key = url.path as NSString
+        // the size is part of the key so big & small requests don't collide
+        let key = "\(url.path)#\(maxPixelSize)" as NSString
         if let cached = cache.object(forKey: key) {
             return cached
         }

@@ -31,7 +31,11 @@ final class SongsStore {
     }
 
     func artworkURL(_ song: Song) -> URL? {
-        guard let filename = song.artworkFilename else { return nil }
+        artworkURL(filename: song.artworkFilename)
+    }
+
+    func artworkURL(filename: String?) -> URL? {
+        guard let filename else { return nil }
         return fileStore.fileURL(.artwork, filename)
     }
 }

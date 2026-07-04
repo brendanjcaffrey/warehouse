@@ -6,6 +6,14 @@ struct Song: Identifiable, Equatable, Sendable {
     let sortName: String
     let artistName: String
     let artistSortName: String
+    let albumArtistName: String
+    let albumArtistSortName: String
+    let albumName: String
+    let albumSortName: String
+    let genre: String
+    let year: Int
+    let discNumber: Int
+    let trackNumber: Int
     let musicFilename: String
     let artworkFilename: String?
 
@@ -105,7 +113,7 @@ enum SongListBuilder {
         return String(letter).uppercased()
     }
 
-    private static func fold(_ value: String) -> String {
+    static func fold(_ value: String) -> String {
         value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
     }
 }

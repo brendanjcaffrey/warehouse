@@ -15,7 +15,11 @@ struct LibraryView: View {
                     Label("Playlists", systemImage: "music.note.list")
                 }
                 disabledRow("Artists", systemImage: "music.microphone")
-                disabledRow("Albums", systemImage: "square.stack")
+                NavigationLink {
+                    AlbumsView()
+                } label: {
+                    Label("Albums", systemImage: "square.stack")
+                }
             }
             .navigationTitle("Library")
         }

@@ -135,6 +135,14 @@ final class LibraryDatabase {
                     sortName: $0.sortName,
                     artistName: $0.artistName,
                     artistSortName: $0.artistSortName,
+                    albumArtistName: $0.albumArtistName,
+                    albumArtistSortName: $0.albumArtistSortName,
+                    albumName: $0.albumName,
+                    albumSortName: $0.albumSortName,
+                    genre: $0.genre,
+                    year: Int($0.year),
+                    discNumber: Int($0.discNumber),
+                    trackNumber: Int($0.trackNumber),
                     musicFilename: $0.musicFilename,
                     artworkFilename: $0.artworkFilename)
             }
