@@ -53,6 +53,7 @@ struct ArtistsView: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
+                        .playbackContextMenu()
                     }
                 }
                 .sectionIndexLabel(Text(section.title))

@@ -1,6 +1,6 @@
 import Foundation
 
-struct Artist: Identifiable, Equatable, Sendable {
+struct Artist: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let sortName: String
@@ -44,6 +44,24 @@ enum ArtistListBuilder {
                 sortName: songs.first { !$0.artistSortName.isEmpty }?.artistSortName ?? "",
                 albums: albums)
         }
+    }
+
+    /// the library artist matching a track artist name, if any songs have it
+    static func artist(named name: String, in songs: [Song]) -> Artist? {
+        guard !name.isEmpty else { return nil }
+        let key = fold(name)
+        return artists(from: songs.filter { fold($0.artistName) == key }).first
+    }
+
+    /// the library artist for an album; album artists that never appear as a
+    /// track artist (e.g. compilations) get a standalone entry with just this album
+    static func artist(for album: Album, in songs: [Song]) -> Artist? {
+        guard !album.artistName.isEmpty else { return nil }
+        return artist(named: album.artistName, in: songs) ?? Artist(
+            id: fold(album.artistName),
+            name: album.artistName,
+            sortName: album.artistSortName,
+            albums: [album])
     }
 
     static func sections(_ artists: [Artist], matching search: String) -> [ArtistSection] {

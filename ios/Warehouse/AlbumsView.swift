@@ -7,6 +7,7 @@ struct AlbumsView: View {
     @AppStorage("albumsSortOption") private var sortRaw = AlbumSortOption.title.rawValue
     @State private var search = ""
     @State private var sections = [AlbumSection]()
+    @State private var artistDestination: Artist?
 
     private var sort: AlbumSortOption {
         AlbumSortOption(rawValue: sortRaw) ?? .title
@@ -30,6 +31,9 @@ struct AlbumsView: View {
             }
         }
         .navigationTitle("Albums")
+        .navigationDestination(item: $artistDestination) { artist in
+            ArtistView(artist: artist)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 sortMenu
@@ -64,6 +68,7 @@ struct AlbumsView: View {
                                 album: album,
                                 artworkURL: store.artworkURL(filename: album.artworkFilename))
                         }
+                        .albumContextMenu(album, library: store.songs, artistDestination: $artistDestination)
                     }
                 }
                 .sectionIndexLabel(Text(section.title))

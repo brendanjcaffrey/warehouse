@@ -6,6 +6,8 @@ struct AlbumView: View {
 
     let album: Album
 
+    @State private var artistDestination: Artist?
+
     var body: some View {
         List {
             Section {
@@ -30,12 +32,17 @@ struct AlbumView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    // no go to album since we're already on it
+                    .songContextMenu(song, library: store.songs, artistDestination: $artistDestination)
                 }
             }
         }
         .listStyle(.plain)
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $artistDestination) { artist in
+            ArtistView(artist: artist)
+        }
         .onChange(of: sync.completedSyncs) {
             // pick up newly downloaded files once a sync finishes
             Task { await store.load() }

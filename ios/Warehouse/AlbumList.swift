@@ -1,6 +1,6 @@
 import Foundation
 
-struct Album: Identifiable, Equatable, Sendable {
+struct Album: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let sortName: String
@@ -74,6 +74,16 @@ enum AlbumListBuilder {
                 artworkFilename: tracks.compactMap(\.artworkFilename).first,
                 songs: tracks)
         }
+    }
+
+    /// the library album a song belongs to, if it has one
+    static func album(for song: Song, in songs: [Song]) -> Album? {
+        guard !song.albumName.isEmpty else { return nil }
+        let key = "\(fold(albumArtist(for: song).name))\u{1F}\(fold(song.albumName))"
+        let matching = songs.filter {
+            !$0.albumName.isEmpty && "\(fold(albumArtist(for: $0).name))\u{1F}\(fold($0.albumName))" == key
+        }
+        return albums(from: matching).first
     }
 
     static func sections(_ albums: [Album], sortedBy sort: AlbumSortOption, matching search: String) -> [AlbumSection] {

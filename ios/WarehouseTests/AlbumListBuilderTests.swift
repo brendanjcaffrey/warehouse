@@ -157,4 +157,23 @@ struct AlbumListBuilderTests {
         ])
         #expect(albums.count == 2)
     }
+
+    @Test("album lookup finds a song's album with all of its tracks")
+    func albumLookup() {
+        let songs = [
+            Self.song(id: "1", albumArtist: "The Beatles", album: "Greatest Hits", track: 1),
+            Self.song(id: "2", albumArtist: "The Beatles", album: "Greatest Hits", track: 2),
+            Self.song(id: "3", albumArtist: "Cher", album: "Greatest Hits", track: 1)
+        ]
+
+        let album = AlbumListBuilder.album(for: songs[1], in: songs)
+        #expect(album?.artistName == "The Beatles")
+        #expect(album?.songs.map(\.id) == ["1", "2"])
+    }
+
+    @Test("album lookup returns nil for songs without an album")
+    func albumLookupNoAlbum() {
+        let songs = [Self.song(id: "1", name: "Single")]
+        #expect(AlbumListBuilder.album(for: songs[0], in: songs) == nil)
+    }
 }

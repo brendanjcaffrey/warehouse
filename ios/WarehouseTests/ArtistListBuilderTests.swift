@@ -9,6 +9,7 @@ struct ArtistListBuilderTests {
         name: String = "Song",
         artist: String = "",
         artistSortName: String = "",
+        albumArtist: String = "",
         album: String = "",
         albumSortName: String = "",
         year: Int = 0
@@ -19,7 +20,7 @@ struct ArtistListBuilderTests {
             sortName: "",
             artistName: artist,
             artistSortName: artistSortName,
-            albumArtistName: "",
+            albumArtistName: albumArtist,
             albumArtistSortName: "",
             albumName: album,
             albumSortName: albumSortName,
@@ -132,5 +133,39 @@ struct ArtistListBuilderTests {
         let artists = ArtistListBuilder.artists(from: [Self.song(id: "1", artist: "Cher")])
         let sections = ArtistListBuilder.sections(artists, matching: "   ")
         #expect(sections.flatMap(\.artists).count == 1)
+    }
+
+    @Test("artist lookup matches folded names and returns nil otherwise")
+    func artistLookup() {
+        let songs = [
+            Self.song(id: "1", artist: "Beyoncé", album: "Lemonade"),
+            Self.song(id: "2", artist: "Cher", album: "Believe")
+        ]
+
+        let artist = ArtistListBuilder.artist(named: "beyonce", in: songs)
+        #expect(artist?.name == "Beyoncé")
+        #expect(artist?.albums.map(\.name) == ["Lemonade"])
+
+        #expect(ArtistListBuilder.artist(named: "The Beatles", in: songs) == nil)
+        #expect(ArtistListBuilder.artist(named: "", in: songs) == nil)
+    }
+
+    @Test("album artist lookup falls back to a standalone artist for compilations")
+    func albumArtistLookup() {
+        let songs = [
+            Self.song(id: "1", artist: "Cher", albumArtist: "Various Artists", album: "Now Vol. 1"),
+            Self.song(id: "2", artist: "The Beatles", albumArtist: "Various Artists", album: "Now Vol. 1"),
+            Self.song(id: "3", artist: "Cher", album: "Believe")
+        ]
+        let albums = AlbumListBuilder.albums(from: songs)
+
+        let compilation = ArtistListBuilder.artist(for: albums[0], in: songs)
+        #expect(compilation?.name == "Various Artists")
+        #expect(compilation?.albums == [albums[0]])
+
+        let known = ArtistListBuilder.artist(for: albums[1], in: songs)
+        #expect(known?.name == "Cher")
+        // compilations she appears on show up under her too
+        #expect(known?.albums.map(\.name) == ["Believe", "Now Vol. 1"])
     }
 }

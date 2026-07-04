@@ -7,6 +7,8 @@ struct SearchView: View {
     @State private var search = ""
     @State private var scope = SearchScope.songs
     @State private var results = SearchResults()
+    @State private var artistDestination: Artist?
+    @State private var albumDestination: Album?
 
     private struct ResultsInput: Equatable, Sendable {
         let songs: [Song]
@@ -33,6 +35,12 @@ struct SearchView: View {
                 }
             }
             .navigationTitle("Search")
+            .navigationDestination(item: $artistDestination) { artist in
+                ArtistView(artist: artist)
+            }
+            .navigationDestination(item: $albumDestination) { album in
+                AlbumView(album: album)
+            }
             .searchable(text: $search, prompt: "Artists, Albums & Songs")
             .searchScopes($scope) {
                 ForEach(SearchScope.allCases) { scope in
@@ -72,6 +80,7 @@ struct SearchView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
+                    .playbackContextMenu()
                 }
             case .albums:
                 ForEach(results.albums) { album in
@@ -82,6 +91,7 @@ struct SearchView: View {
                             album: album,
                             artworkURL: store.artworkURL(filename: album.artworkFilename))
                     }
+                    .albumContextMenu(album, library: store.songs, artistDestination: $artistDestination)
                 }
             case .songs:
                 ForEach(results.songs) { song in
@@ -89,6 +99,11 @@ struct SearchView: View {
                         song: song,
                         artworkURL: store.artworkURL(song),
                         downloaded: store.isDownloaded(song))
+                        .songContextMenu(
+                            song,
+                            library: store.songs,
+                            artistDestination: $artistDestination,
+                            albumDestination: $albumDestination)
                 }
             }
         }

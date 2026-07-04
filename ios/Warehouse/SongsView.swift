@@ -9,6 +9,8 @@ struct SongsView: View {
     @AppStorage private var sortRaw: String
     @State private var search = ""
     @State private var sections = [SongSection]()
+    @State private var artistDestination: Artist?
+    @State private var albumDestination: Album?
 
     init(playlist: PlaylistItem? = nil) {
         self.playlist = playlist
@@ -57,6 +59,12 @@ struct SongsView: View {
             }
         }
         .navigationTitle(playlist?.name ?? "Songs")
+        .navigationDestination(item: $artistDestination) { artist in
+            ArtistView(artist: artist)
+        }
+        .navigationDestination(item: $albumDestination) { album in
+            AlbumView(album: album)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 sortMenu
@@ -120,6 +128,11 @@ struct SongsView: View {
                 song: song,
                 artworkURL: store.artworkURL(song),
                 downloaded: store.isDownloaded(song))
+                .songContextMenu(
+                    song,
+                    library: store.songs,
+                    artistDestination: $artistDestination,
+                    albumDestination: $albumDestination)
         }
     }
 

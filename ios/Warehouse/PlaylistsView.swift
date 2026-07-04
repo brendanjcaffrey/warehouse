@@ -26,14 +26,11 @@ struct PlaylistsView: View {
                         : "This folder is empty."))
             } else {
                 List(rows) { playlist in
-                    NavigationLink {
-                        if playlist.isFolder {
-                            PlaylistsView(folder: playlist)
-                        } else {
-                            SongsView(playlist: playlist)
-                        }
-                    } label: {
-                        Label(playlist.name, systemImage: playlist.isFolder ? "folder" : "music.note.list")
+                    if playlist.isFolder {
+                        playlistLink(playlist)
+                    } else {
+                        playlistLink(playlist)
+                            .playbackContextMenu()
                     }
                 }
             }
@@ -45,6 +42,18 @@ struct PlaylistsView: View {
         .onChange(of: sync.completedSyncs) {
             // pick up new playlists once a sync finishes
             Task { await store.load() }
+        }
+    }
+
+    private func playlistLink(_ playlist: PlaylistItem) -> some View {
+        NavigationLink {
+            if playlist.isFolder {
+                PlaylistsView(folder: playlist)
+            } else {
+                SongsView(playlist: playlist)
+            }
+        } label: {
+            Label(playlist.name, systemImage: playlist.isFolder ? "folder" : "music.note.list")
         }
     }
 }

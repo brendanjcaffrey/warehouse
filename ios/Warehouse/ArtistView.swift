@@ -24,6 +24,8 @@ struct ArtistView: View {
                             album: album,
                             artworkURL: store.artworkURL(filename: album.artworkFilename))
                     }
+                    // no go to artist since we're already on it
+                    .playbackContextMenu()
                 }
             }
         }
