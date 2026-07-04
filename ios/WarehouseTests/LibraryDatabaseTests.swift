@@ -168,6 +168,29 @@ struct LibraryDatabaseTests {
         #expect(playlists.isEmpty)
     }
 
+    @Test("allSongs returns lightweight copies of every track")
+    func allSongs() async throws {
+        let database = LibraryDatabase(inMemory: true)
+        try await database.replaceLibrary(with: Self.makeLibrary())
+
+        let songs = try await database.allSongs()
+        let byId = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+        #expect(songs.count == 2)
+
+        let song1 = try #require(byId["t1"])
+        #expect(song1.name == "Come Together")
+        #expect(song1.artistName == "The Beatles")
+        #expect(song1.artistSortName == "Beatles, The")
+        #expect(song1.musicFilename == "m1.mp3")
+        #expect(song1.artworkFilename == "a1.jpg")
+        #expect(song1.titleSortKey == "Come Together")
+        #expect(song1.artistSortKey == "Beatles, The")
+
+        let song2 = try #require(byId["t2"])
+        #expect(song2.artworkFilename == nil)
+        #expect(song2.artistSortKey == "Cher")
+    }
+
     @Test("filename queries return referenced files")
     func filenameQueries() async throws {
         let database = LibraryDatabase(inMemory: true)

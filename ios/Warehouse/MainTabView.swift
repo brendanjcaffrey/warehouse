@@ -6,6 +6,9 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
+            Tab("Library", systemImage: "music.note.list") {
+                LibraryView()
+            }
             Tab("Settings", systemImage: "gearshape") {
                 SettingsView()
             }

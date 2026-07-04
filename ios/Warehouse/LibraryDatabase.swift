@@ -123,6 +123,24 @@ final class LibraryDatabase {
         try await fetchFilenames(attribute: "artworkFilename")
     }
 
+    /// lightweight copies of every track for the songs list
+    func allSongs() async throws -> [Song] {
+        try await container.performBackgroundTask { context in
+            let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
+            let tracks = try context.fetch(request)
+            return tracks.map {
+                Song(
+                    id: $0.id,
+                    name: $0.name,
+                    sortName: $0.sortName,
+                    artistName: $0.artistName,
+                    artistSortName: $0.artistSortName,
+                    musicFilename: $0.musicFilename,
+                    artworkFilename: $0.artworkFilename)
+            }
+        }
+    }
+
     func trackCount() async throws -> Int {
         try await container.performBackgroundTask { context in
             try context.count(for: NSFetchRequest<TrackEntity>(entityName: "TrackEntity"))

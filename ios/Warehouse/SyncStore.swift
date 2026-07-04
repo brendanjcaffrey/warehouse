@@ -36,24 +36,34 @@ final class SyncStore {
     }
 
     private(set) var state: State = .idle
+    /// bumped when a sync attempt finishes, so views can reload without
+    /// observing every per-file progress update in `state`
+    private(set) var completedSyncs = 0
+    /// bumped at most once per refresh interval while files download, so the
+    /// songs list can update its downloaded icons during long syncs
+    private(set) var downloadRefreshTicks = 0
 
     private let client: LibraryClient
     private let database: LibraryDatabase
     private let fileStore: FileStore
     private let metadata: LibraryMetadata
+    private let downloadRefreshInterval: TimeInterval
+    private var lastDownloadRefresh = Date.distantPast
     private var syncInProgress = false
 
-    // the session & defaults parameters are here for tests
+    // the session, defaults & interval parameters are here for tests
     init(
         database: LibraryDatabase,
         fileStore: FileStore,
         session: URLSession = .shared,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        downloadRefreshInterval: TimeInterval = 5
     ) {
         client = LibraryClient(session: session)
         self.database = database
         self.fileStore = fileStore
         metadata = LibraryMetadata(defaults: defaults)
+        self.downloadRefreshInterval = downloadRefreshInterval
     }
 
     var isBusy: Bool {
@@ -96,7 +106,10 @@ final class SyncStore {
     func sync(token: String?, baseURL: URL?) async {
         guard let token, let baseURL, !syncInProgress else { return }
         syncInProgress = true
-        defer { syncInProgress = false }
+        defer {
+            syncInProgress = false
+            completedSyncs += 1
+        }
 
         do {
             state = .checkingForUpdates
@@ -180,10 +193,19 @@ final class SyncStore {
         guard !missing.isEmpty else { return 0 }
 
         state = .downloadingFiles(DownloadProgress(total: missing.count))
+        lastDownloadRefresh = Date()
         let downloader = FileDownloader(client: client, fileStore: fileStore)
         let progress = await downloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
             self?.state = .downloadingFiles(progress)
+            self?.tickDownloadRefreshIfDue()
         }
         return progress.failed
+    }
+
+    private func tickDownloadRefreshIfDue() {
+        let now = Date()
+        guard now.timeIntervalSince(lastDownloadRefresh) >= downloadRefreshInterval else { return }
+        lastDownloadRefresh = now
+        downloadRefreshTicks += 1
     }
 }

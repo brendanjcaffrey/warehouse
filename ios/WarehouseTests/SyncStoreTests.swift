@@ -15,7 +15,7 @@ struct SyncStoreTests {
         let host: String
     }
 
-    static func makeEnv(host: String) -> Env {
+    static func makeEnv(host: String, downloadRefreshInterval: TimeInterval = 5) -> Env {
         let suiteName = "SyncStoreTests-\(host)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
@@ -25,7 +25,8 @@ struct SyncStoreTests {
             .appending(path: "syncstore-tests-\(host)-\(UUID().uuidString)"))
         let store = SyncStore(
             database: database, fileStore: fileStore,
-            session: MockURLProtocol.makeSession(), defaults: defaults)
+            session: MockURLProtocol.makeSession(), defaults: defaults,
+            downloadRefreshInterval: downloadRefreshInterval)
         return Env(
             store: store, database: database, fileStore: fileStore,
             metadata: LibraryMetadata(defaults: defaults),
@@ -307,6 +308,41 @@ struct SyncStoreTests {
         await env.store.checkForUpdates(token: "tok", baseURL: env.baseURL)
 
         #expect(env.store.state == .upToDate(failedDownloads: 0))
+    }
+
+    @Test("completedSyncs increments when a sync finishes, not on checks")
+    func completedSyncsIncrements() async throws {
+        let host = "sync-completed.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host)
+
+        #expect(env.store.completedSyncs == 0)
+
+        await env.store.checkForUpdates(token: "tok", baseURL: env.baseURL)
+        #expect(env.store.completedSyncs == 0)
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+        #expect(env.store.completedSyncs == 1)
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+        #expect(env.store.completedSyncs == 2)
+    }
+
+    @Test("download refresh ticks are throttled by the refresh interval")
+    func downloadRefreshTicksAreThrottled() async throws {
+        // with a zero interval, every downloaded file bumps the counter
+        let eagerHost = "sync-ticks-eager.test"
+        let eager = Self.makeEnv(host: eagerHost, downloadRefreshInterval: 0)
+        try Self.installHandler(host: eagerHost)
+        await eager.store.sync(token: "tok", baseURL: eager.baseURL)
+        #expect(eager.store.downloadRefreshTicks == 3)
+
+        // with the default interval, a fast sync never bumps it
+        let throttledHost = "sync-ticks-throttled.test"
+        let throttled = Self.makeEnv(host: throttledHost)
+        try Self.installHandler(host: throttledHost)
+        await throttled.store.sync(token: "tok", baseURL: throttled.baseURL)
+        #expect(throttled.store.downloadRefreshTicks == 0)
     }
 
     @Test("sync does nothing without a token or base url")
