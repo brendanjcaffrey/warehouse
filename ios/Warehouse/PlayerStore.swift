@@ -109,7 +109,7 @@ final class PlayerStore {
             to: CMTime(seconds: time, preferredTimescale: 600),
             toleranceBefore: .zero, toleranceAfter: .zero
         ) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.pendingSeeks -= 1
                 if self.pendingSeeks == 0 {

@@ -21,7 +21,8 @@ struct ArtistSection: Identifiable {
 enum ArtistListBuilder {
     /// groups songs by track artist, so artists with only non-album singles
     /// still appear; each artist's albums are built from their songs and
-    /// sorted by year (unknown years last) with ties broken by title
+    /// sorted by year (unknown years last) with ties broken by title, and
+    /// any songs without an album collect into an unknown album at the end
     static func artists(from songs: [Song]) -> [Artist] {
         var order = [String]()
         var grouped = [String: [Song]]()
@@ -35,8 +36,11 @@ enum ArtistListBuilder {
 
         return order.compactMap { key in
             guard let songs = grouped[key] else { return nil }
-            let albums = AlbumListBuilder.albums(from: songs).sorted {
+            var albums = AlbumListBuilder.albums(from: songs).sorted {
                 (yearKey($0), fold($0.titleSortKey)) < (yearKey($1), fold($1.titleSortKey))
+            }
+            if let unknown = AlbumListBuilder.unknownAlbum(from: songs) {
+                albums.append(unknown)
             }
             return Artist(
                 id: key,

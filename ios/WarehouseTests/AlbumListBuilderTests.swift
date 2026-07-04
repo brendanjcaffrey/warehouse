@@ -95,6 +95,31 @@ struct AlbumListBuilderTests {
         #expect(AlbumListBuilder.albums(from: songs).isEmpty)
     }
 
+    @Test("unknown album collects songs without one in disc & track order")
+    func unknownAlbum() {
+        let songs = [
+            Self.song(id: "1", name: "B Side", artist: "Cher", artistSortName: "Cher, Sort",
+                      genre: "Pop", track: 2, artwork: "a1.jpg"),
+            Self.song(id: "2", name: "Believe", artist: "Cher", album: "Believe"),
+            Self.song(id: "3", name: "A Side", artist: "Cher", track: 1)
+        ]
+
+        let album = AlbumListBuilder.unknownAlbum(from: songs)
+        #expect(album?.name == "Unknown Album")
+        #expect(album?.artistName == "Cher")
+        #expect(album?.artistSortName == "Cher, Sort")
+        #expect(album?.genre == "Pop")
+        #expect(album?.year == 0)
+        #expect(album?.artworkFilename == "a1.jpg")
+        #expect(album?.songs.map(\.id) == ["3", "1"])
+    }
+
+    @Test("unknown album is nil when every song has an album")
+    func noUnknownAlbum() {
+        let songs = [Self.song(id: "1", artist: "Cher", album: "Believe")]
+        #expect(AlbumListBuilder.unknownAlbum(from: songs) == nil)
+    }
+
     @Test("title sort uses album sort names and sections by first letter")
     func titleSort() {
         let albums = AlbumListBuilder.albums(from: [

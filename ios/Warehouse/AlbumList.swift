@@ -76,6 +76,27 @@ enum AlbumListBuilder {
         }
     }
 
+    /// a pseudo-album collecting songs with no album name, shown at the end
+    /// of the artist view; nil when every song has an album
+    static func unknownAlbum(from songs: [Song]) -> Album? {
+        let loose = songs.filter { $0.albumName.isEmpty }
+        guard !loose.isEmpty else { return nil }
+        let tracks = loose.sorted {
+            ($0.discNumber, $0.trackNumber, fold($0.name)) < ($1.discNumber, $1.trackNumber, fold($1.name))
+        }
+        // the doubled separator can't collide with a real album's key
+        return Album(
+            id: "\(fold(tracks[0].artistName))\u{1F}\u{1F}",
+            name: "Unknown Album",
+            sortName: "",
+            artistName: tracks[0].artistName,
+            artistSortName: tracks.first { !$0.artistSortName.isEmpty }?.artistSortName ?? "",
+            genre: tracks.first { !$0.genre.isEmpty }?.genre ?? "",
+            year: 0,
+            artworkFilename: tracks.compactMap(\.artworkFilename).first,
+            songs: tracks)
+    }
+
     /// the library album a song belongs to, if it has one
     static func album(for song: Song, in songs: [Song]) -> Album? {
         guard !song.albumName.isEmpty else { return nil }

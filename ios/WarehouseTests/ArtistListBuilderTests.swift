@@ -50,14 +50,29 @@ struct ArtistListBuilderTests {
         #expect(artists[1].name == "Cher")
     }
 
-    @Test("artists with only non-album singles still appear")
+    @Test("artists with only non-album singles get an unknown album")
     func singlesOnly() {
         let songs = [Self.song(id: "1", name: "Single", artist: "Cher")]
 
         let artists = ArtistListBuilder.artists(from: songs)
         #expect(artists.count == 1)
         #expect(artists[0].name == "Cher")
-        #expect(artists[0].albums.isEmpty)
+        #expect(artists[0].albums.map(\.name) == ["Unknown Album"])
+        #expect(artists[0].albums[0].songs.map(\.id) == ["1"])
+    }
+
+    @Test("songs without an album collect into an unknown album at the end")
+    func unknownAlbumLast() {
+        let songs = [
+            Self.song(id: "1", name: "Single", artist: "Cher"),
+            Self.song(id: "2", artist: "Cher", album: "No Year"),
+            Self.song(id: "3", artist: "Cher", album: "Believe", year: 1998)
+        ]
+
+        let artists = ArtistListBuilder.artists(from: songs)
+        #expect(artists.count == 1)
+        #expect(artists[0].albums.map(\.name) == ["Believe", "No Year", "Unknown Album"])
+        #expect(artists[0].albums[2].songs.map(\.id) == ["1"])
     }
 
     @Test("songs without an artist are left out")
