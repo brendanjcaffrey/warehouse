@@ -143,6 +143,7 @@ struct SongsView: View {
                 song,
                 library: store.songs,
                 play: { play(song) },
+                playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                 artistDestination: $artistDestination,
                 albumDestination: $albumDestination)
         }

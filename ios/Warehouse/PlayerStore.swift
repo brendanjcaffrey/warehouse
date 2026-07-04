@@ -128,6 +128,16 @@ final class PlayerStore {
         startCurrent()
     }
 
+    /// queues a song right after the current track, or just plays it when
+    /// nothing is queued
+    func playNext(_ song: Song, token: String?, baseURL: URL?) {
+        if queue.current == nil {
+            play([song], token: token, baseURL: baseURL)
+        } else {
+            queue.playNext(song)
+        }
+    }
+
     /// jumps ahead to an upcoming track picked in the queue view
     func playFromUpcoming(at index: Int) {
         guard queue.jump(toUpcomingIndex: index) else { return }

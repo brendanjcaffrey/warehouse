@@ -28,7 +28,7 @@ struct PlayQueue: Sendable {
     /// the position of the current track within the queue
     private var index: Int
     /// the context in its original order, for restoring when shuffle turns off
-    private let context: [QueueEntry]
+    private var context: [QueueEntry]
 
     var current: QueueEntry? {
         entries.indices.contains(index) ? entries[index] : nil
@@ -121,6 +121,17 @@ struct PlayQueue: Sendable {
         var tail = Array(entries[(index + 1)...])
         tail.move(fromOffsets: offsets, toOffset: destination)
         entries.replaceSubrange((index + 1)..., with: tail)
+    }
+
+    /// inserts a song right after the current track; it goes into the context
+    /// too so it isn't lost when shuffle turns off
+    mutating func playNext(_ song: Song) {
+        guard let current else { return }
+        let entry = QueueEntry(song)
+        entries.insert(entry, at: index + 1)
+        if let position = context.firstIndex(where: { $0.id == current.id }) {
+            context.insert(entry, at: position + 1)
+        }
     }
 
     /// keeps the played record when this queue replaces an old one; the track

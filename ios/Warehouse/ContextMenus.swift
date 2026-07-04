@@ -1,18 +1,19 @@
 import SwiftUI
 
 extension View {
-    /// hold on a track: play it now plus shortcuts to its artist & album views
+    /// hold on a track: play it now or next plus shortcuts to its artist &
+    /// album views
     func songContextMenu(
         _ song: Song,
         library: [Song],
         play: @escaping () -> Void,
+        playNext: @escaping () -> Void,
         artistDestination: Binding<Artist?>,
         albumDestination: Binding<Album?>? = nil
     ) -> some View {
         contextMenu {
             Button("Play", systemImage: "play", action: play)
-            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {}
-                .disabled(true)
+            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward", action: playNext)
             if !song.artistName.isEmpty {
                 Button("Go to Artist", systemImage: "music.microphone") {
                     artistDestination.wrappedValue = ArtistListBuilder.artist(named: song.artistName, in: library)

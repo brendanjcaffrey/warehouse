@@ -123,6 +123,32 @@ struct PlayQueueTests {
         #expect(Set(queue.history.map(\.id)).count == 3)
     }
 
+    @Test("play next inserts right after the current track")
+    func playNext() {
+        var queue = PlayQueue(songs: Self.songs(3))
+        queue.playNext(Self.song("9"))
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.upcoming.map(\.song.id) == ["9", "2", "3"])
+        queue.advance()
+        #expect(queue.current?.song.id == "9")
+
+        var empty = PlayQueue(songs: [])
+        empty.playNext(Self.song("9"))
+        #expect(empty.current == nil)
+        #expect(empty.upcoming.isEmpty)
+    }
+
+    @Test("a song queued next survives turning shuffle off")
+    func playNextSurvivesUnshuffle() {
+        var queue = PlayQueue(songs: Self.songs(5))
+        var generator = SeededGenerator(seed: 4)
+        queue.setShuffled(true, using: &generator)
+        queue.playNext(Self.song("9"))
+        queue.setShuffled(false, using: &generator)
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.upcoming.map(\.song.id) == ["9", "2", "3", "4", "5"])
+    }
+
     @Test("a replacement queue keeps the history & counts the interrupted track")
     func inheritHistory() {
         var previous = PlayQueue(songs: Self.songs(3))
