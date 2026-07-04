@@ -14,7 +14,11 @@ struct LibraryView: View {
                 } label: {
                     Label("Playlists", systemImage: "music.note.list")
                 }
-                disabledRow("Artists", systemImage: "music.microphone")
+                NavigationLink {
+                    ArtistsView()
+                } label: {
+                    Label("Artists", systemImage: "music.microphone")
+                }
                 NavigationLink {
                     AlbumsView()
                 } label: {
@@ -23,11 +27,5 @@ struct LibraryView: View {
             }
             .navigationTitle("Library")
         }
-    }
-
-    private func disabledRow(_ title: String, systemImage: String) -> some View {
-        // these will become navigation links as the corresponding views are built
-        Label(title, systemImage: systemImage)
-            .foregroundStyle(.tertiary)
     }
 }

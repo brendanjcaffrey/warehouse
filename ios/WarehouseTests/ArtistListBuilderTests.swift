@@ -1,0 +1,136 @@
+import Foundation
+import Testing
+@testable import Warehouse
+
+@Suite("ArtistListBuilder")
+struct ArtistListBuilderTests {
+    static func song(
+        id: String = "id",
+        name: String = "Song",
+        artist: String = "",
+        artistSortName: String = "",
+        album: String = "",
+        albumSortName: String = "",
+        year: Int = 0
+    ) -> Song {
+        Song(
+            id: id,
+            name: name,
+            sortName: "",
+            artistName: artist,
+            artistSortName: artistSortName,
+            albumArtistName: "",
+            albumArtistSortName: "",
+            albumName: album,
+            albumSortName: albumSortName,
+            genre: "",
+            year: year,
+            discNumber: 0,
+            trackNumber: 0,
+            musicFilename: "\(id).mp3",
+            artworkFilename: nil)
+    }
+
+    @Test("artists group songs by track artist with albums in year order")
+    func grouping() {
+        let songs = [
+            Self.song(id: "1", artist: "The Beatles", album: "Abbey Road", year: 1969),
+            Self.song(id: "2", artist: "Cher", album: "Believe", year: 1998),
+            Self.song(id: "3", artist: "The Beatles", album: "Rubber Soul", year: 1965)
+        ]
+
+        let artists = ArtistListBuilder.artists(from: songs)
+        #expect(artists.count == 2)
+        #expect(artists[0].name == "The Beatles")
+        #expect(artists[0].albums.map(\.name) == ["Rubber Soul", "Abbey Road"])
+        #expect(artists[1].name == "Cher")
+    }
+
+    @Test("artists with only non-album singles still appear")
+    func singlesOnly() {
+        let songs = [Self.song(id: "1", name: "Single", artist: "Cher")]
+
+        let artists = ArtistListBuilder.artists(from: songs)
+        #expect(artists.count == 1)
+        #expect(artists[0].name == "Cher")
+        #expect(artists[0].albums.isEmpty)
+    }
+
+    @Test("songs without an artist are left out")
+    func noArtist() {
+        let songs = [Self.song(id: "1", name: "Mystery")]
+        #expect(ArtistListBuilder.artists(from: songs).isEmpty)
+    }
+
+    @Test("albums with unknown years sort last, ties broken by title")
+    func albumOrder() {
+        let songs = [
+            Self.song(id: "1", artist: "Cher", album: "No Year"),
+            Self.song(id: "2", artist: "Cher", album: "Twins", year: 1998),
+            Self.song(id: "3", artist: "Cher", album: "Believe", year: 1998)
+        ]
+
+        let artists = ArtistListBuilder.artists(from: songs)
+        #expect(artists.count == 1)
+        #expect(artists[0].albums.map(\.name) == ["Believe", "Twins", "No Year"])
+    }
+
+    @Test("artists with the same folded name group together")
+    func foldedGrouping() {
+        let songs = [
+            Self.song(id: "1", artist: "Beyoncé", album: "Dangerously in Love"),
+            Self.song(id: "2", artist: "beyonce", album: "Lemonade")
+        ]
+
+        let artists = ArtistListBuilder.artists(from: songs)
+        #expect(artists.count == 1)
+        #expect(artists[0].name == "Beyoncé")
+        #expect(artists[0].albums.count == 2)
+    }
+
+    @Test("artist sort name comes from the first song that has one")
+    func sortNameFallback() {
+        let songs = [
+            Self.song(id: "1", artist: "The Who"),
+            Self.song(id: "2", artist: "The Who", artistSortName: "Who, The")
+        ]
+
+        let artists = ArtistListBuilder.artists(from: songs)
+        #expect(artists.count == 1)
+        #expect(artists[0].sortName == "Who, The")
+    }
+
+    @Test("sections use sort names and put symbols in a # section last")
+    func sections() {
+        let artists = ArtistListBuilder.artists(from: [
+            Self.song(id: "1", artist: "The Beatles", artistSortName: "Beatles, The"),
+            Self.song(id: "2", artist: "Cher"),
+            Self.song(id: "3", artist: "311")
+        ])
+
+        let sections = ArtistListBuilder.sections(artists, matching: "")
+        #expect(sections.map(\.title) == ["B", "C", "#"])
+        #expect(sections[0].artists.map(\.name) == ["The Beatles"])
+        #expect(sections[2].artists.map(\.name) == ["311"])
+    }
+
+    @Test("search matches artist names, case insensitively")
+    func search() {
+        let artists = ArtistListBuilder.artists(from: [
+            Self.song(id: "1", artist: "Cher"),
+            Self.song(id: "2", artist: "The Beatles")
+        ])
+
+        let matched = ArtistListBuilder.sections(artists, matching: "cher")
+        #expect(matched.flatMap { $0.artists.map(\.name) } == ["Cher"])
+
+        #expect(ArtistListBuilder.sections(artists, matching: "xyz").isEmpty)
+    }
+
+    @Test("blank search returns everything")
+    func blankSearch() {
+        let artists = ArtistListBuilder.artists(from: [Self.song(id: "1", artist: "Cher")])
+        let sections = ArtistListBuilder.sections(artists, matching: "   ")
+        #expect(sections.flatMap(\.artists).count == 1)
+    }
+}
