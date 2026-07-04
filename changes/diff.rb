@@ -86,8 +86,8 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
       changesets.push(changeset) unless changeset.changed.empty?
     end
 
-    old_idx += 1 # rubocop:disable Lint/UselessAssignment
-    new_idx += 1 # rubocop:disable Lint/UselessAssignment
+    old_idx += 1
+    new_idx += 1
   elsif old_track['id'] < new_track['id']
     changesets.push(Changeset.new(desc(old_track), 'Deleted', []))
     old_idx += 1
@@ -157,8 +157,8 @@ while old_idx < old_playlists.size && new_idx < new_playlists.size
         new_track_id = new_track_ids[new_track_idx]
 
         if old_track_id == new_track_id
-          old_track_idx += 1 # rubocop:disable Lint/UselessAssignment
-          new_track_idx += 1 # rubocop:disable Lint/UselessAssignment
+          old_track_idx += 1
+          new_track_idx += 1
         elsif old_track_id < new_track_id
           changesets.push(Changeset.new(desc_id(old_track_id, old_tracks), 'Removed', []))
           old_track_idx += 1
@@ -174,8 +174,8 @@ while old_idx < old_playlists.size && new_idx < new_playlists.size
       puts "\n"
     end
 
-    old_idx += 1 # rubocop:disable Lint/UselessAssignment
-    new_idx += 1 # rubocop:disable Lint/UselessAssignment
+    old_idx += 1
+    new_idx += 1
   elsif old_playlist['id'] < new_playlist['id']
     puts "Deleted: #{old_playlist['name']}\n\n"
     old_idx += 1
@@ -214,8 +214,8 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
 
       plays.push("#{desc_id(new_track['id'], new_tracks)}: #{old_track['play_count']} → #{new_track['play_count']}")
     end
-    old_idx += 1 # rubocop:disable Lint/UselessAssignment
-    new_idx += 1 # rubocop:disable Lint/UselessAssignment
+    old_idx += 1
+    new_idx += 1
   elsif old_track['id'] < new_track['id']
     old_idx += 1
   else

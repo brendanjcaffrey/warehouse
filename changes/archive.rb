@@ -43,21 +43,21 @@ if val.to_s == '0'
   exit 1
 end
 
-f = File.open(tracks_out, 'w')
-db.copy_data(tracks) do
-  while (row = db.get_copy_data)
-    f.puts(row)
+File.open(tracks_out, 'w') do |f|
+  db.copy_data(tracks) do
+    while (row = db.get_copy_data)
+      f.puts(row)
+    end
   end
 end
-f.close
 
-f = File.open(playlists_out, 'w')
-db.copy_data(playlists) do
-  while (row = db.get_copy_data)
-    f.puts(row)
+File.open(playlists_out, 'w') do |f|
+  db.copy_data(playlists) do
+    while (row = db.get_copy_data)
+      f.puts(row)
+    end
   end
 end
-f.close
 
 # https://dba.stackexchange.com/a/147827
 `sed -i '' -e 's/\\\\\\\\/\\\\/g' #{tracks_out}`

@@ -36,15 +36,11 @@ jobs:
         gem install bundler
         bundle install --jobs 4 --retry 3
 
-    - uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-
     - name: npm ci
       run: cd web && npm ci
 
-    - name: compile protobufs & build web
-      run: bundle exec rake web:build
+    - name: build web
+      run: cd web && npm run build
 
     - name: rspec
       id: rspec

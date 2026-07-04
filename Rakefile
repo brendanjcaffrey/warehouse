@@ -6,7 +6,7 @@ require 'tty-command'
 require_relative 'shared/config'
 
 ROOT = __dir__
-SIMULATOR = 'iPhone 17 Pro'
+SIMULATOR = 'iPhone 17 Pro'.freeze
 command = TTY::Command.new
 
 namespace :export do
@@ -179,10 +179,12 @@ namespace :web do
 end
 
 namespace :ios do
+  desc 'list the available xcode schemes'
   task :list_schemas do
     sh "xcodebuild -project #{ROOT}/ios/Warehouse.xcodeproj -list"
   end
 
+  desc 'build the iOS app for the simulator'
   task :build do
     sh "xcodebuild -project #{ROOT}/ios/Warehouse.xcodeproj " \
        '-scheme Warehouse ' \
@@ -297,7 +299,7 @@ namespace :ios do
                         else 'logo.png'
                         end
     end
-    File.write(contents_path, JSON.pretty_generate(contents) + "\n")
+    File.write(contents_path, "#{JSON.pretty_generate(contents)}\n")
 
     puts "regenerated app icons in #{iconset}"
   end

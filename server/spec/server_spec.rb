@@ -60,11 +60,7 @@ end
 
 require_relative '../server'
 
-module Update
-  class Database
-    attr_reader :db
-  end
-end
+Update::Database.class_eval { attr_reader :db }
 
 describe 'Warehouse Server' do
   include Rack::Test::Methods

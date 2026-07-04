@@ -1,0 +1,79 @@
+name: ios
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+# these mirror the `rake ios:build`, `ios:test` and `ios:uitest` tasks, but call
+# xcodebuild directly so the mac runner doesn't need the ruby/bundle toolchain
+# (the Gemfile pulls native gems like pg that don't build cleanly here).
+env:
+  PROJECT: ios/Warehouse.xcodeproj
+  SCHEME: Warehouse
+  # concrete, bootable simulator (xcodebuild test can't use a generic
+  # destination). override here if the runner image drops this device.
+  SIMULATOR: iPhone 17 Pro
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
+
+    # the app targets iOS 26.2, so pick the newest installed Xcode 26.x rather
+    # than whatever the image defaults to.
+    - name: select xcode
+      run: |
+        sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)/Contents/Developer"
+        xcodebuild -version
+
+    - name: swiftlint
+      run: |
+        brew install swiftlint
+        ./check_swiftlint.sh
+
+    - name: build
+      run: |
+        xcodebuild -project "$PROJECT" \
+          -scheme "$SCHEME" \
+          -destination 'generic/platform=iOS Simulator' \
+          -configuration Debug \
+          CODE_SIGNING_ALLOWED=NO \
+          build
+
+    - name: unit tests
+      run: |
+        xcodebuild test -project "$PROJECT" \
+          -scheme "$SCHEME" \
+          -destination "platform=iOS Simulator,name=$SIMULATOR" \
+          -only-testing:WarehouseTests \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: ui tests
+      run: |
+        xcodebuild test -project "$PROJECT" \
+          -scheme "$SCHEME" \
+          -destination "platform=iOS Simulator,name=$SIMULATOR" \
+          -only-testing:WarehouseUITests \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: pushover-actions
+      if: failure()
+      uses: umahmood/pushover-actions@0582cb24dccd1fe77aeb35e6fb8027ddbca8af35
+      env:
+        PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+        PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+      with:
+        status: ${{ job.status }}
+        title: "${{ github.repository }} CI failed (${{ github.workflow }})"
+        url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

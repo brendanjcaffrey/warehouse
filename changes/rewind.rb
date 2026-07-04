@@ -60,8 +60,8 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
   if old_track['id'] == new_track['id']
     track = Track.build(new_track, old_track['play_count'])
     tracks.push(track, track.plays)
-    old_idx += 1 # rubocop:disable Lint/UselessAssignment
-    new_idx += 1 # rubocop:disable Lint/UselessAssignment
+    old_idx += 1
+    new_idx += 1
   elsif old_track['id'] < new_track['id']
     old_idx += 1 # deleted, ignore
   else
