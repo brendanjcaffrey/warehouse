@@ -54,4 +54,27 @@ struct FileStoreTests {
 
         #expect(store.list(.music) == ["keep.mp3"])
     }
+
+    @Test("download stats count files & sum their sizes")
+    func downloadStats() throws {
+        let store = Self.makeStore()
+        #expect(store.downloadStats() == DownloadStats())
+
+        try store.write(.music, "a.mp3", data: Data(count: 100))
+        try store.write(.music, "b.mp3", data: Data(count: 50))
+        try store.write(.artwork, "a.jpg", data: Data(count: 8))
+
+        let stats = store.downloadStats()
+        #expect(stats.trackCount == 2)
+        #expect(stats.artworkCount == 1)
+        #expect(stats.totalBytes == 158)
+    }
+
+    @Test("device storage reports a sensible used & total")
+    func deviceStorage() throws {
+        let storage = try #require(FileStore.deviceStorage())
+        #expect(storage.totalBytes > 0)
+        #expect(storage.usedBytes > 0)
+        #expect(storage.usedBytes <= storage.totalBytes)
+    }
 }

@@ -8,6 +8,19 @@ enum LibraryFileType: String, CaseIterable, Sendable {
     var directory: String { rawValue }
 }
 
+/// counts & sizes of everything downloaded, shown in settings
+struct DownloadStats: Equatable, Sendable {
+    var trackCount = 0
+    var artworkCount = 0
+    var totalBytes: Int64 = 0
+}
+
+/// used & total capacity of the device, shown in settings
+struct DeviceStorage: Equatable, Sendable {
+    let usedBytes: Int64
+    let totalBytes: Int64
+}
+
 /// stores downloaded music & artwork files under a root directory,
 /// mirroring the server's filenames (md5-based, extension included)
 struct FileStore: Sendable {
@@ -58,6 +71,37 @@ struct FileStore: Sendable {
     func deleteFiles(_ type: LibraryFileType, keeping: Set<String>) {
         for filename in list(type).subtracting(keeping) {
             try? delete(type, filename)
+        }
+    }
+
+    func downloadStats() -> DownloadStats {
+        let music = contents(.music)
+        let artwork = contents(.artwork)
+        return DownloadStats(
+            trackCount: music.count,
+            artworkCount: artwork.count,
+            totalBytes: totalSize(of: music) + totalSize(of: artwork))
+    }
+
+    static func deviceStorage() -> DeviceStorage? {
+        let values = try? URL.applicationSupportDirectory.resourceValues(
+            forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
+        guard let total = values?.volumeTotalCapacity,
+              let available = values?.volumeAvailableCapacityForImportantUsage else { return nil }
+        return DeviceStorage(usedBytes: Int64(total) - available, totalBytes: Int64(total))
+    }
+
+    private func contents(_ type: LibraryFileType) -> [URL] {
+        let urls = try? FileManager.default.contentsOfDirectory(
+            at: directoryURL(type),
+            includingPropertiesForKeys: [.fileSizeKey])
+        return urls ?? []
+    }
+
+    private func totalSize(of files: [URL]) -> Int64 {
+        files.reduce(0) { total, url in
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            return total + Int64(size)
         }
     }
 }

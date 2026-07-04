@@ -75,6 +75,11 @@ final class SyncStore {
         }
     }
 
+    /// counts & sizes of the downloaded files; safe to call off the main actor
+    nonisolated func downloadStats() -> DownloadStats {
+        fileStore.downloadStats()
+    }
+
     /// checks whether there's new library data or missing files, without syncing anything
     func checkForUpdates(token: String?, baseURL: URL?) async {
         guard let token, let baseURL, !syncInProgress else { return }
