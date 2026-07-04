@@ -16,6 +16,7 @@ final class PlayerStore {
     var song: Song? { queue.current?.song }
 
     private let fileStore: FileStore
+    private let updates: UpdatesStore
     private let player = AVPlayer()
     /// kept from the last play call for loading later tracks in the queue
     private var token: String?
@@ -31,8 +32,9 @@ final class PlayerStore {
     /// until they land so the playhead doesn't flick back to the old position
     private var pendingSeeks = 0
 
-    init(fileStore: FileStore) {
+    init(fileStore: FileStore, updates: UpdatesStore) {
         self.fileStore = fileStore
+        self.updates = updates
     }
 
     /// starts playing songs in order, positioned at the tapped one so previous
@@ -314,6 +316,11 @@ final class PlayerStore {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                if let song = self.song {
+                    // the track played through to its finish, count a play
+                    let updates = self.updates
+                    Task { await updates.addPlay(trackId: song.id) }
+                }
                 if self.queue.advance() {
                     self.startCurrent()
                 } else {
