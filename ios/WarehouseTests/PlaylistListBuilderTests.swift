@@ -52,4 +52,19 @@ struct PlaylistListBuilderTests {
         let playlists = [Self.playlist(id: "p1", name: "Nested", parentId: "f1")]
         #expect(PlaylistListBuilder.children(of: "", in: playlists).isEmpty)
     }
+
+    @Test("containing finds a track's playlists but not folders or the library")
+    func containing() {
+        let playlists = [
+            Self.playlist(id: "lib", name: "Library", isLibrary: true, trackIds: ["t1", "t2"]),
+            Self.playlist(id: "f1", name: "Folder", isFolder: true, trackIds: ["t1"]),
+            Self.playlist(id: "p1", name: "Workout", trackIds: ["t1", "t2"]),
+            Self.playlist(id: "p2", name: "chill", trackIds: ["t1"]),
+            Self.playlist(id: "p3", name: "Empty", trackIds: [])
+        ]
+
+        #expect(PlaylistListBuilder.containing(trackId: "t1", in: playlists).map(\.id) == ["p2", "p1"])
+        #expect(PlaylistListBuilder.containing(trackId: "t2", in: playlists).map(\.id) == ["p1"])
+        #expect(PlaylistListBuilder.containing(trackId: "t9", in: playlists).isEmpty)
+    }
 }

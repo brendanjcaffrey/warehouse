@@ -47,7 +47,7 @@ enum SongSortOption: String, Identifiable {
     }
 }
 
-struct SongSection: Identifiable {
+struct SongSection: Identifiable, Equatable {
     let title: String
     let songs: [Song]
 
@@ -87,6 +87,17 @@ enum SongListBuilder {
             titles.append("#")
         }
         return titles.map { SongSection(title: $0, songs: songsByTitle[$0] ?? []) }
+    }
+
+    /// the section & row of a song within the built sections, for scrolling
+    /// the list to it
+    static func position(of song: Song, in sections: [SongSection]) -> (section: Int, row: Int)? {
+        for (section, entry) in sections.enumerated() {
+            if let row = entry.songs.firstIndex(of: song) {
+                return (section, row)
+            }
+        }
+        return nil
     }
 
     /// the playlist's songs in playlist order, skipping unknown track ids;

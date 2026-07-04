@@ -1,12 +1,18 @@
 import Foundation
 
-struct PlaylistItem: Identifiable, Equatable, Sendable {
+struct PlaylistItem: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let parentId: String
     let isLibrary: Bool
     let isFolder: Bool
     let trackIds: [String]
+}
+
+/// where show in playlist navigates: the playlist plus the track to scroll to
+struct PlaylistDestination: Hashable {
+    let playlist: PlaylistItem
+    let song: Song
 }
 
 /// pure helpers for the playlists list
@@ -23,5 +29,13 @@ enum PlaylistListBuilder {
                 }
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
+    }
+
+    /// the playlists a track appears in, alphabetical; folders & the library
+    /// playlist are skipped since they aren't real playlists
+    static func containing(trackId: String, in playlists: [PlaylistItem]) -> [PlaylistItem] {
+        playlists
+            .filter { !$0.isLibrary && !$0.isFolder && $0.trackIds.contains(trackId) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }

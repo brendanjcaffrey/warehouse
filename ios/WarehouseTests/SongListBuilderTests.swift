@@ -155,4 +155,20 @@ struct SongListBuilderTests {
             [Self.song(id: "1", name: "")], sortedBy: .title, matching: "")
         #expect(sections.map(\.title) == ["#"])
     }
+
+    @Test("position finds a song's section & row for scrolling")
+    func position() {
+        let sections = [
+            SongSection(title: "A", songs: [Self.song(id: "1", name: "Angie")]),
+            SongSection(title: "B", songs: [
+                Self.song(id: "2", name: "Believe"),
+                Self.song(id: "3", name: "Beast of Burden")
+            ])
+        ]
+
+        let position = SongListBuilder.position(of: sections[1].songs[1], in: sections)
+        #expect(position?.section == 1)
+        #expect(position?.row == 1)
+        #expect(SongListBuilder.position(of: Self.song(id: "9", name: "Missing"), in: sections) == nil)
+    }
 }

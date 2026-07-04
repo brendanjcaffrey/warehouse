@@ -3,12 +3,14 @@ import SwiftUI
 struct AlbumView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
+    @Environment(PlaylistsStore.self) private var playlists
     @Environment(SyncStore.self) private var sync
     @Environment(PlayerStore.self) private var player
 
     let album: Album
 
     @State private var artistDestination: Artist?
+    @State private var playlistDestination: PlaylistDestination?
 
     var body: some View {
         List {
@@ -49,9 +51,11 @@ struct AlbumView: View {
                     .songContextMenu(
                         song,
                         library: store.songs,
+                        playlists: playlists.playlists,
                         play: { play(song) },
                         playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
-                        artistDestination: $artistDestination)
+                        artistDestination: $artistDestination,
+                        playlistDestination: $playlistDestination)
                 }
             }
         }
@@ -60,6 +64,13 @@ struct AlbumView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $artistDestination) { artist in
             ArtistView(artist: artist)
+        }
+        .navigationDestination(item: $playlistDestination) { destination in
+            SongsView(playlist: destination.playlist, scrollTo: destination.song)
+        }
+        .task {
+            // the context menu needs the playlists for show in playlist
+            await playlists.load()
         }
         .onChange(of: sync.completedSyncs) {
             // pick up newly downloaded files once a sync finishes

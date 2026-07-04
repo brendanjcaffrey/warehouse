@@ -3,6 +3,7 @@ import SwiftUI
 struct SongsView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
+    @Environment(PlaylistsStore.self) private var playlistsStore
     @Environment(SyncStore.self) private var sync
     @Environment(PlayerStore.self) private var player
 
@@ -13,9 +14,14 @@ struct SongsView: View {
     @State private var sections = [SongSection]()
     @State private var artistDestination: Artist?
     @State private var albumDestination: Album?
+    @State private var playlistDestination: PlaylistDestination?
+    /// a track to scroll to once the list is built, for show in playlist
+    @State private var pendingScroll: Song?
+    @State private var listScroller = ListScroller()
 
-    init(playlist: PlaylistItem? = nil) {
+    init(playlist: PlaylistItem? = nil, scrollTo: Song? = nil) {
         self.playlist = playlist
+        _pendingScroll = State(initialValue: scrollTo)
         // playlists remember their own sort separately from the all songs list
         if playlist == nil {
             _sortRaw = AppStorage(wrappedValue: SongSortOption.title.rawValue, "songsSortOption")
@@ -67,6 +73,9 @@ struct SongsView: View {
         .navigationDestination(item: $albumDestination) { album in
             AlbumView(album: album)
         }
+        .navigationDestination(item: $playlistDestination) { destination in
+            SongsView(playlist: destination.playlist, scrollTo: destination.song)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 sortMenu
@@ -74,6 +83,8 @@ struct SongsView: View {
         }
         .task {
             await store.load()
+            // the context menu needs the playlists for show in playlist
+            await playlistsStore.load()
         }
         .task(id: SectionInput(songs: store.songs, trackIds: playlist?.trackIds, sort: sort, search: search)) {
             // sorting & sectioning thousands of songs is too slow to redo in body
@@ -97,35 +108,64 @@ struct SongsView: View {
     }
 
     private var songList: some View {
-        List {
-            Section {
-                HStack(spacing: 12) {
-                    playbackButton("Play", systemImage: "play.fill") {
-                        player.play(sections.flatMap(\.songs), token: auth.token, baseURL: auth.baseURL())
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    HStack(spacing: 12) {
+                        playbackButton("Play", systemImage: "play.fill") {
+                            player.play(sections.flatMap(\.songs), token: auth.token, baseURL: auth.baseURL())
+                        }
+                        playbackButton("Shuffle", systemImage: "shuffle") {
+                            player.playShuffled(sections.flatMap(\.songs), token: auth.token, baseURL: auth.baseURL())
+                        }
                     }
-                    playbackButton("Shuffle", systemImage: "shuffle") {
-                        player.playShuffled(sections.flatMap(\.songs), token: auth.token, baseURL: auth.baseURL())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+                ForEach(sections) { section in
+                    if section.title.isEmpty {
+                        Section {
+                            songRows(section)
+                        }
+                    } else {
+                        Section(section.title) {
+                            songRows(section)
+                        }
+                        .sectionIndexLabel(Text(section.title))
                     }
                 }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
             }
-            ForEach(sections) { section in
-                if section.title.isEmpty {
-                    Section {
-                        songRows(section)
-                    }
-                } else {
-                    Section(section.title) {
-                        songRows(section)
-                    }
-                    .sectionIndexLabel(Text(section.title))
-                }
+            .listStyle(.plain)
+            .listSectionIndexVisibility(sort == .playlistOrder ? .hidden : .visible)
+            .searchable(text: $search, prompt: "Search")
+            .background(ListScrollerAnchor(scroller: listScroller))
+            .onChange(of: sections) {
+                scrollToPending(proxy)
             }
         }
-        .listStyle(.plain)
-        .listSectionIndexVisibility(sort == .playlistOrder ? .hidden : .visible)
-        .searchable(text: $search, prompt: "Search")
+    }
+
+    /// jumps to the track show in playlist asked for once it's in the list;
+    /// the jump goes through uikit because scrollviewreader's scrollto
+    /// builds every row on the way there, which takes seconds on big lists
+    private func scrollToPending(_ proxy: ScrollViewProxy) {
+        guard let song = pendingScroll,
+              let position = SongListBuilder.position(of: song, in: sections) else { return }
+        pendingScroll = nil
+        // + 1 skips the play & shuffle buttons section
+        let expectedSections = sections.count + 1
+        Task { @MainActor in
+            // the collection view picks up the new rows just after this
+            // update, so retry until the section counts line up
+            for _ in 0..<10 {
+                try? await Task.sleep(for: .milliseconds(100))
+                if listScroller.scrollToRow(
+                    section: position.section + 1, row: position.row, expectedSections: expectedSections) {
+                    return
+                }
+            }
+            proxy.scrollTo(song.id, anchor: .center)
+        }
     }
 
     private func songRows(_ section: SongSection) -> some View {
@@ -142,10 +182,13 @@ struct SongsView: View {
             .songContextMenu(
                 song,
                 library: store.songs,
+                // no show in playlist entry for the playlist we're already in
+                playlists: playlistsStore.playlists.filter { $0.id != playlist?.id },
                 play: { play(song) },
                 playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                 artistDestination: $artistDestination,
-                albumDestination: $albumDestination)
+                albumDestination: $albumDestination,
+                playlistDestination: $playlistDestination)
         }
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct SearchView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
+    @Environment(PlaylistsStore.self) private var playlists
     @Environment(SyncStore.self) private var sync
     @Environment(PlayerStore.self) private var player
 
@@ -11,6 +12,7 @@ struct SearchView: View {
     @State private var results = SearchResults()
     @State private var artistDestination: Artist?
     @State private var albumDestination: Album?
+    @State private var playlistDestination: PlaylistDestination?
 
     private struct ResultsInput: Equatable, Sendable {
         let songs: [Song]
@@ -43,6 +45,9 @@ struct SearchView: View {
             .navigationDestination(item: $albumDestination) { album in
                 AlbumView(album: album)
             }
+            .navigationDestination(item: $playlistDestination) { destination in
+                SongsView(playlist: destination.playlist, scrollTo: destination.song)
+            }
             .searchable(text: $search, prompt: "Artists, Albums & Songs")
             .searchScopes($scope) {
                 ForEach(SearchScope.allCases) { scope in
@@ -51,6 +56,8 @@ struct SearchView: View {
             }
             .task {
                 await store.load()
+                // the context menu needs the playlists for show in playlist
+                await playlists.load()
             }
             .task(id: ResultsInput(songs: store.songs, scope: scope, search: search)) {
                 // filtering & sorting thousands of songs is too slow to redo in body
@@ -124,10 +131,12 @@ struct SearchView: View {
                     .songContextMenu(
                         song,
                         library: store.songs,
+                        playlists: playlists.playlists,
                         play: { play(song) },
                         playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                         artistDestination: $artistDestination,
-                        albumDestination: $albumDestination)
+                        albumDestination: $albumDestination,
+                        playlistDestination: $playlistDestination)
                 }
             }
         }
