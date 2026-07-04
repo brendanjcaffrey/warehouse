@@ -12,6 +12,9 @@ struct MainTabView: View {
             Tab("Settings", systemImage: "gearshape") {
                 SettingsView()
             }
+            Tab(role: .search) {
+                SearchView()
+            }
         }
         .task {
             // only check whether there's anything to sync, downloading starts manually
