@@ -141,6 +141,23 @@ final class LibraryDatabase {
         }
     }
 
+    /// lightweight copies of every playlist for the playlists list
+    func allPlaylists() async throws -> [PlaylistItem] {
+        try await container.performBackgroundTask { context in
+            let request = NSFetchRequest<PlaylistEntity>(entityName: "PlaylistEntity")
+            let playlists = try context.fetch(request)
+            return playlists.map {
+                PlaylistItem(
+                    id: $0.id,
+                    name: $0.name,
+                    parentId: $0.parentId,
+                    isLibrary: $0.isLibrary,
+                    isFolder: !$0.childPlaylistIds.isEmpty,
+                    trackIds: $0.trackIds)
+            }
+        }
+    }
+
     func trackCount() async throws -> Int {
         try await container.performBackgroundTask { context in
             try context.count(for: NSFetchRequest<TrackEntity>(entityName: "TrackEntity"))

@@ -191,6 +191,34 @@ struct LibraryDatabaseTests {
         #expect(song2.artistSortKey == "Cher")
     }
 
+    @Test("allPlaylists returns lightweight copies with folder flags")
+    func allPlaylists() async throws {
+        let database = LibraryDatabase(inMemory: true)
+        try await database.replaceLibrary(with: Self.makeLibrary())
+
+        let playlists = try await database.allPlaylists()
+        let byId = Dictionary(uniqueKeysWithValues: playlists.map { ($0.id, $0) })
+        #expect(playlists.count == 4)
+
+        let library = try #require(byId["lib"])
+        #expect(library.isLibrary)
+        #expect(!library.isFolder)
+
+        let folder = try #require(byId["f1"])
+        #expect(folder.name == "Folder")
+        #expect(folder.parentId.isEmpty)
+        #expect(folder.isFolder)
+
+        let child = try #require(byId["c1"])
+        #expect(child.parentId == "f1")
+        #expect(child.isFolder) // it has a child playlist
+        #expect(child.trackIds == ["t1"])
+
+        let grandchild = try #require(byId["g1"])
+        #expect(!grandchild.isFolder)
+        #expect(grandchild.trackIds.isEmpty)
+    }
+
     @Test("filename queries return referenced files")
     func filenameQueries() async throws {
         let database = LibraryDatabase(inMemory: true)

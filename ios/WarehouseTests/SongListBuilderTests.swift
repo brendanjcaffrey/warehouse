@@ -98,6 +98,46 @@ struct SongListBuilderTests {
         #expect(sections.flatMap(\.songs).count == 1)
     }
 
+    @Test("playlist order keeps the incoming order in a single untitled section")
+    func playlistOrder() {
+        let songs = [
+            Self.song(id: "1", name: "Zombie"),
+            Self.song(id: "2", name: "Angie"),
+            Self.song(id: "3", name: "Believe", artist: "Cher")
+        ]
+
+        let sections = SongListBuilder.sections(songs, sortedBy: .playlistOrder, matching: "")
+        #expect(sections.map(\.title) == [""])
+        #expect(sections[0].songs.map(\.id) == ["1", "2", "3"])
+    }
+
+    @Test("playlist order still filters by search")
+    func playlistOrderSearch() {
+        let songs = [
+            Self.song(id: "1", name: "Zombie"),
+            Self.song(id: "2", name: "Believe", artist: "Cher")
+        ]
+
+        let sections = SongListBuilder.sections(songs, sortedBy: .playlistOrder, matching: "cher")
+        #expect(sections.count == 1)
+        #expect(sections[0].songs.map(\.id) == ["2"])
+
+        let empty = SongListBuilder.sections(songs, sortedBy: .playlistOrder, matching: "xyz")
+        #expect(empty.isEmpty)
+    }
+
+    @Test("playlistSongs maps track ids in order, skipping unknowns and duplicates")
+    func playlistSongs() {
+        let songs = [
+            Self.song(id: "1", name: "Angie"),
+            Self.song(id: "2", name: "Believe"),
+            Self.song(id: "3", name: "Zombie")
+        ]
+
+        let ordered = SongListBuilder.playlistSongs(songs, trackIds: ["3", "missing", "1", "3"])
+        #expect(ordered.map(\.id) == ["3", "1"])
+    }
+
     @Test("empty names fall into the # section")
     func emptyName() {
         let sections = SongListBuilder.sections(

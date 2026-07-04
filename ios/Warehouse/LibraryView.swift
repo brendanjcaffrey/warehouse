@@ -9,7 +9,11 @@ struct LibraryView: View {
                 } label: {
                     Label("Songs", systemImage: "music.note")
                 }
-                disabledRow("Playlists", systemImage: "music.note.list")
+                NavigationLink {
+                    PlaylistsView()
+                } label: {
+                    Label("Playlists", systemImage: "music.note.list")
+                }
                 disabledRow("Artists", systemImage: "music.microphone")
                 disabledRow("Albums", systemImage: "square.stack")
             }

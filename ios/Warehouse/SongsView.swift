@@ -4,32 +4,59 @@ struct SongsView: View {
     @Environment(SongsStore.self) private var store
     @Environment(SyncStore.self) private var sync
 
-    @AppStorage("songsSortOption") private var sortRaw = SongSortOption.title.rawValue
+    /// nil shows every song in the library
+    private let playlist: PlaylistItem?
+    @AppStorage private var sortRaw: String
     @State private var search = ""
     @State private var sections = [SongSection]()
 
+    init(playlist: PlaylistItem? = nil) {
+        self.playlist = playlist
+        // playlists remember their own sort separately from the all songs list
+        if playlist == nil {
+            _sortRaw = AppStorage(wrappedValue: SongSortOption.title.rawValue, "songsSortOption")
+        } else {
+            _sortRaw = AppStorage(wrappedValue: SongSortOption.playlistOrder.rawValue, "playlistSortOption")
+        }
+    }
+
+    private var sortOptions: [SongSortOption] {
+        playlist == nil ? SongSortOption.libraryOptions : SongSortOption.playlistOptions
+    }
+
     private var sort: SongSortOption {
-        SongSortOption(rawValue: sortRaw) ?? .title
+        guard let stored = SongSortOption(rawValue: sortRaw), sortOptions.contains(stored) else {
+            return sortOptions[0]
+        }
+        return stored
+    }
+
+    private var isEmpty: Bool {
+        guard let playlist else { return store.songs.isEmpty }
+        return store.songs.isEmpty || playlist.trackIds.isEmpty
     }
 
     private struct SectionInput: Equatable, Sendable {
         let songs: [Song]
+        let trackIds: [String]?
         let sort: SongSortOption
         let search: String
     }
 
     var body: some View {
         Group {
-            if store.songs.isEmpty {
+            if isEmpty {
                 ContentUnavailableView(
                     "No Songs",
                     systemImage: "music.note",
-                    description: Text("Sync your library from the Settings tab."))
+                    description: Text(playlist == nil
+                        ? "Sync your library from the Settings tab."
+                        : "This playlist has no songs."))
             } else {
                 songList
             }
         }
-        .navigationTitle("Songs")
+        .navigationTitle(playlist?.name ?? "Songs")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 sortMenu
@@ -38,11 +65,15 @@ struct SongsView: View {
         .task {
             await store.load()
         }
-        .task(id: SectionInput(songs: store.songs, sort: sort, search: search)) {
+        .task(id: SectionInput(songs: store.songs, trackIds: playlist?.trackIds, sort: sort, search: search)) {
             // sorting & sectioning thousands of songs is too slow to redo in body
-            let input = SectionInput(songs: store.songs, sort: sort, search: search)
+            let input = SectionInput(songs: store.songs, trackIds: playlist?.trackIds, sort: sort, search: search)
             sections = await Task.detached(priority: .userInitiated) {
-                SongListBuilder.sections(input.songs, sortedBy: input.sort, matching: input.search)
+                var songs = input.songs
+                if let trackIds = input.trackIds {
+                    songs = SongListBuilder.playlistSongs(songs, trackIds: trackIds)
+                }
+                return SongListBuilder.sections(songs, sortedBy: input.sort, matching: input.search)
             }.value
         }
         .onChange(of: sync.completedSyncs) {
@@ -66,20 +97,30 @@ struct SongsView: View {
                 .listRowBackground(Color.clear)
             }
             ForEach(sections) { section in
-                Section(section.title) {
-                    ForEach(section.songs) { song in
-                        SongRow(
-                            song: song,
-                            artworkURL: store.artworkURL(song),
-                            downloaded: store.isDownloaded(song))
+                if section.title.isEmpty {
+                    Section {
+                        songRows(section)
                     }
+                } else {
+                    Section(section.title) {
+                        songRows(section)
+                    }
+                    .sectionIndexLabel(Text(section.title))
                 }
-                .sectionIndexLabel(Text(section.title))
             }
         }
         .listStyle(.plain)
-        .listSectionIndexVisibility(.visible)
+        .listSectionIndexVisibility(sort == .playlistOrder ? .hidden : .visible)
         .searchable(text: $search, prompt: "Search")
+    }
+
+    private func songRows(_ section: SongSection) -> some View {
+        ForEach(section.songs) { song in
+            SongRow(
+                song: song,
+                artworkURL: store.artworkURL(song),
+                downloaded: store.isDownloaded(song))
+        }
     }
 
     private func playbackButton(_ title: String, systemImage: String) -> some View {
@@ -96,7 +137,7 @@ struct SongsView: View {
     private var sortMenu: some View {
         Menu {
             Picker("Sort By", selection: $sortRaw) {
-                ForEach(SongSortOption.allCases) { option in
+                ForEach(sortOptions) { option in
                     Text(option.label).tag(option.rawValue)
                 }
             }

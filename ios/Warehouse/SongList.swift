@@ -13,14 +13,21 @@ struct Song: Identifiable, Equatable, Sendable {
     var artistSortKey: String { artistSortName.isEmpty ? artistName : artistSortName }
 }
 
-enum SongSortOption: String, CaseIterable, Identifiable {
+enum SongSortOption: String, Identifiable {
+    case playlistOrder
     case title
     case artist
+
+    /// playlist order only makes sense inside a playlist
+    static let libraryOptions: [SongSortOption] = [.title, .artist]
+    static let playlistOptions: [SongSortOption] = [.playlistOrder, .title, .artist]
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
+        case .playlistOrder:
+            return "Playlist Order"
         case .title:
             return "Title"
         case .artist:
@@ -49,6 +56,11 @@ enum SongListBuilder {
             }
         }
 
+        if sort == .playlistOrder {
+            // playlist order keeps the incoming order and skips letter sections
+            return filtered.isEmpty ? [] : [SongSection(title: "", songs: filtered)]
+        }
+
         let keyed = filtered
             .map { (song: $0, key: sortKey(for: $0, sort: sort)) }
             .sorted { ($0.key.primary, $0.key.secondary) < ($1.key.primary, $1.key.secondary) }
@@ -66,9 +78,20 @@ enum SongListBuilder {
         return titles.map { SongSection(title: $0, songs: songsByTitle[$0] ?? []) }
     }
 
+    /// the playlist's songs in playlist order, skipping unknown track ids;
+    /// a track can only appear once because duplicate ids would break list identity
+    static func playlistSongs(_ songs: [Song], trackIds: [String]) -> [Song] {
+        let byId = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        return trackIds.compactMap { id in
+            guard seen.insert(id).inserted else { return nil }
+            return byId[id]
+        }
+    }
+
     static func sortKey(for song: Song, sort: SongSortOption) -> (primary: String, secondary: String) {
         switch sort {
-        case .title:
+        case .title, .playlistOrder:
             return (fold(song.titleSortKey), fold(song.artistSortKey))
         case .artist:
             return (fold(song.artistSortKey), fold(song.titleSortKey))
