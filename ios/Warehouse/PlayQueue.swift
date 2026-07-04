@@ -63,12 +63,14 @@ struct PlayQueue: Sendable {
     }
 
     /// moves to the next track, recording the current one as played even
-    /// when it was skipped partway through
+    /// when it was skipped partway through; wrapping continues from the last
+    /// track around to the first, for the next button but not for the end of
+    /// a track so playback still stops at the end of the queue
     @discardableResult
-    mutating func advance() -> Bool {
-        guard let current, index + 1 < entries.count else { return false }
+    mutating func advance(wrapping: Bool = false) -> Bool {
+        guard let current, wrapping || index + 1 < entries.count else { return false }
         recordPlayed(current)
-        index += 1
+        index = index + 1 < entries.count ? index + 1 : 0
         return true
     }
 

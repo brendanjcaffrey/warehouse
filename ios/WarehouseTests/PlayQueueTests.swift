@@ -100,6 +100,20 @@ struct PlayQueueTests {
         #expect(queue.current?.song.id == "3")
     }
 
+    @Test("next wraps around to the first track when asked")
+    func advanceWrapping() {
+        var queue = PlayQueue(songs: Self.songs(3), startingAt: 2)
+        let wrapped = queue.advance(wrapping: true)
+        #expect(wrapped)
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.upcoming.map(\.song.id) == ["2", "3"])
+        #expect(queue.history.map(\.song.id) == ["3"])
+
+        var empty = PlayQueue(songs: [])
+        let advanced = empty.advance(wrapping: true)
+        #expect(!advanced)
+    }
+
     @Test("previous steps backwards through the queue & wraps around")
     func goBack() {
         var queue = PlayQueue(songs: Self.songs(3))

@@ -123,8 +123,9 @@ final class PlayerStore {
         }
     }
 
+    /// steps forward through the queue, wrapping around at the end
     func skipToNext() {
-        guard queue.advance() else { return }
+        guard queue.advance(wrapping: true) else { return }
         startCurrent()
     }
 
