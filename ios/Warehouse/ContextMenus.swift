@@ -1,16 +1,16 @@
 import SwiftUI
 
 extension View {
-    /// hold on a track: playback stubs plus shortcuts to its artist & album views
+    /// hold on a track: play it now plus shortcuts to its artist & album views
     func songContextMenu(
         _ song: Song,
         library: [Song],
+        play: @escaping () -> Void,
         artistDestination: Binding<Artist?>,
         albumDestination: Binding<Album?>? = nil
     ) -> some View {
         contextMenu {
-            Button("Play", systemImage: "play") {}
-                .disabled(true)
+            Button("Play", systemImage: "play", action: play)
             Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {}
                 .disabled(true)
             if !song.artistName.isEmpty {

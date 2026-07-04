@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct AlbumView: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
     @Environment(SyncStore.self) private var sync
+    @Environment(PlayerStore.self) private var player
 
     let album: Album
 
@@ -21,19 +23,30 @@ struct AlbumView: View {
             .listRowBackground(Color.clear)
             Section {
                 ForEach(album.songs) { song in
-                    HStack {
-                        Text(song.name)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 8)
-                        if store.isDownloaded(song) {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                    Button {
+                        player.play(song, token: auth.token, baseURL: auth.baseURL())
+                    } label: {
+                        HStack {
+                            Text(song.name)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            if store.isDownloaded(song) {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        // taps anywhere on the row should register, not just on its content
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     // no go to album since we're already on it
-                    .songContextMenu(song, library: store.songs, artistDestination: $artistDestination)
+                    .songContextMenu(
+                        song,
+                        library: store.songs,
+                        play: { player.play(song, token: auth.token, baseURL: auth.baseURL()) },
+                        artistDestination: $artistDestination)
                 }
             }
         }

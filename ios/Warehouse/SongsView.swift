@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct SongsView: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
     @Environment(SyncStore.self) private var sync
+    @Environment(PlayerStore.self) private var player
 
     /// nil shows every song in the library
     private let playlist: PlaylistItem?
@@ -124,15 +126,21 @@ struct SongsView: View {
 
     private func songRows(_ section: SongSection) -> some View {
         ForEach(section.songs) { song in
-            SongRow(
-                song: song,
-                artworkURL: store.artworkURL(song),
-                downloaded: store.isDownloaded(song))
-                .songContextMenu(
-                    song,
-                    library: store.songs,
-                    artistDestination: $artistDestination,
-                    albumDestination: $albumDestination)
+            Button {
+                player.play(song, token: auth.token, baseURL: auth.baseURL())
+            } label: {
+                SongRow(
+                    song: song,
+                    artworkURL: store.artworkURL(song),
+                    downloaded: store.isDownloaded(song))
+            }
+            .buttonStyle(.plain)
+            .songContextMenu(
+                song,
+                library: store.songs,
+                play: { player.play(song, token: auth.token, baseURL: auth.baseURL()) },
+                artistDestination: $artistDestination,
+                albumDestination: $albumDestination)
         }
     }
 
@@ -186,5 +194,7 @@ struct SongRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+        // taps anywhere on the row should register, not just on its content
+        .contentShape(Rectangle())
     }
 }

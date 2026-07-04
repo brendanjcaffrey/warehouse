@@ -12,6 +12,9 @@ struct Song: Identifiable, Hashable, Sendable {
     let albumSortName: String
     let genre: String
     let year: Int
+    let duration: TimeInterval
+    let start: TimeInterval
+    let finish: TimeInterval
     let discNumber: Int
     let trackNumber: Int
     let musicFilename: String

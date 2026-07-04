@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct SearchView: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(SongsStore.self) private var store
     @Environment(SyncStore.self) private var sync
+    @Environment(PlayerStore.self) private var player
 
     @State private var search = ""
     @State private var scope = SearchScope.songs
@@ -95,15 +97,21 @@ struct SearchView: View {
                 }
             case .songs:
                 ForEach(results.songs) { song in
-                    SongRow(
-                        song: song,
-                        artworkURL: store.artworkURL(song),
-                        downloaded: store.isDownloaded(song))
-                        .songContextMenu(
-                            song,
-                            library: store.songs,
-                            artistDestination: $artistDestination,
-                            albumDestination: $albumDestination)
+                    Button {
+                        player.play(song, token: auth.token, baseURL: auth.baseURL())
+                    } label: {
+                        SongRow(
+                            song: song,
+                            artworkURL: store.artworkURL(song),
+                            downloaded: store.isDownloaded(song))
+                    }
+                    .buttonStyle(.plain)
+                    .songContextMenu(
+                        song,
+                        library: store.songs,
+                        play: { player.play(song, token: auth.token, baseURL: auth.baseURL()) },
+                        artistDestination: $artistDestination,
+                        albumDestination: $albumDestination)
                 }
             }
         }
