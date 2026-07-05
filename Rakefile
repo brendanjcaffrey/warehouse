@@ -152,27 +152,31 @@ namespace :web do
     end
   end
 
-  desc 'regenerate the web favicons from logo.png (needs imagemagick)'
+  desc 'regenerate the web favicons from logo.svg (needs imagemagick)'
   task :favicon do
-    source = "#{ROOT}/logo.png"
+    source = "#{ROOT}/logo.svg"
     dest   = "#{ROOT}/web/public/favicon"
     abort "missing #{source}" unless File.exist?(source)
+
+    # rasterize the vector at a high density so curves stay crisp when scaled
+    # down, and -background none keeps the source glyph transparent. both must
+    # precede the source so they apply during rasterization.
+    render = ['magick', '-background', 'none', '-density', '384', source]
 
     # transparent glyph favicons for browser tabs and the android/pwa icons.
     { 'favicon-16x16.png' => 16, 'favicon-32x32.png' => 32,
       'android-chrome-192x192.png' => 192, 'android-chrome-512x512.png' => 512 }.each do |name, px|
-      command.run('magick', source, '-background', 'none', '-resize', "#{px}x#{px}",
+      command.run(*render, '-resize', "#{px}x#{px}",
                   '-depth', '8', '-strip', "PNG32:#{dest}/#{name}")
     end
 
     # the apple-touch icon shows on the ios home screen, which rejects alpha, so
     # flatten the glyph onto an opaque white background.
-    command.run('magick', source, '-background', '#ffffff', '-resize', '180x180',
+    command.run(*render, '-resize', '180x180', '-background', '#ffffff',
                 '-flatten', '-alpha', 'off', '-depth', '8', '-strip', "PNG24:#{dest}/apple-touch-icon.png")
 
     # multi-resolution .ico fallback for legacy browsers.
-    command.run('magick', source, '-background', 'none',
-                '-define', 'icon:auto-resize=16,32,48', "#{dest}/favicon.ico")
+    command.run(*render, '-define', 'icon:auto-resize=16,32,48', "#{dest}/favicon.ico")
 
     puts "regenerated favicons in #{dest}"
   end
@@ -264,11 +268,11 @@ namespace :ios do
        "--apiKey #{key_id} --apiIssuer #{issuer_id}"
   end
 
-  desc 'regenerate the iOS app icons from logo.png (needs imagemagick)'
+  desc 'regenerate the iOS app icons from logo.svg (needs imagemagick)'
   task :icons do
     require 'json'
 
-    source  = "#{ROOT}/logo.png"
+    source  = "#{ROOT}/logo.svg"
     iconset = "#{ROOT}/ios/Warehouse/Assets.xcassets/AppIcon.appiconset"
     abort "missing #{source}" unless File.exist?(source)
 
@@ -283,9 +287,14 @@ namespace :ios do
     }
 
     variants.each do |name, (negate, bg)|
-      args = ['magick', source, '-background', bg, '-resize', '1024x1024']
+      # rasterize transparent at a high density (both must precede the source):
+      # transparency lets a later negate flip only the glyph, and the opaque
+      # fill is applied at flatten time so it isn't negated with it. the glyph
+      # is sized to 80% and centered on the 1024 canvas to leave 10% padding.
+      args = ['magick', '-background', 'none', '-density', '384', source, '-resize', '819x819']
       args += ['-channel', 'RGB', '-negate', '+channel'] if negate
-      args += ['-flatten', '-alpha', 'off', '-depth', '8', '-strip', "PNG24:#{iconset}/#{name}"]
+      args += ['-gravity', 'center', '-background', bg, '-extent', '1024x1024',
+               '-flatten', '-alpha', 'off', '-depth', '8', '-strip', "PNG24:#{iconset}/#{name}"]
       command.run(*args)
     end
 
