@@ -4,11 +4,29 @@ import MediaPlayer
 import Observation
 import UIKit
 
+/// what happens when a track finishes: stop at the end of the queue,
+/// repeat the whole queue, or repeat the current track
+enum RepeatMode: Sendable {
+    case off
+    case all
+    case one
+
+    /// the state after this one when the repeat button is tapped
+    var next: RepeatMode {
+        switch self {
+        case .off: .all
+        case .all: .one
+        case .one: .off
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class PlayerStore {
     private(set) var queue = PlayQueue(songs: [])
     private(set) var isPlaying = false
+    private(set) var repeatMode: RepeatMode = .off
     private(set) var window = PlaybackWindow()
     /// the playhead position within the file, not the window
     private(set) var currentTime: TimeInterval = 0
@@ -38,18 +56,21 @@ final class PlayerStore {
     }
 
     /// starts playing songs in order, positioned at the tapped one so previous
-    /// walks back through the earlier tracks; replaces the current queue
+    /// walks back through the earlier tracks; replaces the current queue and
+    /// turns repeat off
     func play(_ songs: [Song], startingAt index: Int = 0, token: String?, baseURL: URL?) {
-        start(PlayQueue(songs: songs, startingAt: index), token: token, baseURL: baseURL)
+        start(PlayQueue(songs: songs, startingAt: index), repeating: .off, token: token, baseURL: baseURL)
     }
 
-    /// starts playing songs in a random order; replaces the current queue
+    /// starts playing songs in a random order; replaces the current queue and
+    /// repeats it once it runs out
     func playShuffled(_ songs: [Song], token: String?, baseURL: URL?) {
-        start(PlayQueue(shuffling: songs), token: token, baseURL: baseURL)
+        start(PlayQueue(shuffling: songs), repeating: .all, token: token, baseURL: baseURL)
     }
 
-    private func start(_ newQueue: PlayQueue, token: String?, baseURL: URL?) {
+    private func start(_ newQueue: PlayQueue, repeating mode: RepeatMode, token: String?, baseURL: URL?) {
         guard newQueue.current != nil else { return }
+        repeatMode = mode
         self.token = token
         self.baseURL = baseURL
         var replacement = newQueue
@@ -125,10 +146,15 @@ final class PlayerStore {
         }
     }
 
-    /// steps forward through the queue, wrapping around at the end
+    /// steps forward through the queue; repeat all wraps around at the end,
+    /// otherwise playback stops once past the last track
     func skipToNext() {
-        guard queue.advance(wrapping: true) else { return }
-        startCurrent()
+        guard song != nil else { return }
+        if queue.advance(wrapping: repeatMode == .all) {
+            startCurrent()
+        } else {
+            stop()
+        }
     }
 
     /// queues a song right after the current track, or just plays it when
@@ -150,6 +176,11 @@ final class PlayerStore {
     /// shuffles the upcoming tracks or restores their original order
     func setShuffled(_ shuffled: Bool) {
         queue.setShuffled(shuffled)
+    }
+
+    /// steps the repeat button through off, repeat all & repeat one
+    func cycleRepeatMode() {
+        repeatMode = repeatMode.next
     }
 
     /// reorders the upcoming tracks from the queue view
@@ -315,20 +346,39 @@ final class PlayerStore {
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                if let song = self.song {
-                    // the track played through to its finish, count a play
-                    let updates = self.updates
-                    Task { await updates.addPlay(trackId: song.id) }
-                }
-                if self.queue.advance() {
-                    self.startCurrent()
-                } else {
-                    self.isPlaying = false
-                    self.currentTime = self.effectiveEnd
-                    self.updateNowPlayingPlaybackState()
-                }
+                self?.handleTrackEnd()
             }
         }
+    }
+
+    /// a track played through to its finish: count a play, then repeat it,
+    /// move on, or stop depending on the repeat mode & queue position
+    func handleTrackEnd() {
+        if let song {
+            let updates = updates
+            Task { await updates.addPlay(trackId: song.id) }
+        }
+        let continues: Bool
+        switch repeatMode {
+        case .one:
+            continues = queue.repeatCurrent()
+        case .all:
+            continues = queue.advance(wrapping: true)
+        case .off:
+            continues = queue.advance()
+        }
+        if continues {
+            startCurrent()
+        } else {
+            stop()
+        }
+    }
+
+    /// halts playback at the end of the queue, leaving the last track current
+    private func stop() {
+        player.pause()
+        isPlaying = false
+        currentTime = effectiveEnd
+        updateNowPlayingPlaybackState()
     }
 }

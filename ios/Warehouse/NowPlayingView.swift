@@ -75,11 +75,8 @@ struct NowPlayingView: View {
                             .id(current.id)
                     }
                 }
-                Section("Playing Next") {
-                    if player.queue.upcoming.isEmpty {
-                        Text("The queue is empty.")
-                            .foregroundStyle(.secondary)
-                    } else {
+                if !player.queue.upcoming.isEmpty {
+                    Section("Playing Next") {
                         ForEach(Array(player.queue.upcoming.enumerated()), id: \.element.id) { index, entry in
                             Button {
                                 player.playFromUpcoming(at: index)
@@ -91,6 +88,19 @@ struct NowPlayingView: View {
                         .onMove { offsets, destination in
                             player.moveUpcoming(fromOffsets: offsets, toOffset: destination)
                         }
+                    }
+                }
+                if player.repeatMode == .all {
+                    // repeat all loops the whole queue back around once it runs out
+                    Section {
+                        HStack(spacing: 6) {
+                            Text("Repeating \(repeatingLabel)")
+                            Image(systemName: "repeat")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .listRowSeparator(.hidden)
                     }
                 }
             }
@@ -117,6 +127,11 @@ struct NowPlayingView: View {
                 }
             }
         }
+    }
+
+    private var repeatingLabel: String {
+        let count = player.queue.count
+        return "\(count) \(count == 1 ? "song" : "songs")"
     }
 
     private func scrollToCurrent(_ proxy: ScrollViewProxy) {
@@ -292,6 +307,15 @@ struct NowPlayingView: View {
                 Image(systemName: "shuffle")
                     .font(.title3)
                     .foregroundStyle(player.queue.isShuffled ? Color.accentColor : Color.secondary)
+                    .frame(width: 44, height: 44)
+            }
+            Spacer()
+            Button {
+                player.cycleRepeatMode()
+            } label: {
+                Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                    .font(.title3)
+                    .foregroundStyle(player.repeatMode == .off ? Color.secondary : Color.accentColor)
                     .frame(width: 44, height: 44)
             }
             Spacer()

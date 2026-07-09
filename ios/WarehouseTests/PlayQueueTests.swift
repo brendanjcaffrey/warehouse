@@ -114,6 +114,20 @@ struct PlayQueueTests {
         #expect(!advanced)
     }
 
+    @Test("repeating the current track records the play without moving")
+    func repeatCurrent() {
+        var queue = PlayQueue(songs: Self.songs(2))
+        let repeated = queue.repeatCurrent()
+        #expect(repeated)
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.upcoming.map(\.song.id) == ["2"])
+        #expect(queue.history.map(\.song.id) == ["1"])
+
+        var empty = PlayQueue(songs: [])
+        let repeatedEmpty = empty.repeatCurrent()
+        #expect(!repeatedEmpty)
+    }
+
     @Test("previous steps backwards through the queue & wraps around")
     func goBack() {
         var queue = PlayQueue(songs: Self.songs(3))

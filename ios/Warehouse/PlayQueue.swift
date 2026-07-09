@@ -38,6 +38,9 @@ struct PlayQueue: Sendable {
         index + 1 < entries.count ? Array(entries[(index + 1)...]) : []
     }
 
+    /// the total number of tracks in the queue
+    var count: Int { entries.count }
+
     /// queues the songs in order, positioned at the given one
     init(songs: [Song], startingAt start: Int = 0) {
         entries = songs.map(QueueEntry.init)
@@ -71,6 +74,15 @@ struct PlayQueue: Sendable {
         guard let current, wrapping || index + 1 < entries.count else { return false }
         recordPlayed(current)
         index = index + 1 < entries.count ? index + 1 : 0
+        return true
+    }
+
+    /// stays on the current track but records it as played again, for
+    /// repeat one at the end of a track
+    @discardableResult
+    mutating func repeatCurrent() -> Bool {
+        guard let current else { return false }
+        recordPlayed(current)
         return true
     }
 
