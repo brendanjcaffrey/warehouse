@@ -18,6 +18,9 @@ struct ArtworkThumbnail: View {
                     .scaledToFill()
             } else {
                 Image(systemName: "music.note")
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(0.45)
                     .foregroundStyle(.secondary)
             }
         }
