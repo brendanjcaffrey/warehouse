@@ -314,6 +314,54 @@ namespace :ios do
   end
 end
 
+namespace :db do
+  desc 'trim the local database down to 100 tracks for development (leaves music/artwork files alone)'
+  task :trim do
+    require 'pg'
+    Config.set_env('local')
+
+    db = PG.connect(user: Config.env.database_username, password: Config.env.database_password,
+                    dbname: Config.env.database_name)
+
+    total = db.exec('SELECT COUNT(*) FROM tracks;').getvalue(0, 0).to_i
+    if total <= 100
+      puts "only #{total} tracks in #{Config.env.database_name}, nothing to trim"
+      next
+    end
+
+    print "delete #{total - 100} of #{total} tracks from #{Config.env.database_name}? [y/N] "
+    abort 'aborted' unless $stdin.gets.to_s.strip.downcase == 'y'
+
+    db.transaction do |conn|
+      # keep the most played tracks so the remaining data is still interesting
+      conn.exec('DELETE FROM tracks WHERE id NOT IN (SELECT id FROM tracks ORDER BY play_count DESC, id LIMIT 100);')
+      conn.exec('DELETE FROM playlist_tracks WHERE track_id NOT IN (SELECT id FROM tracks);')
+
+      # prune rows that referenced the deleted tracks
+      %w[plays rating_updates name_updates artist_updates album_updates album_artist_updates
+         genre_updates year_updates start_updates finish_updates artwork_updates].each do |table|
+        conn.exec("DELETE FROM #{table} WHERE track_id NOT IN (SELECT id FROM tracks);")
+      end
+      conn.exec(<<~SQL)
+        DELETE FROM artists WHERE id NOT IN (
+          SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL
+          UNION
+          SELECT album_artist_id FROM tracks WHERE album_artist_id IS NOT NULL
+        );
+      SQL
+      conn.exec('DELETE FROM albums WHERE id NOT IN (SELECT album_id FROM tracks WHERE album_id IS NOT NULL);')
+      conn.exec('DELETE FROM genres WHERE id NOT IN (SELECT genre_id FROM tracks WHERE genre_id IS NOT NULL);')
+    end
+
+    %w[track_name_search_view artist_name_search_view album_name_search_view
+       genre_name_search_view playlist_name_search_view].each do |view|
+      db.exec("REFRESH MATERIALIZED VIEW #{view};")
+    end
+
+    puts "trimmed #{Config.env.database_name} to 100 tracks"
+  end
+end
+
 namespace :changes do
   desc 'archive the database with today\'s date'
   task :archive do
