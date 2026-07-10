@@ -5,7 +5,7 @@ import AuthWrapper from "./AuthWrapper";
 import LibraryWrapper from "./LibraryWrapper";
 import Layout from "./Layout";
 import Audio from "./Audio";
-import SettingsRecorder from "./SettingsRecorder";
+import SettingsEffects from "./SettingsEffects";
 import "./index.css";
 import { BackgroundWrapper } from "./BackgroundWrapper";
 
@@ -20,7 +20,7 @@ function App() {
             </LibraryWrapper>
           </HashRouter>
           <Audio />
-          <SettingsRecorder />
+          <SettingsEffects />
         </AuthWrapper>
       </BackgroundWrapper>
     </JotaiProvider>

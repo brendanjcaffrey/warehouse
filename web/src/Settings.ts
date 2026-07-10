@@ -1,4 +1,4 @@
-import { atom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 
 const KEEP_MODE_KEY = "keepMode";
 const DOWNLOAD_MODE_KEY = "downloadMode";
@@ -18,101 +18,101 @@ export function ClampSidebarWidth(value: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
 }
 
-function GetPersistedKeepMode(): boolean {
-  const value = localStorage.getItem(KEEP_MODE_KEY);
-  if (value === null) {
-    return false;
-  } else {
-    return value === "true";
-  }
-}
+// read the persisted value synchronously at init so we don't flash a default
+// before hydrating from local storage
+const options = { getOnInit: true } as const;
 
-export function SetPersistedKeepMode(value: boolean) {
-  localStorage.setItem(KEEP_MODE_KEY, value.toString());
-}
-
-function GetPersistedDownloadMode(): boolean {
-  const value = localStorage.getItem(DOWNLOAD_MODE_KEY);
-  if (value === null) {
-    return false;
-  } else {
-    return value === "true";
-  }
-}
-
-export function SetPersistedDownloadMode(value: boolean) {
-  localStorage.setItem(DOWNLOAD_MODE_KEY, value.toString());
-}
-
-function GetPersistedShuffle(): boolean {
-  return localStorage.getItem(SHUFFLE_KEY) === "true";
-}
-
-export function SetPersistedShuffle(value: boolean) {
-  localStorage.setItem(SHUFFLE_KEY, value.toString());
-}
-
-function GetPersistedRepeat(): boolean {
-  return localStorage.getItem(REPEAT_KEY) === "true";
-}
-
-export function SetPersistedRepeat(value: boolean) {
-  localStorage.setItem(REPEAT_KEY, value.toString());
-}
-
-function GetPersistedShowArtwork(): boolean {
-  return localStorage.getItem(SHOW_ARTWORK_KEY) === "true";
-}
-
-export function SetPersistedShowArtwork(value: boolean) {
-  localStorage.setItem(SHOW_ARTWORK_KEY, value.toString());
-}
-
-function GetPersistedVolume(): number {
-  try {
-    const value = localStorage.getItem(VOLUME_KEY);
+// a set of strings persisted as a json array
+export const stringSetStorage = {
+  getItem(key: string, initialValue: Set<string>): Set<string> {
+    const value = localStorage.getItem(key);
     if (value === null) {
-      return DEFAULT_VOLUME;
+      return initialValue;
     }
-    return Number(value);
-  } catch {
-    return DEFAULT_VOLUME;
-  }
-}
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed as string[]);
+      }
+      return initialValue;
+    } catch {
+      return initialValue;
+    }
+  },
+  setItem(key: string, value: Set<string>): void {
+    localStorage.setItem(key, JSON.stringify(Array.from(value)));
+  },
+  removeItem(key: string): void {
+    localStorage.removeItem(key);
+  },
+};
 
-export function SetPersistedVolume(value: number) {
-  localStorage.setItem(VOLUME_KEY, value.toString());
-}
+// a width clamped to the allowed range on the way in
+const sidebarWidthStorage = {
+  getItem(key: string, initialValue: number): number {
+    const value = localStorage.getItem(key);
+    if (value === null) {
+      return initialValue;
+    }
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      return initialValue;
+    }
+    return ClampSidebarWidth(parsed);
+  },
+  setItem(key: string, value: number): void {
+    localStorage.setItem(key, value.toString());
+  },
+  removeItem(key: string): void {
+    localStorage.removeItem(key);
+  },
+};
 
-function GetPersistedOpenedFolders(): Set<string> {
-  return new Set((localStorage.getItem(OPENED_FOLDERS_KEY) || "").split(","));
-}
-
-export function SetPersistedOpenedFolders(value: Set<string>) {
-  localStorage.setItem(OPENED_FOLDERS_KEY, Array.from(value).join(","));
-}
-
-function GetPersistedSidebarWidth(): number {
-  const value = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-  if (value === null) {
-    return DEFAULT_SIDEBAR_WIDTH;
-  }
-  const parsed = Number(value);
-  if (Number.isNaN(parsed)) {
-    return DEFAULT_SIDEBAR_WIDTH;
-  }
-  return ClampSidebarWidth(parsed);
-}
-
-export function SetPersistedSidebarWidth(value: number) {
-  localStorage.setItem(SIDEBAR_WIDTH_KEY, value.toString());
-}
-
-export const keepModeAtom = atom(GetPersistedKeepMode());
-export const downloadModeAtom = atom(GetPersistedDownloadMode());
-export const shuffleAtom = atom(GetPersistedShuffle());
-export const repeatAtom = atom(GetPersistedRepeat());
-export const showArtworkAtom = atom(GetPersistedShowArtwork());
-export const volumeAtom = atom(GetPersistedVolume());
-export const openedFoldersAtom = atom(GetPersistedOpenedFolders());
-export const sidebarWidthAtom = atom(GetPersistedSidebarWidth());
+export const keepModeAtom = atomWithStorage(
+  KEEP_MODE_KEY,
+  false,
+  undefined,
+  options
+);
+export const downloadModeAtom = atomWithStorage(
+  DOWNLOAD_MODE_KEY,
+  false,
+  undefined,
+  options
+);
+export const shuffleAtom = atomWithStorage(
+  SHUFFLE_KEY,
+  false,
+  undefined,
+  options
+);
+export const repeatAtom = atomWithStorage(
+  REPEAT_KEY,
+  false,
+  undefined,
+  options
+);
+export const showArtworkAtom = atomWithStorage(
+  SHOW_ARTWORK_KEY,
+  false,
+  undefined,
+  options
+);
+export const volumeAtom = atomWithStorage(
+  VOLUME_KEY,
+  DEFAULT_VOLUME,
+  undefined,
+  options
+);
+export const openedFoldersAtom = atomWithStorage(
+  OPENED_FOLDERS_KEY,
+  new Set<string>(),
+  stringSetStorage,
+  options
+);
+export const sidebarWidthAtom = atomWithStorage(
+  SIDEBAR_WIDTH_KEY,
+  DEFAULT_SIDEBAR_WIDTH,
+  sidebarWidthStorage,
+  options
+);
