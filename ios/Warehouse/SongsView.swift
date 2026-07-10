@@ -198,10 +198,24 @@ struct SongsView: View {
         }
     }
 
-    /// plays a tapped song within the whole displayed list
+    /// plays a tapped song within the whole list; when a filter is active it
+    /// clears the search and plays the full list, scrolling to the tapped track
     private func play(_ song: Song) {
-        let songs = sections.flatMap(\.songs)
-        player.play(songs, startingAt: songs.firstIndex(of: song) ?? 0, token: auth.token, baseURL: auth.baseURL())
+        let songs = fullSongList()
+        let start = songs.firstIndex(of: song) ?? 0
+        if !search.isEmpty {
+            // scroll to the track once the cleared list rebuilds
+            pendingScroll = song
+            search = ""
+        }
+        player.play(songs, startingAt: start, token: auth.token, baseURL: auth.baseURL())
+    }
+
+    /// the full list in display order, ignoring any active search filter
+    private func fullSongList() -> [Song] {
+        // the built sections already are the full list when nothing is filtered
+        guard !search.isEmpty else { return sections.flatMap(\.songs) }
+        return SongListBuilder.orderedSongs(store.songs, trackIds: playlist?.trackIds, sortedBy: sort)
     }
 
     private func playbackButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {

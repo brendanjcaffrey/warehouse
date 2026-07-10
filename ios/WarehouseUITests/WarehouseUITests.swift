@@ -76,6 +76,38 @@ final class WarehouseUITests: XCTestCase {
     }
 
     @MainActor
+    func testPlayingFilteredSongClearsFilterAndScrolls() throws {
+        let app = launchWithFixtures()
+
+        // library tab → songs, sorted by title
+        app.buttons["Songs"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Alpha Song"].waitForExistence(timeout: 5))
+
+        // the search bar sits above the first row, so pull the list down to
+        // reveal it, then filter down to a single song deep in the list
+        app.collectionViews.firstMatch.swipeDown()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Song 100")
+
+        // the filter hides everything else, including song 100's neighbours
+        let match = app.staticTexts["Song 100"]
+        XCTAssertTrue(match.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Song 101"].exists)
+        XCTAssertFalse(app.staticTexts["Alpha Song"].exists)
+
+        // tapping the filtered song clears the search & plays the whole list
+        match.tap()
+
+        // song 101 was filtered out and sorts right after song 100, so it's
+        // only back on screen if the filter cleared and the list scrolled here
+        XCTAssertTrue(waitForVisible(app.staticTexts["Song 101"].firstMatch))
+        // ...and the top of the list is scrolled away
+        XCTAssertFalse(app.staticTexts["Alpha Song"].firstMatch.isHittable)
+    }
+
+    @MainActor
     func testNoShowInSongsInSongsList() throws {
         let app = launchWithFixtures()
 

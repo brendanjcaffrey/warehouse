@@ -149,6 +149,31 @@ struct SongListBuilderTests {
         #expect(ordered.map(\.id) == ["3", "1"])
     }
 
+    @Test("orderedSongs returns the whole library in sort order, ignoring nil track ids")
+    func orderedSongsLibrary() {
+        let songs = [
+            Self.song(id: "1", name: "Zombie"),
+            Self.song(id: "2", name: "Angie"),
+            Self.song(id: "3", name: "Believe", artist: "Cher")
+        ]
+
+        let ordered = SongListBuilder.orderedSongs(songs, trackIds: nil, sortedBy: .title)
+        #expect(ordered.map(\.id) == ["2", "3", "1"])
+    }
+
+    @Test("orderedSongs keeps playlist order and skips unknown track ids")
+    func orderedSongsPlaylist() {
+        let songs = [
+            Self.song(id: "1", name: "Angie"),
+            Self.song(id: "2", name: "Believe"),
+            Self.song(id: "3", name: "Zombie")
+        ]
+
+        let ordered = SongListBuilder.orderedSongs(
+            songs, trackIds: ["3", "missing", "1"], sortedBy: .playlistOrder)
+        #expect(ordered.map(\.id) == ["3", "1"])
+    }
+
     @Test("empty names fall into the # section")
     func emptyName() {
         let sections = SongListBuilder.sections(

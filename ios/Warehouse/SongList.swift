@@ -89,6 +89,16 @@ enum SongListBuilder {
         return titles.map { SongSection(title: $0, songs: songsByTitle[$0] ?? []) }
     }
 
+    /// the full unfiltered list in display order, so tapping a filtered result
+    /// can play the whole list instead of just the visible matches
+    static func orderedSongs(_ songs: [Song], trackIds: [String]?, sortedBy sort: SongSortOption) -> [Song] {
+        var base = songs
+        if let trackIds {
+            base = playlistSongs(base, trackIds: trackIds)
+        }
+        return sections(base, sortedBy: sort, matching: "").flatMap(\.songs)
+    }
+
     /// the section & row of a song within the built sections, for scrolling
     /// the list to it
     static func position(of song: Song, in sections: [SongSection]) -> (section: Int, row: Int)? {
