@@ -6,7 +6,7 @@ require 'tty-command'
 require_relative 'shared/config'
 
 ROOT = __dir__
-SIMULATOR = 'iPhone 17 Pro'.freeze
+SIMULATOR = 'iPhone 17'.freeze
 command = TTY::Command.new
 
 namespace :export do
