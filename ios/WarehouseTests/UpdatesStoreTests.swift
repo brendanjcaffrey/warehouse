@@ -12,6 +12,7 @@ struct UpdatesStoreTests {
         let defaults: UserDefaults
         let baseURL: URL
         let host: String
+        let fileStore: FileStore
     }
 
     /// tracks whether the first request already failed, shared with the
@@ -45,17 +46,19 @@ struct UpdatesStoreTests {
             metadata.trackUserChanges = trackUserChanges
         }
 
-        let fileURL = FileManager.default.temporaryDirectory
+        let root = FileManager.default.temporaryDirectory
             .appending(path: "updates-tests-\(host)-\(UUID().uuidString)")
-            .appending(path: "updates.json")
+        let fileURL = root.appending(path: "updates.json")
+        let fileStore = FileStore(rootURL: root.appending(path: "files"))
         let store = UpdatesStore(
             fileURL: fileURL,
             session: MockURLProtocol.makeSession(),
             defaults: defaults,
-            retryInterval: retryInterval)
+            retryInterval: retryInterval,
+            fileStore: fileStore)
         return Env(
             store: store, fileURL: fileURL, defaults: defaults,
-            baseURL: URL(string: "https://\(host)")!, host: host)
+            baseURL: URL(string: "https://\(host)")!, host: host, fileStore: fileStore)
     }
 
     /// a second store on the same file & defaults, as if the app relaunched
@@ -63,7 +66,8 @@ struct UpdatesStoreTests {
         UpdatesStore(
             fileURL: env.fileURL,
             session: MockURLProtocol.makeSession(),
-            defaults: env.defaults)
+            defaults: env.defaults,
+            fileStore: env.fileStore)
     }
 
     static func installHandler(host: String, success: Bool = true, failingPaths: Set<String> = []) throws {
@@ -213,6 +217,137 @@ struct UpdatesStoreTests {
         }
         #expect(env.store.pending.isEmpty)
         #expect(Self.persisted(at: env.fileURL).isEmpty)
+    }
+
+    @Test("a track update posts its fields & leaves nothing queued")
+    func trackUpdateSendsImmediately() async throws {
+        let env = Self.makeEnv(host: "updates-track.test")
+        try Self.installHandler(host: env.host)
+        env.store.configure(token: "tok", baseURL: env.baseURL)
+
+        await env.store.addTrackUpdate(trackId: "t1", update: .with { $0.name = "Strong Enough" })
+
+        #expect(env.store.pending.isEmpty)
+        let request = try #require(MockURLProtocol.requests(forHost: env.host).first)
+        #expect(request.url?.path == "/api/track/t1")
+        let message = try TrackUpdate(serializedBytes: request.httpBody ?? Data())
+        #expect(message.name == "Strong Enough")
+    }
+
+    @Test("an artwork upload posts the local file & leaves nothing queued")
+    func artworkUploadSends() async throws {
+        let env = Self.makeEnv(host: "updates-artwork.test")
+        try Self.installHandler(host: env.host)
+        try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
+        env.store.configure(token: "tok", baseURL: env.baseURL)
+
+        await env.store.addArtworkUpload(filename: "abc.jpg")
+
+        #expect(env.store.pending.isEmpty)
+        let request = try #require(MockURLProtocol.requests(forHost: env.host).first)
+        #expect(request.url?.path == "/api/artwork")
+    }
+
+    @Test("queuing the same artwork upload twice only sends one")
+    func artworkUploadDedupes() async throws {
+        let env = Self.makeEnv(host: "updates-artwork-dupe.test")
+        MockURLProtocol.setHandler(forHost: env.host) { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
+        env.store.configure(token: "tok", baseURL: env.baseURL)
+
+        await env.store.addArtworkUpload(filename: "abc.jpg")
+        await env.store.addArtworkUpload(filename: "abc.jpg")
+
+        #expect(env.store.pending.count == 1)
+        #expect(env.store.pendingArtworkFilenames == ["abc.jpg"])
+    }
+
+    @Test("an artwork upload & its track update stay ordered across a retry")
+    func artworkOrderSurvivesRetry() async throws {
+        let env = Self.makeEnv(host: "updates-artwork-order.test")
+        MockURLProtocol.setHandler(forHost: env.host) { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
+        env.store.configure(token: "tok", baseURL: env.baseURL)
+
+        await env.store.addArtworkUpload(filename: "abc.jpg")
+        await env.store.addTrackUpdate(trackId: "t1", update: .with { $0.artwork = "abc.jpg" })
+        #expect(env.store.pending.map(\.kind) == [.artworkUpload, .track])
+
+        // installing a fresh handler also clears the recorded requests
+        try Self.installHandler(host: env.host)
+        await env.store.flush()
+
+        #expect(env.store.pending.isEmpty)
+        let paths = MockURLProtocol.requests(forHost: env.host).map { $0.url?.path ?? "" }
+        #expect(paths == ["/api/artwork", "/api/track/t1"])
+    }
+
+    @Test("an artwork upload whose file is gone is dropped, not retried")
+    func missingArtworkFileDrops() async throws {
+        let env = Self.makeEnv(host: "updates-artwork-gone.test")
+        try Self.installHandler(host: env.host)
+        env.store.configure(token: "tok", baseURL: env.baseURL)
+
+        await env.store.addArtworkUpload(filename: "never-written.jpg")
+
+        #expect(env.store.pending.isEmpty)
+        #expect(MockURLProtocol.requests(forHost: env.host).isEmpty)
+    }
+
+    @Test("all update kinds survive a relaunch")
+    func allKindsPersist() async throws {
+        let env = Self.makeEnv(host: "updates-kinds-persist.test")
+        MockURLProtocol.setHandler(forHost: env.host) { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
+        env.store.configure(token: "tok", baseURL: env.baseURL)
+
+        await env.store.addPlay(trackId: "t1")
+        await env.store.addArtworkUpload(filename: "abc.jpg")
+        // the empty album artist checks field presence survives the disk round trip
+        await env.store.addTrackUpdate(
+            trackId: "t1",
+            update: .with {
+                $0.artwork = "abc.jpg"
+                $0.albumArtist = ""
+            })
+
+        let relaunched = Self.relaunch(env)
+        #expect(relaunched.pending == env.store.pending)
+        #expect(relaunched.pending.map(\.kind) == [.play, .artworkUpload, .track])
+    }
+
+    @Test("the updates file decodes from its persisted json")
+    func decodesPersistedFile() throws {
+        let env = Self.makeEnv(host: "updates-persisted.test")
+        try FileManager.default.createDirectory(
+            at: env.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let fields = TrackUpdate.with { $0.name = "new name" }
+        let encoded = try fields.serializedData().base64EncodedString()
+        let persisted = #"""
+        [{"type":"play","trackId":"t1","params":{}},
+         {"type":"track","trackId":"t2","params":{},"trackUpdate":"\#(encoded)"}]
+        """#
+        try Data(persisted.utf8).write(to: env.fileURL)
+
+        let relaunched = Self.relaunch(env)
+        #expect(relaunched.pending == [
+            PendingUpdate(kind: .play, trackId: "t1"),
+            PendingUpdate(kind: .track, trackId: "t2", trackUpdate: fields)
+        ])
+    }
+
+    @Test("editing is offered unless the server said it isn't tracking changes")
+    func canEditTracks() {
+        #expect(Self.makeEnv(host: "updates-canedit-unsynced.test", synced: false).store.canEditTracks)
+        #expect(Self.makeEnv(host: "updates-canedit-tracked.test").store.canEditTracks)
+        #expect(!Self.makeEnv(host: "updates-canedit-untracked.test", trackUserChanges: false)
+            .store.canEditTracks)
     }
 
     @Test("a corrupt updates file loads as empty")

@@ -311,6 +311,119 @@ struct LibraryResponse: Sendable {
   init() {}
 }
 
+/// edited track fields; only fields that are present are updated, and a
+/// present but empty album/albumArtist/artwork clears the value
+struct TrackUpdate: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var name: String {
+    get {_name ?? String()}
+    set {_name = newValue}
+  }
+  /// Returns true if `name` has been explicitly set.
+  var hasName: Bool {self._name != nil}
+  /// Clears the value of `name`. Subsequent reads from it will return its default value.
+  mutating func clearName() {self._name = nil}
+
+  var artist: String {
+    get {_artist ?? String()}
+    set {_artist = newValue}
+  }
+  /// Returns true if `artist` has been explicitly set.
+  var hasArtist: Bool {self._artist != nil}
+  /// Clears the value of `artist`. Subsequent reads from it will return its default value.
+  mutating func clearArtist() {self._artist = nil}
+
+  var album: String {
+    get {_album ?? String()}
+    set {_album = newValue}
+  }
+  /// Returns true if `album` has been explicitly set.
+  var hasAlbum: Bool {self._album != nil}
+  /// Clears the value of `album`. Subsequent reads from it will return its default value.
+  mutating func clearAlbum() {self._album = nil}
+
+  var albumArtist: String {
+    get {_albumArtist ?? String()}
+    set {_albumArtist = newValue}
+  }
+  /// Returns true if `albumArtist` has been explicitly set.
+  var hasAlbumArtist: Bool {self._albumArtist != nil}
+  /// Clears the value of `albumArtist`. Subsequent reads from it will return its default value.
+  mutating func clearAlbumArtist() {self._albumArtist = nil}
+
+  var genre: String {
+    get {_genre ?? String()}
+    set {_genre = newValue}
+  }
+  /// Returns true if `genre` has been explicitly set.
+  var hasGenre: Bool {self._genre != nil}
+  /// Clears the value of `genre`. Subsequent reads from it will return its default value.
+  mutating func clearGenre() {self._genre = nil}
+
+  var year: Int32 {
+    get {_year ?? 0}
+    set {_year = newValue}
+  }
+  /// Returns true if `year` has been explicitly set.
+  var hasYear: Bool {self._year != nil}
+  /// Clears the value of `year`. Subsequent reads from it will return its default value.
+  mutating func clearYear() {self._year = nil}
+
+  var start: Double {
+    get {_start ?? 0}
+    set {_start = newValue}
+  }
+  /// Returns true if `start` has been explicitly set.
+  var hasStart: Bool {self._start != nil}
+  /// Clears the value of `start`. Subsequent reads from it will return its default value.
+  mutating func clearStart() {self._start = nil}
+
+  var finish: Double {
+    get {_finish ?? 0}
+    set {_finish = newValue}
+  }
+  /// Returns true if `finish` has been explicitly set.
+  var hasFinish: Bool {self._finish != nil}
+  /// Clears the value of `finish`. Subsequent reads from it will return its default value.
+  mutating func clearFinish() {self._finish = nil}
+
+  var artwork: String {
+    get {_artwork ?? String()}
+    set {_artwork = newValue}
+  }
+  /// Returns true if `artwork` has been explicitly set.
+  var hasArtwork: Bool {self._artwork != nil}
+  /// Clears the value of `artwork`. Subsequent reads from it will return its default value.
+  mutating func clearArtwork() {self._artwork = nil}
+
+  var rating: Int32 {
+    get {_rating ?? 0}
+    set {_rating = newValue}
+  }
+  /// Returns true if `rating` has been explicitly set.
+  var hasRating: Bool {self._rating != nil}
+  /// Clears the value of `rating`. Subsequent reads from it will return its default value.
+  mutating func clearRating() {self._rating = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _name: String? = nil
+  fileprivate var _artist: String? = nil
+  fileprivate var _album: String? = nil
+  fileprivate var _albumArtist: String? = nil
+  fileprivate var _genre: String? = nil
+  fileprivate var _year: Int32? = nil
+  fileprivate var _start: Double? = nil
+  fileprivate var _finish: Double? = nil
+  fileprivate var _artwork: String? = nil
+  fileprivate var _rating: Int32? = nil
+}
+
 struct IncrementUpdate: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1004,6 +1117,85 @@ extension LibraryResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
 
   static func ==(lhs: LibraryResponse, rhs: LibraryResponse) -> Bool {
     if lhs.response != rhs.response {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension TrackUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = "TrackUpdate"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}artist\0\u{1}album\0\u{1}albumArtist\0\u{1}genre\0\u{1}year\0\u{1}start\0\u{1}finish\0\u{1}artwork\0\u{1}rating\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self._name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self._artist) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self._album) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self._albumArtist) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self._genre) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self._year) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self._start) }()
+      case 8: try { try decoder.decodeSingularDoubleField(value: &self._finish) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self._artwork) }()
+      case 10: try { try decoder.decodeSingularInt32Field(value: &self._rating) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._name {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 1)
+    } }()
+    try { if let v = self._artist {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 2)
+    } }()
+    try { if let v = self._album {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 3)
+    } }()
+    try { if let v = self._albumArtist {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._genre {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 5)
+    } }()
+    try { if let v = self._year {
+      try visitor.visitSingularInt32Field(value: v, fieldNumber: 6)
+    } }()
+    try { if let v = self._start {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 7)
+    } }()
+    try { if let v = self._finish {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 8)
+    } }()
+    try { if let v = self._artwork {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 9)
+    } }()
+    try { if let v = self._rating {
+      try visitor.visitSingularInt32Field(value: v, fieldNumber: 10)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: TrackUpdate, rhs: TrackUpdate) -> Bool {
+    if lhs._name != rhs._name {return false}
+    if lhs._artist != rhs._artist {return false}
+    if lhs._album != rhs._album {return false}
+    if lhs._albumArtist != rhs._albumArtist {return false}
+    if lhs._genre != rhs._genre {return false}
+    if lhs._year != rhs._year {return false}
+    if lhs._start != rhs._start {return false}
+    if lhs._finish != rhs._finish {return false}
+    if lhs._artwork != rhs._artwork {return false}
+    if lhs._rating != rhs._rating {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

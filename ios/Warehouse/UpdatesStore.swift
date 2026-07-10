@@ -28,9 +28,10 @@ final class UpdatesStore {
         fileURL: URL = UpdatesStore.defaultFileURL(),
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
-        retryInterval: TimeInterval = 30
+        retryInterval: TimeInterval = 30,
+        fileStore: FileStore = FileStore(rootURL: FileStore.defaultRootURL())
     ) {
-        client = UpdateClient(session: session)
+        client = UpdateClient(session: session, fileStore: fileStore)
         self.fileURL = fileURL
         metadata = LibraryMetadata(defaults: defaults)
         self.retryInterval = retryInterval
@@ -49,6 +50,33 @@ final class UpdatesStore {
     func addPlay(trackId: String) async {
         add(PendingUpdate(kind: .play, trackId: trackId))
         await flush()
+    }
+
+    /// records edited track fields & tries to push them right away
+    func addTrackUpdate(trackId: String, update: TrackUpdate) async {
+        add(PendingUpdate(kind: .track, trackId: trackId, trackUpdate: update))
+        await flush()
+    }
+
+    /// queues an artwork upload; must be queued before the track update that
+    /// references the filename so the server has the file when it's set
+    func addArtworkUpload(filename: String) async {
+        let update = PendingUpdate(kind: .artworkUpload, trackId: "", params: ["filename": filename])
+        // the same file may back multiple edits, one upload covers them all
+        guard !pending.contains(update) else { return }
+        add(update)
+        await flush()
+    }
+
+    /// artwork files still waiting to upload, protected from sync cleanup
+    var pendingArtworkFilenames: Set<String> {
+        Set(pending.compactMap { $0.kind == .artworkUpload ? $0.params["filename"] : nil })
+    }
+
+    /// whether edits are worth offering; unknown before the first sync, so
+    /// optimistically true until the server says it isn't tracking changes
+    var canEditTracks: Bool {
+        metadata.updateTimeNs == 0 || metadata.trackUserChanges
     }
 
     /// pushes every pending update to the server in order, keeping the ones
@@ -74,6 +102,9 @@ final class UpdatesStore {
         while index < pending.count {
             do {
                 try await client.send(pending[index], token: token, baseURL: baseURL)
+                pending.remove(at: index)
+            } catch UpdateClient.UpdateError.missingFile {
+                // the file is gone from disk so this can never succeed
                 pending.remove(at: index)
             } catch {
                 // keep the update & move on so one failure can't block the rest

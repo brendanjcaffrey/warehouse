@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// the play, play next & go to buttons shared by the long press track menu
-/// and the now playing view's tap menu; play & play next are left out when
-/// their closures are nil, as on the now playing view where the track is
-/// already playing
+/// the play, play next, edit & go to buttons shared by the long press track
+/// menu and the now playing view's tap menu; play & play next are left out
+/// when their closures are nil, as on the now playing view where the track is
+/// already playing, & edit is left out when the server isn't tracking changes
 @ViewBuilder
 func songMenuButtons(
     _ song: Song,
@@ -11,6 +11,7 @@ func songMenuButtons(
     playlists: [PlaylistItem] = [],
     play: (() -> Void)? = nil,
     playNext: (() -> Void)? = nil,
+    edit: (() -> Void)? = nil,
     artistDestination: Binding<Artist?>,
     albumDestination: Binding<Album?>? = nil,
     songsDestination: Binding<Song?>? = nil,
@@ -21,6 +22,9 @@ func songMenuButtons(
     }
     if let playNext {
         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward", action: playNext)
+    }
+    if let edit {
+        Button("Edit", systemImage: "pencil", action: edit)
     }
     if let songsDestination {
         Button("Go to Song", systemImage: "music.note") {
@@ -62,6 +66,7 @@ extension View {
         playlists: [PlaylistItem] = [],
         play: @escaping () -> Void,
         playNext: @escaping () -> Void,
+        edit: (() -> Void)? = nil,
         artistDestination: Binding<Artist?>,
         albumDestination: Binding<Album?>? = nil,
         songsDestination: Binding<Song?>? = nil,
@@ -74,6 +79,7 @@ extension View {
                 playlists: playlists,
                 play: play,
                 playNext: playNext,
+                edit: edit,
                 artistDestination: artistDestination,
                 albumDestination: albumDestination,
                 songsDestination: songsDestination,

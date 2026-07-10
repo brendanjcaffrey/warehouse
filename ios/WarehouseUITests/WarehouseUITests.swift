@@ -293,6 +293,38 @@ final class WarehouseUITests: XCTestCase {
     }
 
     @MainActor
+    func testEditTrackUpdatesListAndNowPlaying() throws {
+        // play alpha so the edit's effect on the now playing bar is visible
+        let app = playFixtureSongs()
+        let bar = app.buttons["nowPlayingBar"]
+        XCTAssertTrue(waitFor(bar, labelContaining: "Alpha Song"))
+
+        // hold the track's list row (the bar shows the same name) & open the
+        // edit sheet from its context menu
+        let row = app.collectionViews.firstMatch.staticTexts["Alpha Song"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.press(forDuration: 1.5)
+        let edit = app.buttons["Edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+
+        // replace the name field's contents
+        let name = app.textFields["editName"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.press(forDuration: 1.0)
+        let selectAll = app.menuItems["Select All"]
+        XCTAssertTrue(selectAll.waitForExistence(timeout: 5))
+        selectAll.tap()
+        name.typeText("Edited Song")
+        app.buttons["editSave"].tap()
+
+        // the songs list & the now playing bar both pick up the new name
+        XCTAssertTrue(app.staticTexts["Edited Song"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Alpha Song"].exists)
+        XCTAssertTrue(waitFor(bar, labelContaining: "Edited Song"))
+    }
+
+    @MainActor
     func testTappingUpcomingRowJumpsToTrack() throws {
         let app = openNowPlaying()
 

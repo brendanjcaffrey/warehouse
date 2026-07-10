@@ -113,6 +113,29 @@ final class LibraryDatabase {
         }
     }
 
+    /// writes an edited track's fields back to its entity so the change
+    /// shows before the next sync; sort names are left stale until then,
+    /// matching the web app
+    func updateTrack(_ song: Song) async throws {
+        try await container.performBackgroundTask { context in
+            let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
+            request.predicate = NSPredicate(format: "id == %@", song.id)
+            request.fetchLimit = 1
+            guard let entity = try context.fetch(request).first else { return }
+            entity.name = song.name
+            entity.artistName = song.artistName
+            entity.albumArtistName = song.albumArtistName
+            entity.albumName = song.albumName
+            entity.genre = song.genre
+            entity.year = Int32(song.year)
+            entity.start = song.start
+            entity.finish = song.finish
+            entity.rating = Int32(song.rating)
+            entity.artworkFilename = song.artworkFilename
+            try context.save()
+        }
+    }
+
     /// all music filenames referenced by tracks
     func musicFilenames() async throws -> Set<String> {
         try await fetchFilenames(attribute: "musicFilename")
@@ -146,6 +169,8 @@ final class LibraryDatabase {
                     finish: $0.finish,
                     discNumber: Int($0.discNumber),
                     trackNumber: Int($0.trackNumber),
+                    playCount: Int($0.playCount),
+                    rating: Int($0.rating),
                     musicFilename: $0.musicFilename,
                     artworkFilename: $0.artworkFilename)
             }

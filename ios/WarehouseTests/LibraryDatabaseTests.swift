@@ -190,6 +190,8 @@ struct LibraryDatabaseTests {
         #expect(abs(song1.finish - 259.7) < 0.001)
         #expect(song1.discNumber == 1)
         #expect(song1.trackNumber == 1)
+        #expect(song1.playCount == 5)
+        #expect(song1.rating == 100)
         #expect(song1.musicFilename == "m1.mp3")
         #expect(song1.artworkFilename == "a1.jpg")
         #expect(song1.titleSortKey == "Come Together")
@@ -227,6 +229,72 @@ struct LibraryDatabaseTests {
         let grandchild = try #require(byId["g1"])
         #expect(!grandchild.isFolder)
         #expect(grandchild.trackIds.isEmpty)
+    }
+
+    static func editedSong(id: String = "t1", artworkFilename: String? = "b2.jpg") -> Song {
+        Song(
+            id: id,
+            name: "Something",
+            sortName: "ignored",
+            artistName: "George Harrison",
+            artistSortName: "ignored",
+            albumArtistName: "The Beatles",
+            albumArtistSortName: "ignored",
+            albumName: "Abbey Road (Remaster)",
+            albumSortName: "ignored",
+            genre: "Classic Rock",
+            year: 1970,
+            duration: 259.7,
+            start: 1.5,
+            finish: 200,
+            discNumber: 1,
+            trackNumber: 1,
+            playCount: 999, // ignored, updates never touch the play count
+            rating: 80,
+            musicFilename: "m1.mp3",
+            artworkFilename: artworkFilename)
+    }
+
+    @Test("updateTrack rewrites the edited fields & leaves sort names alone")
+    func updateTrack() async throws {
+        let database = LibraryDatabase(inMemory: true)
+        try await database.replaceLibrary(with: Self.makeLibrary())
+
+        try await database.updateTrack(Self.editedSong())
+
+        let songs = try await database.allSongs()
+        let song = try #require(songs.first { $0.id == "t1" })
+        #expect(song.name == "Something")
+        #expect(song.artistName == "George Harrison")
+        #expect(song.albumArtistName == "The Beatles")
+        #expect(song.albumName == "Abbey Road (Remaster)")
+        #expect(song.genre == "Classic Rock")
+        #expect(song.year == 1970)
+        #expect(abs(song.start - 1.5) < 0.0001)
+        #expect(abs(song.finish - 200) < 0.0001)
+        #expect(song.rating == 80)
+        #expect(song.playCount == 5)
+        #expect(song.artworkFilename == "b2.jpg")
+        // sort names go stale until the next sync, matching the web app
+        #expect(song.sortName.isEmpty)
+        #expect(song.artistSortName == "Beatles, The")
+        #expect(song.albumArtistSortName.isEmpty)
+        #expect(song.albumSortName.isEmpty)
+        #expect(abs(song.duration - 259.7) < 0.001)
+    }
+
+    @Test("updateTrack can clear artwork & skips unknown tracks")
+    func updateTrackEdgeCases() async throws {
+        let database = LibraryDatabase(inMemory: true)
+        try await database.replaceLibrary(with: Self.makeLibrary())
+
+        try await database.updateTrack(Self.editedSong(artworkFilename: nil))
+        let songs = try await database.allSongs()
+        let song = try #require(songs.first { $0.id == "t1" })
+        #expect(song.artworkFilename == nil)
+
+        try await database.updateTrack(Self.editedSong(id: "missing"))
+        #expect(try await database.trackCount() == 2)
     }
 
     @Test("filename queries return referenced files")

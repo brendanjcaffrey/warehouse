@@ -10,10 +10,12 @@ struct NowPlayingView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(NavigationRouter.self) private var router
+    @Environment(UpdatesStore.self) private var updates
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingQueue = false
     @State private var scrolledQueue = false
+    @State private var editingSong: Song?
 
     var body: some View {
         Group {
@@ -22,10 +24,18 @@ struct NowPlayingView: View {
             }
         }
         .presentationDragIndicator(.visible)
+        .sheet(item: $editingSong) { song in
+            EditTrackView(song: song)
+        }
         .task {
             // the queue context menu needs the playlists for show in playlist
             await playlists.load()
         }
+    }
+
+    /// the shared menu's edit action, or nil when edits aren't tracked
+    private func editAction(for song: Song) -> (() -> Void)? {
+        updates.canEditTracks ? { editingSong = song } : nil
     }
 
     /// closes the modal & pushes a destination onto the library tab, so the
@@ -86,7 +96,7 @@ struct NowPlayingView: View {
                 }
                 if let current = player.queue.current {
                     Section("Now Playing") {
-                        queueRow(current.song)
+                        currentRow(current.song)
                             .id(current.id)
                     }
                 }
@@ -153,6 +163,23 @@ struct NowPlayingView: View {
         SongRow(song: song, artworkURL: songs.artworkURL(song), downloaded: songs.isDownloaded(song))
     }
 
+    /// the currently playing track's row; its menu leaves out play & play next
+    /// since the track is already playing, matching the track info menu
+    private func currentRow(_ song: Song) -> some View {
+        queueRow(song)
+            .contextMenu {
+                songMenuButtons(
+                    song,
+                    library: songs.songs,
+                    playlists: playlists.playlists,
+                    edit: editAction(for: song),
+                    artistDestination: routeBinding(LibraryRoute.artist),
+                    albumDestination: routeBinding(LibraryRoute.album),
+                    songsDestination: routeBinding(LibraryRoute.songs),
+                    playlistDestination: routeBinding(LibraryRoute.playlist))
+            }
+    }
+
     private func historyRow(_ song: Song) -> some View {
         Button {
             // let the queue snap back to the new current track
@@ -171,6 +198,7 @@ struct NowPlayingView: View {
                 player.playFromHistory(song)
             },
             playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+            edit: editAction(for: song),
             artistDestination: routeBinding(LibraryRoute.artist),
             albumDestination: routeBinding(LibraryRoute.album),
             songsDestination: routeBinding(LibraryRoute.songs),
@@ -195,6 +223,7 @@ struct NowPlayingView: View {
                 player.playFromUpcoming(at: index)
             },
             playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+            edit: editAction(for: song),
             artistDestination: routeBinding(LibraryRoute.artist),
             albumDestination: routeBinding(LibraryRoute.album),
             songsDestination: routeBinding(LibraryRoute.songs),
@@ -224,6 +253,7 @@ struct NowPlayingView: View {
                     song,
                     library: songs.songs,
                     playlists: playlists.playlists,
+                    edit: editAction(for: song),
                     artistDestination: routeBinding(LibraryRoute.artist),
                     albumDestination: routeBinding(LibraryRoute.album),
                     songsDestination: routeBinding(LibraryRoute.songs),

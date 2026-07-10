@@ -276,4 +276,58 @@ struct PlayerStoreTests {
         #expect(player.queue.upcoming.map(\.song.id) == ["2"])
         #expect(player.queue.history.map(\.song.id) == ["1", "1"])
     }
+
+    static func edited(
+        id: String,
+        name: String = "Renamed",
+        start: TimeInterval = 0,
+        finish: TimeInterval = 0
+    ) -> Song {
+        Song(
+            id: id,
+            name: name,
+            sortName: "",
+            artistName: "New Artist",
+            artistSortName: "",
+            albumArtistName: "",
+            albumArtistSortName: "",
+            albumName: "",
+            albumSortName: "",
+            genre: "",
+            year: 0,
+            duration: 240,
+            start: start,
+            finish: finish,
+            discNumber: 0,
+            trackNumber: 0,
+            musicFilename: "\(id).mp3",
+            artworkFilename: nil)
+    }
+
+    @Test("an edit to the current track updates the song & playback window")
+    @MainActor
+    func trackUpdatedCurrent() {
+        let player = Self.makePlayer()
+        player.play(Self.songs(3), token: nil, baseURL: nil)
+
+        player.trackUpdated(Self.edited(id: "1", start: 5, finish: 200))
+
+        #expect(player.song?.name == "Renamed")
+        #expect(player.song?.artistName == "New Artist")
+        #expect(player.window == PlaybackWindow(duration: 240, start: 5, finish: 200))
+    }
+
+    @Test("an edit to another track only refreshes the queue's copy")
+    @MainActor
+    func trackUpdatedOther() {
+        let player = Self.makePlayer()
+        player.play(Self.songs(3), token: nil, baseURL: nil)
+        let windowBefore = player.window
+
+        player.trackUpdated(Self.edited(id: "2"))
+
+        #expect(player.song?.name == "Believe")
+        #expect(player.window == windowBefore)
+        #expect(player.queue.upcoming.first?.song.name == "Renamed")
+    }
 }

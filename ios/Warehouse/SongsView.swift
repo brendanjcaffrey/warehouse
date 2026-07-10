@@ -6,6 +6,7 @@ struct SongsView: View {
     @Environment(PlaylistsStore.self) private var playlistsStore
     @Environment(SyncStore.self) private var sync
     @Environment(PlayerStore.self) private var player
+    @Environment(UpdatesStore.self) private var updates
 
     /// nil shows every song in the library
     private let playlist: PlaylistItem?
@@ -16,6 +17,7 @@ struct SongsView: View {
     @State private var albumDestination: Album?
     @State private var songsDestination: Song?
     @State private var playlistDestination: PlaylistDestination?
+    @State private var editingSong: Song?
     /// a track to scroll to once the list is built, for show in playlist
     @State private var pendingScroll: Song?
     @State private var listScroller = ListScroller()
@@ -79,6 +81,9 @@ struct SongsView: View {
         }
         .navigationDestination(item: $playlistDestination) { destination in
             SongsView(playlist: destination.playlist, scrollTo: destination.song)
+        }
+        .sheet(item: $editingSong) { song in
+            EditTrackView(song: song)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -190,6 +195,7 @@ struct SongsView: View {
                 playlists: playlistsStore.playlists.filter { $0.id != playlist?.id },
                 play: { play(song) },
                 playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+                edit: updates.canEditTracks ? { editingSong = song } : nil,
                 artistDestination: $artistDestination,
                 albumDestination: $albumDestination,
                 // no show in songs entry when this is already the songs list

@@ -6,7 +6,11 @@ enum UITestSupport {
     static let enabled = ProcessInfo.processInfo.arguments.contains("-uiTestFixtures")
 
     static func seed(_ database: LibraryDatabase) async {
-        try? await database.replaceLibrary(with: fixtureLibrary())
+        let library = fixtureLibrary()
+        try? await database.replaceLibrary(with: library)
+        // stamp the metadata too so edits are offered; the update queue
+        // can't reach a server here so nothing is ever actually sent
+        LibraryMetadata().update(from: library)
     }
 
     private static func fixtureLibrary() -> Library {
@@ -34,6 +38,8 @@ enum UITestSupport {
             + numbered.map(\.id).filter { $0 != "n100" }
             + ["t3"]
         library.playlists = [playlist]
+        library.trackUserChanges = true
+        library.updateTimeNs = 1
         return library
     }
 

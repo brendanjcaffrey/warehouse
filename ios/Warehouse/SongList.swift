@@ -17,6 +17,9 @@ struct Song: Identifiable, Hashable, Sendable {
     let finish: TimeInterval
     let discNumber: Int
     let trackNumber: Int
+    var playCount = 0
+    /// 0-100, 20 per star like itunes
+    var rating = 0
     let musicFilename: String
     let artworkFilename: String?
 

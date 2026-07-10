@@ -36,6 +36,9 @@ final class SyncStore {
     }
 
     private(set) var state: State = .idle
+    /// artwork filenames to keep even when no track references them, e.g.
+    /// files still waiting in the update queue to be uploaded
+    var protectedArtworkFilenames: () -> Set<String> = { [] }
     /// bumped when a sync attempt finishes, so views can reload without
     /// observing every per-file progress update in `state`
     private(set) var completedSyncs = 0
@@ -192,7 +195,7 @@ final class SyncStore {
         let musicFilenames = try await database.musicFilenames()
         let artworkFilenames = try await database.artworkFilenames()
         fileStore.deleteFiles(.music, keeping: musicFilenames)
-        fileStore.deleteFiles(.artwork, keeping: artworkFilenames)
+        fileStore.deleteFiles(.artwork, keeping: artworkFilenames.union(protectedArtworkFilenames()))
 
         let missing = Self.missing(music: musicFilenames, artwork: artworkFilenames, fileStore: fileStore)
         guard !missing.isEmpty else { return 0 }

@@ -255,4 +255,61 @@ struct PlayQueueTests {
         #expect(queue.upcoming.map(\.song.id) == ["1"])
         #expect(queue.current?.id != queue.upcoming[0].id)
     }
+
+    static func renamed(_ id: String) -> Song {
+        Song(
+            id: id,
+            name: "Renamed \(id)",
+            sortName: "",
+            artistName: "New Artist",
+            artistSortName: "",
+            albumArtistName: "",
+            albumArtistSortName: "",
+            albumName: "",
+            albumSortName: "",
+            genre: "",
+            year: 0,
+            duration: 0,
+            start: 0,
+            finish: 0,
+            discNumber: 0,
+            trackNumber: 0,
+            musicFilename: "\(id).mp3",
+            artworkFilename: nil)
+    }
+
+    @Test("updateSong refreshes every copy of the track & keeps row identity")
+    func updateSong() {
+        var queue = PlayQueue(songs: Self.songs(3))
+        // put a second copy of song 1 in the queue & one into the history
+        queue.playNext(Self.song("1"))
+        queue.advance()
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.history.map(\.song.id) == ["1"])
+
+        let currentId = queue.current?.id
+        let historyId = queue.history.first?.id
+        let upcomingIds = queue.upcoming.map(\.id)
+
+        queue.updateSong(Self.renamed("1"))
+
+        #expect(queue.current?.song.name == "Renamed 1")
+        #expect(queue.current?.id == currentId)
+        #expect(queue.history.first?.song.name == "Renamed 1")
+        #expect(queue.history.first?.id == historyId)
+        #expect(queue.upcoming.map(\.id) == upcomingIds)
+        #expect(queue.upcoming.map(\.song.name) == ["Song 2", "Song 3"])
+    }
+
+    @Test("updateSong reaches the context so unshuffling keeps the edit")
+    func updateSongSurvivesUnshuffle() {
+        var generator = SeededGenerator(seed: 7)
+        var queue = PlayQueue(songs: Self.songs(5))
+        queue.setShuffled(true, using: &generator)
+        queue.updateSong(Self.renamed("2"))
+        queue.setShuffled(false, using: &generator)
+
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.upcoming.map(\.song.name) == ["Renamed 2", "Song 3", "Song 4", "Song 5"])
+    }
 }

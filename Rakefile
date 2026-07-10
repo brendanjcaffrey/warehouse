@@ -145,8 +145,15 @@ namespace :web do
     end
   end
 
-  desc 'run the web tests'
+  desc 'run the web tests once'
   task :vitest do
+    Dir.chdir('web') do
+      exec('npx vitest run')
+    end
+  end
+
+  desc 'run the web tests in a watcher'
+  task :vitest_watch do
     Dir.chdir('web') do
       exec('npx vitest')
     end

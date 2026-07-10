@@ -202,6 +202,23 @@ struct SyncStoreTests {
         #expect(env.fileStore.list(.artwork) == ["a1.jpg"])
     }
 
+    @Test("protected artwork survives cleanup even when unreferenced")
+    func protectedArtworkSurvivesCleanup() async throws {
+        let host = "sync-protected.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host)
+
+        // as if an edit queued this upload & a sync reverted the reference
+        try env.fileStore.write(.artwork, "queued.jpg", data: Data("new".utf8))
+        try env.fileStore.write(.artwork, "stale.jpg", data: Data("old".utf8))
+        env.store.protectedArtworkFilenames = { ["queued.jpg"] }
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(env.fileStore.list(.artwork) == ["a1.jpg", "queued.jpg"])
+    }
+
     @Test("existing files are not downloaded again")
     func existingFilesAreSkipped() async throws {
         let host = "sync-skip.test"

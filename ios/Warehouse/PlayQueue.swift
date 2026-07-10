@@ -12,6 +12,16 @@ struct QueueEntry: Identifiable, Hashable, Sendable {
         id = UUID()
         self.song = song
     }
+
+    private init(id: UUID, song: Song) {
+        self.id = id
+        self.song = song
+    }
+
+    /// the same slot with refreshed song data, keeping the row's identity
+    func with(_ song: Song) -> QueueEntry {
+        QueueEntry(id: id, song: song)
+    }
 }
 
 /// the now playing list: an ordered queue with a current position plus a
@@ -155,6 +165,17 @@ struct PlayQueue: Sendable {
             carried.append(QueueEntry(current.song))
         }
         history = carried + history
+    }
+
+    /// swaps edited song data into every slot holding the track, keeping
+    /// each row's identity so lists don't churn
+    mutating func updateSong(_ song: Song) {
+        func refresh(_ entry: QueueEntry) -> QueueEntry {
+            entry.song.id == song.id ? entry.with(song) : entry
+        }
+        entries = entries.map(refresh)
+        context = context.map(refresh)
+        history = history.map(refresh)
     }
 
     /// a track can be played twice, so history rows get a fresh identity

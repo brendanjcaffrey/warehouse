@@ -222,6 +222,24 @@ final class PlayerStore {
         startCurrent()
     }
 
+    /// picks up a metadata edit: refreshes the queue's copies of the track,
+    /// & when it's the one playing also the playback window & lock screen info
+    func trackUpdated(_ song: Song) {
+        let current = self.song
+        queue.updateSong(song)
+        guard let current, current.id == song.id else { return }
+
+        // only rebuild the window when the edit moved the markers, so a name
+        // edit can't re-arm a stop time the user scrubbed past
+        if current.start != song.start || current.finish != song.finish {
+            window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
+            ignoresFinish = false
+            applyStopTime()
+        }
+        setNowPlayingInfo(for: song)
+        updateNowPlayingPlaybackState()
+    }
+
     /// shuffles the upcoming tracks or restores their original order
     func setShuffled(_ shuffled: Bool) {
         queue.setShuffled(shuffled)

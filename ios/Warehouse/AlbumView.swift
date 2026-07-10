@@ -6,12 +6,14 @@ struct AlbumView: View {
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(SyncStore.self) private var sync
     @Environment(PlayerStore.self) private var player
+    @Environment(UpdatesStore.self) private var updates
 
     let album: Album
 
     @State private var artistDestination: Artist?
     @State private var songsDestination: Song?
     @State private var playlistDestination: PlaylistDestination?
+    @State private var editingSong: Song?
 
     var body: some View {
         List {
@@ -55,6 +57,7 @@ struct AlbumView: View {
                         playlists: playlists.playlists,
                         play: { play(song) },
                         playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+                        edit: updates.canEditTracks ? { editingSong = song } : nil,
                         artistDestination: $artistDestination,
                         songsDestination: $songsDestination,
                         playlistDestination: $playlistDestination)
@@ -72,6 +75,9 @@ struct AlbumView: View {
         }
         .navigationDestination(item: $playlistDestination) { destination in
             SongsView(playlist: destination.playlist, scrollTo: destination.song)
+        }
+        .sheet(item: $editingSong) { song in
+            EditTrackView(song: song)
         }
         .task {
             // the context menu needs the playlists for show in playlist
