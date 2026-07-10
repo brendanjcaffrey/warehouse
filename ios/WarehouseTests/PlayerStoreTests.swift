@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import MediaPlayer
 import Testing
@@ -48,6 +49,105 @@ struct PlayerStoreTests {
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
         return PlayerStore(fileStore: fileStore, updates: updates)
+    }
+
+    /// a player wired to a mock server that answers every file request with a
+    /// little data, so on-demand downloads succeed without the network
+    @MainActor
+    static func makePlayerWithServer(host: String) -> (PlayerStore, FileStore, URL) {
+        let baseURL = URL(string: "https://\(host)")!
+        MockURLProtocol.setHandler(forHost: host) { _ in
+            (HTTPURLResponse(url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("music-bytes".utf8))
+        }
+        let fileStore = FileStore(
+            rootURL: FileManager.default.temporaryDirectory
+                .appending(path: "player-tests-files-\(UUID().uuidString)"))
+        let suiteName = "PlayerStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let updates = UpdatesStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appending(path: "player-tests-\(UUID().uuidString)")
+                .appending(path: "updates.json"),
+            session: MockURLProtocol.makeSession(),
+            defaults: defaults)
+        var client = LibraryClient()
+        client.session = MockURLProtocol.makeSession()
+        let player = PlayerStore(fileStore: fileStore, updates: updates, client: client)
+        return (player, fileStore, baseURL)
+    }
+
+    static func interruption(
+        _ type: AVAudioSession.InterruptionType,
+        options: AVAudioSession.InterruptionOptions = []
+    ) -> Notification {
+        Notification(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+            AVAudioSessionInterruptionTypeKey: type.rawValue,
+            AVAudioSessionInterruptionOptionKey: options.rawValue
+        ])
+    }
+
+    static func routeChange(_ reason: AVAudioSession.RouteChangeReason) -> Notification {
+        Notification(name: AVAudioSession.routeChangeNotification, object: nil, userInfo: [
+            AVAudioSessionRouteChangeReasonKey: reason.rawValue
+        ])
+    }
+
+    @Test("playing a song that isn't downloaded fetches it to disk first")
+    @MainActor
+    func onDemandDownload() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
+
+        let song = Self.song()
+        #expect(!fileStore.exists(.music, song.musicFilename))
+        player.play([song], token: "tok", baseURL: baseURL)
+
+        // wait for the background download to land the file
+        for _ in 0..<200 where !fileStore.exists(.music, song.musicFilename) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(fileStore.exists(.music, song.musicFilename))
+
+        let requests = MockURLProtocol.requests(forHost: host)
+        #expect(requests.first?.url?.path == "/music/\(song.musicFilename)")
+        #expect(requests.first?.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+    }
+
+    @Test("an interruption pauses playback & resumes when told to")
+    @MainActor
+    func interruptionPausesAndResumes() {
+        let host = "player-\(UUID().uuidString).example.com"
+        let (player, _, baseURL) = Self.makePlayerWithServer(host: host)
+        player.play([Self.song()], token: "tok", baseURL: baseURL)
+        #expect(player.isPlaying)
+
+        player.handleInterruption(Self.interruption(.began))
+        #expect(!player.isPlaying)
+
+        // ended without shouldResume leaves it paused
+        player.handleInterruption(Self.interruption(.ended))
+        #expect(!player.isPlaying)
+
+        // ended with shouldResume starts it again
+        player.handleInterruption(Self.interruption(.ended, options: .shouldResume))
+        #expect(player.isPlaying)
+    }
+
+    @Test("unplugging headphones pauses, other route changes don't")
+    @MainActor
+    func routeChangePausesOnUnplug() {
+        let host = "player-\(UUID().uuidString).example.com"
+        let (player, _, baseURL) = Self.makePlayerWithServer(host: host)
+        player.play([Self.song()], token: "tok", baseURL: baseURL)
+        #expect(player.isPlaying)
+
+        // a new device appearing shouldn't pause
+        player.handleRouteChange(Self.routeChange(.newDeviceAvailable))
+        #expect(player.isPlaying)
+
+        // the old device going away (headphones out) pauses
+        player.handleRouteChange(Self.routeChange(.oldDeviceUnavailable))
+        #expect(!player.isPlaying)
     }
 
     @Test("now playing info carries title, duration & initial state")

@@ -34,16 +34,28 @@ struct FileDownloader: Sendable {
             if Task.isCancelled {
                 break
             }
-            do {
-                let data = try await client.fetchFile(file.type, filename: file.filename, token: token, baseURL: baseURL)
-                try fileStore.write(file.type, file.filename, data: data)
+            if await download(file.type, filename: file.filename, token: token, baseURL: baseURL) {
                 progress.completed += 1
-            } catch {
+            } else {
                 progress.failed += 1
             }
             let current = progress
             await onProgress(current)
         }
         return progress
+    }
+
+    /// fetches a single file into the store, returning whether it succeeded;
+    /// skips the fetch when the file is already on disk so a sync and an
+    /// on-demand play don't download the same file twice
+    func download(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> Bool {
+        if fileStore.exists(type, filename) { return true }
+        do {
+            let data = try await client.fetchFile(type, filename: filename, token: token, baseURL: baseURL)
+            try fileStore.write(type, filename, data: data)
+            return true
+        } catch {
+            return false
+        }
     }
 }

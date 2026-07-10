@@ -35,12 +35,15 @@ final class PlayerStore {
 
     private let fileStore: FileStore
     private let updates: UpdatesStore
+    private let downloader: FileDownloader
     private let player = AVPlayer()
     /// kept from the last play call for loading later tracks in the queue
     private var token: String?
     private var baseURL: URL?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var interruptionObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
     private var audioSessionConfigured = false
     private var remoteCommandsConfigured = false
     /// set when the user scrubs past the stop time, so the track plays
@@ -49,10 +52,15 @@ final class PlayerStore {
     /// seeks the player hasn't finished yet; the time observer stays quiet
     /// until they land so the playhead doesn't flick back to the old position
     private var pendingSeeks = 0
+    /// bumped every time a new track starts, so a download that finishes after
+    /// the user has moved on doesn't hijack playback
+    private var startGeneration = 0
 
-    init(fileStore: FileStore, updates: UpdatesStore) {
+    init(fileStore: FileStore, updates: UpdatesStore, client: LibraryClient = LibraryClient()) {
         self.fileStore = fileStore
         self.updates = updates
+        self.downloader = FileDownloader(client: client, fileStore: fileStore)
+        observeAudioSession()
     }
 
     /// starts playing songs in order, positioned at the tapped one so previous
@@ -79,22 +87,52 @@ final class PlayerStore {
         startCurrent()
     }
 
-    /// loads & plays the queue's current track, from disk when downloaded or
-    /// streamed from the server otherwise
+    /// plays the queue's current track, downloading it from the server first
+    /// when it isn't already on disk
     private func startCurrent() {
         guard let song else { return }
-        guard let item = makeItem(for: song, token: token, baseURL: baseURL) else {
+        startGeneration += 1
+        let generation = startGeneration
+
+        let isDownloaded = fileStore.exists(.music, song.musicFilename)
+        // without the file or a way to fetch it there's nothing to play
+        guard isDownloaded || (token != nil && baseURL != nil) else {
             player.pause()
             isPlaying = false
             return
         }
+
         configureAudioSessionIfNeeded()
         configureRemoteCommandsIfNeeded()
 
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
         currentTime = window.start
         ignoresFinish = false
+        isPlaying = true
+        setNowPlayingInfo(for: song)
+        updateNowPlayingPlaybackState()
 
+        if isDownloaded {
+            beginPlayback(of: song)
+        } else if let token, let baseURL {
+            Task { @MainActor in
+                let ok = await downloader.download(.music, filename: song.musicFilename, token: token, baseURL: baseURL)
+                // drop it if the user skipped to another track while downloading
+                guard generation == startGeneration else { return }
+                if ok {
+                    beginPlayback(of: song)
+                } else {
+                    isPlaying = false
+                    updateNowPlayingPlaybackState()
+                }
+            }
+        }
+    }
+
+    /// swaps the downloaded file into the player and starts it, unless the user
+    /// paused while it was still downloading
+    private func beginPlayback(of song: Song) {
+        let item = AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename))
         observeEnd(of: item)
         observeTimeIfNeeded()
 
@@ -103,9 +141,9 @@ final class PlayerStore {
         if window.start > 0 {
             seekPlayer(to: window.start)
         }
-        player.play()
-        isPlaying = true
-        setNowPlayingInfo(for: song)
+        if isPlaying {
+            player.play()
+        }
         updateNowPlayingPlaybackState()
     }
 
@@ -126,6 +164,8 @@ final class PlayerStore {
 
     func resume() {
         guard song != nil, !isPlaying else { return }
+        // the session may have gone inactive after a long pause or interruption
+        try? AVAudioSession.sharedInstance().setActive(true)
         // play again after the track ended restarts it
         if effectiveEnd > 0 && currentTime >= effectiveEnd {
             seek(to: window.start)
@@ -258,28 +298,59 @@ final class PlayerStore {
         }
     }
 
-    private func makeItem(for song: Song, token: String?, baseURL: URL?) -> AVPlayerItem? {
-        if fileStore.exists(.music, song.musicFilename) {
-            return AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename))
-        }
-        guard let token, let baseURL else { return nil }
-        let url = baseURL
-            .appendingPathComponent(LibraryFileType.music.directory)
-            .appendingPathComponent(song.musicFilename)
-        // avurlasset has no public api for request headers, this key is the
-        // widely used workaround
-        let asset = AVURLAsset(url: url, options: [
-            "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]
-        ])
-        return AVPlayerItem(asset: asset)
-    }
-
     private func configureAudioSessionIfNeeded() {
         guard !audioSessionConfigured else { return }
         audioSessionConfigured = true
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
+    }
+
+    /// listens for interruptions (calls, siri, other apps) and route changes
+    /// (unplugging headphones) so playback state stays in sync with the system
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        interruptionObserver = center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: session, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.handleInterruption(note) }
+        }
+        routeChangeObserver = center.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: session, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.handleRouteChange(note) }
+        }
+    }
+
+    /// the system paused us for a call or siri; reflect that, then resume when
+    /// it ends if the interruption says we should
+    func handleInterruption(_ note: Notification) {
+        guard let info = note.userInfo,
+              let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        switch type {
+        case .began:
+            pause()
+        case .ended:
+            let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
+                .map(AVAudioSession.InterruptionOptions.init(rawValue:))
+            if options?.contains(.shouldResume) == true {
+                resume()
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    /// pause when the headphones are unplugged, matching the system music app
+    func handleRouteChange(_ note: Notification) {
+        guard let info = note.userInfo,
+              let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+        if reason == .oldDeviceUnavailable {
+            pause()
+        }
     }
 
     private func configureRemoteCommandsIfNeeded() {
