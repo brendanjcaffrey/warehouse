@@ -8,7 +8,9 @@ import {
   showArtworkAtom,
   volumeAtom,
   openedFoldersAtom,
+  sidebarWidthAtom,
   DEFAULT_VOLUME,
+  DEFAULT_SIDEBAR_WIDTH,
   SetPersistedKeepMode,
   SetPersistedDownloadMode,
   SetPersistedShuffle,
@@ -16,6 +18,7 @@ import {
   SetPersistedShowArtwork,
   SetPersistedVolume,
   SetPersistedOpenedFolders,
+  SetPersistedSidebarWidth,
 } from "./Settings";
 import { clearSettingsFnAtom } from "./State";
 import { DownloadWorker } from "./DownloadWorker";
@@ -34,6 +37,7 @@ function SettingsRecorder() {
   const [showArtwork, setShowArtwork] = useAtom(showArtworkAtom);
   const [volume, setVolume] = useAtom(volumeAtom);
   const [openedFolders, setOpenedFolders] = useAtom(openedFoldersAtom);
+  const [sidebarWidth, setSidebarWidth] = useAtom(sidebarWidthAtom);
   const setClearSettingsFn = useSetAtom(clearSettingsFnAtom);
 
   useEffect(() => {
@@ -73,6 +77,10 @@ function SettingsRecorder() {
   }, [openedFolders]);
 
   useEffect(() => {
+    SetPersistedSidebarWidth(sidebarWidth);
+  }, [sidebarWidth]);
+
+  useEffect(() => {
     setClearSettingsFn({
       fn: () => {
         setKeepMode(false);
@@ -82,6 +90,7 @@ function SettingsRecorder() {
         setShowArtwork(false);
         setVolume(DEFAULT_VOLUME);
         setOpenedFolders(new Set());
+        setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
       },
     });
   }, [
@@ -92,6 +101,7 @@ function SettingsRecorder() {
     setShowArtwork,
     setVolume,
     setOpenedFolders,
+    setSidebarWidth,
     setClearSettingsFn,
   ]);
 
