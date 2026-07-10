@@ -45,7 +45,7 @@ jobs:
     - name: rspec
       id: rspec
       timeout-minutes: 1
-      run: bundle exec rspec
+      run: bundle exec rake web:spec
 
     - name: vitest
       id: vitest

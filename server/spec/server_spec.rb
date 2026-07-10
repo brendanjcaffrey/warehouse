@@ -173,26 +173,26 @@ describe 'Warehouse Server' do
     end
   end
 
-  describe '/tracks/*' do
+  describe '/music/*' do
     it 'redirects if not logged in' do
-      get "/tracks/#{music_filename}"
+      get "/music/#{music_filename}"
       follow_redirect!
       expect(last_request.url).to eq('http://localhost/')
     end
 
     it 'returns 404 if the track does not exist in the database' do
-      get '/tracks/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ', {}, get_auth_header
+      get '/music/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ', {}, get_auth_header
       expect(last_response.status).to eq(404)
     end
 
     it 'sends the contents of the file' do
-      get "/tracks/#{music_filename}", {}, get_auth_header
+      get "/music/#{music_filename}", {}, get_auth_header
       expect(last_response.body).to eq("fake mp3 contents\n")
     end
 
     it 'sends a path to the file in remote mode' do
       Config.set_remote(true)
-      get "/tracks/#{music_filename}", {}, get_auth_header
+      get "/music/#{music_filename}", {}, get_auth_header
       expect(last_response.headers['Content-Type']).to eq('audio/mpeg')
       expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/music/06dbe92c2a5dab2f7911e20a9e157521.mp3')
     end
