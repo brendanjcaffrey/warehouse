@@ -661,187 +661,118 @@ describe 'Warehouse Server' do
     end
   end
 
-  describe '/api/rating/*' do
-    it 'returns an error if rating is missing' do
-      post "/api/rating/#{track_id1}", {}, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_RATING_ERROR)
-    end
-
-    it 'returns an error if rating is non-numeric' do
-      post "/api/rating/#{track_id1}", { rating: 'abcd' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_RATING_ERROR)
-    end
-
-    it 'returns an error if rating is empty' do
-      post "/api/rating/#{track_id1}", { rating: '' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_RATING_ERROR)
-    end
-
-    it 'returns an error if rating is too high' do
-      post "/api/rating/#{track_id1}", { rating: '120' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_RATING_ERROR)
-    end
-
-    it 'returns an error if rating is too low' do
-      post "/api/rating/#{track_id1}", { rating: '-1' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_RATING_ERROR)
-    end
-
-    it 'returns an error if no jwt' do
-      post "/api/rating/#{track_id1}", { rating: '80' }
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(NOT_AUTHED_ERROR)
-    end
-
-    it 'returns an error if invalid jwt' do
-      post "/api/rating/#{track_id1}", { rating: '80' }, get_invalid_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(NOT_AUTHED_ERROR)
-    end
-
-    it 'returns an error if expired jwt' do
-      post "/api/rating/#{track_id1}", { rating: '80' }, get_expired_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(NOT_AUTHED_ERROR)
-    end
-
-    it 'returns an error if not tracking this users changes' do
-      post "/api/rating/#{track_id1}", { rating: '80' }, get_auth_header('notrack')
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(NOT_TRACKING_ERROR)
-    end
-
-    it 'returns an error if track does not exist' do
-      post '/api/rating/ABCD', { rating: '80' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_TRACK_ERROR)
-    end
-
-    it 'creates a rating update if tracking this users changes is enabled' do
-      insert_old_export_finished_at
-      expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('100')
-
-      post "/api/rating/#{track_id1}", { rating: '80' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be true
-      expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('1')
-      expect(get_first_value('SELECT track_id FROM rating_updates')).to eq(track_id1)
-      expect(get_first_value('SELECT rating FROM rating_updates')).to eq('80')
-      expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('80')
-
-      post "/api/rating/#{track_id1}", { rating: '100' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be true
-      expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('1')
-      expect(get_first_value('SELECT track_id FROM rating_updates')).to eq(track_id1)
-      expect(get_first_value('SELECT rating FROM rating_updates')).to eq('100')
-      expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('100')
-
-      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
-    end
-  end
-
-  describe '/api/track-info/*' do
+  describe '/api/track/*' do
     before do
       insert_old_export_finished_at
     end
 
+    def post_track_update(id, update, headers = get_auth_header)
+      post "/api/track/#{id}", update.to_proto, headers.merge('CONTENT_TYPE' => 'application/octet-stream')
+    end
+
     it 'returns an error if no jwt' do
-      post "/api/track-info/#{track_id1}"
+      post_track_update(track_id1, TrackUpdate.new, {})
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
     it 'returns an error if invalid jwt' do
-      post "/api/track-info/#{track_id1}", {}, get_invalid_auth_header
+      post_track_update(track_id1, TrackUpdate.new, get_invalid_auth_header)
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
     it 'returns an error if expired jwt' do
-      post "/api/track-info/#{track_id1}", {}, get_expired_auth_header
+      post_track_update(track_id1, TrackUpdate.new, get_expired_auth_header)
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_AUTHED_ERROR)
     end
 
     it 'returns an error if not tracking the users changes' do
-      post "/api/track-info/#{track_id1}", {}, get_auth_header('notrack')
+      post_track_update(track_id1, TrackUpdate.new, get_auth_header('notrack'))
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(NOT_TRACKING_ERROR)
     end
 
     it 'returns an error if track does not exist' do
-      post '/api/track-info/ABCD', {}, get_auth_header
+      post_track_update('ABCD', TrackUpdate.new)
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(INVALID_TRACK_ERROR)
     end
 
-    it 'returns an error if name is empty' do
-      post '/api/track-info/ABCD', { name: '' }, get_auth_header
+    it 'returns an error if the body is not a valid track update' do
+      post '/api/track/ABCD', "\xff\xff\xff\xff".b, get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(INVALID_REQUEST_ERROR)
+    end
+
+    it 'returns an error if name is present but empty' do
+      post_track_update('ABCD', TrackUpdate.new(name: ''))
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'returns an error if year is empty' do
-      post '/api/track-info/ABCD', { year: '' }, get_auth_header
+    it 'returns an error if year is present but zero' do
+      post_track_update('ABCD', TrackUpdate.new(year: 0))
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'returns an error if artist is empty' do
-      post '/api/track-info/ABCD', { artist: '' }, get_auth_header
+    it 'returns an error if artist is present but empty' do
+      post_track_update('ABCD', TrackUpdate.new(artist: ''))
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
     end
 
-    it 'returns an error if genre is empty' do
-      post '/api/track-info/ABCD', { genre: '' }, get_auth_header
+    it 'returns an error if genre is present but empty' do
+      post_track_update('ABCD', TrackUpdate.new(genre: ''))
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(TRACK_FIELD_MISSING_ERROR)
-    end
-
-    it 'returns an error if year is non-numeric' do
-      post '/api/track-info/ABCD', { year: 'abcd' }, get_auth_header
-      resp = OperationResponse.decode(last_response.body)
-      expect(resp.success).to be false
-      expect(resp.error).to eq(INVALID_YEAR_ERROR)
     end
 
     it 'returns an error if artwork file does not exist' do
-      post '/api/track-info/ABCD', { artwork: 'abcd.png' }, get_auth_header
+      post_track_update('ABCD', TrackUpdate.new(artwork: 'abcd.png'))
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be false
       expect(resp.error).to eq(MISSING_FILE_ERROR)
     end
 
+    it 'returns an error if rating is too high' do
+      post_track_update('ABCD', TrackUpdate.new(rating: 120))
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(INVALID_RATING_ERROR)
+    end
+
+    it 'returns an error if rating is too low' do
+      post_track_update('ABCD', TrackUpdate.new(rating: -1))
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(INVALID_RATING_ERROR)
+    end
+
+    it 'updates nothing when no fields are present' do
+      post_track_update(track_id1, TrackUpdate.new)
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      %w[name year start finish artist genre album_artist album artwork rating].each do |field|
+        expect(get_first_value("SELECT COUNT(*) FROM #{field}_updates")).to eq('0')
+      end
+    end
+
     it 'creates a name update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT name FROM tracks WHERE id='#{track_id1}'")).to eq('test_title')
 
-      post "/api/track-info/#{track_id1}", { name: 'abc' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(name: 'abc'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM name_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM name_updates')).to eq(track_id1)
@@ -849,7 +780,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT name FROM tracks WHERE id='#{track_id1}'")).to eq('abc')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { name: 'test_title' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(name: 'test_title'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM name_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM name_updates')).to eq(track_id1)
@@ -861,7 +792,7 @@ describe 'Warehouse Server' do
     it 'creates a year update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT year FROM tracks WHERE id='#{track_id1}'")).to eq('2018')
 
-      post "/api/track-info/#{track_id1}", { year: '1970' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(year: 1970))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM year_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM year_updates')).to eq(track_id1)
@@ -869,7 +800,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT year FROM tracks WHERE id='#{track_id1}'")).to eq('1970')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { year: '1990' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(year: 1990))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM year_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM year_updates')).to eq(track_id1)
@@ -881,7 +812,7 @@ describe 'Warehouse Server' do
     it 'creates a start update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT start FROM tracks WHERE id='#{track_id1}'")).to eq('0.1')
 
-      post "/api/track-info/#{track_id1}", { start: '1.2' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(start: 1.2))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM start_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM start_updates')).to eq(track_id1)
@@ -889,7 +820,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT start FROM tracks WHERE id='#{track_id1}'")).to eq('1.2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { start: '1.3' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(start: 1.3))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM start_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM start_updates')).to eq(track_id1)
@@ -901,7 +832,7 @@ describe 'Warehouse Server' do
     it 'creates a finish update if tracking this users changes is enabled' do
       expect(get_first_value("SELECT finish FROM tracks WHERE id='#{track_id1}'")).to eq('1.22')
 
-      post "/api/track-info/#{track_id1}", { finish: '2.3' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(finish: 2.3))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM finish_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM finish_updates')).to eq(track_id1)
@@ -909,7 +840,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT finish FROM tracks WHERE id='#{track_id1}'")).to eq('2.3')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { finish: '2.4' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(finish: 2.4))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM finish_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM finish_updates')).to eq(track_id1)
@@ -922,7 +853,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT artists.name FROM tracks JOIN artists ON tracks.artist_id = artists.id WHERE tracks.id='#{track_id1}'")).to eq('test_artist')
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('1')
 
-      post "/api/track-info/#{track_id1}", { artist: 'new_artist' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(artist: 'new_artist'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM artist_updates')).to eq(track_id1)
@@ -931,7 +862,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { artist: 'test_artist' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(artist: 'test_artist'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM artist_updates')).to eq(track_id1)
@@ -945,7 +876,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT genres.name FROM tracks JOIN genres ON tracks.genre_id = genres.id WHERE tracks.id='#{track_id1}'")).to eq('test_genre')
       expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('1')
 
-      post "/api/track-info/#{track_id1}", { genre: 'new_genre' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(genre: 'new_genre'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM genre_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM genre_updates')).to eq(track_id1)
@@ -954,7 +885,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM genres')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { genre: 'test_genre' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(genre: 'test_genre'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM genre_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM genre_updates')).to eq(track_id1)
@@ -968,7 +899,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT album_artist_id FROM tracks WHERE tracks.id='#{track_id1}'")).to be_nil
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('1')
 
-      post "/api/track-info/#{track_id1}", { album_artist: 'new_album_artist' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(albumArtist: 'new_album_artist'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq(track_id1)
@@ -977,7 +908,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { album_artist: '' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(albumArtist: ''))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq(track_id1)
@@ -986,7 +917,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM artists')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { album_artist: 'test_artist' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(albumArtist: 'test_artist'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_artist_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_artist_updates')).to eq(track_id1)
@@ -1000,7 +931,7 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT albums.name FROM tracks JOIN albums ON tracks.album_id = albums.id WHERE tracks.id='#{track_id1}'")).to eq('test_album')
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('1')
 
-      post "/api/track-info/#{track_id1}", { album: 'new_album' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(album: 'new_album'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_updates')).to eq(track_id1)
@@ -1009,7 +940,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { album: '' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(album: ''))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_updates')).to eq(track_id1)
@@ -1018,7 +949,7 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT COUNT(*) FROM albums')).to eq('2')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { album: 'test_album' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(album: 'test_album'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM album_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM album_updates')).to eq(track_id1)
@@ -1031,7 +962,7 @@ describe 'Warehouse Server' do
     it 'creates an artwork update if tracking this users changes' do
       expect(get_first_value("SELECT artwork_filename FROM tracks WHERE id='#{track_id1}'").strip).to eq('__artwork.jpg')
 
-      post "/api/track-info/#{track_id1}", { artwork: '__artwork.png' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(artwork: '__artwork.png'))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM artwork_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM artwork_updates')).to eq(track_id1)
@@ -1039,12 +970,32 @@ describe 'Warehouse Server' do
       expect(get_first_value("SELECT artwork_filename FROM tracks WHERE id='#{track_id1}'").strip).to eq('__artwork.png')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
 
-      post "/api/track-info/#{track_id1}", { artwork: '' }, get_auth_header
+      post_track_update(track_id1, TrackUpdate.new(artwork: ''))
       expect(OperationResponse.decode(last_response.body).success).to be true
       expect(get_first_value('SELECT COUNT(*) FROM artwork_updates')).to eq('1')
       expect(get_first_value('SELECT track_id FROM artwork_updates')).to eq(track_id1)
       expect(get_first_value('SELECT artwork_filename FROM artwork_updates')).to be_nil
       expect(get_first_value("SELECT artwork_filename FROM tracks WHERE id='#{track_id1}'")).to be_nil
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+
+    it 'creates a rating update if tracking this users changes is enabled' do
+      expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('100')
+
+      post_track_update(track_id1, TrackUpdate.new(rating: 80))
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM rating_updates')).to eq(track_id1)
+      expect(get_first_value('SELECT rating FROM rating_updates')).to eq('80')
+      expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('80')
+      expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+
+      post_track_update(track_id1, TrackUpdate.new(rating: 100))
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      expect(get_first_value('SELECT COUNT(*) FROM rating_updates')).to eq('1')
+      expect(get_first_value('SELECT track_id FROM rating_updates')).to eq(track_id1)
+      expect(get_first_value('SELECT rating FROM rating_updates')).to eq('100')
+      expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('100')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
   end

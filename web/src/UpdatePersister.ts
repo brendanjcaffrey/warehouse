@@ -1,7 +1,6 @@
 import axios from "axios";
-import qs from "qs";
-import { memoize } from "lodash";
-import { OperationResponse } from "./generated/messages";
+import { memoize, parseInt } from "lodash";
+import { OperationResponse, TrackUpdate } from "./generated/messages";
 import library from "./Library";
 import { DownloadWorker } from "./DownloadWorker";
 import {
@@ -20,16 +19,10 @@ type PlayUpdate = {
   params: undefined;
 };
 
-type RatingUpdate = {
-  type: "rating";
+type PendingTrackUpdate = {
+  type: "track";
   trackId: string;
-  params: { rating: number };
-};
-
-type TrackInfoUpdate = {
-  type: "track-info";
-  trackId: string;
-  params: object;
+  params: TrackUpdate;
 };
 
 type ArtworkUpload = {
@@ -38,29 +31,83 @@ type ArtworkUpload = {
   params: { filename: string };
 };
 
-export type Update =
-  | PlayUpdate
-  | RatingUpdate
-  | TrackInfoUpdate
-  | ArtworkUpload;
+export type Update = PlayUpdate | PendingTrackUpdate | ArtworkUpload;
 
-function IsUpdate(value: object): value is Update {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    (value.type === "artwork" || "trackId" in value) &&
-    (value.type === "play" || "params" in value)
+// track update messages are persisted as base64 of the serialized message so
+// field presence survives the round trip through json
+function EncodeTrackUpdate(message: TrackUpdate): string {
+  return btoa(String.fromCharCode(...message.serialize()));
+}
+
+function DecodeTrackUpdate(encoded: string): TrackUpdate {
+  return TrackUpdate.deserialize(
+    Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))
   );
 }
 
-function IsArtworkUpload(value: object): value is ArtworkUpload {
-  return (
-    IsUpdate(value) &&
-    value.type === "artwork" &&
-    value.trackId === undefined &&
-    typeof value.params.filename === "string"
-  );
+type PersistedUpdate = {
+  type?: unknown;
+  trackId?: unknown;
+  params?: unknown;
+};
+
+function ParsePersistedUpdate(value: PersistedUpdate): Update | undefined {
+  const trackId = typeof value.trackId === "string" ? value.trackId : undefined;
+  switch (value.type) {
+    case "play":
+      return trackId === undefined
+        ? undefined
+        : { type: "play", trackId, params: undefined };
+    case "track":
+      try {
+        return trackId === undefined || typeof value.params !== "string"
+          ? undefined
+          : { type: "track", trackId, params: DecodeTrackUpdate(value.params) };
+      } catch {
+        return undefined;
+      }
+    case "artwork": {
+      const filename =
+        value.params instanceof Object && "filename" in value.params
+          ? value.params.filename
+          : undefined;
+      return typeof filename === "string"
+        ? { type: "artwork", trackId: undefined, params: { filename } }
+        : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function IsUpdate(value: object): value is Update {
+  if (typeof value !== "object" || value === null || !("type" in value)) {
+    return false;
+  }
+  switch (value.type) {
+    case "play":
+      return "trackId" in value && typeof value.trackId === "string";
+    case "track":
+      return (
+        "trackId" in value &&
+        typeof value.trackId === "string" &&
+        "params" in value &&
+        value.params instanceof TrackUpdate
+      );
+    case "artwork":
+      return (
+        "params" in value &&
+        value.params instanceof Object &&
+        "filename" in value.params &&
+        typeof value.params.filename === "string"
+      );
+    default:
+      return false;
+  }
+}
+
+function IsArtworkUpload(value: Update): value is ArtworkUpload {
+  return value.type === "artwork";
 }
 
 export class UpdatePersister {
@@ -74,7 +121,11 @@ export class UpdatePersister {
   constructor() {
     this.pendingUpdates = JSON.parse(
       localStorage.getItem(LOCAL_STORAGE_KEY) || "[]"
-    ).filter((value: object) => IsUpdate(value));
+    )
+      .map((value: PersistedUpdate) => ParsePersistedUpdate(value))
+      .filter(
+        (value: Update | undefined): value is Update => value !== undefined
+      );
 
     this.requestedArtworkFiles = new Set(
       this.pendingUpdates
@@ -132,21 +183,8 @@ export class UpdatePersister {
     await this.handleUpdate(update);
   }
 
-  async updateRating(trackId: string, rating: number) {
-    const update: RatingUpdate = {
-      type: "rating",
-      trackId,
-      params: { rating },
-    };
-    await this.handleUpdate(update);
-  }
-
-  async updateTrackInfo(trackId: string, updatedFields: object) {
-    const update: TrackInfoUpdate = {
-      type: "track-info",
-      trackId,
-      params: updatedFields,
-    };
+  async updateTrack(trackId: string, params: TrackUpdate) {
+    const update: PendingTrackUpdate = { type: "track", trackId, params };
     await this.handleUpdate(update);
   }
 
@@ -205,8 +243,25 @@ export class UpdatePersister {
 
     if (IsArtworkUpload(update)) {
       await this.attemptArtworkUpdate(update);
-    } else {
+    } else if (update.type === "track") {
       await this.attemptTrackUpdate(update);
+    } else {
+      await this.attemptPlayUpdate(update);
+    }
+  }
+
+  private async attemptTrackUpdate(update: PendingTrackUpdate) {
+    const requestPath = `/api/track/${update.trackId}`;
+    const { data } = await axios.post(requestPath, update.params.serialize(), {
+      responseType: "arraybuffer",
+      headers: {
+        Authorization: `Bearer ${this.authToken}`,
+        "Content-Type": "application/octet-stream",
+      },
+    });
+    const resp = OperationResponse.deserialize(data);
+    if (!resp.success) {
+      throw new Error(resp.error);
     }
   }
 
@@ -239,19 +294,15 @@ export class UpdatePersister {
     }
   }
 
-  private async attemptTrackUpdate(update: Update) {
+  private async attemptPlayUpdate(update: PlayUpdate) {
     const requestPath = `/api/${update.type}/${update.trackId}`;
-    const { data } = await axios.post(
-      requestPath,
-      qs.stringify(update.params),
-      {
-        responseType: "arraybuffer",
-        headers: {
-          Authorization: `Bearer ${this.authToken}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
-    );
+    const { data } = await axios.post(requestPath, "", {
+      responseType: "arraybuffer",
+      headers: {
+        Authorization: `Bearer ${this.authToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
     const resp = OperationResponse.deserialize(data);
     if (!resp.success) {
       throw new Error(resp.error);
@@ -303,7 +354,13 @@ export class UpdatePersister {
   private persistUpdates() {
     localStorage.setItem(
       LOCAL_STORAGE_KEY,
-      JSON.stringify(this.pendingUpdates)
+      JSON.stringify(
+        this.pendingUpdates.map((update) =>
+          update.type === "track"
+            ? { ...update, params: EncodeTrackUpdate(update.params) }
+            : update
+        )
+      )
     );
   }
 

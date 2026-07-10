@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import { FieldDefinition, EDIT_TRACK_FIELDS } from "./EditTrackFields";
 import { store, trackUpdatedFnAtom } from "./State";
+import { TrackUpdate } from "./generated/messages";
 import library, { Track } from "./Library";
 import { player } from "./Player";
 import { updatePersister } from "./UpdatePersister";
@@ -74,32 +75,29 @@ function EditTrackPanel({
       return;
     }
 
-    const updatedFields: { [key: string]: string } = {};
+    const update = new TrackUpdate();
     for (const field of fields) {
       if (field.stateValue !== field.definition.getDisplayTrackValue(track)) {
         field.definition.setTrackValue(updatedTrack, field.stateValue);
-        const getter =
-          field.definition.getApiTrackValue ??
-          field.definition.getDisplayTrackValue;
-        updatedFields[field.definition.name] = getter(updatedTrack);
+        field.definition.setUpdateValue(update, updatedTrack);
       }
     }
 
     if (uploadedImageFilename) {
       if (updatedTrack.artworkFilename !== uploadedImageFilename) {
         updatedTrack.artworkFilename = uploadedImageFilename;
-        updatedFields.artwork = uploadedImageFilename;
+        update.artwork = uploadedImageFilename;
       }
     } else if (artworkCleared) {
       updatedTrack.artworkFilename = null;
-      updatedFields.artwork = "";
+      update.artwork = "";
     }
 
-    if (Object.keys(updatedFields).length > 0) {
+    if (update.serialize().length > 0) {
       await library().putTrack(updatedTrack);
       store.get(trackUpdatedFnAtom).fn(updatedTrack);
-      player().trackInfoUpdated(updatedTrack);
-      updatePersister().updateTrackInfo(track?.id, updatedFields);
+      player().trackUpdated(updatedTrack);
+      updatePersister().updateTrack(track.id, update);
     }
   };
 

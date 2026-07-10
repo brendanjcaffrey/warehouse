@@ -162,7 +162,7 @@ class Player {
     );
   }
 
-  trackInfoUpdated(track: Track) {
+  trackUpdated(track: Track) {
     if (this.playingTrack?.track.id === track.id) {
       this.playingTrack.track = track;
       store.set(playingTrackAtom, this.playingTrack);

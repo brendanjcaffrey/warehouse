@@ -4,6 +4,7 @@ import { StarRounded, StarBorderRounded } from "@mui/icons-material";
 import { store, trackUpdatedFnAtom } from "./State";
 import library, { Track } from "./Library";
 import { updatePersister } from "./UpdatePersister";
+import { TrackUpdate } from "./generated/messages";
 
 export const NUM_ICONS = 5;
 export const RATING_MULTIPLIER = 20;
@@ -34,7 +35,10 @@ export function RenderRating(track: Track): JSX.Element {
         updatedTrack.rating = newValue * RATING_MULTIPLIER;
         await library().putTrack(updatedTrack);
         store.get(trackUpdatedFnAtom).fn(updatedTrack);
-        updatePersister().updateRating(track.id, updatedTrack.rating);
+        updatePersister().updateTrack(
+          track.id,
+          new TrackUpdate({ rating: updatedTrack.rating })
+        );
       }}
       icon={<StarRounded fontSize="small" />}
       emptyIcon={<StarBorderRounded fontSize="small" />}

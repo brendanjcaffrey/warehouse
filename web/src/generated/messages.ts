@@ -1465,6 +1465,409 @@ export class LibraryResponse extends pb_1.Message {
         return LibraryResponse.deserialize(bytes);
     }
 }
+export class TrackUpdate extends pb_1.Message {
+    #one_of_decls: number[][] = [[1], [2], [3], [4], [5], [6], [7], [8], [9], [10]];
+    constructor(data?: any[] | ({} & (({
+        name?: string;
+    }) | ({
+        artist?: string;
+    }) | ({
+        album?: string;
+    }) | ({
+        albumArtist?: string;
+    }) | ({
+        genre?: string;
+    }) | ({
+        year?: number;
+    }) | ({
+        start?: number;
+    }) | ({
+        finish?: number;
+    }) | ({
+        artwork?: string;
+    }) | ({
+        rating?: number;
+    })))) {
+        super();
+        pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
+        if (!Array.isArray(data) && typeof data == "object") {
+            if ("name" in data && data.name != undefined) {
+                this.name = data.name;
+            }
+            if ("artist" in data && data.artist != undefined) {
+                this.artist = data.artist;
+            }
+            if ("album" in data && data.album != undefined) {
+                this.album = data.album;
+            }
+            if ("albumArtist" in data && data.albumArtist != undefined) {
+                this.albumArtist = data.albumArtist;
+            }
+            if ("genre" in data && data.genre != undefined) {
+                this.genre = data.genre;
+            }
+            if ("year" in data && data.year != undefined) {
+                this.year = data.year;
+            }
+            if ("start" in data && data.start != undefined) {
+                this.start = data.start;
+            }
+            if ("finish" in data && data.finish != undefined) {
+                this.finish = data.finish;
+            }
+            if ("artwork" in data && data.artwork != undefined) {
+                this.artwork = data.artwork;
+            }
+            if ("rating" in data && data.rating != undefined) {
+                this.rating = data.rating;
+            }
+        }
+    }
+    get name() {
+        return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
+    }
+    set name(value: string) {
+        pb_1.Message.setOneofField(this, 1, this.#one_of_decls[0], value);
+    }
+    get has_name() {
+        return pb_1.Message.getField(this, 1) != null;
+    }
+    get artist() {
+        return pb_1.Message.getFieldWithDefault(this, 2, "") as string;
+    }
+    set artist(value: string) {
+        pb_1.Message.setOneofField(this, 2, this.#one_of_decls[1], value);
+    }
+    get has_artist() {
+        return pb_1.Message.getField(this, 2) != null;
+    }
+    get album() {
+        return pb_1.Message.getFieldWithDefault(this, 3, "") as string;
+    }
+    set album(value: string) {
+        pb_1.Message.setOneofField(this, 3, this.#one_of_decls[2], value);
+    }
+    get has_album() {
+        return pb_1.Message.getField(this, 3) != null;
+    }
+    get albumArtist() {
+        return pb_1.Message.getFieldWithDefault(this, 4, "") as string;
+    }
+    set albumArtist(value: string) {
+        pb_1.Message.setOneofField(this, 4, this.#one_of_decls[3], value);
+    }
+    get has_albumArtist() {
+        return pb_1.Message.getField(this, 4) != null;
+    }
+    get genre() {
+        return pb_1.Message.getFieldWithDefault(this, 5, "") as string;
+    }
+    set genre(value: string) {
+        pb_1.Message.setOneofField(this, 5, this.#one_of_decls[4], value);
+    }
+    get has_genre() {
+        return pb_1.Message.getField(this, 5) != null;
+    }
+    get year() {
+        return pb_1.Message.getFieldWithDefault(this, 6, 0) as number;
+    }
+    set year(value: number) {
+        pb_1.Message.setOneofField(this, 6, this.#one_of_decls[5], value);
+    }
+    get has_year() {
+        return pb_1.Message.getField(this, 6) != null;
+    }
+    get start() {
+        return pb_1.Message.getFieldWithDefault(this, 7, 0) as number;
+    }
+    set start(value: number) {
+        pb_1.Message.setOneofField(this, 7, this.#one_of_decls[6], value);
+    }
+    get has_start() {
+        return pb_1.Message.getField(this, 7) != null;
+    }
+    get finish() {
+        return pb_1.Message.getFieldWithDefault(this, 8, 0) as number;
+    }
+    set finish(value: number) {
+        pb_1.Message.setOneofField(this, 8, this.#one_of_decls[7], value);
+    }
+    get has_finish() {
+        return pb_1.Message.getField(this, 8) != null;
+    }
+    get artwork() {
+        return pb_1.Message.getFieldWithDefault(this, 9, "") as string;
+    }
+    set artwork(value: string) {
+        pb_1.Message.setOneofField(this, 9, this.#one_of_decls[8], value);
+    }
+    get has_artwork() {
+        return pb_1.Message.getField(this, 9) != null;
+    }
+    get rating() {
+        return pb_1.Message.getFieldWithDefault(this, 10, 0) as number;
+    }
+    set rating(value: number) {
+        pb_1.Message.setOneofField(this, 10, this.#one_of_decls[9], value);
+    }
+    get has_rating() {
+        return pb_1.Message.getField(this, 10) != null;
+    }
+    get _name() {
+        const cases: {
+            [index: number]: "none" | "name";
+        } = {
+            0: "none",
+            1: "name"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [1])];
+    }
+    get _artist() {
+        const cases: {
+            [index: number]: "none" | "artist";
+        } = {
+            0: "none",
+            2: "artist"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [2])];
+    }
+    get _album() {
+        const cases: {
+            [index: number]: "none" | "album";
+        } = {
+            0: "none",
+            3: "album"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [3])];
+    }
+    get _albumArtist() {
+        const cases: {
+            [index: number]: "none" | "albumArtist";
+        } = {
+            0: "none",
+            4: "albumArtist"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [4])];
+    }
+    get _genre() {
+        const cases: {
+            [index: number]: "none" | "genre";
+        } = {
+            0: "none",
+            5: "genre"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [5])];
+    }
+    get _year() {
+        const cases: {
+            [index: number]: "none" | "year";
+        } = {
+            0: "none",
+            6: "year"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [6])];
+    }
+    get _start() {
+        const cases: {
+            [index: number]: "none" | "start";
+        } = {
+            0: "none",
+            7: "start"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [7])];
+    }
+    get _finish() {
+        const cases: {
+            [index: number]: "none" | "finish";
+        } = {
+            0: "none",
+            8: "finish"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [8])];
+    }
+    get _artwork() {
+        const cases: {
+            [index: number]: "none" | "artwork";
+        } = {
+            0: "none",
+            9: "artwork"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [9])];
+    }
+    get _rating() {
+        const cases: {
+            [index: number]: "none" | "rating";
+        } = {
+            0: "none",
+            10: "rating"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [10])];
+    }
+    static fromObject(data: {
+        name?: string;
+        artist?: string;
+        album?: string;
+        albumArtist?: string;
+        genre?: string;
+        year?: number;
+        start?: number;
+        finish?: number;
+        artwork?: string;
+        rating?: number;
+    }): TrackUpdate {
+        const message = new TrackUpdate({});
+        if (data.name != null) {
+            message.name = data.name;
+        }
+        if (data.artist != null) {
+            message.artist = data.artist;
+        }
+        if (data.album != null) {
+            message.album = data.album;
+        }
+        if (data.albumArtist != null) {
+            message.albumArtist = data.albumArtist;
+        }
+        if (data.genre != null) {
+            message.genre = data.genre;
+        }
+        if (data.year != null) {
+            message.year = data.year;
+        }
+        if (data.start != null) {
+            message.start = data.start;
+        }
+        if (data.finish != null) {
+            message.finish = data.finish;
+        }
+        if (data.artwork != null) {
+            message.artwork = data.artwork;
+        }
+        if (data.rating != null) {
+            message.rating = data.rating;
+        }
+        return message;
+    }
+    toObject() {
+        const data: {
+            name?: string;
+            artist?: string;
+            album?: string;
+            albumArtist?: string;
+            genre?: string;
+            year?: number;
+            start?: number;
+            finish?: number;
+            artwork?: string;
+            rating?: number;
+        } = {};
+        if (this.name != null) {
+            data.name = this.name;
+        }
+        if (this.artist != null) {
+            data.artist = this.artist;
+        }
+        if (this.album != null) {
+            data.album = this.album;
+        }
+        if (this.albumArtist != null) {
+            data.albumArtist = this.albumArtist;
+        }
+        if (this.genre != null) {
+            data.genre = this.genre;
+        }
+        if (this.year != null) {
+            data.year = this.year;
+        }
+        if (this.start != null) {
+            data.start = this.start;
+        }
+        if (this.finish != null) {
+            data.finish = this.finish;
+        }
+        if (this.artwork != null) {
+            data.artwork = this.artwork;
+        }
+        if (this.rating != null) {
+            data.rating = this.rating;
+        }
+        return data;
+    }
+    serialize(): Uint8Array;
+    serialize(w: pb_1.BinaryWriter): void;
+    serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+        const writer = w || new pb_1.BinaryWriter();
+        if (this.has_name)
+            writer.writeString(1, this.name);
+        if (this.has_artist)
+            writer.writeString(2, this.artist);
+        if (this.has_album)
+            writer.writeString(3, this.album);
+        if (this.has_albumArtist)
+            writer.writeString(4, this.albumArtist);
+        if (this.has_genre)
+            writer.writeString(5, this.genre);
+        if (this.has_year)
+            writer.writeInt32(6, this.year);
+        if (this.has_start)
+            writer.writeDouble(7, this.start);
+        if (this.has_finish)
+            writer.writeDouble(8, this.finish);
+        if (this.has_artwork)
+            writer.writeString(9, this.artwork);
+        if (this.has_rating)
+            writer.writeInt32(10, this.rating);
+        if (!w)
+            return writer.getResultBuffer();
+    }
+    static deserialize(bytes: Uint8Array | pb_1.BinaryReader): TrackUpdate {
+        const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new TrackUpdate();
+        while (reader.nextField()) {
+            if (reader.isEndGroup())
+                break;
+            switch (reader.getFieldNumber()) {
+                case 1:
+                    message.name = reader.readString();
+                    break;
+                case 2:
+                    message.artist = reader.readString();
+                    break;
+                case 3:
+                    message.album = reader.readString();
+                    break;
+                case 4:
+                    message.albumArtist = reader.readString();
+                    break;
+                case 5:
+                    message.genre = reader.readString();
+                    break;
+                case 6:
+                    message.year = reader.readInt32();
+                    break;
+                case 7:
+                    message.start = reader.readDouble();
+                    break;
+                case 8:
+                    message.finish = reader.readDouble();
+                    break;
+                case 9:
+                    message.artwork = reader.readString();
+                    break;
+                case 10:
+                    message.rating = reader.readInt32();
+                    break;
+                default: reader.skipField();
+            }
+        }
+        return message;
+    }
+    serializeBinary(): Uint8Array {
+        return this.serialize();
+    }
+    static deserializeBinary(bytes: Uint8Array): TrackUpdate {
+        return TrackUpdate.deserialize(bytes);
+    }
+}
 export class IncrementUpdate extends pb_1.Message {
     #one_of_decls: number[][] = [];
     constructor(data?: any[] | {

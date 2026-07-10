@@ -77,6 +77,21 @@ message LibraryResponse {
   }
 }
 
+// edited track fields; only fields that are present are updated, and a
+// present but empty album/albumArtist/artwork clears the value
+message TrackUpdate {
+  optional string name = 1;
+  optional string artist = 2;
+  optional string album = 3;
+  optional string albumArtist = 4;
+  optional string genre = 5;
+  optional int32 year = 6;
+  optional double start = 7;
+  optional double finish = 8;
+  optional string artwork = 9;
+  optional int32 rating = 10;
+}
+
 message IncrementUpdate {
   string trackId = 1;
 }

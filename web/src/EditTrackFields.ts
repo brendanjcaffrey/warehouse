@@ -1,4 +1,5 @@
 import { Track } from "./Library";
+import { TrackUpdate } from "./generated/messages";
 import {
   FormatPlaybackPositionWithMillis,
   UnformatPlaybackPositionWithMillis,
@@ -15,8 +16,8 @@ export interface FieldDefinition {
   name: string;
   label: string;
   getDisplayTrackValue: (t: Track) => string;
-  getApiTrackValue: ((t: Track) => string) | undefined;
   setTrackValue: (t: Track, v: string) => void;
+  setUpdateValue: (u: TrackUpdate, t: Track) => void;
   validate: (v: string, t: Track) => boolean;
 }
 
@@ -25,48 +26,49 @@ export const EDIT_TRACK_FIELDS: FieldDefinition[] = [
     name: "name",
     label: "Name",
     getDisplayTrackValue: (t: Track) => t.name,
-    getApiTrackValue: undefined,
     setTrackValue: (t: Track, v: string) => (t.name = v),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.name = t.name),
     validate: ValidRequiredField,
   },
   {
     name: "artist",
     label: "Artist",
     getDisplayTrackValue: (t: Track) => t.artistName,
-    getApiTrackValue: undefined,
     setTrackValue: (t: Track, v: string) => (t.artistName = v),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.artist = t.artistName),
     validate: ValidRequiredField,
   },
   {
     name: "album",
     label: "Album",
     getDisplayTrackValue: (t: Track) => t.albumName,
-    getApiTrackValue: undefined,
     setTrackValue: (t: Track, v: string) => (t.albumName = v),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.album = t.albumName),
     validate: ValidOptionalField,
   },
   {
     name: "albumArtist",
     label: "Album Artist",
     getDisplayTrackValue: (t: Track) => t.albumArtistName,
-    getApiTrackValue: undefined,
     setTrackValue: (t: Track, v: string) => (t.albumArtistName = v),
+    setUpdateValue: (u: TrackUpdate, t: Track) =>
+      (u.albumArtist = t.albumArtistName),
     validate: ValidOptionalField,
   },
   {
     name: "genre",
     label: "Genre",
     getDisplayTrackValue: (t: Track) => t.genre,
-    getApiTrackValue: undefined,
     setTrackValue: (t: Track, v: string) => (t.genre = v),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.genre = t.genre),
     validate: ValidRequiredField,
   },
   {
     name: "year",
     label: "Year",
     getDisplayTrackValue: (t: Track) => t.year.toString(),
-    getApiTrackValue: undefined,
     setTrackValue: (t: Track, v: string) => (t.year = parseInt(v)),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.year = t.year),
     validate: ValidYear,
   },
   {
@@ -74,9 +76,9 @@ export const EDIT_TRACK_FIELDS: FieldDefinition[] = [
     label: "Start",
     getDisplayTrackValue: (t: Track) =>
       FormatPlaybackPositionWithMillis(t.start),
-    getApiTrackValue: (t: Track) => t.start.toFixed(3),
     setTrackValue: (t: Track, v: string) =>
       (t.start = UnformatPlaybackPositionWithMillis(v)),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.start = t.start),
     validate: ValidPlaybackPosition,
   },
   {
@@ -84,9 +86,9 @@ export const EDIT_TRACK_FIELDS: FieldDefinition[] = [
     label: "Finish",
     getDisplayTrackValue: (t: Track) =>
       FormatPlaybackPositionWithMillis(t.finish),
-    getApiTrackValue: (t: Track) => t.finish.toFixed(3),
     setTrackValue: (t: Track, v: string) =>
       (t.finish = UnformatPlaybackPositionWithMillis(v)),
+    setUpdateValue: (u: TrackUpdate, t: Track) => (u.finish = t.finish),
     validate: ValidPlaybackPosition,
   },
 ];
