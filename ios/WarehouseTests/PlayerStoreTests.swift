@@ -146,6 +146,23 @@ struct PlayerStoreTests {
         #expect(player.song?.id == "1")
     }
 
+    @Test("playing from history queues the track next & jumps straight to it")
+    @MainActor
+    func playFromHistory() {
+        let player = Self.makePlayer()
+        player.play(Self.songs(3), token: nil, baseURL: nil)
+        player.handleTrackEnd()
+        player.handleTrackEnd()
+        // now on track 3 with 1 & 2 in the history
+        #expect(player.song?.id == "3")
+        #expect(player.queue.history.map(\.song.id) == ["1", "2"])
+
+        player.playFromHistory(player.queue.history[0].song)
+        #expect(player.song?.id == "1")
+        // the interrupted track 3 gets recorded, the skipped ones don't repeat
+        #expect(player.queue.history.map(\.song.id) == ["1", "2", "3"])
+    }
+
     @Test("repeat one stays on the same track & counts every play")
     @MainActor
     func trackEndRepeatOne() {

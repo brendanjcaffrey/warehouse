@@ -65,7 +65,14 @@ struct NowPlayingView: View {
                 if !player.queue.history.isEmpty {
                     Section("History") {
                         ForEach(player.queue.history) { entry in
-                            queueRow(entry.song)
+                            Button {
+                                // let the queue snap back to the new current track
+                                scrolledQueue = false
+                                player.playFromHistory(entry.song)
+                            } label: {
+                                queueRow(entry.song)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -79,6 +86,8 @@ struct NowPlayingView: View {
                     Section("Playing Next") {
                         ForEach(Array(player.queue.upcoming.enumerated()), id: \.element.id) { index, entry in
                             Button {
+                                // let the queue snap back to the new current track
+                                scrolledQueue = false
                                 player.playFromUpcoming(at: index)
                             } label: {
                                 queueRow(entry.song)

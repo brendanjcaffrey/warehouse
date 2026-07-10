@@ -173,6 +173,15 @@ final class PlayerStore {
         startCurrent()
     }
 
+    /// plays a track picked from the history: queues it right after the current
+    /// track like play next, then jumps straight to it
+    func playFromHistory(_ song: Song) {
+        guard queue.current != nil else { return }
+        queue.playNext(song)
+        queue.jump(toUpcomingIndex: 0)
+        startCurrent()
+    }
+
     /// shuffles the upcoming tracks or restores their original order
     func setShuffled(_ shuffled: Bool) {
         queue.setShuffled(shuffled)

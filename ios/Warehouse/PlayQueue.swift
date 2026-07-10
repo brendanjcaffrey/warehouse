@@ -95,14 +95,13 @@ struct PlayQueue: Sendable {
         return true
     }
 
-    /// jumps ahead to an upcoming track; everything in between counts as played
+    /// jumps ahead to an upcoming track; only the current track counts as
+    /// played, the skipped tracks in between are dropped without recording them
     @discardableResult
     mutating func jump(toUpcomingIndex upcomingIndex: Int) -> Bool {
         let target = index + 1 + upcomingIndex
-        guard current != nil, upcomingIndex >= 0, entries.indices.contains(target) else { return false }
-        for entry in entries[index..<target] {
-            recordPlayed(entry)
-        }
+        guard let current, upcomingIndex >= 0, entries.indices.contains(target) else { return false }
+        recordPlayed(current)
         index = target
         return true
     }

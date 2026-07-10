@@ -192,12 +192,12 @@ struct PlayQueueTests {
         #expect(fresh.history.isEmpty)
     }
 
-    @Test("jumping ahead counts the skipped tracks as played")
+    @Test("jumping ahead records only the current track, not the skipped ones")
     func jump() {
         var queue = PlayQueue(songs: Self.songs(5))
         let jumped = queue.jump(toUpcomingIndex: 2)
         #expect(jumped)
-        #expect(queue.history.map(\.song.id) == ["1", "2", "3"])
+        #expect(queue.history.map(\.song.id) == ["1"])
         #expect(queue.current?.song.id == "4")
         #expect(queue.upcoming.map(\.song.id) == ["5"])
 
