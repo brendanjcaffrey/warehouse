@@ -209,6 +209,7 @@ struct NowPlayingView: View {
                     .fontWeight(.semibold)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .accessibilityIdentifier("nowPlayingTitle")
                 if !song.artistName.isEmpty {
                     Text(song.artistName)
                         .font(.body)
@@ -245,6 +246,7 @@ struct NowPlayingView: View {
                 Image(systemName: "backward.fill")
                     .font(.system(size: 28))
             }
+            .accessibilityIdentifier("skipPrevious")
             Spacer()
             Button {
                 player.togglePlayPause()
@@ -252,6 +254,8 @@ struct NowPlayingView: View {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 44))
             }
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .accessibilityIdentifier("playPause")
             Spacer()
             Button {
                 player.skipToNext()
@@ -259,6 +263,7 @@ struct NowPlayingView: View {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 28))
             }
+            .accessibilityIdentifier("skipNext")
             Spacer()
         }
         .buttonStyle(.plain)

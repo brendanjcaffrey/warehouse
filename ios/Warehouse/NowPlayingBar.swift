@@ -46,6 +46,8 @@ struct NowPlayingBar: View {
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
+                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                .accessibilityIdentifier("barPlayPause")
                 Button {
                     player.skipToNext()
                 } label: {
@@ -54,6 +56,7 @@ struct NowPlayingBar: View {
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
+                .accessibilityIdentifier("barNext")
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 12)

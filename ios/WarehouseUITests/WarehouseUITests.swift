@@ -108,10 +108,10 @@ final class WarehouseUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Alpha Song"].firstMatch.isHittable)
     }
 
-    /// plays the songs list & opens the full player, returning the app so the
-    /// queue & track menu tests can share the setup
+    /// plays the songs list so alpha is current & the rest becomes the queue,
+    /// returning once the now playing bar has appeared
     @MainActor
-    private func openNowPlaying() -> XCUIApplication {
+    private func playFixtureSongs() -> XCUIApplication {
         let app = launchWithFixtures()
 
         // library tab → songs, then play alpha song so the rest of the list
@@ -121,12 +121,36 @@ final class WarehouseUITests: XCTestCase {
         XCTAssertTrue(alpha.waitForExistence(timeout: 5))
         alpha.tap()
 
-        // the now playing bar appears once something is playing; tapping it
-        // opens the full screen player
-        let bar = app.buttons["nowPlayingBar"]
-        XCTAssertTrue(bar.waitForExistence(timeout: 5))
-        bar.tap()
+        // the now playing bar appears once something is playing
+        XCTAssertTrue(app.buttons["nowPlayingBar"].waitForExistence(timeout: 5))
         return app
+    }
+
+    /// plays the songs list & opens the full player, returning the app so the
+    /// queue & track menu tests can share the setup
+    @MainActor
+    private func openNowPlaying() -> XCUIApplication {
+        let app = playFixtureSongs()
+        app.buttons["nowPlayingBar"].tap()
+        return app
+    }
+
+    /// waits for an element's accessibility label to become an exact value,
+    /// re-reading it as the underlying view updates
+    @MainActor
+    private func waitFor(_ element: XCUIElement, label: String, timeout: TimeInterval = 5) -> Bool {
+        let predicate = NSPredicate(format: "label == %@", label)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// waits for an element's accessibility label to contain a substring, used
+    /// for the bar whose label merges the track name & artist
+    @MainActor
+    private func waitFor(_ element: XCUIElement, labelContaining text: String, timeout: TimeInterval = 5) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@", text)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
     /// the on screen match for a label, skipping the duplicate the tab view
@@ -221,5 +245,66 @@ final class WarehouseUITests: XCTestCase {
         beta.press(forDuration: 1.5)
         XCTAssertTrue(app.buttons["Play Next"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Go to Song"].exists)
+    }
+
+    @MainActor
+    func testMiniBarTransportControls() throws {
+        let app = playFixtureSongs()
+
+        // the fixtures have no audio to stream, so playback sits paused & the
+        // bar's play button reflects that; tapping it toggles the state
+        let playPause = app.buttons["barPlayPause"]
+        XCTAssertTrue(playPause.waitForExistence(timeout: 5))
+        XCTAssertEqual(playPause.label, "Play")
+        playPause.tap()
+        XCTAssertTrue(waitFor(playPause, label: "Pause"))
+        playPause.tap()
+        XCTAssertTrue(waitFor(playPause, label: "Play"))
+
+        // the forward button advances to beta, the next track in the list
+        let bar = app.buttons["nowPlayingBar"]
+        XCTAssertTrue(waitFor(bar, labelContaining: "Alpha Song"))
+        app.buttons["barNext"].tap()
+        XCTAssertTrue(waitFor(bar, labelContaining: "Beta Song"))
+    }
+
+    @MainActor
+    func testFullPlayerTransportControls() throws {
+        let app = openNowPlaying()
+
+        // the title starts on alpha, the first song in the list
+        let title = app.staticTexts["nowPlayingTitle"]
+        XCTAssertTrue(waitFor(title, label: "Alpha Song"))
+
+        // skip forward to beta, then back to alpha; still near the start so
+        // previous steps back a track instead of restarting the current one
+        app.buttons["skipNext"].tap()
+        XCTAssertTrue(waitFor(title, label: "Beta Song"))
+        app.buttons["skipPrevious"].tap()
+        XCTAssertTrue(waitFor(title, label: "Alpha Song"))
+
+        // play/pause reflects & toggles the paused fixture playback
+        let playPause = app.buttons["playPause"]
+        XCTAssertEqual(playPause.label, "Play")
+        playPause.tap()
+        XCTAssertTrue(waitFor(playPause, label: "Pause"))
+        playPause.tap()
+        XCTAssertTrue(waitFor(playPause, label: "Play"))
+    }
+
+    @MainActor
+    func testTappingUpcomingRowJumpsToTrack() throws {
+        let app = openNowPlaying()
+
+        // switch the player over to the queue list
+        let showQueue = app.buttons["showQueue"]
+        XCTAssertTrue(showQueue.waitForExistence(timeout: 5))
+        showQueue.tap()
+
+        // beta leads the upcoming queue after alpha; tapping the row should
+        // jump straight to it and make it the current track
+        XCTAssertTrue(app.staticTexts["Playing Next"].waitForExistence(timeout: 5))
+        onScreen(app, "Beta Song").tap()
+        XCTAssertTrue(waitFor(app.staticTexts["nowPlayingTitle"], label: "Beta Song"))
     }
 }
