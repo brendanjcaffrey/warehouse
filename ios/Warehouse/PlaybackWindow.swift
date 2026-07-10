@@ -19,10 +19,10 @@ struct PlaybackWindow: Equatable, Sendable {
     }
 
     /// whether the track starts after the beginning of the file
-    var startsLate: Bool { start > 0 }
+    var startsLate: Bool { start > 1.0 }
 
     /// whether the track normally stops before the end of the file
-    var stopsEarly: Bool { end < duration }
+    var stopsEarly: Bool { end < (duration-1.0) }
 
     /// progress through the file as 0-1 for the scrubber
     func fraction(atTime time: TimeInterval) -> Double {
