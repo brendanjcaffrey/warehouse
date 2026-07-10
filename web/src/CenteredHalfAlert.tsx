@@ -1,24 +1,36 @@
 import { ReactNode } from "react";
-import { Alert, AlertColor } from "@mui/material";
+import { Alert } from "react-bootstrap";
+
+type Severity = "error" | "info" | "success" | "warning";
+
+const SEVERITY_TO_VARIANT: Record<Severity, string> = {
+  error: "danger",
+  info: "info",
+  success: "success",
+  warning: "warning",
+};
 
 interface CenteredHalfAlertProps {
-  severity?: AlertColor;
+  severity?: Severity;
   action?: ReactNode;
   children: ReactNode;
 }
 
 function CenteredHalfAlert({
-  severity,
+  severity = "info",
   action,
   children,
 }: CenteredHalfAlertProps) {
   return (
     <Alert
-      severity={severity}
-      action={action}
-      sx={{ width: "50%", marginLeft: "25%", marginTop: "12px" }}
+      variant={SEVERITY_TO_VARIANT[severity]}
+      className="w-50 mx-auto"
+      style={{ marginTop: "12px" }}
     >
-      {children}
+      <div className="d-flex align-items-center justify-content-between">
+        <span>{children}</span>
+        {action}
+      </div>
     </Alert>
   );
 }

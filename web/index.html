@@ -22,8 +22,17 @@
     />
     <link rel="manifest" href="/site.webmanifest" />
     <title>Warehouse</title>
+    <script>
+      // set bootstrap's color mode before first paint so components never flash the wrong theme
+      document.documentElement.setAttribute(
+        "data-bs-theme",
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+      );
+    </script>
     <style>
-      /* this is a bit hacky, but prevents a flash of white on page load in dark mode */
+      /* prevents a flash of white before bootstrap's css loads, keyed off the theme set above */
       html,
       body {
         margin: 0;
@@ -32,12 +41,10 @@
         color: #000;
       }
 
-      @media (prefers-color-scheme: dark) {
-        html,
-        body {
-          background-color: #121212;
-          color: #fff;
-        }
+      html[data-bs-theme="dark"],
+      html[data-bs-theme="dark"] body {
+        background-color: #121212;
+        color: #fff;
       }
     </style>
   </head>

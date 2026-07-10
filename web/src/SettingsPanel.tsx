@@ -1,21 +1,19 @@
 import { useState, useEffect } from "react";
 import { useAtom } from "jotai";
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  FormControlLabel,
-  Switch,
-  IconButton,
+  Form,
+  Modal,
+  OverlayTrigger,
   Popover,
+  Toast,
+  ToastContainer,
   Tooltip,
-  Grid,
-} from "@mui/material";
-import { HelpOutlineRounded } from "@mui/icons-material";
-import { enqueueSnackbar } from "notistack";
+} from "react-bootstrap";
+import { QuestionCircle } from "react-bootstrap-icons";
 import { showArtworkAtom, keepModeAtom, downloadModeAtom } from "./Settings";
 import { formatBytes } from "./Util";
 import library from "./Library";
+import IconButton from "./IconButton";
 import LogOutButton from "./LogOutButton";
 
 interface SettingsPanelProps {
@@ -27,6 +25,40 @@ const CONFIRM_MSG =
   "Are you sure you want to disable Keep Mode? This will delete all downloaded tracks and artwork.";
 const FILE_OVERHEAD_ESTIMATE = 1.5;
 
+const PERSIST_STORAGE_HELP =
+  "Request that the browser allow this app to store data persistently and give " +
+  "it a larger quota. Firefox will prompt you to allow this, but Chrome may not " +
+  "allow this until you use the app more. Once granted, it is not possible to " +
+  "revoke this permission.";
+const KEEP_MODE_HELP =
+  "Keep mode will retain all track and artwork downloads in the browser cache. " +
+  "This can be useful for offline listening, but may consume a lot of storage " +
+  "space. It is only available when storage is persisted and enough space is " +
+  "available for the entire library plus overhead.";
+const DOWNLOAD_MODE_HELP =
+  "Download mode will aggressively download all music and artwork files at page " +
+  "load so you can listen to your entire music library without having an internet " +
+  "connection.";
+
+function HelpPopover({ text }: { text: string }) {
+  return (
+    <OverlayTrigger
+      trigger="click"
+      rootClose
+      placement="bottom-start"
+      overlay={
+        <Popover>
+          <Popover.Body style={{ maxWidth: 300 }}>{text}</Popover.Body>
+        </Popover>
+      }
+    >
+      <IconButton>
+        <QuestionCircle />
+      </IconButton>
+    </OverlayTrigger>
+  );
+}
+
 function SettingsPanel({
   showSettings,
   toggleShowSettings,
@@ -37,18 +69,7 @@ function SettingsPanel({
     useState(false);
   const [keepMode, setKeepMode] = useAtom(keepModeAtom);
   const [downloadMode, setDownloadMode] = useAtom(downloadModeAtom);
-
-  const [persistStorageHelpAnchorEl, setPersistStorageHelpAnchorEl] =
-    useState<HTMLButtonElement | null>(null);
-  const persistStorageHelpOpen = Boolean(persistStorageHelpAnchorEl);
-
-  const [keepModeHelpAnchorEl, setKeepModeHelpAnchorEl] =
-    useState<HTMLButtonElement | null>(null);
-  const keepModeHelpOpen = Boolean(keepModeHelpAnchorEl);
-
-  const [downloadModeHelpAnchorEl, setDownloadModeHelpAnchorEl] =
-    useState<HTMLButtonElement | null>(null);
-  const downloadModeHelpOpen = Boolean(downloadModeHelpAnchorEl);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const handleShowArtworkChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -65,9 +86,7 @@ function SettingsPanel({
       if (granted) {
         setPersisted(true);
       } else {
-        enqueueSnackbar("Persistent storage was not granted.", {
-          variant: "error",
-        });
+        setToastMsg("Persistent storage was not granted.");
       }
     });
   };
@@ -86,32 +105,6 @@ function SettingsPanel({
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     setDownloadMode(event.target.checked);
-  };
-
-  const openPersistStorageHelp = (
-    event: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    setPersistStorageHelpAnchorEl(event.currentTarget);
-  };
-
-  const closePersistStorageHelp = () => {
-    setPersistStorageHelpAnchorEl(null);
-  };
-
-  const openKeepModeHelp = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setKeepModeHelpAnchorEl(event.currentTarget);
-  };
-
-  const closeKeepModeHelp = () => {
-    setKeepModeHelpAnchorEl(null);
-  };
-
-  const openDownloadModeHelp = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setDownloadModeHelpAnchorEl(event.currentTarget);
-  };
-
-  const closeDownloadModeHelp = () => {
-    setDownloadModeHelpAnchorEl(null);
   };
 
   const [usage, setUsage] = useState(0);
@@ -149,137 +142,83 @@ function SettingsPanel({
   }, []);
 
   return (
-    <Dialog open={showSettings} onClose={toggleShowSettings}>
-      <DialogTitle>Settings</DialogTitle>
-      <DialogContent>
-        <Grid container spacing={0} sx={{ width: "300px" }}>
-          <Grid size={10}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={showArtwork}
-                  onChange={handleShowArtworkChange}
-                />
-              }
+    <>
+      <Modal show={showSettings} onHide={toggleShowSettings}>
+        <Modal.Header closeButton>
+          <Modal.Title>Settings</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div style={{ width: "300px" }}>
+            <Form.Check
+              type="switch"
+              id="show-artwork"
               label="Show Artwork"
+              checked={showArtwork}
+              onChange={handleShowArtworkChange}
             />
-          </Grid>
-          <Grid size={10}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={persisted}
-                  disabled={persisted}
-                  onChange={handlePersistStorageChange}
-                />
+            <div className="d-flex align-items-center justify-content-between">
+              <Form.Check
+                type="switch"
+                id="persist-storage"
+                label="Persist Storage"
+                checked={persisted}
+                disabled={persisted}
+                onChange={handlePersistStorageChange}
+              />
+              <HelpPopover text={PERSIST_STORAGE_HELP} />
+            </div>
+            <div className="d-flex align-items-center justify-content-between">
+              <Form.Check
+                type="switch"
+                id="keep-mode"
+                label="Keep Mode"
+                checked={keepMode}
+                onChange={handleKeepModeChange}
+                disabled={!persisted || !haveEnoughStorageForKeepMode}
+              />
+              <HelpPopover text={KEEP_MODE_HELP} />
+            </div>
+            <div className="d-flex align-items-center justify-content-between">
+              <Form.Check
+                type="switch"
+                id="download-mode"
+                label="Download Mode"
+                checked={downloadMode}
+                onChange={handleDownloadModeChange}
+                disabled={
+                  !persisted || !haveEnoughStorageForKeepMode || !keepMode
+                }
+              />
+              <HelpPopover text={DOWNLOAD_MODE_HELP} />
+            </div>
+            <OverlayTrigger
+              overlay={
+                <Tooltip>
+                  {formatBytes(usage)} / {formatBytes(quota)}
+                </Tooltip>
               }
-              label="Persist Storage"
-            />
-          </Grid>
-          <Grid size={2}>
-            <IconButton onClick={openPersistStorageHelp}>
-              <HelpOutlineRounded sx={{ float: "right" }} />
-            </IconButton>
-          </Grid>
-
-          <Grid size={10}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={keepMode}
-                  onChange={handleKeepModeChange}
-                  disabled={!persisted || !haveEnoughStorageForKeepMode}
-                />
-              }
-              label="Keep Mode"
-            />
-          </Grid>
-          <Grid size={2}>
-            <IconButton onClick={openKeepModeHelp}>
-              <HelpOutlineRounded />
-            </IconButton>
-          </Grid>
-          <Grid size={10}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={downloadMode}
-                  onChange={handleDownloadModeChange}
-                  disabled={
-                    !persisted || !haveEnoughStorageForKeepMode || !keepMode
-                  }
-                />
-              }
-              label="Download Mode"
-            />
-          </Grid>
-          <Grid size={2}>
-            <IconButton onClick={openDownloadModeHelp}>
-              <HelpOutlineRounded />
-            </IconButton>
-          </Grid>
-          <Grid size={12}>
-            <Tooltip title={`${formatBytes(usage)} / ${formatBytes(quota)}`}>
-              <p>Storage Used: {percentageUsed}%</p>
-            </Tooltip>
-
+            >
+              <p className="mb-1">Storage Used: {percentageUsed}%</p>
+            </OverlayTrigger>
             <p>
               Library Total Size: {formatBytes(library().getTotalFileSize())}
             </p>
-          </Grid>
-          <Grid size={12}>
             <LogOutButton />
-          </Grid>
-        </Grid>
-        <Popover
-          open={persistStorageHelpOpen}
-          anchorEl={persistStorageHelpAnchorEl}
-          onClose={closePersistStorageHelp}
-          anchorOrigin={{
-            vertical: "bottom",
-            horizontal: "left",
-          }}
-        >
-          <div style={{ padding: "10px", maxWidth: "300px" }}>
-            Request that the browser allow this app to store data persistently
-            and give it a larger quota. Firefox will prompt you to allow this,
-            but Chrome may not allow this until you use the app more. Once
-            granted, it is not possible to revoke this permission.
           </div>
-        </Popover>
-        <Popover
-          open={keepModeHelpOpen}
-          anchorEl={keepModeHelpAnchorEl}
-          onClose={closeKeepModeHelp}
-          anchorOrigin={{
-            vertical: "bottom",
-            horizontal: "left",
-          }}
+        </Modal.Body>
+      </Modal>
+      <ToastContainer position="bottom-end" className="p-3">
+        <Toast
+          show={!!toastMsg}
+          onClose={() => setToastMsg(null)}
+          bg="danger"
+          delay={4000}
+          autohide
         >
-          <div style={{ padding: "10px", maxWidth: "300px" }}>
-            Keep mode will retain all track and artwork downloads in the browser
-            cache. This can be useful for offline listening, but may consume a
-            lot of storage space. It is only available when storage is persisted
-            and enough space is available for the entire library plus overhead.
-          </div>
-        </Popover>
-        <Popover
-          open={downloadModeHelpOpen}
-          anchorEl={downloadModeHelpAnchorEl}
-          onClose={closeDownloadModeHelp}
-          anchorOrigin={{
-            vertical: "bottom",
-            horizontal: "left",
-          }}
-        >
-          <div style={{ padding: "10px", maxWidth: "300px" }}>
-            Download mode will aggressively download all music and artwork files
-            at page load so you can listen to your entire music library without
-            having an internet connection.
-          </div>
-        </Popover>
-      </DialogContent>
-    </Dialog>
+          <Toast.Body className="text-white">{toastMsg}</Toast.Body>
+        </Toast>
+      </ToastContainer>
+    </>
   );
 }
 

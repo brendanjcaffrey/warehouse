@@ -1,5 +1,5 @@
 import axios from "axios";
-import { memoize, parseInt } from "lodash";
+import { memoize } from "lodash";
 import { OperationResponse, TrackUpdate } from "./generated/messages";
 import library from "./Library";
 import { DownloadWorker } from "./DownloadWorker";

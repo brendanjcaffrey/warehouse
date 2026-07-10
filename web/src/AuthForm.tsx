@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  Alert,
-  CircularProgress,
-  Button,
-  TextField,
-  Box,
-  Typography,
-  Container,
-} from "@mui/material";
+import { Alert, Button, Container, Form, Spinner } from "react-bootstrap";
 import axios from "axios";
 import DelayedElement from "./DelayedElement";
 import { AuthResponse } from "./generated/messages";
@@ -50,64 +42,65 @@ function AuthForm({ setAuthToken }: AuthFormProps) {
   };
 
   return (
-    <Container component="main" maxWidth="xs">
-      <Box
-        sx={{
+    <Container style={{ maxWidth: "444px" }}>
+      <div
+        style={{
           paddingTop: "40px",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
         }}
       >
-        <Typography component="h1" variant="h5" color="textPrimary">
-          Warehouse
-        </Typography>
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            label="Username"
-            name="username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            label="Password"
-            name="password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
+        <h5>Warehouse</h5>
+        <Form
+          onSubmit={handleSubmit}
+          noValidate
+          style={{ marginTop: "8px", width: "100%" }}
+        >
+          {error && <Alert variant="danger">{error}</Alert>}
+          <Form.Group className="mb-3" controlId="username">
+            <Form.Label>Username</Form.Label>
+            <Form.Control
+              required
+              name="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </Form.Group>
+          <Form.Group className="mb-3" controlId="password">
+            <Form.Label>Password</Form.Label>
+            <Form.Control
+              required
+              name="password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </Form.Group>
           <Button
             type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 3, mb: 2 }}
+            className="w-100 position-relative"
+            style={{ marginTop: "24px", marginBottom: "16px" }}
             disabled={inflight}
           >
             Sign In
             {inflight && (
               <DelayedElement>
-                <Box
-                  sx={{
+                <span
+                  style={{
                     position: "absolute",
                     top: "50%",
                     left: "50%",
                     transform: "translate(-50%, -50%)",
                   }}
                 >
-                  <CircularProgress size={37} />
-                </Box>
+                  <Spinner animation="border" size="sm" />
+                </span>
               </DelayedElement>
             )}
           </Button>
-        </Box>
-      </Box>
+        </Form>
+      </div>
     </Container>
   );
 }

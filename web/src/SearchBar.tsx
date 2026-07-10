@@ -1,39 +1,49 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
-  useTheme,
-  useMediaQuery,
-  Box,
+  Form,
+  InputGroup,
+  OverlayTrigger,
   Popover,
-  FormControl,
-  Input,
-  InputAdornment,
   Tooltip,
-  IconButton,
-  Badge,
-} from "@mui/material";
-import { SettingsRounded, DownloadRounded } from "@mui/icons-material";
-import { SearchRounded } from "@mui/icons-material";
+} from "react-bootstrap";
+import { Gear, Download, Search } from "react-bootstrap-icons";
 import { anyDownloadErrorsAtom, searchAtom } from "./State";
+import useBreakpoint from "@restart/hooks/useBreakpoint";
+import IconButton from "./IconButton";
 import DownloadsPanel from "./DownloadsPanel";
 import SettingsPanel from "./SettingsPanel";
 
+interface DotBadgeProps {
+  show: boolean;
+  color: string;
+  children: ReactNode;
+}
+
+function DotBadge({ show, color, children }: DotBadgeProps) {
+  return (
+    <span className="position-relative d-inline-flex">
+      {children}
+      {show && (
+        <span
+          className="position-absolute translate-middle rounded-circle"
+          style={{
+            top: 2,
+            left: "100%",
+            width: 8,
+            height: 8,
+            backgroundColor: color,
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
 function SearchBar() {
-  const theme = useTheme();
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down("lg"));
+  const isSmallScreen = useBreakpoint("lg", "down");
 
   const [search, setSearch] = useAtom(searchAtom);
-  const [popoverAnchorEl, setPopoverAnchorEl] = useState<null | HTMLElement>(
-    null
-  );
-  const popoverOpen = Boolean(popoverAnchorEl);
-  const handleOpenPopover = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setPopoverAnchorEl(event.currentTarget);
-  };
-  const handleClosePopover = () => {
-    setPopoverAnchorEl(null);
-  };
-
   const haveSearchTerm = search.length > 0;
   const anyDownloadErrors = useAtomValue(anyDownloadErrorsAtom);
 
@@ -53,66 +63,59 @@ function SearchBar() {
   };
 
   const searchBar = (
-    <FormControl sx={{ p: "12px", width: "25ch" }} variant="standard">
-      <Input
+    <InputGroup style={{ padding: "12px", width: "25ch" }}>
+      <Form.Control
         type="search"
         placeholder="Search"
         value={search}
         onChange={handleChange}
-        endAdornment={
-          <InputAdornment position="end">
-            <SearchRounded sx={{ pb: "5px" }} />
-          </InputAdornment>
-        }
-        sx={{ fontSize: "12px", color: theme.palette.text.primary }}
+        style={{ fontSize: "12px" }}
       />
-    </FormControl>
+      <InputGroup.Text>
+        <Search />
+      </InputGroup.Text>
+    </InputGroup>
   );
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "flex-end",
-        width: "100%",
-        height: "100%",
-      }}
-    >
+    <div className="d-flex align-items-center justify-content-end w-100 h-100">
       {isSmallScreen ? (
-        <>
-          <IconButton onClick={handleOpenPopover}>
-            <Badge color="secondary" variant="dot" invisible={!haveSearchTerm}>
-              <SearchRounded />
-            </Badge>
+        <OverlayTrigger
+          trigger="click"
+          rootClose
+          placement="bottom-start"
+          overlay={
+            <Popover>
+              <Popover.Body style={{ minWidth: 240, padding: 0 }}>
+                {searchBar}
+              </Popover.Body>
+            </Popover>
+          }
+        >
+          <IconButton>
+            <DotBadge show={haveSearchTerm} color="var(--bs-primary)">
+              <Search size={26} />
+            </DotBadge>
           </IconButton>
-          <Popover
-            open={popoverOpen}
-            anchorEl={popoverAnchorEl}
-            onClose={handleClosePopover}
-            anchorOrigin={{
-              vertical: "bottom",
-              horizontal: "left",
-            }}
-          >
-            <Box sx={{ minWidth: 240 }}>{searchBar}</Box>
-          </Popover>
-        </>
+        </OverlayTrigger>
       ) : (
         searchBar
       )}
-      <Tooltip title="Download Status">
-        <IconButton size="large" onClick={toggleShowDownloads} edge="start">
-          <Badge color="error" variant="dot" invisible={!anyDownloadErrors}>
-            <DownloadRounded fontSize="inherit" />
-          </Badge>
+      <OverlayTrigger
+        placement="bottom"
+        overlay={<Tooltip>Download Status</Tooltip>}
+      >
+        <IconButton onClick={toggleShowDownloads}>
+          <DotBadge show={anyDownloadErrors} color="var(--bs-danger)">
+            <Download size={26} />
+          </DotBadge>
         </IconButton>
-      </Tooltip>
-      <Tooltip title="Settings">
-        <IconButton size="large" onClick={toggleShowSettings} edge="start">
-          <SettingsRounded fontSize="inherit" />
+      </OverlayTrigger>
+      <OverlayTrigger placement="bottom" overlay={<Tooltip>Settings</Tooltip>}>
+        <IconButton onClick={toggleShowSettings}>
+          <Gear size={26} />
         </IconButton>
-      </Tooltip>
+      </OverlayTrigger>
       <DownloadsPanel
         showDownloads={showDownloads}
         toggleShowDownloads={toggleShowDownloads}
@@ -121,7 +124,7 @@ function SearchBar() {
         showSettings={showSettings}
         toggleShowSettings={toggleShowSettings}
       />
-    </Box>
+    </div>
   );
 }
 

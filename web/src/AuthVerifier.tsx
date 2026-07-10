@@ -47,14 +47,11 @@ function AuthVerifier({
 
   useEffect(() => {
     checkAuth();
-  });
+  }, [checkAuth]);
 
   if (error) {
     return (
-      <CenteredHalfAlert
-        severity="error"
-        action={<LogOutButton size="small" />}
-      >
+      <CenteredHalfAlert severity="error" action={<LogOutButton size="sm" />}>
         {error}
       </CenteredHalfAlert>
     );

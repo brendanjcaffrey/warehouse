@@ -1,42 +1,27 @@
-import { useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
+import { Form, OverlayTrigger, Popover, Stack, Tooltip } from "react-bootstrap";
 import {
-  useTheme,
-  useMediaQuery,
-  Box,
-  Stack,
-  Slider,
-  IconButton,
-  Tooltip,
-  Popover,
-} from "@mui/material";
-import {
-  SkipNextRounded,
-  SkipPreviousRounded,
-  PauseRounded,
-  PlayArrowRounded,
-  RepeatRounded,
-  ShuffleRounded,
-  TuneRounded,
-} from "@mui/icons-material";
+  SkipEndFill,
+  SkipStartFill,
+  PauseFill,
+  PlayFill,
+  Repeat,
+  Shuffle,
+  Sliders,
+  VolumeDownFill,
+  VolumeUpFill,
+} from "react-bootstrap-icons";
 import { shuffleAtom, repeatAtom, volumeAtom } from "./Settings";
+import useBreakpoint from "@restart/hooks/useBreakpoint";
+import IconButton from "./IconButton";
 import { player } from "./Player";
 import { playingAtom } from "./State";
 
-function Controls() {
-  const theme = useTheme();
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down("lg"));
+const ACTIVE_COLOR = "var(--bs-body-color)";
+const DISABLED_COLOR = "var(--bs-secondary-color)";
 
-  const [popoverAnchorEl, setPopoverAnchorEl] = useState<null | HTMLElement>(
-    null
-  );
-  const popoverOpen = Boolean(popoverAnchorEl);
-  const handleOpenPopover = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setPopoverAnchorEl(event.currentTarget);
-  };
-  const handleClosePopover = () => {
-    setPopoverAnchorEl(null);
-  };
+function Controls() {
+  const isSmallScreen = useBreakpoint("lg", "down");
 
   const [shuffle, setShuffle] = useAtom(shuffleAtom);
   const [repeat, setRepeat] = useAtom(repeatAtom);
@@ -52,112 +37,91 @@ function Controls() {
     setRepeat((prev) => !prev);
   };
 
-  const volumeChange = (_: Event, newValue: number | number[]) => {
-    player().setVolume(newValue as number);
+  const volumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    player().setVolume(Number(e.target.value));
   };
 
   const alwaysShownItems = (
     <>
-      <IconButton size="large" onClick={() => player().prev()}>
-        <SkipPreviousRounded fontSize="inherit" color="action" />
+      <IconButton onClick={() => player().prev()}>
+        <SkipStartFill size={30} color={ACTIVE_COLOR} />
       </IconButton>
-      <IconButton
-        size="large"
-        onClick={() => player().playPause()}
-        edge="start"
-      >
+      <IconButton onClick={() => player().playPause()}>
         {playing ? (
-          <PauseRounded fontSize="inherit" color="action" />
+          <PauseFill size={30} color={ACTIVE_COLOR} />
         ) : (
-          <PlayArrowRounded fontSize="inherit" color="action" />
+          <PlayFill size={30} color={ACTIVE_COLOR} />
         )}
       </IconButton>
-      <IconButton size="large" edge="start" onClick={() => player().next()}>
-        <SkipNextRounded fontSize="inherit" color="action" />
+      <IconButton onClick={() => player().next()}>
+        <SkipEndFill size={30} color={ACTIVE_COLOR} />
       </IconButton>
     </>
   );
 
   const possiblyHiddenItems = (
     <>
-      <Tooltip title="Shuffle Playlist">
-        <IconButton size="large" onClick={toggleShuffle}>
-          <ShuffleRounded
-            color={shuffle ? "action" : "disabled"}
-            fontSize="inherit"
-          />
+      <OverlayTrigger
+        placement="bottom"
+        overlay={<Tooltip>Shuffle Playlist</Tooltip>}
+      >
+        <IconButton onClick={toggleShuffle}>
+          <Shuffle size={26} color={shuffle ? ACTIVE_COLOR : DISABLED_COLOR} />
         </IconButton>
-      </Tooltip>
-      <Tooltip title="Repeat Track">
-        <IconButton size="large" onClick={toggleRepeat} edge="start">
-          <RepeatRounded
-            color={repeat ? "action" : "disabled"}
-            fontSize="inherit"
-          />
+      </OverlayTrigger>
+      <OverlayTrigger
+        placement="bottom"
+        overlay={<Tooltip>Repeat Track</Tooltip>}
+      >
+        <IconButton onClick={toggleRepeat}>
+          <Repeat size={26} color={repeat ? ACTIVE_COLOR : DISABLED_COLOR} />
         </IconButton>
-      </Tooltip>
-      <Slider
+      </OverlayTrigger>
+      <VolumeDownFill
+        size={16}
+        color={DISABLED_COLOR}
+        style={{ marginLeft: "24px", flexShrink: 0 }}
+      />
+      <Form.Range
+        className="volume-range"
         value={volume}
         onChange={volumeChange}
-        sx={() => ({
-          maxWidth: "125px",
-          ml: "12px",
-          color: theme.palette.action.disabled,
-          "& .MuiSlider-track": {
-            border: "none",
-          },
-          "& .MuiSlider-thumb": {
-            width: "16px",
-            height: "16px",
-            backgroundColor: theme.palette.grey[500],
-            "&::before": {
-              boxShadow: "none",
-            },
-            "&:hover, &.Mui-focusVisible, &.Mui-active": {
-              boxShadow: "none",
-            },
-          },
-        })}
+        style={{ maxWidth: "125px", marginLeft: "6px", marginRight: "6px" }}
+      />
+      <VolumeUpFill
+        size={16}
+        color={DISABLED_COLOR}
+        style={{ flexShrink: 0 }}
       />
     </>
   );
 
-  if (isSmallScreen) {
-    return (
-      <div>
-        <Stack direction="row" sx={{ alignItems: "center" }}>
-          {alwaysShownItems}
-          <IconButton onClick={handleOpenPopover}>
-            <TuneRounded />
+  return (
+    <Stack direction="horizontal">
+      {alwaysShownItems}
+      <div style={{ width: "16px", flexShrink: 0 }} />
+      {isSmallScreen ? (
+        <OverlayTrigger
+          trigger="click"
+          rootClose
+          placement="bottom-start"
+          overlay={
+            <Popover>
+              <Popover.Body style={{ minWidth: 240 }}>
+                <Stack direction="horizontal">{possiblyHiddenItems}</Stack>
+              </Popover.Body>
+            </Popover>
+          }
+        >
+          <IconButton>
+            <Sliders size={26} color={ACTIVE_COLOR} />
           </IconButton>
-          <Popover
-            open={popoverOpen}
-            anchorEl={popoverAnchorEl}
-            onClose={handleClosePopover}
-            anchorOrigin={{
-              vertical: "bottom",
-              horizontal: "left",
-            }}
-          >
-            <Box sx={{ minWidth: 240 }}>
-              <Stack direction="row" sx={{ alignItems: "center" }}>
-                {possiblyHiddenItems}
-              </Stack>
-            </Box>
-          </Popover>
-        </Stack>
-      </div>
-    );
-  } else {
-    return (
-      <div>
-        <Stack direction="row" sx={{ alignItems: "center" }}>
-          {alwaysShownItems}
-          {possiblyHiddenItems}
-        </Stack>
-      </div>
-    );
-  }
+        </OverlayTrigger>
+      ) : (
+        possiblyHiddenItems
+      )}
+    </Stack>
+  );
 }
 
 export default Controls;

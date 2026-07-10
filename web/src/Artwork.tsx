@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAtomValue } from "jotai";
-import { Box, CircularProgress, Modal } from "@mui/material";
+import { Spinner } from "react-bootstrap";
 import DelayedElement from "./DelayedElement";
 import { showArtworkAtom } from "./Settings";
 import { playingTrackAtom } from "./State";
@@ -8,7 +8,6 @@ import { files } from "./Files";
 import { useArtworkFileURL } from "./useArtworkFileURL";
 
 const ARTWORK_SIZE = "40px";
-const SPINNER_SIZE = "20px";
 const SPACING = "4px";
 
 function Artwork() {
@@ -25,8 +24,8 @@ function Artwork() {
 
   if (showArtwork && playingTrack && playingTrack.track.artworkFilename) {
     return (
-      <Box
-        sx={{
+      <div
+        style={{
           width: ARTWORK_SIZE,
           height: ARTWORK_SIZE,
           marginTop: SPACING,
@@ -57,16 +56,17 @@ function Artwork() {
                 i.src = artworkFileURL;
               }}
             />
-            <Modal open={showModal} onClose={() => setShowModal(false)}>
-              <Box
-                sx={{
-                  outline: 0,
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  width: `${modalWidth}px`,
-                  height: `${modalHeight}px`,
+            {showModal && (
+              <div
+                onClick={() => setShowModal(false)}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 1050,
+                  backgroundColor: "rgba(0, 0, 0, 0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 <img
@@ -77,8 +77,8 @@ function Artwork() {
                     height: `${modalHeight}px`,
                   }}
                 />
-              </Box>
-            </Modal>
+              </div>
+            )}
           </>
         ) : (
           <DelayedElement>
@@ -90,11 +90,11 @@ function Artwork() {
                 alignItems: "center",
               }}
             >
-              <CircularProgress size={SPINNER_SIZE} />
+              <Spinner animation="border" size="sm" />
             </div>
           </DelayedElement>
         )}
-      </Box>
+      </div>
     );
   } else {
     return null;

@@ -1,9 +1,8 @@
 import { useAtomValue } from "jotai";
-import { Button, ButtonOwnProps } from "@mui/material";
-import { Logout } from "@mui/icons-material";
+import { Button } from "react-bootstrap";
 import { clearAuthFnAtom, clearSettingsFnAtom } from "./State";
 import library from "./Library";
-import downloadsStore from "./Library";
+import downloadsStore from "./DownloadsStore";
 import { updatePersister } from "./UpdatePersister";
 import { DownloadWorker } from "./DownloadWorker";
 import { player } from "./Player";
@@ -11,11 +10,10 @@ import { files } from "./Files";
 import { CLEARED_ALL_TYPE, TypedMessage } from "./WorkerTypes";
 
 interface LogOutButtonProps {
-  size?: ButtonOwnProps["size"];
-  sx?: ButtonOwnProps["sx"];
+  size?: "sm" | "lg";
 }
 
-function LogOutButton({ size, sx }: LogOutButtonProps) {
+function LogOutButton({ size }: LogOutButtonProps) {
   const clearAuthFn = useAtomValue(clearAuthFnAtom);
   const clearSettingsFn = useAtomValue(clearSettingsFnAtom);
 
@@ -33,14 +31,7 @@ function LogOutButton({ size, sx }: LogOutButtonProps) {
   }
 
   return (
-    <Button
-      color="primary"
-      variant="text"
-      size={size}
-      sx={sx}
-      startIcon={<Logout />}
-      onClick={clearAllState}
-    >
+    <Button size={size} variant="danger" onClick={clearAllState}>
       Log Out
     </Button>
   );

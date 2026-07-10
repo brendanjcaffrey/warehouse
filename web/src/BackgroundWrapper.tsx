@@ -1,16 +1,15 @@
 import { ReactNode } from "react";
-import { useTheme } from "@mui/material";
 
 interface BackgroundWrapperProps {
   children: ReactNode;
 }
 
 export function BackgroundWrapper({ children }: BackgroundWrapperProps) {
-  const theme = useTheme();
   return (
     <div
       style={{
-        backgroundColor: theme.palette.background.default,
+        backgroundColor: "var(--bs-body-bg)",
+        color: "var(--bs-body-color)",
         height: "100vh",
         overflow: "hidden",
       }}

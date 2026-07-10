@@ -1,22 +1,50 @@
 body {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: 14px;
 }
 
-.valign-center {
-  display: flex;
-  align-items: center;
+.track-progress {
+  height: 0.75rem;
 }
 
-.has-sort-icon svg.hover-only {
-  display: none;
-  font-weight: normal;
+.track-progress::-webkit-slider-runnable-track {
+  height: 0.25rem;
 }
 
-.has-sort-icon:hover svg.hover-only {
-  display: inline;
+.track-progress::-moz-range-track {
+  height: 0.25rem;
 }
 
-.no-select {
-  user-select: none;
+.track-progress::-webkit-slider-thumb {
+  opacity: 0;
+}
+
+.track-progress::-moz-range-thumb {
+  opacity: 0;
+  border: none;
+}
+
+.volume-range {
+  height: 1rem;
+}
+
+.volume-range::-webkit-slider-runnable-track {
+  height: 0.35rem;
+}
+
+.volume-range::-moz-range-track {
+  height: 0.35rem;
+}
+
+.volume-range::-webkit-slider-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-top: -0.2rem;
+  background-color: var(--bs-secondary-color);
+}
+
+.volume-range::-moz-range-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  background-color: var(--bs-secondary-color);
+  border: none;
 }
