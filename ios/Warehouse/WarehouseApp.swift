@@ -10,9 +10,13 @@ struct WarehouseApp: App {
     @State private var playlists: PlaylistsStore
     @State private var updates: UpdatesStore
     @State private var player: PlayerStore
+    @State private var seeded = false
+
+    private let database: LibraryDatabase
 
     init() {
-        let database = LibraryDatabase()
+        let database = LibraryDatabase(inMemory: UITestSupport.enabled)
+        self.database = database
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         let updatesStore = UpdatesStore()
         _sync = State(initialValue: SyncStore(database: database, fileStore: fileStore))
@@ -24,7 +28,18 @@ struct WarehouseApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                if UITestSupport.enabled && !seeded {
+                    // hold the real ui until the fixture library is loaded
+                    ProgressView()
+                        .task {
+                            await UITestSupport.seed(database)
+                            seeded = true
+                        }
+                } else {
+                    RootView()
+                }
+            }
                 .environment(auth)
                 .environment(sync)
                 .environment(songs)

@@ -10,6 +10,7 @@ struct AlbumView: View {
     let album: Album
 
     @State private var artistDestination: Artist?
+    @State private var songsDestination: Song?
     @State private var playlistDestination: PlaylistDestination?
 
     var body: some View {
@@ -55,6 +56,7 @@ struct AlbumView: View {
                         play: { play(song) },
                         playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                         artistDestination: $artistDestination,
+                        songsDestination: $songsDestination,
                         playlistDestination: $playlistDestination)
                 }
             }
@@ -64,6 +66,9 @@ struct AlbumView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $artistDestination) { artist in
             ArtistView(artist: artist)
+        }
+        .navigationDestination(item: $songsDestination) { song in
+            SongsView(scrollTo: song)
         }
         .navigationDestination(item: $playlistDestination) { destination in
             SongsView(playlist: destination.playlist, scrollTo: destination.song)

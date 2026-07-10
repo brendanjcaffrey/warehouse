@@ -2,7 +2,7 @@ import SwiftUI
 
 extension View {
     /// hold on a track: play it now or next plus shortcuts to its artist,
-    /// album & playlist views
+    /// album, songs & playlist views
     func songContextMenu(
         _ song: Song,
         library: [Song],
@@ -11,11 +11,17 @@ extension View {
         playNext: @escaping () -> Void,
         artistDestination: Binding<Artist?>,
         albumDestination: Binding<Album?>? = nil,
+        songsDestination: Binding<Song?>? = nil,
         playlistDestination: Binding<PlaylistDestination?>? = nil
     ) -> some View {
         contextMenu {
             Button("Play", systemImage: "play", action: play)
             Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward", action: playNext)
+            if let songsDestination {
+                Button("Go to Song", systemImage: "music.note") {
+                    songsDestination.wrappedValue = song
+                }
+            }
             if !song.artistName.isEmpty {
                 Button("Go to Artist", systemImage: "music.microphone") {
                     artistDestination.wrappedValue = ArtistListBuilder.artist(named: song.artistName, in: library)

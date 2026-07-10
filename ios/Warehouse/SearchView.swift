@@ -12,6 +12,7 @@ struct SearchView: View {
     @State private var results = SearchResults()
     @State private var artistDestination: Artist?
     @State private var albumDestination: Album?
+    @State private var songsDestination: Song?
     @State private var playlistDestination: PlaylistDestination?
 
     private struct ResultsInput: Equatable, Sendable {
@@ -44,6 +45,9 @@ struct SearchView: View {
             }
             .navigationDestination(item: $albumDestination) { album in
                 AlbumView(album: album)
+            }
+            .navigationDestination(item: $songsDestination) { song in
+                SongsView(scrollTo: song)
             }
             .navigationDestination(item: $playlistDestination) { destination in
                 SongsView(playlist: destination.playlist, scrollTo: destination.song)
@@ -136,6 +140,7 @@ struct SearchView: View {
                         playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                         artistDestination: $artistDestination,
                         albumDestination: $albumDestination,
+                        songsDestination: $songsDestination,
                         playlistDestination: $playlistDestination)
                 }
             }

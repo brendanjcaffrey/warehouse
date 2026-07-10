@@ -22,6 +22,13 @@ final class AuthStore {
     // the parameter is here for tests
     init(session: URLSession = .shared) {
         client = AuthClient(session: session)
+        if UITestSupport.enabled {
+            // ui tests skip the login flow & run offline against fixtures
+            token = "ui-tests"
+            verified = true
+            serverURL = ""
+            return
+        }
         token = Keychain.readToken()
         serverURL = UserDefaults.standard.string(forKey: Self.serverURLKey) ?? ""
     }

@@ -14,6 +14,7 @@ struct SongsView: View {
     @State private var sections = [SongSection]()
     @State private var artistDestination: Artist?
     @State private var albumDestination: Album?
+    @State private var songsDestination: Song?
     @State private var playlistDestination: PlaylistDestination?
     /// a track to scroll to once the list is built, for show in playlist
     @State private var pendingScroll: Song?
@@ -72,6 +73,9 @@ struct SongsView: View {
         }
         .navigationDestination(item: $albumDestination) { album in
             AlbumView(album: album)
+        }
+        .navigationDestination(item: $songsDestination) { song in
+            SongsView(scrollTo: song)
         }
         .navigationDestination(item: $playlistDestination) { destination in
             SongsView(playlist: destination.playlist, scrollTo: destination.song)
@@ -188,6 +192,8 @@ struct SongsView: View {
                 playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                 artistDestination: $artistDestination,
                 albumDestination: $albumDestination,
+                // no show in songs entry when this is already the songs list
+                songsDestination: playlist == nil ? nil : $songsDestination,
                 playlistDestination: $playlistDestination)
         }
     }
