@@ -4,6 +4,7 @@ final class WarehouseUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
     }
 
     /// launches the app against the fixture library from UITestSupport
