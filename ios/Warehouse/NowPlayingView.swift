@@ -7,29 +7,44 @@ import SwiftUI
 struct NowPlayingView: View {
     @Environment(PlayerStore.self) private var player
     @Environment(SongsStore.self) private var songs
+    @Environment(AuthStore.self) private var auth
+    @Environment(PlaylistsStore.self) private var playlists
+    @Environment(NavigationRouter.self) private var router
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var artistDestination: Artist?
-    @State private var albumDestination: Album?
-    @State private var scrubTime: TimeInterval = 0
-    @State private var isScrubbing = false
     @State private var showingQueue = false
     @State private var scrolledQueue = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let song = player.song {
-                    content(song)
-                }
-            }
-            .navigationDestination(item: $artistDestination) { artist in
-                ArtistView(artist: artist)
-            }
-            .navigationDestination(item: $albumDestination) { album in
-                AlbumView(album: album)
+        Group {
+            if let song = player.song {
+                content(song)
             }
         }
         .presentationDragIndicator(.visible)
+        .task {
+            // the queue context menu needs the playlists for show in playlist
+            await playlists.load()
+        }
+    }
+
+    /// closes the modal & pushes a destination onto the library tab, so the
+    /// go to menus land on top of whatever that tab is already showing
+    private func navigate(to route: LibraryRoute) {
+        router.navigate(to: route)
+        dismiss()
+    }
+
+    /// a binding the shared song menu can set to trigger navigation; it never
+    /// holds a value since the destination lives on the library tab, not here
+    private func routeBinding<Value>(_ makeRoute: @escaping (Value) -> LibraryRoute) -> Binding<Value?> {
+        Binding(
+            get: { nil },
+            set: { newValue in
+                if let newValue {
+                    navigate(to: makeRoute(newValue))
+                }
+            })
     }
 
     private func content(_ song: Song) -> some View {
@@ -44,7 +59,7 @@ struct NowPlayingView: View {
                     .frame(maxWidth: .infinity)
                 trackInfo(song)
             }
-            progress
+            PlayerProgress()
             controls
             volume
             bottomButtons
@@ -65,14 +80,7 @@ struct NowPlayingView: View {
                 if !player.queue.history.isEmpty {
                     Section("History") {
                         ForEach(player.queue.history) { entry in
-                            Button {
-                                // let the queue snap back to the new current track
-                                scrolledQueue = false
-                                player.playFromHistory(entry.song)
-                            } label: {
-                                queueRow(entry.song)
-                            }
-                            .buttonStyle(.plain)
+                            historyRow(entry.song)
                         }
                     }
                 }
@@ -85,14 +93,7 @@ struct NowPlayingView: View {
                 if !player.queue.upcoming.isEmpty {
                     Section("Playing Next") {
                         ForEach(Array(player.queue.upcoming.enumerated()), id: \.element.id) { index, entry in
-                            Button {
-                                // let the queue snap back to the new current track
-                                scrolledQueue = false
-                                player.playFromUpcoming(at: index)
-                            } label: {
-                                queueRow(entry.song)
-                            }
-                            .buttonStyle(.plain)
+                            upcomingRow(entry.song, at: index)
                         }
                         .onMove { offsets, destination in
                             player.moveUpcoming(fromOffsets: offsets, toOffset: destination)
@@ -152,6 +153,54 @@ struct NowPlayingView: View {
         SongRow(song: song, artworkURL: songs.artworkURL(song), downloaded: songs.isDownloaded(song))
     }
 
+    private func historyRow(_ song: Song) -> some View {
+        Button {
+            // let the queue snap back to the new current track
+            scrolledQueue = false
+            player.playFromHistory(song)
+        } label: {
+            queueRow(song)
+        }
+        .buttonStyle(.plain)
+        .songContextMenu(
+            song,
+            library: songs.songs,
+            playlists: playlists.playlists,
+            play: {
+                scrolledQueue = false
+                player.playFromHistory(song)
+            },
+            playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+            artistDestination: routeBinding(LibraryRoute.artist),
+            albumDestination: routeBinding(LibraryRoute.album),
+            songsDestination: routeBinding(LibraryRoute.songs),
+            playlistDestination: routeBinding(LibraryRoute.playlist))
+    }
+
+    private func upcomingRow(_ song: Song, at index: Int) -> some View {
+        Button {
+            // let the queue snap back to the new current track
+            scrolledQueue = false
+            player.playFromUpcoming(at: index)
+        } label: {
+            queueRow(song)
+        }
+        .buttonStyle(.plain)
+        .songContextMenu(
+            song,
+            library: songs.songs,
+            playlists: playlists.playlists,
+            play: {
+                scrolledQueue = false
+                player.playFromUpcoming(at: index)
+            },
+            playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+            artistDestination: routeBinding(LibraryRoute.artist),
+            albumDestination: routeBinding(LibraryRoute.album),
+            songsDestination: routeBinding(LibraryRoute.songs),
+            playlistDestination: routeBinding(LibraryRoute.playlist))
+    }
+
     private func trackInfo(_ song: Song) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -170,98 +219,21 @@ struct NowPlayingView: View {
             }
             Spacer(minLength: 8)
             Menu {
-                if !song.albumName.isEmpty {
-                    Button("Go to Album", systemImage: "square.stack") {
-                        albumDestination = AlbumListBuilder.album(for: song, in: songs.songs)
-                    }
-                }
-                if !song.artistName.isEmpty {
-                    Button("Go to Artist", systemImage: "music.microphone") {
-                        artistDestination = ArtistListBuilder.artist(named: song.artistName, in: songs.songs)
-                    }
-                }
+                songMenuButtons(
+                    song,
+                    library: songs.songs,
+                    playlists: playlists.playlists,
+                    artistDestination: routeBinding(LibraryRoute.artist),
+                    albumDestination: routeBinding(LibraryRoute.album),
+                    songsDestination: routeBinding(LibraryRoute.songs),
+                    playlistDestination: routeBinding(LibraryRoute.playlist))
             } label: {
                 Image(systemName: "ellipsis.circle.fill")
                     .font(.title2)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityIdentifier("nowPlayingMenu")
         }
-    }
-
-    private var progress: some View {
-        VStack(spacing: 8) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    progressBar(width: geometry.size.width)
-                    if player.window.startsLate {
-                        windowMarker(at: player.window.start, width: geometry.size.width)
-                    }
-                    if player.window.stopsEarly {
-                        windowMarker(at: player.window.end, width: geometry.size.width)
-                    }
-                }
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            isScrubbing = true
-                            scrubTime = player.window.time(
-                                atFraction: value.location.x / geometry.size.width)
-                        }
-                        .onEnded { _ in
-                            player.seek(to: scrubTime)
-                            isScrubbing = false
-                        })
-            }
-            .frame(height: 24)
-            HStack {
-                Text(PlaybackTime.label(shownTime))
-                Spacer()
-                Text("-" + PlaybackTime.label(player.window.duration - shownTime))
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-        }
-    }
-
-    /// the full file's bar with the parts outside the track's start/stop
-    /// times dimmed and the played part filled
-    private func progressBar(width: CGFloat) -> some View {
-        let window = player.window
-        return ZStack(alignment: .leading) {
-            Capsule()
-                .fill(Color(.systemGray4))
-            if window.startsLate {
-                Rectangle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: width * window.fraction(atTime: window.start))
-            }
-            if window.stopsEarly {
-                let endFraction = window.fraction(atTime: window.end)
-                Rectangle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: width * (1 - endFraction))
-                    .offset(x: width * endFraction)
-            }
-            Capsule()
-                .fill(Color(.systemGray))
-                .frame(width: width * window.fraction(atTime: shownTime))
-        }
-        .frame(height: 6)
-        .clipShape(Capsule())
-    }
-
-    private func windowMarker(at time: TimeInterval, width: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 1)
-            .fill(Color(.systemGray2))
-            .frame(width: 2, height: 12)
-            .offset(x: width * player.window.fraction(atTime: time) - 1)
-    }
-
-    private var shownTime: TimeInterval {
-        isScrubbing ? scrubTime : player.currentTime
     }
 
     private var controls: some View {
@@ -336,7 +308,93 @@ struct NowPlayingView: View {
                     .foregroundStyle(showingQueue ? Color.accentColor : Color.secondary)
                     .frame(width: 44, height: 44)
             }
+            .accessibilityIdentifier("showQueue")
         }
+    }
+}
+
+/// the progress bar & time labels, split out so the frequent currentTime
+/// updates only re-render this view and don't flash the now playing menu
+private struct PlayerProgress: View {
+    @Environment(PlayerStore.self) private var player
+
+    @State private var scrubTime: TimeInterval = 0
+    @State private var isScrubbing = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    progressBar(width: geometry.size.width)
+                    if player.window.startsLate {
+                        windowMarker(at: player.window.start, width: geometry.size.width)
+                    }
+                    if player.window.stopsEarly {
+                        windowMarker(at: player.window.end, width: geometry.size.width)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            isScrubbing = true
+                            scrubTime = player.window.time(
+                                atFraction: value.location.x / geometry.size.width)
+                        }
+                        .onEnded { _ in
+                            player.seek(to: scrubTime)
+                            isScrubbing = false
+                        })
+            }
+            .frame(height: 24)
+            HStack {
+                Text(PlaybackTime.label(shownTime))
+                Spacer()
+                Text("-" + PlaybackTime.label(player.window.duration - shownTime))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+    }
+
+    /// the full file's bar with the parts outside the track's start/stop
+    /// times dimmed and the played part filled
+    private func progressBar(width: CGFloat) -> some View {
+        let window = player.window
+        return ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Color(.systemGray4))
+            if window.startsLate {
+                Rectangle()
+                    .fill(Color(.systemGray5))
+                    .frame(width: width * window.fraction(atTime: window.start))
+            }
+            if window.stopsEarly {
+                let endFraction = window.fraction(atTime: window.end)
+                Rectangle()
+                    .fill(Color(.systemGray5))
+                    .frame(width: width * (1 - endFraction))
+                    .offset(x: width * endFraction)
+            }
+            Capsule()
+                .fill(Color(.systemGray))
+                .frame(width: width * window.fraction(atTime: shownTime))
+        }
+        .frame(height: 6)
+        .clipShape(Capsule())
+    }
+
+    private func windowMarker(at time: TimeInterval, width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(Color(.systemGray2))
+            .frame(width: 2, height: 12)
+            .offset(x: width * player.window.fraction(atTime: time) - 1)
+    }
+
+    private var shownTime: TimeInterval {
+        isScrubbing ? scrubTime : player.currentTime
     }
 }
 

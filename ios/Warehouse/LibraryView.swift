@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct LibraryView: View {
+    @Environment(NavigationRouter.self) private var router
+
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        return NavigationStack(path: $router.libraryPath) {
             List {
                 NavigationLink {
                     SongsView()
@@ -26,6 +29,19 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
+            // destinations the now playing modal pushes onto this stack
+            .navigationDestination(for: LibraryRoute.self) { route in
+                switch route {
+                case .artist(let artist):
+                    ArtistView(artist: artist)
+                case .album(let album):
+                    AlbumView(album: album)
+                case .songs(let song):
+                    SongsView(scrollTo: song)
+                case .playlist(let destination):
+                    SongsView(playlist: destination.playlist, scrollTo: destination.song)
+                }
+            }
         }
     }
 }

@@ -1,5 +1,58 @@
 import SwiftUI
 
+/// the play, play next & go to buttons shared by the long press track menu
+/// and the now playing view's tap menu; play & play next are left out when
+/// their closures are nil, as on the now playing view where the track is
+/// already playing
+@ViewBuilder
+func songMenuButtons(
+    _ song: Song,
+    library: [Song],
+    playlists: [PlaylistItem] = [],
+    play: (() -> Void)? = nil,
+    playNext: (() -> Void)? = nil,
+    artistDestination: Binding<Artist?>,
+    albumDestination: Binding<Album?>? = nil,
+    songsDestination: Binding<Song?>? = nil,
+    playlistDestination: Binding<PlaylistDestination?>? = nil
+) -> some View {
+    if let play {
+        Button("Play", systemImage: "play", action: play)
+    }
+    if let playNext {
+        Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward", action: playNext)
+    }
+    if let songsDestination {
+        Button("Go to Song", systemImage: "music.note") {
+            songsDestination.wrappedValue = song
+        }
+    }
+    if !song.artistName.isEmpty {
+        Button("Go to Artist", systemImage: "music.microphone") {
+            artistDestination.wrappedValue = ArtistListBuilder.artist(named: song.artistName, in: library)
+        }
+    }
+    if let albumDestination, !song.albumName.isEmpty {
+        Button("Go to Album", systemImage: "square.stack") {
+            albumDestination.wrappedValue = AlbumListBuilder.album(for: song, in: library)
+        }
+    }
+    if let playlistDestination {
+        let containing = PlaylistListBuilder.containing(trackId: song.id, in: playlists)
+        if !containing.isEmpty {
+            Menu {
+                ForEach(containing) { playlist in
+                    Button(playlist.name) {
+                        playlistDestination.wrappedValue = PlaylistDestination(playlist: playlist, song: song)
+                    }
+                }
+            } label: {
+                Label("Show in Playlist", systemImage: "music.note.list")
+            }
+        }
+    }
+}
+
 extension View {
     /// hold on a track: play it now or next plus shortcuts to its artist,
     /// album, songs & playlist views
@@ -15,37 +68,16 @@ extension View {
         playlistDestination: Binding<PlaylistDestination?>? = nil
     ) -> some View {
         contextMenu {
-            Button("Play", systemImage: "play", action: play)
-            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward", action: playNext)
-            if let songsDestination {
-                Button("Go to Song", systemImage: "music.note") {
-                    songsDestination.wrappedValue = song
-                }
-            }
-            if !song.artistName.isEmpty {
-                Button("Go to Artist", systemImage: "music.microphone") {
-                    artistDestination.wrappedValue = ArtistListBuilder.artist(named: song.artistName, in: library)
-                }
-            }
-            if let albumDestination, !song.albumName.isEmpty {
-                Button("Go to Album", systemImage: "square.stack") {
-                    albumDestination.wrappedValue = AlbumListBuilder.album(for: song, in: library)
-                }
-            }
-            if let playlistDestination {
-                let containing = PlaylistListBuilder.containing(trackId: song.id, in: playlists)
-                if !containing.isEmpty {
-                    Menu {
-                        ForEach(containing) { playlist in
-                            Button(playlist.name) {
-                                playlistDestination.wrappedValue = PlaylistDestination(playlist: playlist, song: song)
-                            }
-                        }
-                    } label: {
-                        Label("Show in Playlist", systemImage: "music.note.list")
-                    }
-                }
-            }
+            songMenuButtons(
+                song,
+                library: library,
+                playlists: playlists,
+                play: play,
+                playNext: playNext,
+                artistDestination: artistDestination,
+                albumDestination: albumDestination,
+                songsDestination: songsDestination,
+                playlistDestination: playlistDestination)
         }
     }
 

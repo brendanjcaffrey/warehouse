@@ -10,6 +10,7 @@ struct WarehouseApp: App {
     @State private var playlists: PlaylistsStore
     @State private var updates: UpdatesStore
     @State private var player: PlayerStore
+    @State private var router = NavigationRouter()
     @State private var seeded = false
 
     private let database: LibraryDatabase
@@ -46,6 +47,7 @@ struct WarehouseApp: App {
                 .environment(playlists)
                 .environment(updates)
                 .environment(player)
+                .environment(router)
                 .onChange(of: scenePhase) {
                     // push any stuck updates when coming back to the foreground
                     if scenePhase == .active {

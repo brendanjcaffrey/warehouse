@@ -1,28 +1,23 @@
 import SwiftUI
 
 struct MainTabView: View {
-    private enum TabId {
-        case library
-        case settings
-        case search
-    }
-
     @Environment(AuthStore.self) private var auth
     @Environment(SyncStore.self) private var sync
     @Environment(PlayerStore.self) private var player
+    @Environment(NavigationRouter.self) private var router
 
-    @State private var selectedTab = TabId.library
     @State private var showingNowPlaying = false
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            Tab("Library", systemImage: "music.note.list", value: TabId.library) {
+        @Bindable var router = router
+        return TabView(selection: $router.selectedTab) {
+            Tab("Library", systemImage: "music.note.list", value: AppTab.library) {
                 LibraryView()
             }
-            Tab("Settings", systemImage: "gearshape", value: TabId.settings) {
+            Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
                 SettingsView()
             }
-            Tab(value: TabId.search, role: .search) {
+            Tab(value: AppTab.search, role: .search) {
                 SearchView()
             }
         }

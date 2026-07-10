@@ -108,6 +108,106 @@ final class WarehouseUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Alpha Song"].firstMatch.isHittable)
     }
 
+    /// plays the songs list & opens the full player, returning the app so the
+    /// queue & track menu tests can share the setup
+    @MainActor
+    private func openNowPlaying() -> XCUIApplication {
+        let app = launchWithFixtures()
+
+        // library tab → songs, then play alpha song so the rest of the list
+        // becomes the upcoming queue
+        app.buttons["Songs"].firstMatch.tap()
+        let alpha = app.staticTexts["Alpha Song"]
+        XCTAssertTrue(alpha.waitForExistence(timeout: 5))
+        alpha.tap()
+
+        // the now playing bar appears once something is playing; tapping it
+        // opens the full screen player
+        let bar = app.buttons["nowPlayingBar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        bar.tap()
+        return app
+    }
+
+    /// the on screen match for a label, skipping the duplicate the tab view
+    /// leaves mounted behind the now playing sheet
+    @MainActor
+    private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
+        let matches = app.staticTexts.matching(identifier: label)
+        for index in 0..<matches.count where matches.element(boundBy: index).isHittable {
+            return matches.element(boundBy: index)
+        }
+        return matches.firstMatch
+    }
+
+    @MainActor
+    func testQueueRowHasSongContextMenu() throws {
+        let app = openNowPlaying()
+
+        // switch the player over to the queue list
+        let showQueue = app.buttons["showQueue"]
+        XCTAssertTrue(showQueue.waitForExistence(timeout: 5))
+        showQueue.tap()
+
+        // beta song is first in the upcoming queue after alpha; holding it
+        // should bring up the full track context menu
+        XCTAssertTrue(app.staticTexts["Playing Next"].waitForExistence(timeout: 5))
+        onScreen(app, "Beta Song").press(forDuration: 1.5)
+        XCTAssertTrue(app.buttons["Play Next"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Go to Song"].exists)
+        XCTAssertTrue(app.buttons["Go to Artist"].exists)
+    }
+
+    @MainActor
+    func testNowPlayingMenuNavigatesLibraryTab() throws {
+        let app = openNowPlaying()
+
+        // the three dots menu next to the track name offers the go to entries
+        // but not play or play next, since the track is already playing
+        let menu = app.buttons["nowPlayingMenu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        XCTAssertFalse(app.buttons["Play Next"].exists)
+        XCTAssertTrue(app.buttons["Go to Song"].exists)
+        let goToArtist = app.buttons["Go to Artist"]
+        XCTAssertTrue(goToArtist.waitForExistence(timeout: 5))
+        goToArtist.tap()
+
+        // it dismisses the modal & pushes the artist view onto the library tab
+        XCTAssertTrue(app.navigationBars["Fixture Artist"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["nowPlayingMenu"].exists)
+        // the mini player stays put with the track still playing
+        XCTAssertTrue(app.buttons["nowPlayingBar"].exists)
+    }
+
+    @MainActor
+    func testNowPlayingMenuLeavesSettingsTab() throws {
+        let app = launchWithFixtures()
+
+        // play something from the library so the now playing bar appears
+        app.buttons["Songs"].firstMatch.tap()
+        let alpha = app.staticTexts["Alpha Song"]
+        XCTAssertTrue(alpha.waitForExistence(timeout: 5))
+        alpha.tap()
+
+        // move over to the settings tab, then open the player from the bar
+        app.tabBars.buttons["Settings"].tap()
+        let bar = app.buttons["nowPlayingBar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        bar.tap()
+
+        // go to album drops the modal, leaves settings & lands on the album
+        // view in the library tab
+        let menu = app.buttons["nowPlayingMenu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        let goToAlbum = app.buttons["Go to Album"]
+        XCTAssertTrue(goToAlbum.waitForExistence(timeout: 5))
+        goToAlbum.tap()
+
+        XCTAssertTrue(app.navigationBars["Fixture Album"].waitForExistence(timeout: 5))
+    }
+
     @MainActor
     func testNoShowInSongsInSongsList() throws {
         let app = launchWithFixtures()
