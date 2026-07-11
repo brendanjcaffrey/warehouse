@@ -8,6 +8,10 @@ export const clearAuthFnAtom = atom({ fn: () => {} });
 export const clearSettingsFnAtom = atom({ fn: () => {} });
 export const trackUpdatedFnAtom = atom({ fn: (_: Track) => {} }); // eslint-disable-line @typescript-eslint/no-unused-vars
 
+// the most recently edited track, so the track lists can patch their loaded
+// copy in place when a rating or edit lands without a full reload
+export const updatedTrackAtom = atom<Track | null>(null);
+
 export const searchAtom = atom("");
 export const anyDownloadErrorsAtom = atom(false);
 export const typeToShowInProgressAtom = atom(false);
@@ -39,6 +43,7 @@ export async function resetAllState() {
   store.set(clearSettingsFnAtom, { fn: () => {} });
   store.set(trackUpdatedFnAtom, { fn: (_: Track) => {} }); // eslint-disable-line @typescript-eslint/no-unused-vars
 
+  store.set(updatedTrackAtom, null);
   store.set(searchAtom, "");
   store.set(anyDownloadErrorsAtom, false);
   store.set(revealTargetAtom, null);

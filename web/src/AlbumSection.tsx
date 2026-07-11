@@ -7,7 +7,7 @@ import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
 import { TrackMenuActions } from "./TrackContextMenu";
 import { player } from "./Player";
 import IconButton from "./IconButton";
-import StarRating from "./StarRating";
+import TrackRating from "./TrackRating";
 
 export const ARTWORK_SIZE = 160;
 
@@ -123,7 +123,7 @@ function TrackRows({
         >
           <td>{track.name}</td>
           <td className="text-end text-nowrap" style={{ width: 1 }}>
-            <StarRating rating={track.rating} />
+            <TrackRating track={track} />
           </td>
           <td
             className="text-end text-secondary text-nowrap"

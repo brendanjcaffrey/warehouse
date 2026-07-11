@@ -13,6 +13,7 @@ import {
   SkipForwardFill,
 } from "react-bootstrap-icons";
 import library, { Playlist, Track } from "./Library";
+import EditTrackForm from "./EditTrackForm";
 import { usePlaylists } from "./usePlaylists";
 import {
   GotoTarget,
@@ -74,6 +75,7 @@ function TrackContextMenu({
   currentPlaylistId,
   actions,
   returnToSource,
+  onEdit,
   onClose,
 }: {
   position: Position;
@@ -82,6 +84,7 @@ function TrackContextMenu({
   currentPlaylistId?: string;
   actions?: TrackMenuActions;
   returnToSource?: { label: string; onClick: () => void };
+  onEdit: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -181,7 +184,13 @@ function TrackContextMenu({
         Download
       </MenuItem>
       {canEdit && (
-        <MenuItem icon={<PencilSquare size={15} />} onClick={onClose}>
+        <MenuItem
+          icon={<PencilSquare size={15} />}
+          onClick={() => {
+            onEdit();
+            onClose();
+          }}
+        >
           Edit
         </MenuItem>
       )}
@@ -269,6 +278,7 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
     actions?: TrackMenuActions;
     returnToSource?: { label: string; onClick: () => void };
   } | null>(null);
+  const [editTrack, setEditTrack] = useState<Track | null>(null);
 
   const openMenu = useCallback(
     (
@@ -288,17 +298,25 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
     []
   );
 
-  const element = state ? (
-    <TrackContextMenu
-      position={state.position}
-      track={state.track}
-      playlists={playlists}
-      currentPlaylistId={currentPlaylistId}
-      actions={state.actions}
-      returnToSource={state.returnToSource}
-      onClose={() => setState(null)}
-    />
-  ) : null;
+  const element = (
+    <>
+      {state && (
+        <TrackContextMenu
+          position={state.position}
+          track={state.track}
+          playlists={playlists}
+          currentPlaylistId={currentPlaylistId}
+          actions={state.actions}
+          returnToSource={state.returnToSource}
+          onEdit={() => setEditTrack(state.track)}
+          onClose={() => setState(null)}
+        />
+      )}
+      {editTrack && (
+        <EditTrackForm track={editTrack} onClose={() => setEditTrack(null)} />
+      )}
+    </>
+  );
 
   return { openMenu, element };
 }

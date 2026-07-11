@@ -14,6 +14,7 @@ import {
 import { useTypeToSearch } from "./useTypeToSearch";
 import { useTrackListTracks } from "./useTrackListTracks";
 import { player } from "./Player";
+import TrackRating from "./TrackRating";
 import { TRACK_COLUMNS, TrackColumn } from "./TrackColumns";
 import { cycleSort, sortTracks, SortKey } from "./TrackSort";
 import { filterTracks, searchTracks, FilterState } from "./TrackFilter";
@@ -477,7 +478,11 @@ function TrackList({ playlistId }: TrackListProps) {
                 column.align === "end" ? " text-end" : ""
               }`}
             >
-              {column.render(track)}
+              {column.id === "rating" ? (
+                <TrackRating track={track} />
+              ) : (
+                column.render(track)
+              )}
             </div>
           ))}
         </div>
