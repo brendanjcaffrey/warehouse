@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useRef, useState } from "react";
+import { ReactNode, useMemo } from "react";
 import { useAtom } from "jotai";
 import { NavLink } from "react-router-dom";
 import { Collapse } from "react-bootstrap";
@@ -16,10 +16,11 @@ import {
   sidebarWidthAtom,
   ClampSidebarWidth,
 } from "./Settings";
+import { useResizableWidth } from "./useResizableWidth";
 import { usePlaylists } from "./usePlaylists";
 import { buildPlaylistTree, PlaylistTreeNode } from "./PlaylistTree";
 
-const rowClass = (isActive: boolean) =>
+export const rowClass = (isActive: boolean) =>
   `d-flex align-items-center gap-2 text-decoration-none py-2 text-body ${
     isActive ? "fw-semibold bg-body-secondary" : ""
   }`;
@@ -127,36 +128,10 @@ function Sidebar() {
   const playlists = usePlaylists();
   const tree = useMemo(() => buildPlaylistTree(playlists), [playlists]);
 
-  const [width, setWidth] = useAtom(sidebarWidthAtom);
-  // tracks the width live during a drag so we only persist to the atom on release
-  const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const displayWidth = dragWidth ?? width;
-
-  const startResize = (event: React.MouseEvent) => {
-    event.preventDefault();
-    const left = containerRef.current?.getBoundingClientRect().left ?? 0;
-    let latest = width;
-
-    const onMove = (moveEvent: MouseEvent) => {
-      latest = ClampSidebarWidth(moveEvent.clientX - left);
-      setDragWidth(latest);
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      setWidth(latest);
-      setDragWidth(null);
-    };
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-  };
+  const { displayWidth, containerRef, startResize } = useResizableWidth(
+    sidebarWidthAtom,
+    ClampSidebarWidth
+  );
 
   return (
     <div

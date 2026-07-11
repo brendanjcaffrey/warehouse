@@ -294,6 +294,20 @@ class Library {
     }
   }
 
+  public async getAllTracks(): Promise<Track[] | undefined> {
+    if (!this.validState) {
+      return;
+    }
+    if (!this.db) {
+      this.setError("getting tracks", "database is not initialized");
+      return;
+    }
+
+    const tx = this.db.transaction("tracks", "readonly");
+    const store = tx.objectStore("tracks");
+    return await store.getAll();
+  }
+
   public async getMusicIds(): Promise<Set<string> | undefined> {
     if (!this.validState) {
       return;

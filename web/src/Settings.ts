@@ -8,6 +8,7 @@ const SHOW_ARTWORK_KEY = "showArtwork";
 const VOLUME_KEY = "volume";
 const OPENED_FOLDERS_KEY = "openedFolders";
 const SIDEBAR_WIDTH_KEY = "sidebarWidth";
+const ARTIST_LIST_WIDTH_KEY = "artistListWidth";
 
 export const DEFAULT_VOLUME = 50;
 export const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -112,6 +113,14 @@ export const openedFoldersAtom = atomWithStorage(
 );
 export const sidebarWidthAtom = atomWithStorage(
   SIDEBAR_WIDTH_KEY,
+  DEFAULT_SIDEBAR_WIDTH,
+  sidebarWidthStorage,
+  options
+);
+// the artists list on the left of the artists view reuses the sidebar's width
+// bounds and clamping storage
+export const artistListWidthAtom = atomWithStorage(
+  ARTIST_LIST_WIDTH_KEY,
   DEFAULT_SIDEBAR_WIDTH,
   sidebarWidthStorage,
   options

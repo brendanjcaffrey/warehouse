@@ -54,6 +54,12 @@ function SearchBar() {
     setSearch(e.target.value);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.currentTarget.blur();
+    }
+  };
+
   const toggleShowDownloads = () => {
     setShowDownloads((prev) => !prev);
   };
@@ -69,6 +75,7 @@ function SearchBar() {
         placeholder="Search"
         value={search}
         onChange={handleChange}
+        onKeyDown={handleKeyDown}
         style={{ fontSize: "12px" }}
       />
       <InputGroup.Text>

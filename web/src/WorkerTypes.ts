@@ -25,6 +25,7 @@ export enum FileRequestSource {
   DOWNLOAD_MODE_ARTWORK,
   EDIT_TRACK_ARTWORK,
   UPDATE_PERSISTER,
+  ARTWORK_BROWSE,
 }
 
 export enum DownloadStatus {
