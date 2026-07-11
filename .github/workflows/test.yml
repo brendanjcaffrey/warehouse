@@ -42,18 +42,15 @@ jobs:
     - name: build web
       run: cd web && npm run build
 
-    - name: rspec
-      id: rspec
+    - name: server spec
       timeout-minutes: 1
-      run: bundle exec rake web:spec
+      run: bundle exec rake server:spec
 
     - name: vitest
-      id: vitest
       timeout-minutes: 1
       run: cd web && npx vitest run
 
     - name: checks
-      id: checks
       run: bundle exec rake checks
 
     - name: pushover-actions
