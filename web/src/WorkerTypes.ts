@@ -27,6 +27,7 @@ export enum FileRequestSource {
   UPDATE_PERSISTER,
   ARTWORK_BROWSE,
   ARTWORK_BROWSE_LIST,
+  QUEUE_ARTWORK,
 }
 
 export enum DownloadStatus {

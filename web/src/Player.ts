@@ -9,6 +9,7 @@ import {
   playingAtom,
   waitingForMusicDownloadAtom,
   typeToShowInProgressAtom,
+  queueRevisionAtom,
   resetAllState,
 } from "./State";
 import library, { Track } from "./Library";
@@ -103,6 +104,12 @@ class Player {
         this.prev();
       }
     });
+  }
+
+  // nudges the queue panel to re-read the queue after a mutation; the queue is
+  // mutated in place so this counter is what the panel subscribes to
+  private bumpQueueRevision() {
+    store.set(queueRevisionAtom, store.get(queueRevisionAtom) + 1);
   }
 
   async reset() {
@@ -208,6 +215,9 @@ class Player {
   private async advanceAfterFinish() {
     const mode = store.get(repeatAtom);
     if (mode === "one") {
+      // the track just played through to the end again, so record the replay
+      this.queue.recordCurrentPlayed();
+      this.bumpQueueRevision();
       this.audioRef!.currentTime = this.playingTrack!.track.start;
       this.audioPlay();
       return;
@@ -248,13 +258,16 @@ class Player {
     if (entries.length === 0) {
       return;
     }
+    let newQueue: PlayQueue;
     if (store.get(shuffleAtom)) {
       const lead = entries[startIndex];
       const rest = lodashShuffle(entries.filter((_, i) => i !== startIndex));
-      this.queue = new PlayQueue([lead, ...rest], 0, true, entries);
+      newQueue = new PlayQueue([lead, ...rest], 0, true, entries);
     } else {
-      this.queue = new PlayQueue(entries, startIndex, false);
+      newQueue = new PlayQueue(entries, startIndex, false);
     }
+    newQueue.inheritHistory(this.queue);
+    this.queue = newQueue;
     await this.startQueue();
   }
 
@@ -276,7 +289,9 @@ class Player {
       return;
     }
     store.set(shuffleAtom, true);
-    this.queue = new PlayQueue(lodashShuffle(entries), 0, true, entries);
+    const newQueue = new PlayQueue(lodashShuffle(entries), 0, true, entries);
+    newQueue.inheritHistory(this.queue);
+    this.queue = newQueue;
     await this.startQueue();
   }
 
@@ -290,6 +305,27 @@ class Player {
     } else {
       await this.preloadTracks();
     }
+    this.bumpQueueRevision();
+  }
+
+  // jumps ahead to an upcoming track picked in the queue view
+  async playFromUpcoming(upcomingIndex: number) {
+    if (this.queue.jumpToUpcoming(upcomingIndex)) {
+      await this.updatePlayingTrack();
+      this.play();
+    }
+  }
+
+  // plays a track picked from the history: queues it right after the current
+  // track like play next, then jumps straight to it
+  async playFromHistory(entry: PlaylistTrack) {
+    if (this.queue.isEmpty) {
+      return;
+    }
+    this.queue.playNext({ ...entry });
+    this.queue.jumpToUpcoming(0);
+    await this.updatePlayingTrack();
+    this.play();
   }
 
   private toEntries(playlistId: string, tracks: Track[]): PlaylistTrack[] {
@@ -392,6 +428,7 @@ class Player {
   setShuffled(shuffled: boolean) {
     this.queue.setShuffled(shuffled);
     this.preloadTracks();
+    this.bumpQueueRevision();
   }
 
   async downloadMusic(trackId: string) {
@@ -521,6 +558,7 @@ class Player {
     this.trySetMediaMetadata();
     this.trySetPlayingMusicFile();
     await this.preloadTracks();
+    this.bumpQueueRevision();
   }
 
   private async trySetMediaMetadata() {

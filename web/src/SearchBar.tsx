@@ -11,6 +11,7 @@ import { Gear, Download, Search } from "react-bootstrap-icons";
 import { anyDownloadErrorsAtom, searchAtom } from "./State";
 import useBreakpoint from "@restart/hooks/useBreakpoint";
 import IconButton from "./IconButton";
+import Queue from "./Queue";
 import DownloadsPanel from "./DownloadsPanel";
 import SettingsPanel from "./SettingsPanel";
 
@@ -108,6 +109,7 @@ function SearchBar() {
       ) : (
         searchBar
       )}
+      <Queue />
       <OverlayTrigger
         placement="bottom"
         overlay={<Tooltip>Download Status</Tooltip>}

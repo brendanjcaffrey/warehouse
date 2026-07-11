@@ -38,6 +38,11 @@ export const waitingForMusicDownloadAtom = atom(false);
 export const playingTrackAtom = atom<PlayingTrack | undefined>(undefined);
 export const currentTimeAtom = atom(0);
 
+// bumped by the player whenever the queue changes (advance, play next, shuffle,
+// jumping around history/upcoming) so the queue panel re-reads it. the queue
+// itself is mutated in place, so this counter is what the panel subscribes to
+export const queueRevisionAtom = atom(0);
+
 export async function resetAllState() {
   store.set(clearAuthFnAtom, { fn: () => {} });
   store.set(clearSettingsFnAtom, { fn: () => {} });
@@ -52,4 +57,5 @@ export async function resetAllState() {
   store.set(playingAtom, false);
   store.set(playingTrackAtom, undefined);
   store.set(currentTimeAtom, 0);
+  store.set(queueRevisionAtom, 0);
 }

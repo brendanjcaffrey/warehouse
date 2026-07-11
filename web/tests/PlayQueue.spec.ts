@@ -11,6 +11,10 @@ function makeEntries(ids: string): PlaylistTrack[] {
   }));
 }
 
+function ids(entries: PlaylistTrack[]): string {
+  return entries.map((e) => e.trackId).join("");
+}
+
 function order(queue: PlayQueue): string {
   // walk the whole queue from the current position without wrapping, reading
   // ids off; used to assert the play order
@@ -143,4 +147,77 @@ test("the same track can appear twice and stays distinct", () => {
 test("slice returns the upcoming tracks starting at the current one", () => {
   const queue = new PlayQueue(makeEntries("abcde"), 3);
   expect(queue.slice(3).map((e) => e.trackId)).toEqual(["d", "e", "a"]);
+});
+
+test("upcoming lists every track after the current one in play order", () => {
+  const queue = new PlayQueue(makeEntries("abcde"), 1);
+  expect(ids(queue.upcoming)).toBe("cde");
+  queue.advance();
+  expect(ids(queue.upcoming)).toBe("de");
+});
+
+test("upcoming is empty on the last track", () => {
+  const queue = new PlayQueue(makeEntries("abc"), 2);
+  expect(queue.upcoming).toEqual([]);
+});
+
+test("advancing records the tracks played in order", () => {
+  const queue = new PlayQueue(makeEntries("abcd"), 0);
+  expect(queue.history).toEqual([]);
+  queue.advance();
+  queue.advance();
+  expect(ids(queue.history)).toBe("ab");
+  expect(queue.current?.trackId).toBe("c");
+});
+
+test("going back records the current track as played", () => {
+  const queue = new PlayQueue(makeEntries("abc"), 2);
+  queue.goBack();
+  expect(ids(queue.history)).toBe("c");
+  expect(queue.current?.trackId).toBe("b");
+});
+
+test("history entries are copies, so a track played twice stays distinct", () => {
+  const queue = new PlayQueue(makeEntries("ab"), 0);
+  queue.advance();
+  const [recorded] = queue.history;
+  // the recorded entry is not the same object as any live queue entry
+  expect(queue.upcoming).not.toContain(recorded);
+  expect(recorded.trackId).toBe("a");
+});
+
+test("jump to upcoming records only the current track and drops the skipped ones", () => {
+  const queue = new PlayQueue(makeEntries("abcde"), 0);
+  expect(queue.jumpToUpcoming(2)).toBe(true);
+  expect(queue.current?.trackId).toBe("d");
+  // a was played, b and c were skipped without being recorded
+  expect(ids(queue.history)).toBe("a");
+  expect(ids(queue.upcoming)).toBe("e");
+});
+
+test("jump to upcoming rejects an out of range index", () => {
+  const queue = new PlayQueue(makeEntries("abc"), 0);
+  expect(queue.jumpToUpcoming(5)).toBe(false);
+  expect(queue.jumpToUpcoming(-1)).toBe(false);
+  expect(queue.current?.trackId).toBe("a");
+  expect(queue.history).toEqual([]);
+});
+
+test("recording the current play again keeps the position, for repeat one", () => {
+  const queue = new PlayQueue(makeEntries("ab"), 0);
+  expect(queue.recordCurrentPlayed()).toBe(true);
+  expect(queue.recordCurrentPlayed()).toBe(true);
+  expect(ids(queue.history)).toBe("aa");
+  expect(queue.current?.trackId).toBe("a");
+});
+
+test("inheriting history carries the old plays plus the interrupted track", () => {
+  const first = new PlayQueue(makeEntries("abc"), 0);
+  first.advance(); // a played, now on b
+  const second = new PlayQueue(makeEntries("xyz"), 0);
+  second.inheritHistory(first);
+  // a was recorded, b was playing when it was replaced, then x's own history
+  expect(ids(second.history)).toBe("ab");
+  second.advance(); // x played
+  expect(ids(second.history)).toBe("abx");
 });
