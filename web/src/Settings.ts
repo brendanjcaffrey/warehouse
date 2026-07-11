@@ -9,6 +9,7 @@ const VOLUME_KEY = "volume";
 const OPENED_FOLDERS_KEY = "openedFolders";
 const SIDEBAR_WIDTH_KEY = "sidebarWidth";
 const ARTIST_LIST_WIDTH_KEY = "artistListWidth";
+const ALBUM_LIST_WIDTH_KEY = "albumListWidth";
 
 export const DEFAULT_VOLUME = 50;
 export const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -121,6 +122,13 @@ export const sidebarWidthAtom = atomWithStorage(
 // bounds and clamping storage
 export const artistListWidthAtom = atomWithStorage(
   ARTIST_LIST_WIDTH_KEY,
+  DEFAULT_SIDEBAR_WIDTH,
+  sidebarWidthStorage,
+  options
+);
+// the album list on the left of the albums view reuses the same width bounds
+export const albumListWidthAtom = atomWithStorage(
+  ALBUM_LIST_WIDTH_KEY,
   DEFAULT_SIDEBAR_WIDTH,
   sidebarWidthStorage,
   options

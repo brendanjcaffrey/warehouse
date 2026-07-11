@@ -5,9 +5,7 @@ import SearchBar from "./SearchBar";
 import Sidebar from "./Sidebar";
 import SongsView from "./SongsView";
 import ArtistsView from "./ArtistsView";
-import ArtistView from "./ArtistView";
 import AlbumsView from "./AlbumsView";
-import AlbumView from "./AlbumView";
 import PlaylistView from "./PlaylistView";
 
 function Layout() {
@@ -37,9 +35,7 @@ function Layout() {
             <Route path="/" element={<Navigate to="/songs" replace />} />
             <Route path="/songs" element={<SongsView />} />
             <Route path="/artists" element={<ArtistsView />} />
-            <Route path="/artists/:id" element={<ArtistView />} />
             <Route path="/albums" element={<AlbumsView />} />
-            <Route path="/albums/:id" element={<AlbumView />} />
             <Route path="/playlists/:id" element={<PlaylistView />} />
             <Route path="*" element={<Navigate to="/songs" replace />} />
           </Routes>

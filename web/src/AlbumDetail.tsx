@@ -1,19 +1,20 @@
 import { useMemo, useRef } from "react";
 import { Track } from "./Library";
 import { buildAlbums } from "./Albums";
-import { AlbumSection, PlayShuffleButtons } from "./AlbumSection";
+import { AlbumSection } from "./AlbumSection";
 import { useTrackListNav } from "./useTrackListNav";
 import { useAlbumArtworkRequests } from "./useAlbumArtworkRequests";
 import { FileRequestSource } from "./WorkerTypes";
 
-interface ArtistDetailProps {
+interface AlbumDetailProps {
   name: string;
   tracks: Track[];
 }
 
-function ArtistDetail({ name, tracks }: ArtistDetailProps) {
+function AlbumDetail({ name, tracks }: AlbumDetailProps) {
+  // the tracks are all one album, so this yields a single section reusing the
+  // same layout as the artist view
   const albums = useMemo(() => buildAlbums(tracks), [tracks]);
-  // one ordered list across every album so the arrow keys walk the whole artist
   const flatTracks = useMemo(
     () => albums.flatMap((album) => album.tracks),
     [albums]
@@ -33,10 +34,6 @@ function ArtistDetail({ name, tracks }: ArtistDetailProps) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <div className="d-flex align-items-center gap-3 mb-4">
-        <h2 className="mb-0 text-truncate">{name}</h2>
-        <PlayShuffleButtons size={22} />
-      </div>
       {albums.map((album) => (
         <AlbumSection
           key={album.name || "unknown"}
@@ -49,4 +46,4 @@ function ArtistDetail({ name, tracks }: ArtistDetailProps) {
   );
 }
 
-export default ArtistDetail;
+export default AlbumDetail;
