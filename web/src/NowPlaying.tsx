@@ -98,7 +98,7 @@ function NowPlaying() {
 
   return (
     <Stack direction="horizontal" className="w-100">
-      <div>
+      <div style={{ alignSelf: "flex-start" }}>
         <Artwork />
       </div>
       <div style={{ width: "100%", color: "var(--bs-body-color)" }}>

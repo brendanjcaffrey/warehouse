@@ -7,8 +7,12 @@ import { playingTrackAtom } from "./State";
 import { files } from "./Files";
 import { useArtworkFileURL } from "./useArtworkFileURL";
 
-const ARTWORK_SIZE = "40px";
-const SPACING = "4px";
+// roughly spans the title + subtitle so it lines up with the track title top
+// and sits near the progress bar bottom
+const ARTWORK_SIZE = "39px";
+// matches the title row's marginTop so the artwork top lines up with the title
+const TOP_OFFSET = "4px";
+const RIGHT_SPACING = "4px";
 
 function Artwork() {
   const showArtwork = useAtomValue(showArtworkAtom);
@@ -28,8 +32,8 @@ function Artwork() {
         style={{
           width: ARTWORK_SIZE,
           height: ARTWORK_SIZE,
-          marginTop: SPACING,
-          paddingRight: SPACING,
+          marginTop: TOP_OFFSET,
+          marginRight: RIGHT_SPACING,
           cursor: artworkFileURL ? "pointer" : "auto",
         }}
       >
@@ -40,6 +44,7 @@ function Artwork() {
               alt="artwork"
               width={ARTWORK_SIZE}
               height={ARTWORK_SIZE}
+              style={{ objectFit: "cover" }}
               onClick={() => {
                 const i = new Image();
                 i.onload = () => {
