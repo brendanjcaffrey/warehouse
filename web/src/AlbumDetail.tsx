@@ -4,6 +4,7 @@ import { buildAlbums } from "./Albums";
 import { AlbumSection } from "./AlbumSection";
 import { useTrackListNav } from "./useTrackListNav";
 import { useAlbumArtworkRequests } from "./useAlbumArtworkRequests";
+import { useTrackContextMenu } from "./TrackContextMenu";
 import { FileRequestSource } from "./WorkerTypes";
 
 interface AlbumDetailProps {
@@ -22,6 +23,7 @@ function AlbumDetail({ name, tracks }: AlbumDetailProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { selectedTrackId, setSelectedTrackId, handleKeyDown } =
     useTrackListNav(flatTracks, containerRef);
+  const trackMenu = useTrackContextMenu();
 
   useAlbumArtworkRequests(albums, FileRequestSource.ARTWORK_BROWSE);
 
@@ -40,8 +42,10 @@ function AlbumDetail({ name, tracks }: AlbumDetailProps) {
           album={album}
           selectedTrackId={selectedTrackId}
           onSelect={setSelectedTrackId}
+          onTrackContextMenu={trackMenu.openMenu}
         />
       ))}
+      {trackMenu.element}
     </div>
   );
 }

@@ -56,12 +56,14 @@ export function AlbumArtwork({
 export interface TrackListProps {
   selectedTrackId: string | null;
   onSelect: (id: string) => void;
+  onTrackContextMenu?: (event: React.MouseEvent, track: Track) => void;
 }
 
 function TrackRows({
   tracks,
   selectedTrackId,
   onSelect,
+  onTrackContextMenu,
 }: { tracks: Track[] } & TrackListProps) {
   return (
     <>
@@ -72,6 +74,10 @@ function TrackRows({
           role="option"
           aria-selected={track.id === selectedTrackId}
           onClick={() => onSelect(track.id)}
+          onContextMenu={(event) => {
+            onSelect(track.id);
+            onTrackContextMenu?.(event, track);
+          }}
           className={track.id === selectedTrackId ? "table-active" : ""}
           style={{ cursor: "pointer" }}
         >
@@ -95,6 +101,7 @@ export function AlbumSection({
   album,
   selectedTrackId,
   onSelect,
+  onTrackContextMenu,
 }: { album: Album } & TrackListProps) {
   const subheaderParts = [
     album.genre,
@@ -141,6 +148,7 @@ export function AlbumSection({
                     tracks={disc.tracks}
                     selectedTrackId={selectedTrackId}
                     onSelect={onSelect}
+                    onTrackContextMenu={onTrackContextMenu}
                   />
                 </Fragment>
               ))
@@ -149,6 +157,7 @@ export function AlbumSection({
                 tracks={album.tracks}
                 selectedTrackId={selectedTrackId}
                 onSelect={onSelect}
+                onTrackContextMenu={onTrackContextMenu}
               />
             )}
           </tbody>

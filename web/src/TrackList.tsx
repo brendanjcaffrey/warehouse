@@ -18,6 +18,7 @@ import { cycleSort, sortTracks, SortKey } from "./TrackSort";
 import { filterTracks, searchTracks, FilterState } from "./TrackFilter";
 import { searchAtom } from "./State";
 import { trackLayoutAtom } from "./Settings";
+import { useTrackContextMenu } from "./TrackContextMenu";
 import {
   buildTemplate,
   COLUMN_MIN_WIDTH,
@@ -232,6 +233,8 @@ function TrackList({ playlistId }: TrackListProps) {
   const [dragColumnId, setDragColumnId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const trackMenu = useTrackContextMenu(playlistId);
+  const openTrackMenu = trackMenu.openMenu;
   const listRef = useRef<FixedSizeList>(null);
 
   // fold the saved layout onto the current column set, then take the columns we
@@ -421,6 +424,10 @@ function TrackList({ playlistId }: TrackListProps) {
           role="row"
           aria-selected={isSelected}
           onClick={() => selectIndex(index)}
+          onContextMenu={(event) => {
+            selectIndex(index);
+            openTrackMenu(event, track);
+          }}
           className={isSelected ? "table-active" : ""}
           style={{
             ...style,
@@ -444,7 +451,7 @@ function TrackList({ playlistId }: TrackListProps) {
         </div>
       );
     },
-    [columns, rows, selectedId, selectIndex, template]
+    [columns, rows, selectedId, selectIndex, template, openTrackMenu]
   );
 
   return (
@@ -594,6 +601,7 @@ function TrackList({ playlistId }: TrackListProps) {
           onClose={() => setMenu(null)}
         />
       )}
+      {trackMenu.element}
     </div>
   );
 }
