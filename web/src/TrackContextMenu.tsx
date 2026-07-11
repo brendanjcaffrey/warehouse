@@ -13,6 +13,7 @@ import {
   SkipForwardFill,
 } from "react-bootstrap-icons";
 import library, { Playlist, Track } from "./Library";
+import { player } from "./Player";
 import EditTrackForm from "./EditTrackForm";
 import { usePlaylists } from "./usePlaylists";
 import {
@@ -180,7 +181,13 @@ function TrackContextMenu({
           </MenuItem>
         </>
       )}
-      <MenuItem icon={<Download size={15} />} onClick={onClose}>
+      <MenuItem
+        icon={<Download size={15} />}
+        onClick={() => {
+          player().downloadMusic(track.id);
+          onClose();
+        }}
+      >
         Download
       </MenuItem>
       {canEdit && (

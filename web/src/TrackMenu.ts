@@ -18,6 +18,16 @@ export interface GotoTarget {
   selectionId?: string;
 }
 
+// the filename to save a track's music file under when downloading it, as
+// "artist - name" with the source file's extension preserved
+export function downloadFilename(
+  track: Pick<Track, "artistName" | "name" | "musicFilename">
+): string {
+  const parts = track.musicFilename.split(".");
+  const extension = parts.length > 1 ? `.${parts[parts.length - 1]}` : "";
+  return `${track.artistName} - ${track.name}${extension}`;
+}
+
 // the "go to song / artist / album" entries a track offers from a given view.
 // the entry for the view we're already in is dropped, and artist/album are
 // dropped when the track has no artist/album to land on

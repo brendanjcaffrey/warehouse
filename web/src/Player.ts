@@ -29,6 +29,7 @@ import { TrackFileSet } from "./TrackFileSet";
 import { PlayingTrack, PlaylistTrack } from "./Types";
 import { PlayQueue } from "./PlayQueue";
 import { trackFinish, shouldSkipAtFinish } from "./PlaybackFinish";
+import { downloadFilename } from "./TrackMenu";
 import { IMAGE_EXTENSION_TO_MIME } from "./MimeTypes";
 
 const TRACKS_TO_PRELOAD = 3;
@@ -410,7 +411,7 @@ class Player {
     if (url) {
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${track.artistName} - ${track.name}.${track.musicFilename.split(".")[-1]}`;
+      a.download = downloadFilename(track);
       a.click();
       this.pendingDownloads.delete(ids);
       setTimeout(() => {

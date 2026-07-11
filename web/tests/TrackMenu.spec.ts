@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { trackGotoTargets, trackPlaylistOptions } from "../src/TrackMenu";
+import {
+  downloadFilename,
+  trackGotoTargets,
+  trackPlaylistOptions,
+} from "../src/TrackMenu";
 import { Playlist } from "../src/Library";
 
 function makePlaylist(
@@ -92,4 +96,34 @@ test("drops artist and album entries when the track has neither", () => {
   expect(trackGotoTargets(bare, "/playlists/abc").map((t) => t.kind)).toEqual([
     "song",
   ]);
+});
+
+test("builds a download filename as 'artist - name' with the source extension", () => {
+  expect(
+    downloadFilename({
+      artistName: "Radiohead",
+      name: "Idioteque",
+      musicFilename: "abc123.m4a",
+    })
+  ).toBe("Radiohead - Idioteque.m4a");
+});
+
+test("keeps only the final extension when the filename has several dots", () => {
+  expect(
+    downloadFilename({
+      artistName: "Boards of Canada",
+      name: "Roygbiv",
+      musicFilename: "track.2.flac",
+    })
+  ).toBe("Boards of Canada - Roygbiv.flac");
+});
+
+test("omits the extension when the source filename has none", () => {
+  expect(
+    downloadFilename({
+      artistName: "Aphex Twin",
+      name: "Xtal",
+      musicFilename: "noextension",
+    })
+  ).toBe("Aphex Twin - Xtal");
 });
