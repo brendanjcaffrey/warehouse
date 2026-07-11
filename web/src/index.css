@@ -19,6 +19,35 @@ body {
   background-color: var(--bs-primary);
 }
 
+.track-column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+  z-index: 1;
+}
+
+.track-column-resize-handle:hover,
+.track-column-resize-handle:active {
+  background-color: var(--bs-primary);
+}
+
+.track-column-dragging {
+  opacity: 0.4;
+}
+
+.track-column-drop-before {
+  box-shadow: inset 2px 0 0 var(--bs-primary);
+}
+
+.track-column-drop-after {
+  box-shadow: inset -2px 0 0 var(--bs-primary);
+}
+
 .track-progress {
   height: 0.75rem;
 }

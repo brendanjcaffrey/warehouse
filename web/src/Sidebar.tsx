@@ -3,7 +3,7 @@ import { useAtom } from "jotai";
 import { NavLink } from "react-router-dom";
 import { Collapse } from "react-bootstrap";
 import {
-  MusicNoteBeamed,
+  MusicNote,
   PersonFill,
   Disc,
   FolderFill,
@@ -146,7 +146,7 @@ function Sidebar() {
         <div className="py-2">
           <SidebarLink
             to="/songs"
-            icon={<MusicNoteBeamed size={16} />}
+            icon={<MusicNote size={16} />}
             label="Songs"
           />
           <SidebarLink

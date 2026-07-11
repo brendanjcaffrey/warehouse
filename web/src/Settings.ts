@@ -1,4 +1,9 @@
 import { atomWithStorage } from "jotai/utils";
+import {
+  ColumnLayout,
+  defaultTrackLayout,
+  normalizeTrackLayout,
+} from "./TrackLayout";
 
 const KEEP_MODE_KEY = "keepMode";
 const DOWNLOAD_MODE_KEY = "downloadMode";
@@ -10,6 +15,7 @@ const OPENED_FOLDERS_KEY = "openedFolders";
 const SIDEBAR_WIDTH_KEY = "sidebarWidth";
 const ARTIST_LIST_WIDTH_KEY = "artistListWidth";
 const ALBUM_LIST_WIDTH_KEY = "albumListWidth";
+const TRACK_LAYOUT_KEY = "trackLayout";
 
 export const DEFAULT_VOLUME = 50;
 export const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -64,6 +70,28 @@ const sidebarWidthStorage = {
   },
   setItem(key: string, value: number): void {
     localStorage.setItem(key, value.toString());
+  },
+  removeItem(key: string): void {
+    localStorage.removeItem(key);
+  },
+};
+
+// the songs and playlist grids share one column arrangement (order, widths,
+// hidden), reconciled against the current column set on the way out of storage
+const trackLayoutStorage = {
+  getItem(key: string, initialValue: ColumnLayout): ColumnLayout {
+    const value = localStorage.getItem(key);
+    if (value === null) {
+      return initialValue;
+    }
+    try {
+      return normalizeTrackLayout(JSON.parse(value));
+    } catch {
+      return initialValue;
+    }
+  },
+  setItem(key: string, value: ColumnLayout): void {
+    localStorage.setItem(key, JSON.stringify(value));
   },
   removeItem(key: string): void {
     localStorage.removeItem(key);
@@ -131,5 +159,11 @@ export const albumListWidthAtom = atomWithStorage(
   ALBUM_LIST_WIDTH_KEY,
   DEFAULT_SIDEBAR_WIDTH,
   sidebarWidthStorage,
+  options
+);
+export const trackLayoutAtom = atomWithStorage(
+  TRACK_LAYOUT_KEY,
+  defaultTrackLayout(),
+  trackLayoutStorage,
   options
 );
