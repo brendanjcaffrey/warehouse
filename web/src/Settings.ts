@@ -55,6 +55,44 @@ export const stringSetStorage = {
   },
 };
 
+// what happens at the end of a track: stop at the end of the queue, loop the
+// whole queue, or repeat the current track. matches the ios repeat button
+export type RepeatMode = "off" | "all" | "one";
+
+// the state after this one as the repeat button cycles
+export function nextRepeatMode(mode: RepeatMode): RepeatMode {
+  return mode === "off" ? "all" : mode === "all" ? "one" : "off";
+}
+
+// the repeat mode persisted as a json string, migrating the old boolean flag
+// (which looped playback) to repeat-all so an upgrade keeps the user's setting
+export const repeatModeStorage = {
+  getItem(key: string, initialValue: RepeatMode): RepeatMode {
+    const value = localStorage.getItem(key);
+    if (value === null) {
+      return initialValue;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed === "off" || parsed === "all" || parsed === "one") {
+        return parsed;
+      }
+      if (typeof parsed === "boolean") {
+        return parsed ? "all" : "off";
+      }
+    } catch {
+      // fall through to the default
+    }
+    return initialValue;
+  },
+  setItem(key: string, value: RepeatMode): void {
+    localStorage.setItem(key, JSON.stringify(value));
+  },
+  removeItem(key: string): void {
+    localStorage.removeItem(key);
+  },
+};
+
 // a width clamped to the allowed range on the way in
 const sidebarWidthStorage = {
   getItem(key: string, initialValue: number): number {
@@ -116,10 +154,10 @@ export const shuffleAtom = atomWithStorage(
   undefined,
   options
 );
-export const repeatAtom = atomWithStorage(
+export const repeatAtom = atomWithStorage<RepeatMode>(
   REPEAT_KEY,
-  false,
-  undefined,
+  "off",
+  repeatModeStorage,
   options
 );
 export const showArtworkAtom = atomWithStorage(

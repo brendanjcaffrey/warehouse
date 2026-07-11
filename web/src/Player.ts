@@ -1,9 +1,8 @@
-import { memoize, isEqual, shuffle } from "lodash";
+import { memoize, shuffle as lodashShuffle } from "lodash";
 import { volumeAtom, shuffleAtom, repeatAtom } from "./Settings";
 import {
   store,
   trackUpdatedFnAtom,
-  showTrackFnAtom,
   stoppedAtom,
   currentTimeAtom,
   playingTrackAtom,
@@ -26,30 +25,24 @@ import {
   TrackFileIds,
 } from "./WorkerTypes";
 import { files } from "./Files";
-import { circularArraySlice } from "./Util";
 import { TrackFileSet } from "./TrackFileSet";
-import { PlayingTrack, DisplayedTrack, PlaylistTrack } from "./Types";
+import { PlayingTrack, PlaylistTrack } from "./Types";
+import { PlayQueue } from "./PlayQueue";
+import { trackFinish, shouldSkipAtFinish } from "./PlaybackFinish";
 import { IMAGE_EXTENSION_TO_MIME } from "./MimeTypes";
 
 const TRACKS_TO_PRELOAD = 3;
+// how far into a track the previous button restarts it instead of stepping back
+const PREV_RESTART_SECONDS = 3;
 
 class Player {
   audioRef: HTMLAudioElement | undefined = undefined;
 
-  // what is displayed in the track table
-  displayedPlaylistId: string | undefined = undefined;
-  displayedTracks: DisplayedTrack[] = [];
-
-  // what playlist is playing right now - can be different from displayed
-  playingPlaylistId: string | undefined = undefined;
-  // tracks sorted in the order they are displayed in
-  sortedPlayingTracks: DisplayedTrack[] = [];
-  // tracks sorted in the order we are playing them - can be different than above
-  // if shuffle is on, or if tracks have been queued to play next
-  playingTracks: PlaylistTrack[] = [];
-
-  // index into playingTracks
-  playingTrackIdx: number = 0;
+  // the now playing queue. it is a snapshot set only by the direct user actions
+  // below (play, play shuffled, play next) - navigating, filtering or re-sorting
+  // a view never touches it, so a filtered view keeps playing even once the
+  // filter is cleared
+  queue: PlayQueue = new PlayQueue();
   playingTrack: PlayingTrack | undefined = undefined;
   // last track we set the audio src to, here to avoid setting it to the same thing
   lastSetAudioSrcTrackId: string | undefined = undefined;
@@ -58,6 +51,9 @@ class Player {
   stopped: boolean = true;
   // whether actively playing or paused
   playing: boolean = false;
+  // set when the user seeks at or past the finish point, letting the current
+  // track play through to its real end rather than skipping at the trim finish
+  playedPastFinish: boolean = false;
 
   // TODO timeout, show error etc
   pendingDownloads: TrackFileSet = new TrackFileSet();
@@ -110,16 +106,12 @@ class Player {
 
   async reset() {
     this.audioRef = undefined;
-    this.displayedPlaylistId = undefined;
-    this.displayedTracks = [];
-    this.playingPlaylistId = undefined;
-    this.sortedPlayingTracks = [];
-    this.playingTracks = [];
-    this.playingTrackIdx = 0;
+    this.queue = new PlayQueue();
     this.playingTrack = undefined;
     this.lastSetAudioSrcTrackId = undefined;
     this.stopped = true;
     this.playing = false;
+    this.playedPastFinish = false;
     resetAllState();
   }
 
@@ -138,11 +130,14 @@ class Player {
         return;
       }
       const track = this.playingTrack.track;
-      // finish can be 0/unset in the library data - fall back to the duration
-      const finish = track.finish > 0 ? track.finish : track.duration;
-      // require that we've actually played past the start point, so a transient
-      // timeupdate during a track switch/seek can't trigger an immediate skip
-      if (currentTime > track.start && currentTime >= finish) {
+      if (
+        shouldSkipAtFinish(
+          currentTime,
+          track.start,
+          trackFinish(track),
+          this.playedPastFinish
+        )
+      ) {
         this.trackFinished();
       }
     };
@@ -165,7 +160,7 @@ class Player {
   trackUpdated(track: Track) {
     if (this.playingTrack?.track.id === track.id) {
       this.playingTrack.track = track;
-      store.set(playingTrackAtom, this.playingTrack);
+      store.set(playingTrackAtom, { ...this.playingTrack });
 
       if (
         this.stopped &&
@@ -199,11 +194,27 @@ class Player {
           store.get(trackUpdatedFnAtom).fn(track);
         }
         this.playingTrack.track = track;
-        store.set(playingTrackAtom, this.playingTrack);
+        store.set(playingTrackAtom, { ...this.playingTrack });
       }
-      await this.next();
+      await this.advanceAfterFinish();
     } finally {
       this.addingPlay = undefined;
+    }
+  }
+
+  // moves on when a track plays through to the end, honouring the repeat mode:
+  // repeat one replays it, repeat all loops the queue, off stops at the end
+  private async advanceAfterFinish() {
+    const mode = store.get(repeatAtom);
+    if (mode === "one") {
+      this.audioRef!.currentTime = this.playingTrack!.track.start;
+      this.audioPlay();
+      return;
+    }
+    if (this.queue.advance(mode === "all")) {
+      await this.updatePlayingTrack();
+    } else {
+      this.stop();
     }
   }
 
@@ -218,72 +229,79 @@ class Player {
     if (this.audioRef) {
       this.audioRef.currentTime = time;
     }
+    if (this.playingTrack) {
+      // a seek at or past the finish lets the track play out to its real end;
+      // seeking back before it restores the normal finish cutoff
+      this.playedPastFinish = time >= trackFinish(this.playingTrack.track);
+    }
     store.set(currentTimeAtom, time);
   }
 
-  async setDisplayedTrackIds(
-    displayedPlaylistId: string,
-    displayedTracks: DisplayedTrack[]
-  ) {
-    if (
-      displayedPlaylistId === this.displayedPlaylistId &&
-      isEqual(this.displayedTracks, displayedTracks)
-    ) {
+  // actions - the only things that change the queue
+
+  // plays a list of tracks starting at the tapped one, so previous walks back
+  // through the earlier tracks. replaces the queue with a snapshot of the list.
+  // when shuffle is on the tapped track leads and the rest follow in random order
+  async playTracks(playlistId: string, tracks: Track[], startIndex: number) {
+    const entries = this.toEntries(playlistId, tracks);
+    if (entries.length === 0) {
       return;
     }
-
-    this.displayedPlaylistId = displayedPlaylistId;
-    this.displayedTracks = displayedTracks;
-    if (this.stopped) {
-      this.rebuildPlayingTracks();
-    } else if (
-      this.displayedPlaylistId === this.playingPlaylistId &&
-      !isEqual(this.sortedPlayingTracks, this.displayedTracks)
-    ) {
-      // the displayed playlist is the one playing and its ordering changed
-      // (a re-sort or edit) - rebuild to match. when the ordering is unchanged
-      // we skip the rebuild so that any play-next tracks queued while viewing
-      // another playlist aren't discarded when we navigate back here.
-      this.rebuildPlayingTracks();
-    }
-  }
-
-  async rebuildPlayingTracks(
-    overwritePlayingTrack: DisplayedTrack | undefined = undefined
-  ) {
-    this.playingPlaylistId = this.displayedPlaylistId;
-    this.sortedPlayingTracks = [...this.displayedTracks];
-    await this.shuffleChanged(overwritePlayingTrack);
-  }
-
-  async shuffleChanged(
-    overwritePlayingTrack: DisplayedTrack | undefined = undefined
-  ) {
-    const savedPlaying = this.playingTracks[this.playingTrackIdx];
-    this.playingTracks = this.sortedPlayingTracks.map((dt) => ({
-      playlistId: this.playingPlaylistId!,
-      trackId: dt.trackId,
-      playlistOffset: dt.playlistOffset,
-    }));
     if (store.get(shuffleAtom)) {
-      this.playingTracks = shuffle(this.playingTracks);
-    }
-
-    if (overwritePlayingTrack) {
-      this.playingTrackIdx = this.playingTracks.findIndex(
-        (pt) =>
-          pt.trackId === overwritePlayingTrack.trackId &&
-          pt.playlistOffset === overwritePlayingTrack.playlistOffset
-      );
-      await this.updatePlayingTrack();
-    } else if (this.stopped) {
-      this.playingTrackIdx = 0;
-      await this.updatePlayingTrack();
+      const lead = entries[startIndex];
+      const rest = lodashShuffle(entries.filter((_, i) => i !== startIndex));
+      this.queue = new PlayQueue([lead, ...rest], 0, true, entries);
     } else {
-      this.playingTrackIdx = this.playingTracks.findIndex((pt) =>
-        isEqual(pt, savedPlaying)
-      );
+      this.queue = new PlayQueue(entries, startIndex, false);
     }
+    await this.startQueue();
+  }
+
+  // plays a list of tracks in order and turns shuffle off, the counterpart to
+  // playTracksShuffled for an explicit play button
+  async playTracksInOrder(
+    playlistId: string,
+    tracks: Track[],
+    startIndex: number
+  ) {
+    store.set(shuffleAtom, false);
+    await this.playTracks(playlistId, tracks, startIndex);
+  }
+
+  // plays a list of tracks in a random order and turns shuffle on
+  async playTracksShuffled(playlistId: string, tracks: Track[]) {
+    const entries = this.toEntries(playlistId, tracks);
+    if (entries.length === 0) {
+      return;
+    }
+    store.set(shuffleAtom, true);
+    this.queue = new PlayQueue(lodashShuffle(entries), 0, true, entries);
+    await this.startQueue();
+  }
+
+  // queues a track right after the current one, or just plays it when nothing
+  // is queued yet
+  async playTrackNext(playlistId: string, track: Track) {
+    const wasEmpty = this.queue.isEmpty;
+    this.queue.playNext({ playlistId, trackId: track.id, playlistOffset: -1 });
+    if (wasEmpty) {
+      await this.startQueue();
+    } else {
+      await this.preloadTracks();
+    }
+  }
+
+  private toEntries(playlistId: string, tracks: Track[]): PlaylistTrack[] {
+    return tracks.map((track, i) => ({
+      playlistId,
+      trackId: track.id,
+      playlistOffset: i,
+    }));
+  }
+
+  private async startQueue() {
+    await this.updatePlayingTrack();
+    this.play();
   }
 
   // controls
@@ -300,17 +318,21 @@ class Player {
     this.playPause();
   }
   playPause() {
-    if (!this.audioRef || this.playingTracks.length === 0) {
+    if (!this.audioRef || this.queue.isEmpty) {
       return;
     }
 
     if (!this.playing) {
+      // resuming after playback stopped at the end of the last track restarts
+      // it from the top rather than sitting finished
+      if (this.playingTrack && this.atTrackEnd()) {
+        this.setCurrentTime(this.playingTrack.track.start);
+      }
       this.trySetPlayingMusicFile();
       this.playing = true;
       this.stopped = false;
       store.set(stoppedAtom, false);
       this.audioPlay();
-      this.showPlayingTrackIfInPlaylist();
     } else {
       this.audioRef.pause();
       this.playing = false;
@@ -318,23 +340,30 @@ class Player {
     store.set(playingAtom, this.playing);
   }
 
+  // whether the audio has played through to the current track's finish
+  private atTrackEnd(): boolean {
+    if (!this.audioRef || !this.playingTrack) {
+      return false;
+    }
+    return this.audioRef.currentTime >= trackFinish(this.playingTrack.track);
+  }
+
   async prev() {
     if (!this.inValidState()) {
       return;
     }
 
-    if (this.shouldRewind()) {
-      this.audioRef.currentTime = this.playingTrack.start;
+    // restart the current track when we're more than a moment into it,
+    // otherwise step back to the previous one (wrapping round at the start)
+    const intoTrack = this.audioRef.currentTime - this.playingTrack.track.start;
+    if (intoTrack > PREV_RESTART_SECONDS) {
+      this.audioRef.currentTime = this.playingTrack.track.start;
       this.audioPlay();
-    } else {
-      this.playingTrackIdx =
-        this.playingTrackIdx === 0
-          ? this.playingTracks.length - 1
-          : this.playingTrackIdx - 1;
+    } else if (this.queue.goBack(store.get(repeatAtom) === "all")) {
+      // repeat all wraps from the first track back to the last; otherwise stay
+      // put on the first track rather than wrapping around
       await this.updatePlayingTrack();
     }
-
-    this.showPlayingTrackIfInPlaylist();
   }
 
   async next() {
@@ -342,29 +371,26 @@ class Player {
       return;
     }
 
-    if (this.shouldRewind()) {
-      this.audioRef.currentTime = this.playingTrack.start;
-      this.audioPlay();
-    } else {
-      this.playingTrackIdx =
-        (this.playingTrackIdx + 1) % this.playingTracks.length;
+    // repeat all loops the queue; otherwise stop once past the last track
+    if (this.queue.advance(store.get(repeatAtom) === "all")) {
       await this.updatePlayingTrack();
+    } else {
+      this.stop();
     }
-    this.showPlayingTrackIfInPlaylist();
   }
 
-  // actions
-  async playTrack(track: DisplayedTrack) {
-    this.playingTracks = [];
-    await this.rebuildPlayingTracks(track);
-    this.play();
+  // halts playback at the end of the queue, leaving the last track showing
+  private stop() {
+    this.audioRef?.pause();
+    this.playing = false;
+    store.set(playingAtom, false);
   }
 
-  async playTrackNext(playlistTrack: PlaylistTrack) {
-    // insert right after the current track so it plays next, but stays in the
-    // playing tracks so you can go back to it
-    this.playingTracks.splice(this.playingTrackIdx + 1, 0, playlistTrack);
-    await this.preloadTracks();
+  // reshuffles the upcoming tracks or restores their order without disturbing
+  // the current track
+  setShuffled(shuffled: boolean) {
+    this.queue.setShuffled(shuffled);
+    this.preloadTracks();
   }
 
   async downloadMusic(trackId: string) {
@@ -460,37 +486,37 @@ class Player {
     });
   }
 
-  private shouldRewind() {
-    return store.get(repeatAtom) || this.playingTracks.length === 1;
-  }
-
   private inValidState(): this is {
     audioRef: HTMLAudioElement;
-    playingTrack: Track;
-    playingTrackIds: string[];
+    playingTrack: PlayingTrack;
   } {
     return (
       this.audioRef !== undefined &&
       this.playingTrack !== undefined &&
-      this.playingTracks.length > 0
+      !this.queue.isEmpty
     );
   }
 
   private async updatePlayingTrack() {
-    if (this.playingTracks.length === 0) {
+    const entry = this.queue.current;
+    if (!entry) {
       return;
     }
 
-    const playlistTrack = this.playingTracks[this.playingTrackIdx];
-    const track = await library().getTrack(playlistTrack.trackId);
+    const track = await library().getTrack(entry.trackId);
+    if (!track) {
+      return;
+    }
     this.playingTrack = {
-      track: track!,
-      playlistId: playlistTrack.playlistId,
-      playlistOffset: playlistTrack.playlistOffset,
+      track,
+      playlistId: entry.playlistId,
+      playlistOffset: entry.playlistOffset,
     };
+    // a fresh track starts under the normal finish cutoff again
+    this.playedPastFinish = false;
 
     store.set(playingTrackAtom, this.playingTrack);
-    store.set(currentTimeAtom, this.playingTrack!.track.start);
+    store.set(currentTimeAtom, track.start);
     this.trySetMediaMetadata();
     this.trySetPlayingMusicFile();
     await this.preloadTracks();
@@ -532,11 +558,7 @@ class Player {
   }
 
   private async preloadTracks() {
-    const preloadTracks = circularArraySlice(
-      this.playingTracks,
-      this.playingTrackIdx,
-      TRACKS_TO_PRELOAD
-    );
+    const preloadTracks = this.queue.slice(TRACKS_TO_PRELOAD);
     const trackIds = preloadTracks.map((pt) => pt.trackId);
 
     const musicIds: TrackFileIds[] = [];
@@ -562,18 +584,6 @@ class Player {
       fileType: FileType.ARTWORK,
       ids: artworkIds,
     } as SetSourceRequestedFilesMessage);
-  }
-
-  private async showPlayingTrackIfInPlaylist() {
-    if (
-      this.playingTrack &&
-      this.playingTrack.playlistId === this.displayedPlaylistId
-    ) {
-      store.get(showTrackFnAtom).fn({
-        playlistId: this.playingTrack.playlistId,
-        playlistOffset: this.playingTrack.playlistOffset,
-      });
-    }
   }
 }
 

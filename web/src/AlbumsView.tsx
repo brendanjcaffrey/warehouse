@@ -124,7 +124,7 @@ function AlbumsView() {
   );
 
   return (
-    <div className="d-flex h-100">
+    <div className="d-flex h-100 user-select-none">
       <div
         ref={containerRef}
         className="position-relative h-100 border-end"

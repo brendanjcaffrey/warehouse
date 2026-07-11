@@ -1,7 +1,13 @@
 import { beforeEach, expect, test } from "vitest";
-import { stringSetStorage, ClampSidebarWidth } from "../src/Settings";
+import {
+  stringSetStorage,
+  repeatModeStorage,
+  nextRepeatMode,
+  ClampSidebarWidth,
+} from "../src/Settings";
 
 const KEY = "openedFolders";
+const REPEAT_KEY = "repeat";
 
 beforeEach(() => {
   localStorage.clear();
@@ -42,4 +48,31 @@ test("clamps sidebar width to the allowed range", () => {
   expect(ClampSidebarWidth(0)).toBe(180);
   expect(ClampSidebarWidth(9999)).toBe(480);
   expect(ClampSidebarWidth(300)).toBe(300);
+});
+
+test("the repeat button cycles off, all, one and back", () => {
+  expect(nextRepeatMode("off")).toBe("all");
+  expect(nextRepeatMode("all")).toBe("one");
+  expect(nextRepeatMode("one")).toBe("off");
+});
+
+test("round trips a repeat mode through storage", () => {
+  repeatModeStorage.setItem(REPEAT_KEY, "all");
+  expect(repeatModeStorage.getItem(REPEAT_KEY, "off")).toBe("all");
+});
+
+test("migrates the old boolean repeat flag", () => {
+  // true looped playback, closest to repeat-all; false was off
+  localStorage.setItem(REPEAT_KEY, "true");
+  expect(repeatModeStorage.getItem(REPEAT_KEY, "off")).toBe("all");
+  localStorage.setItem(REPEAT_KEY, "false");
+  expect(repeatModeStorage.getItem(REPEAT_KEY, "off")).toBe("off");
+});
+
+test("repeat mode falls back to the default on nothing stored or bad data", () => {
+  expect(repeatModeStorage.getItem(REPEAT_KEY, "off")).toBe("off");
+  localStorage.setItem(REPEAT_KEY, "not,json");
+  expect(repeatModeStorage.getItem(REPEAT_KEY, "all")).toBe("all");
+  localStorage.setItem(REPEAT_KEY, JSON.stringify("bogus"));
+  expect(repeatModeStorage.getItem(REPEAT_KEY, "all")).toBe("all");
 });

@@ -13,7 +13,8 @@ import { useTypeToSearch } from "./useTypeToSearch";
 // scrolling the matched row into view by its data-track-id
 export function useTrackListNav(
   flatTracks: Track[],
-  containerRef: RefObject<HTMLElement | null>
+  containerRef: RefObject<HTMLElement | null>,
+  onPlayTrack: (track: Track) => void
 ) {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
 
@@ -48,11 +49,19 @@ export function useTrackListNav(
         selectIndex(current === -1 ? 0 : current + delta);
         return;
       }
+      if (event.key === "Enter") {
+        const track = flatTracks.find((t) => t.id === selectedTrackId);
+        if (track) {
+          event.preventDefault();
+          onPlayTrack(track);
+        }
+        return;
+      }
       if (handleTypeSearch(event)) {
         event.preventDefault();
       }
     },
-    [flatTracks, selectedTrackId, selectIndex, handleTypeSearch]
+    [flatTracks, selectedTrackId, selectIndex, handleTypeSearch, onPlayTrack]
   );
 
   return { selectedTrackId, setSelectedTrackId, handleKeyDown };

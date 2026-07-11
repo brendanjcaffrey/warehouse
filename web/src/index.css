@@ -48,25 +48,48 @@ body {
   box-shadow: inset -2px 0 0 var(--bs-primary);
 }
 
+.track-row-selected {
+  background-color: rgba(var(--bs-emphasis-color-rgb), 0.1);
+}
+
+.track-row-striped {
+  background-color: rgba(var(--bs-emphasis-color-rgb), 0.04);
+}
+
 .track-progress {
   height: 0.75rem;
 }
 
+/* fill left of the thumb in a darker grey, driven by the --range-fill percent
+   the component sets; webkit has no progress pseudo so a hard-stop gradient
+   stands in for it */
 .track-progress::-webkit-slider-runnable-track {
   height: 0.25rem;
+  background: linear-gradient(
+    to right,
+    var(--bs-secondary-color) var(--range-fill, 0%),
+    var(--bs-secondary-bg) var(--range-fill, 0%)
+  );
 }
 
 .track-progress::-moz-range-track {
   height: 0.25rem;
 }
 
+.track-progress::-moz-range-progress {
+  height: 0.25rem;
+  background-color: var(--bs-secondary-color);
+}
+
 .track-progress::-webkit-slider-thumb {
   opacity: 0;
+  width: 1px;
 }
 
 .track-progress::-moz-range-thumb {
   opacity: 0;
   border: none;
+  width: 1px;
 }
 
 .volume-range {
@@ -75,22 +98,29 @@ body {
 
 .volume-range::-webkit-slider-runnable-track {
   height: 0.35rem;
+  background: linear-gradient(
+    to right,
+    var(--bs-secondary-color) var(--range-fill, 0%),
+    var(--bs-secondary-bg) var(--range-fill, 0%)
+  );
 }
 
 .volume-range::-moz-range-track {
   height: 0.35rem;
 }
 
-.volume-range::-webkit-slider-thumb {
-  width: 0.75rem;
-  height: 0.75rem;
-  margin-top: -0.2rem;
+.volume-range::-moz-range-progress {
+  height: 0.35rem;
   background-color: var(--bs-secondary-color);
 }
 
+.volume-range::-webkit-slider-thumb {
+  opacity: 0;
+  width: 1px;
+}
+
 .volume-range::-moz-range-thumb {
-  width: 0.75rem;
-  height: 0.75rem;
-  background-color: var(--bs-secondary-color);
+  opacity: 0;
   border: none;
+  width: 1px;
 }

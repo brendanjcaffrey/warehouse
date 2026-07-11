@@ -13,6 +13,7 @@ import {
   waitingForMusicDownloadAtom,
 } from "./State";
 import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
+import { trackProgress } from "./TrackProgress";
 
 const NO_WRAP: React.CSSProperties = {
   whiteSpace: "nowrap",
@@ -41,6 +42,25 @@ function DurationText({
   );
 }
 
+// vertical tick marking the trim start/finish over the progress bar, hidden
+// by the caller when it sits within a second of the real track ends
+function TrimNotch({ position }: { position: number }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: `${position * 100}%`,
+        top: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "2px",
+        height: "0.6rem",
+        backgroundColor: "var(--bs-secondary-color)",
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
 function NowPlaying() {
   const isSmallScreen = useBreakpoint("md", "down");
 
@@ -49,7 +69,14 @@ function NowPlaying() {
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
   const waitingForMusicDownload = useAtomValue(waitingForMusicDownloadAtom);
-  const remaining = playingTrack ? playingTrack.track.finish - currentTime : 0;
+  const { duration, startNotch, finishNotch } = trackProgress(
+    playingTrack?.track
+  );
+  const remaining = playingTrack ? Math.max(0, duration - currentTime) : 0;
+  const progressPercent =
+    duration > 0
+      ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
+      : 0;
 
   function returnButtonDown() {
     setReturnDown(true);
@@ -93,12 +120,15 @@ function NowPlaying() {
                 style={{
                   fontSize: "14px",
                   lineHeight: "20px",
-                  ...NO_WRAP,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minWidth: 0,
                 }}
               >
                 {waitingForMusicDownload && (
                   <DelayedElement>
-                    <span style={{ paddingRight: "4px" }}>
+                    <span style={{ paddingRight: "4px", flexShrink: 0 }}>
                       <Spinner
                         animation="border"
                         style={{ width: 10, height: 10, borderWidth: 1.5 }}
@@ -106,11 +136,15 @@ function NowPlaying() {
                     </span>
                   </DelayedElement>
                 )}
-                {playingTrack?.track.name || <span>&nbsp;</span>}
+                {/* only the title truncates, so the return button stays visible */}
+                <span style={NO_WRAP}>
+                  {playingTrack?.track.name || <span>&nbsp;</span>}
+                </span>
                 {playingTrack && (
                   <span
                     onMouseDown={returnButtonDown}
                     onMouseUp={returnButtonUp}
+                    style={{ flexShrink: 0 }}
                   >
                     <ArrowReturnLeft
                       size={12}
@@ -143,14 +177,23 @@ function NowPlaying() {
             -{FormatPlaybackPosition(remaining)}
           </DurationText>
         </div>
-        <Form.Range
-          className="track-progress"
-          value={currentTime}
-          min={playingTrack?.track.start ?? 0}
-          max={playingTrack?.track.finish ?? 0}
-          onChange={(e) => player().setCurrentTime(Number(e.target.value))}
-          style={{ marginTop: "0px" }}
-        />
+        <div style={{ position: "relative" }}>
+          <Form.Range
+            className="track-progress"
+            value={currentTime}
+            min={0}
+            max={duration}
+            onChange={(e) => player().setCurrentTime(Number(e.target.value))}
+            style={
+              {
+                marginTop: "0px",
+                "--range-fill": `${progressPercent}%`,
+              } as React.CSSProperties
+            }
+          />
+          {startNotch !== null && <TrimNotch position={startNotch} />}
+          {finishNotch !== null && <TrimNotch position={finishNotch} />}
+        </div>
       </div>
     </Stack>
   );

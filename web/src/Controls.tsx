@@ -6,12 +6,18 @@ import {
   PauseFill,
   PlayFill,
   Repeat,
+  Repeat1,
   Shuffle,
   Sliders,
   VolumeDownFill,
   VolumeUpFill,
 } from "react-bootstrap-icons";
-import { shuffleAtom, repeatAtom, volumeAtom } from "./Settings";
+import {
+  shuffleAtom,
+  repeatAtom,
+  nextRepeatMode,
+  volumeAtom,
+} from "./Settings";
 import useBreakpoint from "@restart/hooks/useBreakpoint";
 import IconButton from "./IconButton";
 import { player } from "./Player";
@@ -29,13 +35,23 @@ function Controls() {
   const playing = useAtomValue(playingAtom);
 
   const toggleShuffle = () => {
-    setShuffle((prev) => !prev);
-    player().shuffleChanged();
+    const next = !shuffle;
+    setShuffle(next);
+    player().setShuffled(next);
   };
 
   const toggleRepeat = () => {
-    setRepeat((prev) => !prev);
+    setRepeat((prev) => nextRepeatMode(prev));
   };
+
+  const repeatActive = repeat !== "off";
+  const RepeatIcon = repeat === "one" ? Repeat1 : Repeat;
+  const repeatTooltip =
+    repeat === "off"
+      ? "Repeat Off"
+      : repeat === "all"
+        ? "Repeat All"
+        : "Repeat Track";
 
   const volumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     player().setVolume(Number(e.target.value));
@@ -63,7 +79,7 @@ function Controls() {
     <>
       <OverlayTrigger
         placement="bottom"
-        overlay={<Tooltip>Shuffle Playlist</Tooltip>}
+        overlay={<Tooltip>{shuffle ? "Shuffle On" : "Shuffle Off"}</Tooltip>}
       >
         <IconButton onClick={toggleShuffle}>
           <Shuffle size={26} color={shuffle ? ACTIVE_COLOR : DISABLED_COLOR} />
@@ -71,10 +87,13 @@ function Controls() {
       </OverlayTrigger>
       <OverlayTrigger
         placement="bottom"
-        overlay={<Tooltip>Repeat Track</Tooltip>}
+        overlay={<Tooltip>{repeatTooltip}</Tooltip>}
       >
         <IconButton onClick={toggleRepeat}>
-          <Repeat size={26} color={repeat ? ACTIVE_COLOR : DISABLED_COLOR} />
+          <RepeatIcon
+            size={26}
+            color={repeatActive ? ACTIVE_COLOR : DISABLED_COLOR}
+          />
         </IconButton>
       </OverlayTrigger>
       <VolumeDownFill
@@ -86,7 +105,14 @@ function Controls() {
         className="volume-range"
         value={volume}
         onChange={volumeChange}
-        style={{ maxWidth: "125px", marginLeft: "6px", marginRight: "6px" }}
+        style={
+          {
+            maxWidth: "125px",
+            marginLeft: "6px",
+            marginRight: "6px",
+            "--range-fill": `${volume}%`,
+          } as React.CSSProperties
+        }
       />
       <VolumeUpFill
         size={16}

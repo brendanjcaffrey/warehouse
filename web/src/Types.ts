@@ -11,11 +11,6 @@ export interface PlaylistEntry {
   playlistOffset: number;
 }
 
-export interface DisplayedTrack {
-  trackId: string;
-  playlistOffset: number;
-}
-
 export interface PlaylistTrack {
   playlistId: string;
   trackId: string;

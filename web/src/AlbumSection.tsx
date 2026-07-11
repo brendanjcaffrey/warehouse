@@ -4,19 +4,40 @@ import { Track } from "./Library";
 import { Album, formatAlbumSummary } from "./Albums";
 import { useArtworkFileURL } from "./useArtworkFileURL";
 import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
+import { TrackMenuActions } from "./TrackContextMenu";
+import { player } from "./Player";
 import IconButton from "./IconButton";
 import StarRating from "./StarRating";
 
 export const ARTWORK_SIZE = 160;
 
-// play and shuffle icons; they do nothing for now
-export function PlayShuffleButtons({ size }: { size: number }) {
+// a track in an album plays within that album, starting at itself, matching
+// the album detail view on ios
+export function playTrackInAlbum(album: Album, track: Track) {
+  player().playTracks(
+    `album:${album.name}`,
+    album.tracks,
+    album.tracks.indexOf(track)
+  );
+}
+
+// play and shuffle icons for a scope (an album, or a whole artist); the caller
+// wires each to play or shuffle its tracks
+export function PlayShuffleButtons({
+  size,
+  onPlay,
+  onShuffle,
+}: {
+  size: number;
+  onPlay: () => void;
+  onShuffle: () => void;
+}) {
   return (
     <span className="d-inline-flex gap-1">
-      <IconButton aria-label="play">
+      <IconButton aria-label="play" onClick={onPlay}>
         <PlayFill size={size} />
       </IconButton>
-      <IconButton aria-label="shuffle">
+      <IconButton aria-label="shuffle" onClick={onShuffle}>
         <Shuffle size={size} />
       </IconButton>
     </span>
@@ -53,18 +74,33 @@ export function AlbumArtwork({
   );
 }
 
+// what a parent view (artist or album detail) supplies: the selection and the
+// context-menu opener. the per-track play handlers are derived from the album
+// inside AlbumSection, so a track plays within its own album
 export interface TrackListProps {
   selectedTrackId: string | null;
   onSelect: (id: string) => void;
-  onTrackContextMenu?: (event: React.MouseEvent, track: Track) => void;
+  onTrackContextMenu: (
+    event: React.MouseEvent,
+    track: Track,
+    actions: TrackMenuActions
+  ) => void;
+}
+
+interface TrackRowsProps extends TrackListProps {
+  tracks: Track[];
+  onPlayTrack: (track: Track) => void;
+  onPlayTrackNext: (track: Track) => void;
 }
 
 function TrackRows({
   tracks,
   selectedTrackId,
   onSelect,
+  onPlayTrack,
+  onPlayTrackNext,
   onTrackContextMenu,
-}: { tracks: Track[] } & TrackListProps) {
+}: TrackRowsProps) {
   return (
     <>
       {tracks.map((track) => (
@@ -74,9 +110,13 @@ function TrackRows({
           role="option"
           aria-selected={track.id === selectedTrackId}
           onClick={() => onSelect(track.id)}
+          onDoubleClick={() => onPlayTrack(track)}
           onContextMenu={(event) => {
             onSelect(track.id);
-            onTrackContextMenu?.(event, track);
+            onTrackContextMenu(event, track, {
+              play: () => onPlayTrack(track),
+              playNext: () => onPlayTrackNext(track),
+            });
           }}
           className={track.id === selectedTrackId ? "table-active" : ""}
           style={{ cursor: "pointer" }}
@@ -108,6 +148,17 @@ export function AlbumSection({
     album.year > 0 ? String(album.year) : "",
   ].filter(Boolean);
 
+  const source = `album:${album.name}`;
+  const playTrack = (track: Track) => playTrackInAlbum(album, track);
+  const playTrackNext = (track: Track) => player().playTrackNext(source, track);
+  const rowProps = {
+    selectedTrackId,
+    onSelect,
+    onPlayTrack: playTrack,
+    onPlayTrackNext: playTrackNext,
+    onTrackContextMenu,
+  };
+
   return (
     <div className="d-flex gap-4 mb-5">
       <div
@@ -124,7 +175,11 @@ export function AlbumSection({
           <h4 className="mb-0 text-truncate">
             {album.isUnknown ? "Unknown Album" : album.name}
           </h4>
-          <PlayShuffleButtons size={18} />
+          <PlayShuffleButtons
+            size={18}
+            onPlay={() => player().playTracksInOrder(source, album.tracks, 0)}
+            onShuffle={() => player().playTracksShuffled(source, album.tracks)}
+          />
         </div>
         {subheaderParts.length > 0 && (
           <div className="text-secondary mb-2">
@@ -144,21 +199,11 @@ export function AlbumSection({
                       disc {disc.discNumber}
                     </td>
                   </tr>
-                  <TrackRows
-                    tracks={disc.tracks}
-                    selectedTrackId={selectedTrackId}
-                    onSelect={onSelect}
-                    onTrackContextMenu={onTrackContextMenu}
-                  />
+                  <TrackRows tracks={disc.tracks} {...rowProps} />
                 </Fragment>
               ))
             ) : (
-              <TrackRows
-                tracks={album.tracks}
-                selectedTrackId={selectedTrackId}
-                onSelect={onSelect}
-                onTrackContextMenu={onTrackContextMenu}
-              />
+              <TrackRows tracks={album.tracks} {...rowProps} />
             )}
           </tbody>
         </table>

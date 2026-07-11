@@ -13,6 +13,7 @@ import {
 } from "react-bootstrap-icons";
 import { useTypeToSearch } from "./useTypeToSearch";
 import { useTrackListTracks } from "./useTrackListTracks";
+import { player } from "./Player";
 import { TRACK_COLUMNS, TrackColumn } from "./TrackColumns";
 import { cycleSort, sortTracks, SortKey } from "./TrackSort";
 import { filterTracks, searchTracks, FilterState } from "./TrackFilter";
@@ -236,6 +237,9 @@ function TrackList({ playlistId }: TrackListProps) {
   const trackMenu = useTrackContextMenu(playlistId);
   const openTrackMenu = trackMenu.openMenu;
   const listRef = useRef<FixedSizeList>(null);
+  // the queue tracks carry this as their source; the library has no real
+  // playlist id so it falls back to a sentinel
+  const source = playlistId ?? "library";
 
   // fold the saved layout onto the current column set, then take the columns we
   // actually draw in their chosen order with hidden ones removed
@@ -408,11 +412,19 @@ function TrackList({ playlistId }: TrackListProps) {
         selectIndex(current === -1 ? 0 : current + delta);
         return;
       }
+      if (event.key === "Enter") {
+        const current = rows.findIndex((track) => track.id === selectedId);
+        if (current !== -1) {
+          event.preventDefault();
+          player().playTracks(source, rows, current);
+        }
+        return;
+      }
       if (handleTypeSearch(event)) {
         event.preventDefault();
       }
     },
-    [rows, selectedId, selectIndex, handleTypeSearch]
+    [rows, selectedId, selectIndex, handleTypeSearch, source]
   );
 
   const Row = useCallback(
@@ -424,11 +436,21 @@ function TrackList({ playlistId }: TrackListProps) {
           role="row"
           aria-selected={isSelected}
           onClick={() => selectIndex(index)}
+          onDoubleClick={() => player().playTracks(source, rows, index)}
           onContextMenu={(event) => {
             selectIndex(index);
-            openTrackMenu(event, track);
+            openTrackMenu(event, track, {
+              play: () => player().playTracks(source, rows, index),
+              playNext: () => player().playTrackNext(source, track),
+            });
           }}
-          className={isSelected ? "table-active" : ""}
+          className={
+            isSelected
+              ? "track-row-selected"
+              : index % 2 === 1
+                ? "track-row-striped"
+                : ""
+          }
           style={{
             ...style,
             display: "grid",
@@ -451,12 +473,12 @@ function TrackList({ playlistId }: TrackListProps) {
         </div>
       );
     },
-    [columns, rows, selectedId, selectIndex, template, openTrackMenu]
+    [columns, rows, selectedId, selectIndex, template, openTrackMenu, source]
   );
 
   return (
     <div
-      className="h-100"
+      className="h-100 user-select-none"
       role="grid"
       aria-label={playlistId ? "playlist tracks" : "songs"}
       tabIndex={0}

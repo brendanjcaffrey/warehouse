@@ -1,7 +1,7 @@
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { Track } from "./Library";
 import { buildAlbums } from "./Albums";
-import { AlbumSection } from "./AlbumSection";
+import { AlbumSection, playTrackInAlbum } from "./AlbumSection";
 import { useTrackListNav } from "./useTrackListNav";
 import { useAlbumArtworkRequests } from "./useAlbumArtworkRequests";
 import { useTrackContextMenu } from "./TrackContextMenu";
@@ -21,8 +21,18 @@ function AlbumDetail({ name, tracks }: AlbumDetailProps) {
     [albums]
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  // enter plays the focused track within its own album, matching a double-click
+  const playTrack = useCallback(
+    (track: Track) => {
+      const album = albums.find((a) => a.tracks.includes(track));
+      if (album) {
+        playTrackInAlbum(album, track);
+      }
+    },
+    [albums]
+  );
   const { selectedTrackId, setSelectedTrackId, handleKeyDown } =
-    useTrackListNav(flatTracks, containerRef);
+    useTrackListNav(flatTracks, containerRef, playTrack);
   const trackMenu = useTrackContextMenu();
 
   useAlbumArtworkRequests(albums, FileRequestSource.ARTWORK_BROWSE);

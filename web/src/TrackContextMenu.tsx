@@ -16,6 +16,13 @@ interface Position {
   y: number;
 }
 
+// the play actions a view supplies for a track: play now (in that view's order,
+// starting at this track) and queue it right after the current track
+export interface TrackMenuActions {
+  play: () => void;
+  playNext: () => void;
+}
+
 // a plain row in the context menu; the actions do nothing yet, they just close
 function MenuItem({
   icon,
@@ -47,12 +54,14 @@ function TrackContextMenu({
   track,
   playlists,
   currentPlaylistId,
+  actions,
   onClose,
 }: {
   position: Position;
   track: Track;
   playlists: Playlist[];
   currentPlaylistId?: string;
+  actions: TrackMenuActions;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -93,10 +102,22 @@ function TrackContextMenu({
         minWidth: 200,
       }}
     >
-      <MenuItem icon={<PlayFill size={15} />} onClick={onClose}>
+      <MenuItem
+        icon={<PlayFill size={15} />}
+        onClick={() => {
+          actions.play();
+          onClose();
+        }}
+      >
         Play
       </MenuItem>
-      <MenuItem icon={<SkipForwardFill size={15} />} onClick={onClose}>
+      <MenuItem
+        icon={<SkipForwardFill size={15} />}
+        onClick={() => {
+          actions.playNext();
+          onClose();
+        }}
+      >
         Play Next
       </MenuItem>
       <MenuItem icon={<Download size={15} />} onClick={onClose}>
@@ -174,12 +195,20 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
   const [state, setState] = useState<{
     track: Track;
     position: Position;
+    actions: TrackMenuActions;
   } | null>(null);
 
-  const openMenu = useCallback((event: React.MouseEvent, track: Track) => {
-    event.preventDefault();
-    setState({ track, position: { x: event.clientX, y: event.clientY } });
-  }, []);
+  const openMenu = useCallback(
+    (event: React.MouseEvent, track: Track, actions: TrackMenuActions) => {
+      event.preventDefault();
+      setState({
+        track,
+        position: { x: event.clientX, y: event.clientY },
+        actions,
+      });
+    },
+    []
+  );
 
   const element = state ? (
     <TrackContextMenu
@@ -187,6 +216,7 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
       track={state.track}
       playlists={playlists}
       currentPlaylistId={currentPlaylistId}
+      actions={state.actions}
       onClose={() => setState(null)}
     />
   ) : null;

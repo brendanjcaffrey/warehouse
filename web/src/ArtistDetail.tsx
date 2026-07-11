@@ -1,10 +1,15 @@
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { Track } from "./Library";
 import { buildAlbums } from "./Albums";
-import { AlbumSection, PlayShuffleButtons } from "./AlbumSection";
+import {
+  AlbumSection,
+  PlayShuffleButtons,
+  playTrackInAlbum,
+} from "./AlbumSection";
 import { useTrackListNav } from "./useTrackListNav";
 import { useAlbumArtworkRequests } from "./useAlbumArtworkRequests";
 import { useTrackContextMenu } from "./TrackContextMenu";
+import { player } from "./Player";
 import { FileRequestSource } from "./WorkerTypes";
 
 interface ArtistDetailProps {
@@ -20,8 +25,18 @@ function ArtistDetail({ name, tracks }: ArtistDetailProps) {
     [albums]
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  // enter plays the focused track within its own album, matching a double-click
+  const playTrack = useCallback(
+    (track: Track) => {
+      const album = albums.find((a) => a.tracks.includes(track));
+      if (album) {
+        playTrackInAlbum(album, track);
+      }
+    },
+    [albums]
+  );
   const { selectedTrackId, setSelectedTrackId, handleKeyDown } =
-    useTrackListNav(flatTracks, containerRef);
+    useTrackListNav(flatTracks, containerRef, playTrack);
   const trackMenu = useTrackContextMenu();
 
   useAlbumArtworkRequests(albums, FileRequestSource.ARTWORK_BROWSE);
@@ -37,7 +52,15 @@ function ArtistDetail({ name, tracks }: ArtistDetailProps) {
     >
       <div className="d-flex align-items-center gap-3 mb-4">
         <h2 className="mb-0 text-truncate">{name}</h2>
-        <PlayShuffleButtons size={22} />
+        <PlayShuffleButtons
+          size={22}
+          onPlay={() =>
+            player().playTracksInOrder(`artist:${name}`, flatTracks, 0)
+          }
+          onShuffle={() =>
+            player().playTracksShuffled(`artist:${name}`, flatTracks)
+          }
+        />
       </div>
       {albums.map((album) => (
         <AlbumSection

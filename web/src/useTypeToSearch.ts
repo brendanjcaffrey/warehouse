@@ -22,6 +22,26 @@ export function nearestMatch(items: string[], query: string): number {
   return contains;
 }
 
+// which keystrokes extend the query: single printable characters without
+// modifiers. a bare space is the play/pause shortcut rather than a query
+// character, so it only counts once a query is already under way (letting
+// multi-word matches like "led zeppelin" still work)
+export function isQueryKey(
+  key: string,
+  hasQuery: boolean,
+  modifiers: { metaKey: boolean; ctrlKey: boolean; altKey: boolean }
+): boolean {
+  if (
+    key.length !== 1 ||
+    modifiers.metaKey ||
+    modifiers.ctrlKey ||
+    modifiers.altKey
+  ) {
+    return false;
+  }
+  return key !== " " || hasQuery;
+}
+
 // type-to-search for a focused list: printable keys accumulate into a query
 // (cleared after a pause) and each keystroke reports the nearest match, so
 // typing "led" scrolls to "led zeppelin". returns true when it handled the key
@@ -35,7 +55,7 @@ export function useTypeToSearch(
   return useCallback(
     (event: KeyboardEvent): boolean => {
       const key = event.key;
-      if (key.length !== 1 || event.metaKey || event.ctrlKey || event.altKey) {
+      if (!isQueryKey(key, bufferRef.current !== "", event)) {
         return false;
       }
       bufferRef.current += key.toLowerCase();
