@@ -9,10 +9,12 @@ struct PlaylistItem: Identifiable, Hashable, Sendable {
     let trackIds: [String]
 }
 
-/// where show in playlist navigates: the playlist plus the track to scroll to
+/// where show in playlist navigates: the playlist plus the track to scroll
+/// to; the song is nil when opening the playlist without a target track,
+/// e.g. from a spotlight result
 struct PlaylistDestination: Hashable {
     let playlist: PlaylistItem
-    let song: Song
+    let song: Song?
 }
 
 /// pure helpers for the playlists list
