@@ -1,19 +1,22 @@
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 import { useAtomValue } from "jotai";
 import { Form, Spinner, Stack } from "react-bootstrap";
-import { ArrowReturnLeft } from "react-bootstrap-icons";
+import { ThreeDots } from "react-bootstrap-icons";
 import Artwork from "./Artwork";
 import DelayedElement from "./DelayedElement";
 import useBreakpoint from "@restart/hooks/useBreakpoint";
 import { player } from "./Player";
 import {
-  showTrackFnAtom,
   playingTrackAtom,
   currentTimeAtom,
   waitingForMusicDownloadAtom,
 } from "./State";
 import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
 import { trackProgress } from "./TrackProgress";
+import { usePlaylists } from "./usePlaylists";
+import { useReveal } from "./useReveal";
+import { useTrackContextMenu } from "./TrackContextMenu";
+import { resolvePlayingSource } from "./PlayingSource";
 
 const NO_WRAP: React.CSSProperties = {
   whiteSpace: "nowrap",
@@ -64,11 +67,26 @@ function TrimNotch({ position }: { position: number }) {
 function NowPlaying() {
   const isSmallScreen = useBreakpoint("md", "down");
 
-  const [returnDown, setReturnDown] = useState(false);
-  const showTrackFn = useAtomValue(showTrackFnAtom);
   const playingTrack = useAtomValue(playingTrackAtom);
   const currentTime = useAtomValue(currentTimeAtom);
   const waitingForMusicDownload = useAtomValue(waitingForMusicDownloadAtom);
+  const playlists = usePlaylists();
+  const revealTo = useReveal();
+  // where the playing track is playing from, driving the return-to-source link
+  // and the subtitle. null when it's an unknown playlist
+  const source = playingTrack
+    ? resolvePlayingSource(
+        playingTrack.playlistId,
+        playingTrack.track,
+        playlists
+      )
+    : null;
+  // exclude the playing playlist from the menu's "show in playlist" submenu
+  const currentPlaylistId =
+    source && source.reveal.view === "playlist"
+      ? source.reveal.selectionId
+      : undefined;
+  const trackMenu = useTrackContextMenu(currentPlaylistId);
   const { duration, startNotch, finishNotch } = trackProgress(
     playingTrack?.track
   );
@@ -77,19 +95,6 @@ function NowPlaying() {
     duration > 0
       ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
       : 0;
-
-  function returnButtonDown() {
-    setReturnDown(true);
-  }
-  function returnButtonUp() {
-    setReturnDown(false);
-    if (playingTrack) {
-      showTrackFn.fn({
-        playlistId: playingTrack.playlistId,
-        playlistOffset: playingTrack.playlistOffset,
-      });
-    }
-  }
 
   return (
     <Stack direction="horizontal" className="w-100">
@@ -136,25 +141,31 @@ function NowPlaying() {
                     </span>
                   </DelayedElement>
                 )}
-                {/* only the title truncates, so the return button stays visible */}
+                {/* only the title truncates, so the menu button stays visible */}
                 <span style={NO_WRAP}>
                   {playingTrack?.track.name || <span>&nbsp;</span>}
                 </span>
                 {playingTrack && (
                   <span
-                    onMouseDown={returnButtonDown}
-                    onMouseUp={returnButtonUp}
-                    style={{ flexShrink: 0 }}
+                    role="button"
+                    aria-label="track menu"
+                    onClick={(event) =>
+                      trackMenu.openMenu(
+                        event,
+                        playingTrack.track,
+                        undefined,
+                        source
+                          ? {
+                              label: source.label,
+                              onClick: () =>
+                                revealTo(source.reveal, source.path),
+                            }
+                          : undefined
+                      )
+                    }
+                    style={{ flexShrink: 0, cursor: "pointer" }}
                   >
-                    <ArrowReturnLeft
-                      size={12}
-                      color={
-                        returnDown
-                          ? "var(--bs-secondary-color)"
-                          : "var(--bs-body-color)"
-                      }
-                      style={{ cursor: "pointer", marginLeft: "2px" }}
-                    />
+                    <ThreeDots size={14} style={{ marginLeft: "2px" }} />
                   </span>
                 )}
               </div>
@@ -195,6 +206,7 @@ function NowPlaying() {
           {finishNotch !== null && <TrimNotch position={finishNotch} />}
         </div>
       </div>
+      {trackMenu.element}
     </Stack>
   );
 }

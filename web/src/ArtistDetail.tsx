@@ -36,7 +36,7 @@ function ArtistDetail({ name, tracks }: ArtistDetailProps) {
     [albums]
   );
   const { selectedTrackId, setSelectedTrackId, handleKeyDown } =
-    useTrackListNav(flatTracks, containerRef, playTrack);
+    useTrackListNav(flatTracks, containerRef, playTrack, "artists");
   const trackMenu = useTrackContextMenu();
 
   useAlbumArtworkRequests(albums, FileRequestSource.ARTWORK_BROWSE);

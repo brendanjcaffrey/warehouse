@@ -159,6 +159,13 @@ namespace :web do
     end
   end
 
+  desc 'run the web browser-mode tests once (needs playwright chromium)'
+  task :vitest_browser do
+    Dir.chdir('web') do
+      exec('npx vitest run --config vitest.browser.config.ts')
+    end
+  end
+
   desc 'regenerate the web favicons from logo.svg (needs imagemagick)'
   task :favicon do
     source = "#{ROOT}/logo.svg"

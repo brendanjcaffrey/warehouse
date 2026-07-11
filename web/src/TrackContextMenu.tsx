@@ -1,15 +1,33 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
+  ArrowReturnLeft,
   CaretRightFill,
+  Disc,
   Download,
+  MusicNoteBeamed,
   MusicNoteList,
   PencilSquare,
+  PersonFill,
   PlayFill,
   SkipForwardFill,
 } from "react-bootstrap-icons";
 import library, { Playlist, Track } from "./Library";
 import { usePlaylists } from "./usePlaylists";
-import { trackPlaylistOptions } from "./TrackMenu";
+import {
+  GotoTarget,
+  trackGotoTargets,
+  trackPlaylistOptions,
+} from "./TrackMenu";
+import { RevealView } from "./State";
+import { useReveal } from "./useReveal";
+
+// the icon each "go to" entry shows, matching the sidebar's view icons
+const GOTO_ICONS: Record<GotoTarget["kind"], typeof MusicNoteBeamed> = {
+  song: MusicNoteBeamed,
+  artist: PersonFill,
+  album: Disc,
+};
 
 interface Position {
   x: number;
@@ -55,17 +73,30 @@ function TrackContextMenu({
   playlists,
   currentPlaylistId,
   actions,
+  returnToSource,
   onClose,
 }: {
   position: Position;
   track: Track;
   playlists: Playlist[];
   currentPlaylistId?: string;
-  actions: TrackMenuActions;
+  actions?: TrackMenuActions;
+  returnToSource?: { label: string; onClick: () => void };
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [submenuOpen, setSubmenuOpen] = useState(false);
+  const { pathname } = useLocation();
+  const revealTo = useReveal();
+
+  // open a view and ask it to reveal this track, then close the menu
+  const reveal = useCallback(
+    (view: RevealView, path: string, selectionId?: string) => {
+      revealTo({ trackId: track.id, view, selectionId }, path);
+      onClose();
+    },
+    [revealTo, track.id, onClose]
+  );
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
@@ -87,6 +118,7 @@ function TrackContextMenu({
   }, [onClose]);
 
   const canEdit = library().getTrackUserChanges();
+  const gotoTargets = trackGotoTargets(track, pathname);
   const options = trackPlaylistOptions(track, playlists, currentPlaylistId);
 
   return (
@@ -102,24 +134,49 @@ function TrackContextMenu({
         minWidth: 200,
       }}
     >
-      <MenuItem
-        icon={<PlayFill size={15} />}
-        onClick={() => {
-          actions.play();
-          onClose();
-        }}
-      >
-        Play
-      </MenuItem>
-      <MenuItem
-        icon={<SkipForwardFill size={15} />}
-        onClick={() => {
-          actions.playNext();
-          onClose();
-        }}
-      >
-        Play Next
-      </MenuItem>
+      {returnToSource && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            returnToSource.onClick();
+            onClose();
+          }}
+          className="dropdown-item d-flex align-items-center gap-2"
+        >
+          <span className="flex-shrink-0 d-inline-flex">
+            <ArrowReturnLeft size={15} />
+          </span>
+          <span className="d-flex flex-column" style={{ minWidth: 0 }}>
+            Return to source
+            <span className="text-secondary small text-truncate">
+              {returnToSource.label}
+            </span>
+          </span>
+        </button>
+      )}
+      {actions && (
+        <>
+          <MenuItem
+            icon={<PlayFill size={15} />}
+            onClick={() => {
+              actions.play();
+              onClose();
+            }}
+          >
+            Play
+          </MenuItem>
+          <MenuItem
+            icon={<SkipForwardFill size={15} />}
+            onClick={() => {
+              actions.playNext();
+              onClose();
+            }}
+          >
+            Play Next
+          </MenuItem>
+        </>
+      )}
       <MenuItem icon={<Download size={15} />} onClick={onClose}>
         Download
       </MenuItem>
@@ -129,6 +186,18 @@ function TrackContextMenu({
         </MenuItem>
       )}
       <div className="dropdown-divider" />
+      {gotoTargets.map((target) => {
+        const Icon = GOTO_ICONS[target.kind];
+        return (
+          <MenuItem
+            key={target.kind}
+            icon={<Icon size={15} />}
+            onClick={() => reveal(target.view, target.path, target.selectionId)}
+          >
+            {target.label}
+          </MenuItem>
+        );
+      })}
       <div
         className="position-relative"
         onMouseEnter={() => setSubmenuOpen(true)}
@@ -173,7 +242,9 @@ function TrackContextMenu({
                   key={option.id}
                   type="button"
                   role="menuitem"
-                  onClick={onClose}
+                  onClick={() =>
+                    reveal("playlist", `/playlists/${option.id}`, option.id)
+                  }
                   className="dropdown-item text-truncate"
                 >
                   {option.name}
@@ -195,16 +266,23 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
   const [state, setState] = useState<{
     track: Track;
     position: Position;
-    actions: TrackMenuActions;
+    actions?: TrackMenuActions;
+    returnToSource?: { label: string; onClick: () => void };
   } | null>(null);
 
   const openMenu = useCallback(
-    (event: React.MouseEvent, track: Track, actions: TrackMenuActions) => {
+    (
+      event: React.MouseEvent,
+      track: Track,
+      actions?: TrackMenuActions,
+      returnToSource?: { label: string; onClick: () => void }
+    ) => {
       event.preventDefault();
       setState({
         track,
         position: { x: event.clientX, y: event.clientY },
         actions,
+        returnToSource,
       });
     },
     []
@@ -217,6 +295,7 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
       playlists={playlists}
       currentPlaylistId={currentPlaylistId}
       actions={state.actions}
+      returnToSource={state.returnToSource}
       onClose={() => setState(null)}
     />
   ) : null;

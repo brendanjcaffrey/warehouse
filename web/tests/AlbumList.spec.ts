@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { buildAlbumList, filterAlbumList } from "../src/AlbumList";
+import {
+  albumKeyForTrack,
+  buildAlbumList,
+  filterAlbumList,
+} from "../src/AlbumList";
 import { Track } from "../src/Library";
 
 function makeTrack(overrides: Partial<Track> & { id: string }): Track {
@@ -127,4 +131,20 @@ test("filters albums by the artist name too", () => {
 test("returns the whole list for a blank or whitespace query", () => {
   expect(filterAlbumList(sampleAlbums, "")).toBe(sampleAlbums);
   expect(filterAlbumList(sampleAlbums, "   ")).toBe(sampleAlbums);
+});
+
+test("albumKeyForTrack matches the key an album entry is built with", () => {
+  const track = makeTrack({
+    id: "1",
+    albumName: "Best Of",
+    artistName: "solo",
+    albumArtistName: "various",
+  });
+  const albums = buildAlbumList([track]);
+  expect(albumKeyForTrack(track)).toBe(albums[0].key);
+});
+
+test("albumKeyForTrack falls back to the track artist without an album artist", () => {
+  const track = makeTrack({ id: "1", albumName: "Solo", artistName: "singer" });
+  expect(albumKeyForTrack(track)).toBe("singer\tSolo");
 });

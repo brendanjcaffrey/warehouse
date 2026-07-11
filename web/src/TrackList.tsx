@@ -19,6 +19,7 @@ import { cycleSort, sortTracks, SortKey } from "./TrackSort";
 import { filterTracks, searchTracks, FilterState } from "./TrackFilter";
 import { searchAtom } from "./State";
 import { trackLayoutAtom } from "./Settings";
+import { useTrackListReveal } from "./Reveal";
 import { useTrackContextMenu } from "./TrackContextMenu";
 import {
   buildTemplate,
@@ -259,6 +260,15 @@ function TrackList({ playlistId }: TrackListProps) {
     const filtered = filterTracks(searched, filters, TRACK_COLUMNS);
     return sortTracks(filtered, sortKeys, TRACK_COLUMNS);
   }, [tracks, search, filters, sortKeys]);
+
+  // a "go to song" or a "show in playlist" for this playlist selects the track,
+  // centres it and consumes the request. it waits for the tracks to load, then
+  // fires once whether or not the track is present so a stale request can't linger
+  const revealTrack = useCallback((trackId: string, index: number) => {
+    setSelectedId(trackId);
+    listRef.current?.scrollToItem(index, "center");
+  }, []);
+  useTrackListReveal(playlistId, tracks.length > 0, rows, revealTrack);
 
   // one shared grid template keeps the header cells lined up with the body cells;
   // it reflects the live drag width so the column tracks the cursor as you resize

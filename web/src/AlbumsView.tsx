@@ -8,6 +8,7 @@ import {
 import AutoSizer from "react-virtualized-auto-sizer";
 import { albumListWidthAtom, ClampSidebarWidth } from "./Settings";
 import { searchAtom } from "./State";
+import { useRevealListSelection } from "./Reveal";
 import { FileRequestSource } from "./WorkerTypes";
 import { useResizableWidth } from "./useResizableWidth";
 import { useTypeToSearch } from "./useTypeToSearch";
@@ -40,6 +41,21 @@ function AlbumsView() {
     ClampSidebarWidth
   );
   const listRef = useRef<FixedSizeList>(null);
+
+  const albumKeys = useMemo(() => albums.map((album) => album.key), [albums]);
+  const scrollToIndex = useCallback(
+    (index: number) => listRef.current?.scrollToItem(index, "smart"),
+    []
+  );
+  // a "go to album" selects the album and scrolls the list to it; the mounted
+  // AlbumDetail then reveals the track and clears the request
+  useRevealListSelection(
+    "albums",
+    albumKeys,
+    selectedKey,
+    setSelectedKey,
+    scrollToIndex
+  );
 
   const selectIndex = useCallback(
     (index: number) => {

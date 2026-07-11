@@ -32,7 +32,7 @@ function AlbumDetail({ name, tracks }: AlbumDetailProps) {
     [albums]
   );
   const { selectedTrackId, setSelectedTrackId, handleKeyDown } =
-    useTrackListNav(flatTracks, containerRef, playTrack);
+    useTrackListNav(flatTracks, containerRef, playTrack, "albums");
   const trackMenu = useTrackContextMenu();
 
   useAlbumArtworkRequests(albums, FileRequestSource.ARTWORK_BROWSE);

@@ -17,6 +17,15 @@ function albumArtist(track: Track): string {
   return track.albumArtistName || track.artistName;
 }
 
+// the stable key grouping a track into its album entry, keyed on the credited
+// album artist and album name. shared so the album view and the "go to album"
+// menu resolve a track to the exact same album
+export function albumKeyForTrack(
+  track: Pick<Track, "albumArtistName" | "artistName" | "albumName">
+): string {
+  return `${track.albumArtistName || track.artistName}\t${track.albumName}`;
+}
+
 // collapses the library's tracks into a distinct list of albums, one per
 // album-artist and album-name pair, skipping tracks with a blank album name so
 // no unknown album shows up. sorted by album sort name, then artist.
@@ -26,7 +35,7 @@ export function buildAlbumList(tracks: Track[]): AlbumListEntry[] {
     if (!track.albumName) {
       continue;
     }
-    const key = `${albumArtist(track)}\t${track.albumName}`;
+    const key = albumKeyForTrack(track);
     const group = byKey.get(key);
     if (group) {
       group.push(track);

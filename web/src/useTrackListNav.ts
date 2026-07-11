@@ -6,6 +6,8 @@ import {
   useState,
 } from "react";
 import { Track } from "./Library";
+import { RevealView } from "./State";
+import { useDetailTrackReveal } from "./Reveal";
 import { useTypeToSearch } from "./useTypeToSearch";
 
 // keyboard selection and type-to-search for a scrollable track list: arrow keys
@@ -14,9 +16,20 @@ import { useTypeToSearch } from "./useTypeToSearch";
 export function useTrackListNav(
   flatTracks: Track[],
   containerRef: RefObject<HTMLElement | null>,
-  onPlayTrack: (track: Track) => void
+  onPlayTrack: (track: Track) => void,
+  revealView: RevealView
 ) {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+
+  // when a "go to" lands on this view and the target track is one of ours,
+  // select it, scroll it to the middle, and consume the request. the parent
+  // view has already selected the right artist/album so it's in flatTracks
+  useDetailTrackReveal(
+    revealView,
+    flatTracks,
+    containerRef,
+    setSelectedTrackId
+  );
 
   const selectIndex = useCallback(
     (index: number) => {

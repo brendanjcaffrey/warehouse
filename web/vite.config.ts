@@ -37,6 +37,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // browser-mode tests run under their own config so the fast jsdom suite
+    // isn't gated on a playwright browser being installed
+    exclude: ["node_modules/**", "tests/**/*.browser.test.tsx"],
   },
   server: {
     port: 20602,

@@ -4,6 +4,7 @@ import { FixedSizeList, ListChildComponentProps } from "react-window";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { artistListWidthAtom, ClampSidebarWidth } from "./Settings";
 import { searchAtom } from "./State";
+import { useRevealListSelection } from "./Reveal";
 import { useResizableWidth } from "./useResizableWidth";
 import { useTypeToSearch } from "./useTypeToSearch";
 import { useTracks } from "./useTracks";
@@ -33,6 +34,24 @@ function ArtistsView() {
     ClampSidebarWidth
   );
   const listRef = useRef<FixedSizeList>(null);
+
+  const artistNames = useMemo(
+    () => artists.map((artist) => artist.name),
+    [artists]
+  );
+  const scrollToIndex = useCallback(
+    (index: number) => listRef.current?.scrollToItem(index, "smart"),
+    []
+  );
+  // a "go to artist" selects the artist and scrolls the list to it; the mounted
+  // ArtistDetail then reveals the track and clears the request
+  useRevealListSelection(
+    "artists",
+    artistNames,
+    selected,
+    setSelected,
+    scrollToIndex
+  );
 
   const selectIndex = useCallback(
     (index: number) => {
