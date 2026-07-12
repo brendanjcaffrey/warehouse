@@ -44,15 +44,23 @@ struct WarehouseApp: App {
         _router = State(initialValue: routerStore)
 
         let watchSettings = WatchSyncSettingsStore()
-        let watchSession = PhoneWatchSession {
-            WatchPayload(
-                serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
-                token: authStore.token ?? "",
-                playlistIds: watchSettings.playlistIds)
-        }
+        let watchSession = PhoneWatchSession(
+            payload: {
+                WatchPayload(
+                    serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
+                    token: authStore.token ?? "",
+                    playlistIds: watchSettings.playlistIds)
+            },
+            onPlay: { trackId in
+                Task { await updatesStore.addPlay(trackId: trackId) }
+            })
         watchSettings.onChange = { watchSession.push() }
         _watchSettings = State(initialValue: watchSettings)
         self.watchSession = watchSession
+        // activate here rather than in the scene: watch connectivity launches
+        // the app in the background to deliver queued plays, & the delegate
+        // must be in place for that
+        watchSession.activate()
 
         // intents run outside the swiftui environment; they resolve the live
         // stores through the app intents dependency manager instead
@@ -104,7 +112,6 @@ struct WarehouseApp: App {
                     Task { await intents.refreshSpotlight() }
                 }
                 .task {
-                    watchSession.activate()
                     WarehouseShortcuts.updateAppShortcutParameters()
                     await intents.refreshSpotlight()
                 }

@@ -11,6 +11,7 @@ struct WarehouseWatchApp: App {
     @State private var player: PlayerStore
 
     private let phone: WatchPhoneSession
+    private let plays: PlayReportQueue
 
     init() {
         let database = LibraryDatabase()
@@ -27,9 +28,18 @@ struct WarehouseWatchApp: App {
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: SongsStore(database: database, fileStore: fileStore))
         _playlists = State(initialValue: PlaylistsStore(database: database))
-        // plays aren't reported back from the watch, so no played callback
-        _player = State(initialValue: PlayerStore(fileStore: fileStore))
-        phone = WatchPhoneSession(settings: settings)
+        let phone = WatchPhoneSession(settings: settings)
+        // finished plays queue here & ride the connectivity session back to
+        // the phone, which pushes them to the server
+        let plays = PlayReportQueue(
+            canSend: { phone.canSend },
+            outstandingIds: { phone.outstandingPlayIds },
+            send: { phone.send($0) })
+        phone.onActivated = { plays.drain() }
+        _player = State(initialValue: PlayerStore(
+            fileStore: fileStore, onTrackPlayed: { plays.add(trackId: $0) }))
+        self.phone = phone
+        self.plays = plays
     }
 
     var body: some Scene {
