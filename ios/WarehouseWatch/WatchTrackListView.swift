@@ -1,10 +1,14 @@
 import SwiftUI
 
 struct WatchTrackListView: View {
+    @Environment(WatchSettingsStore.self) private var settings
+    @Environment(PlayerStore.self) private var player
+
     let title: String
     let songs: [Song]
 
     @State private var search = ""
+    @State private var showingNowPlaying = false
     /// scroll the buttons to the top once on open so the filter starts hidden
     /// just above them, revealed by scrolling up
     @State private var didHideFilter = false
@@ -39,9 +43,12 @@ struct WatchTrackListView: View {
                 }
                 Section {
                     HStack {
-                        // playback comes in a later step
-                        actionButton("Play", systemImage: "play.fill")
-                        actionButton("Shuffle", systemImage: "shuffle")
+                        actionButton("Play", systemImage: "play.fill") {
+                            play(startingAt: 0)
+                        }
+                        actionButton("Shuffle", systemImage: "shuffle") {
+                            playShuffled()
+                        }
                     }
                     .listRowBackground(Color.clear)
                     .id(Anchor.buttons)
@@ -50,11 +57,19 @@ struct WatchTrackListView: View {
                     ContentUnavailableView.search(text: search)
                 } else {
                     ForEach(filtered) { song in
-                        WatchSongRow(song: song)
+                        Button {
+                            // a tap always plays the whole list, dropping any filter
+                            play(startingAt: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
+                        } label: {
+                            WatchSongRow(song: song)
+                        }
                     }
                 }
             }
             .navigationTitle(title)
+            .navigationDestination(isPresented: $showingNowPlaying) {
+                WatchNowPlayingView()
+            }
             .onAppear {
                 guard !didHideFilter else { return }
                 didHideFilter = true
@@ -66,15 +81,29 @@ struct WatchTrackListView: View {
         }
     }
 
-    private func actionButton(_ title: String, systemImage: String) -> some View {
-        Button {
-        } label: {
+    private func play(startingAt index: Int) {
+        player.play(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL())
+        startedPlaying()
+    }
+
+    private func playShuffled() {
+        player.playShuffled(songs, token: settings.token, baseURL: settings.baseURL())
+        startedPlaying()
+    }
+
+    private func startedPlaying() {
+        search = ""
+        showingNowPlaying = true
+    }
+
+    private func actionButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
-        .disabled(true)
+        .disabled(songs.isEmpty)
     }
 }
 

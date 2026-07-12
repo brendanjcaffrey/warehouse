@@ -19,6 +19,24 @@ enum RepeatMode: Sendable {
         case .one: .off
         }
     }
+
+    /// maps from the system now playing controls' repeat setting
+    init(_ repeatType: MPRepeatType) {
+        switch repeatType {
+        case .one: self = .one
+        case .all: self = .all
+        default: self = .off
+        }
+    }
+
+    /// maps back into the system now playing controls' repeat setting
+    var repeatType: MPRepeatType {
+        switch self {
+        case .off: .off
+        case .all: .all
+        case .one: .one
+        }
+    }
 }
 
 @MainActor
@@ -34,7 +52,9 @@ final class PlayerStore {
     var song: Song? { queue.current?.song }
 
     private let fileStore: FileStore
-    private let updates: UpdatesStore
+    /// called with the track id when a track plays through to its finish; the
+    /// phone records a play to push back into itunes, the watch leaves it nil
+    private let onTrackPlayed: (@MainActor (String) -> Void)?
     private let downloader: FileDownloader
     private let player = AVPlayer()
     /// kept from the last play call for loading later tracks in the queue
@@ -46,6 +66,9 @@ final class PlayerStore {
     private var routeChangeObserver: NSObjectProtocol?
     private var audioSessionConfigured = false
     private var remoteCommandsConfigured = false
+    /// on watchos the session activates asynchronously (it can prompt for a
+    /// bluetooth output) & needs re-activating after the route goes away
+    private var sessionActivated = false
     /// set when the user scrubs past the stop time, so the track plays
     /// through to the end of the file instead of stopping right away
     private var ignoresFinish = false
@@ -56,9 +79,13 @@ final class PlayerStore {
     /// the user has moved on doesn't hijack playback
     private var startGeneration = 0
 
-    init(fileStore: FileStore, updates: UpdatesStore, client: LibraryClient = LibraryClient()) {
+    init(
+        fileStore: FileStore,
+        client: LibraryClient = LibraryClient(),
+        onTrackPlayed: (@MainActor (String) -> Void)? = nil
+    ) {
         self.fileStore = fileStore
-        self.updates = updates
+        self.onTrackPlayed = onTrackPlayed
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
         observeAudioSession()
     }
@@ -84,6 +111,7 @@ final class PlayerStore {
         var replacement = newQueue
         replacement.inheritHistory(from: queue)
         queue = replacement
+        updateRemoteCommandModes()
         startCurrent()
     }
 
@@ -112,12 +140,21 @@ final class PlayerStore {
         setNowPlayingInfo(for: song)
         updateNowPlayingPlaybackState()
 
-        if isDownloaded {
-            beginPlayback(of: song)
-        } else if let token, let baseURL {
-            Task { @MainActor in
+        let token = token
+        let baseURL = baseURL
+        Task { @MainActor in
+            let activated = await activateSession()
+            // drop it if the user skipped to another track in the meantime
+            guard generation == startGeneration else { return }
+            guard activated else {
+                isPlaying = false
+                updateNowPlayingPlaybackState()
+                return
+            }
+            if isDownloaded {
+                beginPlayback(of: song)
+            } else if let token, let baseURL {
                 let ok = await downloader.download(.music, filename: song.musicFilename, token: token, baseURL: baseURL)
-                // drop it if the user skipped to another track while downloading
                 guard generation == startGeneration else { return }
                 if ok {
                     beginPlayback(of: song)
@@ -164,15 +201,26 @@ final class PlayerStore {
 
     func resume() {
         guard song != nil, !isPlaying else { return }
-        // the session may have gone inactive after a long pause or interruption
-        try? AVAudioSession.sharedInstance().setActive(true)
         // play again after the track ended restarts it
         if effectiveEnd > 0 && currentTime >= effectiveEnd {
             seek(to: window.start)
         }
-        player.play()
         isPlaying = true
         updateNowPlayingPlaybackState()
+        let generation = startGeneration
+        Task { @MainActor in
+            // the session may have gone inactive after a long pause,
+            // interruption or (on the watch) losing its bluetooth output
+            guard await activateSession() else {
+                if generation == startGeneration {
+                    isPlaying = false
+                    updateNowPlayingPlaybackState()
+                }
+                return
+            }
+            guard generation == startGeneration, isPlaying else { return }
+            player.play()
+        }
     }
 
     /// steps back through the queue, wrapping around at the start, when near
@@ -243,11 +291,17 @@ final class PlayerStore {
     /// shuffles the upcoming tracks or restores their original order
     func setShuffled(_ shuffled: Bool) {
         queue.setShuffled(shuffled)
+        updateRemoteCommandModes()
     }
 
     /// steps the repeat button through off, repeat all & repeat one
     func cycleRepeatMode() {
-        repeatMode = repeatMode.next
+        setRepeatMode(repeatMode.next)
+    }
+
+    func setRepeatMode(_ mode: RepeatMode) {
+        repeatMode = mode
+        updateRemoteCommandModes()
     }
 
     /// reorders the upcoming tracks from the queue view
@@ -320,8 +374,28 @@ final class PlayerStore {
         guard !audioSessionConfigured else { return }
         audioSessionConfigured = true
         let session = AVAudioSession.sharedInstance()
+        #if os(watchOS)
+        // long form audio is how watchos routes music to bluetooth headphones
+        try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+        #else
         try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
+        #endif
+    }
+
+    /// makes the audio session ready for playback; on watchos activation is
+    /// async & prompts the user to pick a bluetooth output, which can be
+    /// declined, so playback only starts once it succeeds
+    private func activateSession() async -> Bool {
+        #if os(watchOS)
+        if sessionActivated { return true }
+        sessionActivated = (try? await AVAudioSession.sharedInstance().activate(options: [])) ?? false
+        return sessionActivated
+        #else
+        // failures here have never blocked playback on ios, keep it that way
+        try? AVAudioSession.sharedInstance().setActive(true)
+        return true
+        #endif
     }
 
     /// listens for interruptions (calls, siri, other apps) and route changes
@@ -367,6 +441,10 @@ final class PlayerStore {
               let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
         if reason == .oldDeviceUnavailable {
+            #if os(watchOS)
+            // the output is gone, so the next play must re-activate & re-route
+            sessionActivated = false
+            #endif
             pause()
         }
     }
@@ -402,6 +480,29 @@ final class PlayerStore {
             Task { @MainActor in self?.seek(to: position) }
             return .success
         }
+        center.changeShuffleModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            let shuffled = event.shuffleType != .off
+            Task { @MainActor in self?.setShuffled(shuffled) }
+            return .success
+        }
+        center.changeRepeatModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            let mode = RepeatMode(event.repeatType)
+            Task { @MainActor in self?.setRepeatMode(mode) }
+            return .success
+        }
+        updateRemoteCommandModes()
+    }
+
+    /// mirrors shuffle & repeat into the system now playing controls; watchos
+    /// takes the commands but has no properties to reflect their state
+    private func updateRemoteCommandModes() {
+        #if !os(watchOS)
+        let center = MPRemoteCommandCenter.shared()
+        center.changeShuffleModeCommand.currentShuffleType = queue.isShuffled ? .items : .off
+        center.changeRepeatModeCommand.currentRepeatType = repeatMode.repeatType
+        #endif
     }
 
     private func setNowPlayingInfo(for song: Song) {
@@ -453,8 +554,7 @@ final class PlayerStore {
     /// move on, or stop depending on the repeat mode & queue position
     func handleTrackEnd() {
         if let song {
-            let updates = updates
-            Task { await updates.addPlay(trackId: song.id) }
+            onTrackPlayed?(song.id)
         }
         let continues: Bool
         switch repeatMode {

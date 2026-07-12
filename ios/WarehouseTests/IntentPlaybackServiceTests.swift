@@ -19,21 +19,13 @@ struct IntentPlaybackServiceTests {
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "intent-service-tests-\(UUID().uuidString)"))
-        let suiteName = "IntentPlaybackServiceTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        let updates = UpdatesStore(
-            fileURL: FileManager.default.temporaryDirectory
-                .appending(path: "intent-service-tests-\(UUID().uuidString)")
-                .appending(path: "updates.json"),
-            session: MockURLProtocol.makeSession(),
-            defaults: defaults)
         let auth = AuthStore(session: MockURLProtocol.makeSession())
         auth.logOut()
         let songs = SongsStore(database: database, fileStore: fileStore)
         let playlists = PlaylistsStore(database: database)
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
-        let player = PlayerStore(fileStore: fileStore, updates: updates, client: client)
+        let player = PlayerStore(fileStore: fileStore, client: client)
         let service = IntentPlaybackService(auth: auth, songs: songs, playlists: playlists, player: player)
         return Harness(service: service, auth: auth, player: player)
     }

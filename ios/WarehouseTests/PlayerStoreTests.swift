@@ -32,23 +32,14 @@ struct PlayerStoreTests {
         (1...count).map { song(id: "\($0)") }
     }
 
-    /// a player backed by throwaway temp files & defaults; nothing actually
-    /// plays since no music files exist, but the queue & modes work normally
+    /// a player backed by throwaway temp files; nothing actually plays since
+    /// no music files exist, but the queue & modes work normally
     @MainActor
-    static func makePlayer() -> PlayerStore {
-        let suiteName = "PlayerStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        let updates = UpdatesStore(
-            fileURL: FileManager.default.temporaryDirectory
-                .appending(path: "player-tests-\(UUID().uuidString)")
-                .appending(path: "updates.json"),
-            session: MockURLProtocol.makeSession(),
-            defaults: defaults)
+    static func makePlayer(onTrackPlayed: (@MainActor (String) -> Void)? = nil) -> PlayerStore {
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
-        return PlayerStore(fileStore: fileStore, updates: updates)
+        return PlayerStore(fileStore: fileStore, onTrackPlayed: onTrackPlayed)
     }
 
     /// a player wired to a mock server that answers every file request with a
@@ -62,17 +53,9 @@ struct PlayerStoreTests {
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
-        let suiteName = "PlayerStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        let updates = UpdatesStore(
-            fileURL: FileManager.default.temporaryDirectory
-                .appending(path: "player-tests-\(UUID().uuidString)")
-                .appending(path: "updates.json"),
-            session: MockURLProtocol.makeSession(),
-            defaults: defaults)
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
-        let player = PlayerStore(fileStore: fileStore, updates: updates, client: client)
+        let player = PlayerStore(fileStore: fileStore, client: client)
         return (player, fileStore, baseURL)
     }
 
@@ -184,6 +167,53 @@ struct PlayerStoreTests {
         player.cycleRepeatMode()
         player.play([], token: nil, baseURL: nil)
         #expect(player.repeatMode == .all)
+    }
+
+    @Test("a track playing through to its finish reports a play")
+    @MainActor
+    func trackEndReportsPlay() {
+        let played = PlayedTracks()
+        let player = Self.makePlayer(onTrackPlayed: { played.ids.append($0) })
+        player.play(Self.songs(2), token: nil, baseURL: nil)
+
+        player.handleTrackEnd()
+        #expect(played.ids == ["1"])
+
+        // stopping at the end of the queue still counts the last play
+        player.handleTrackEnd()
+        #expect(played.ids == ["1", "2"])
+    }
+
+    @MainActor
+    private final class PlayedTracks {
+        var ids = [String]()
+    }
+
+    @Test("system repeat settings map onto the player's modes & back")
+    func repeatTypeMapping() {
+        #expect(RepeatMode(MPRepeatType.off) == .off)
+        #expect(RepeatMode(MPRepeatType.all) == .all)
+        #expect(RepeatMode(MPRepeatType.one) == .one)
+        #expect(RepeatMode.off.repeatType == .off)
+        #expect(RepeatMode.all.repeatType == .all)
+        #expect(RepeatMode.one.repeatType == .one)
+    }
+
+    @Test("shuffle & repeat state is mirrored into the remote command center")
+    @MainActor
+    func remoteCommandModes() {
+        let player = Self.makePlayer()
+        let center = MPRemoteCommandCenter.shared()
+
+        player.playShuffled(Self.songs(3), token: nil, baseURL: nil)
+        #expect(center.changeShuffleModeCommand.currentShuffleType == .items)
+        #expect(center.changeRepeatModeCommand.currentRepeatType == .all)
+
+        player.setShuffled(false)
+        #expect(center.changeShuffleModeCommand.currentShuffleType == .off)
+
+        player.setRepeatMode(.one)
+        #expect(center.changeRepeatModeCommand.currentRepeatType == .one)
     }
 
     @Test("the repeat button cycles off, repeat all & repeat one")

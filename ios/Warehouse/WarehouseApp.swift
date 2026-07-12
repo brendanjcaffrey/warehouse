@@ -31,7 +31,9 @@ struct WarehouseApp: App {
         syncStore.protectedArtworkFilenames = { updatesStore.pendingArtworkFilenames }
         let songsStore = SongsStore(database: database, fileStore: fileStore)
         let playlistsStore = PlaylistsStore(database: database)
-        let playerStore = PlayerStore(fileStore: fileStore, updates: updatesStore)
+        let playerStore = PlayerStore(fileStore: fileStore, onTrackPlayed: { trackId in
+            Task { await updatesStore.addPlay(trackId: trackId) }
+        })
         let routerStore = NavigationRouter()
         _auth = State(initialValue: authStore)
         _sync = State(initialValue: syncStore)

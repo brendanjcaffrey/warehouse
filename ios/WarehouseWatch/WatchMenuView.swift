@@ -6,6 +6,7 @@ struct WatchMenuView: View {
     @Environment(SyncStore.self) private var sync
     @Environment(SongsStore.self) private var songs
     @Environment(PlaylistsStore.self) private var playlists
+    @Environment(PlayerStore.self) private var player
 
     @State private var isSyncing = false
     @State private var syncOutcome: SyncOutcome?
@@ -18,6 +19,13 @@ struct WatchMenuView: View {
     var body: some View {
         NavigationStack {
             List {
+                if player.song != nil {
+                    NavigationLink {
+                        WatchNowPlayingView()
+                    } label: {
+                        Label("Now Playing", systemImage: "play.circle")
+                    }
+                }
                 NavigationLink {
                     WatchTrackListView(
                         title: "Songs",

@@ -8,6 +8,7 @@ struct WarehouseWatchApp: App {
     @State private var sync: SyncStore
     @State private var songs: SongsStore
     @State private var playlists: PlaylistsStore
+    @State private var player: PlayerStore
 
     private let phone: WatchPhoneSession
 
@@ -26,6 +27,8 @@ struct WarehouseWatchApp: App {
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: SongsStore(database: database, fileStore: fileStore))
         _playlists = State(initialValue: PlaylistsStore(database: database))
+        // plays aren't reported back from the watch, so no played callback
+        _player = State(initialValue: PlayerStore(fileStore: fileStore))
         phone = WatchPhoneSession(settings: settings)
     }
 
@@ -36,6 +39,7 @@ struct WarehouseWatchApp: App {
                 .environment(sync)
                 .environment(songs)
                 .environment(playlists)
+                .environment(player)
                 .task {
                     phone.activate()
                 }
