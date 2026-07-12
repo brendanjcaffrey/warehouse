@@ -92,6 +92,86 @@ namespace :export do
   task :fast do
     Rake::Task['export:run'].invoke
   end
+
+  desc 'regenerate the macOS Warehouse Export app icon from logo.svg (needs librsvg + imagemagick)'
+  task :icons do
+    require 'json'
+    require 'tmpdir'
+
+    source  = "#{ROOT}/logo.svg"
+    iconset = "#{ROOT}/export/export/Assets.xcassets/AppIcon.appiconset"
+    abort "missing #{source}" unless File.exist?(source)
+
+    # macOS icons aren't auto-masked like iOS, so the artwork supplies its own
+    # rounded tile. the icon grid places an 824pt tile on a 1024 canvas (100pt
+    # margin all around for the system drop shadow), corner radius ~185. the
+    # glyph is centered on the tile with padding, matching the black-on-white
+    # iOS/web icon family.
+    tile   = 824
+    radius = 185
+    Dir.mktmpdir do |tmp|
+      # rasterize the vector with librsvg rather than imagemagick's built-in svg
+      # renderer: the latter renders the glyph's thin extremities (the bass-clef
+      # dots) faintly enough that a later -trim clips them off.
+      glyph_png = "#{tmp}/glyph.png"
+      command.run('rsvg-convert', '-w', '2048', '-h', '2048', '--keep-aspect-ratio',
+                  '--background-color=none', source, '-o', glyph_png)
+
+      master = "#{tmp}/master.png"
+
+      # a subtly gradiented white tile masked to a rounded rectangle, with a
+      # faint border so the edge reads against light backgrounds.
+      tile_args = [
+        '(', '-size', "#{tile}x#{tile}", 'gradient:#fbfcfd-#dfe3e9',
+        '(', '-size', "#{tile}x#{tile}", 'xc:none',
+        '-draw', "roundrectangle 0,0,#{tile - 1},#{tile - 1},#{radius},#{radius}", ')',
+        '-alpha', 'off', '-compose', 'CopyOpacity', '-composite',
+        '-fill', 'none', '-stroke', '#c4c9d1', '-strokewidth', '4',
+        '-draw', "roundrectangle 2,2,#{tile - 3},#{tile - 3},#{radius - 2},#{radius - 2}", ')'
+      ]
+      # trim the clean raster to the glyph and size it to leave generous padding.
+      glyph_args = ['(', glyph_png, '-trim', '+repage', '-resize', '430x430', ')']
+      # composite the glyph centered on the tile, then add a symmetric
+      # transparent border (824 -> 1024) to center the tile on the icon canvas
+      # with margin for the system drop shadow. (-border centers by construction;
+      # -extent with -gravity proved unreliable here.)
+      command.run('magick', *tile_args, *glyph_args,
+                  '-gravity', 'center', '-compose', 'over', '-composite',
+                  '-bordercolor', 'none', '-border', ((1024 - tile) / 2).to_s,
+                  "PNG32:#{master}")
+
+      # the macOS appiconset needs 16/32/128/256/512 at 1x and 2x. downscale the
+      # single master into each slot rather than re-rendering per size.
+      slots = [16, 32, 128, 256, 512].flat_map do |pt|
+        %w[1x 2x].map do |scale|
+          px     = scale == '2x' ? pt * 2 : pt
+          suffix = scale == '2x' ? '@2x' : ''
+          { 'size' => "#{pt}x#{pt}", 'idiom' => 'mac', 'scale' => scale,
+            'filename' => "export-icon-#{pt}#{suffix}.png", :px => px }
+        end
+      end
+
+      slots.each do |slot|
+        command.run('magick', master, '-resize', "#{slot[:px]}x#{slot[:px]}",
+                    '-depth', '8', '-strip', "PNG32:#{iconset}/#{slot['filename']}")
+      end
+
+      contents = {
+        'images' => slots.map { |slot| slot.except(:px) },
+        'info' => { 'author' => 'xcode', 'version' => 1 }
+      }
+      File.write("#{iconset}/Contents.json", "#{JSON.pretty_generate(contents)}\n")
+
+      # drop any stale pngs from previous icon revisions that the new
+      # Contents.json no longer references.
+      keep = slots.map { |slot| slot['filename'] }
+      Dir.glob("#{iconset}/*.png").each do |file|
+        File.delete(file) unless keep.include?(File.basename(file))
+      end
+    end
+
+    puts "regenerated app icon in #{iconset}"
+  end
 end
 
 desc 'update iTunes library with any changes in the database'

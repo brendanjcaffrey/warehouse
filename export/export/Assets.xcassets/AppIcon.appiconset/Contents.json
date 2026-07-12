@@ -1,68 +1,68 @@
 {
-  "images" : [
+  "images": [
     {
-      "filename" : "export-logo2 8.png",
-      "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "16x16"
+      "size": "16x16",
+      "idiom": "mac",
+      "scale": "1x",
+      "filename": "export-icon-16.png"
     },
     {
-      "filename" : "export-logo2 7.png",
-      "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "16x16"
+      "size": "16x16",
+      "idiom": "mac",
+      "scale": "2x",
+      "filename": "export-icon-16@2x.png"
     },
     {
-      "filename" : "export-logo2 6.png",
-      "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "32x32"
+      "size": "32x32",
+      "idiom": "mac",
+      "scale": "1x",
+      "filename": "export-icon-32.png"
     },
     {
-      "filename" : "export-logo2 5.png",
-      "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "32x32"
+      "size": "32x32",
+      "idiom": "mac",
+      "scale": "2x",
+      "filename": "export-icon-32@2x.png"
     },
     {
-      "filename" : "export-logo2 4.png",
-      "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "128x128"
+      "size": "128x128",
+      "idiom": "mac",
+      "scale": "1x",
+      "filename": "export-icon-128.png"
     },
     {
-      "filename" : "export-logo2 3.png",
-      "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "128x128"
+      "size": "128x128",
+      "idiom": "mac",
+      "scale": "2x",
+      "filename": "export-icon-128@2x.png"
     },
     {
-      "filename" : "export-logo2 2.png",
-      "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "256x256"
+      "size": "256x256",
+      "idiom": "mac",
+      "scale": "1x",
+      "filename": "export-icon-256.png"
     },
     {
-      "filename" : "export-logo2 1.png",
-      "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "256x256"
+      "size": "256x256",
+      "idiom": "mac",
+      "scale": "2x",
+      "filename": "export-icon-256@2x.png"
     },
     {
-      "filename" : "export-logo2.png",
-      "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "512x512"
+      "size": "512x512",
+      "idiom": "mac",
+      "scale": "1x",
+      "filename": "export-icon-512.png"
     },
     {
-      "filename" : "export-logo.png",
-      "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "512x512"
+      "size": "512x512",
+      "idiom": "mac",
+      "scale": "2x",
+      "filename": "export-icon-512@2x.png"
     }
   ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
+  "info": {
+    "author": "xcode",
+    "version": 1
   }
 }

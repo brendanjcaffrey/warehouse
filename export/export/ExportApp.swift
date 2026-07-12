@@ -103,55 +103,193 @@ struct ExportApp: App {
         exportRunning = false
     }
 
+    private var canExport: Bool {
+        authStatus.authorized && workspaceDirURL != nil
+    }
+
     var body: some Scene {
         WindowGroup {
-            Spacer()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
 
-            if authStatus.authorized {
-                Text("music library access authorized 🥳")
-            } else {
-                Text("music library authorization error: \(authStatus.error ?? "unknown")").foregroundStyle(.red)
-                Button("request authorization", action: { Task { await requestAuth() } })
-                Button("open system settings", action: MusicAuth.openSettings)
+                    ExportCard(title: "Music Library Access", systemImage: "music.note.house") {
+                        authSection
+                    }
+
+                    ExportCard(title: "Workspace", systemImage: "folder") {
+                        workspaceSection
+                    }
+
+                    ExportCard(title: "Options", systemImage: "slider.horizontal.3") {
+                        Toggle(isOn: $fastExport) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Fast export").fontWeight(.medium)
+                                Text("Assume track and artwork file checksums haven't changed.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .disabled(exportRunning)
+                    }
+
+                    exportSection
+                }
+                .padding(28)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button("refresh music library authorization status", action: checkAuth)
+            .frame(minWidth: 520, minHeight: 620)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .windowResizability(.contentMinSize)
+    }
 
-            Spacer()
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Warehouse Export")
+                .font(.largeTitle.bold())
+            Text("Export your Apple Music library into Postgres.")
+                .foregroundStyle(.secondary)
+        }
+    }
 
-            if let url = workspaceDirURL {
-                Text("workspace is \(url.path)")
+    @ViewBuilder
+    private var authSection: some View {
+        if authStatus.authorized {
+            StatusRow(systemImage: "checkmark.circle.fill",
+                      tint: .green,
+                      text: "Music library access granted.")
+            HStack {
+                Spacer()
+                Button("Refresh Status", action: checkAuth)
+                    .controlSize(.small)
             }
-            Button("update workspace dir", action: getWorkspaceDir).disabled(exportRunning)
+        } else {
+            StatusRow(systemImage: "exclamationmark.triangle.fill",
+                      tint: .orange,
+                      text: "Not authorized: \(authStatus.error ?? "unknown error").")
+            HStack {
+                Button("Request Authorization") { Task { await requestAuth() } }
+                    .buttonStyle(.borderedProminent)
+                Button("Open System Settings", action: MusicAuth.openSettings)
+                Spacer()
+                Button("Refresh", action: checkAuth)
+                    .controlSize(.small)
+            }
+        }
+    }
 
+    @ViewBuilder
+    private var workspaceSection: some View {
+        if let url = workspaceDirURL {
+            StatusRow(systemImage: "checkmark.circle.fill",
+                      tint: .green,
+                      text: url.path,
+                      monospaced: true)
+        } else {
+            StatusRow(systemImage: "questionmark.circle.fill",
+                      tint: .secondary,
+                      text: "No workspace directory selected.")
+        }
+        HStack {
+            Button(workspaceDirURL == nil ? "Choose Workspace…" : "Change Workspace…",
+                   action: getWorkspaceDir)
+                .disabled(exportRunning)
             Spacer()
+        }
+    }
 
-            Toggle(isOn: $fastExport) {
-                Text("fast export (this will assume track music file and artwork file md5s have not changed)")
+    @ViewBuilder
+    private var exportSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Button {
+                    Task { await exportLibrary() }
+                } label: {
+                    Label(exportRunning ? "Exporting…" : "Export Library",
+                          systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!canExport || exportRunning)
             }
 
-            Spacer()
-
-            if authStatus.authorized && workspaceDirURL != nil {
-                Button("export library", action: { Task { await exportLibrary() } }).disabled(exportRunning)
-            } else {
-                Text("cannot export until music library access is granted and a workspace directory is selected")
+            if !canExport {
+                Text("Grant music library access and select a workspace directory to enable export.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            if exportRunning {
-                if exportProgress.status.totalTracks > 0 {
-                    ProgressView(value: Double(exportProgress.status.processedTracks),
-                                 total: Double(exportProgress.status.totalTracks),
-                                 label: { Text("\(exportProgress.status.processedTracks)/\(exportProgress.status.totalTracks) tracks exported...") })
-                    .frame(width: 300, height: 25)
+
+            if exportRunning && exportProgress.status.totalTracks > 0 {
+                ProgressView(value: Double(exportProgress.status.processedTracks),
+                             total: Double(exportProgress.status.totalTracks)) {
+                    Text("Exporting tracks…")
+                } currentValueLabel: {
+                    Text("\(exportProgress.status.processedTracks) / \(exportProgress.status.totalTracks)")
+                        .monospacedDigit()
                 }
             }
+
             if let msg = exportMsg {
                 Text(msg)
-            }
-            if let error = exportError {
-                Text(error).foregroundStyle(.red)
+                    .font(.system(.footnote, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .textBackgroundColor),
+                                in: RoundedRectangle(cornerRadius: 8))
             }
 
-            Spacer()
+            if let error = exportError {
+                StatusRow(systemImage: "xmark.octagon.fill",
+                          tint: .red,
+                          text: error)
+            }
+        }
+    }
+}
+
+/// A titled container that groups related controls into a bordered card.
+private struct ExportCard<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color(nsColor: .controlBackgroundColor),
+                    in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+    }
+}
+
+/// An icon + message row used for status lines inside cards.
+private struct StatusRow: View {
+    let systemImage: String
+    let tint: Color
+    let text: String
+    var monospaced: Bool = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+            Text(text)
+                .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 }
