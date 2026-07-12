@@ -23,12 +23,25 @@ struct WatchSyncProgressView: View {
                 ProgressView(value: progress.fraction)
                 Text("Downloading \(progress.finished) of \(progress.total)")
                     .font(.footnote)
-            case .upToDate:
-                // only visible when the synced playlists have no tracks
-                Text("No tracks synced yet.")
+            case .upToDate(let failedDownloads):
+                if failedDownloads > 0 {
+                    Text("\(failedDownloads) downloads failed.")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                    retryButton("Retry")
+                } else {
+                    // only visible when the synced playlists have no tracks
+                    Text("No tracks synced yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    retryButton("Sync Again")
+                }
+            case .storageFull:
+                Text("Not enough storage on this watch. Sync fewer playlists.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
-                retryButton("Sync Again")
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                retryButton("Retry")
             case .error(let message):
                 Text(message)
                     .font(.footnote)

@@ -9,6 +9,8 @@ struct DownloadProgress: Equatable, Sendable {
     var completed = 0
     var failed = 0
     var total = 0
+    /// downloading stopped early because the device has no room left
+    var outOfSpace = false
 
     var finished: Int { completed + failed }
 
@@ -23,6 +25,12 @@ struct FileDownloader: BulkFileDownloading, Sendable {
     let client: LibraryClient
     let fileStore: FileStore
 
+    private enum FetchOutcome {
+        case downloaded
+        case failed
+        case outOfSpace
+    }
+
     func downloadAll(
         _ files: [FileToDownload],
         token: String,
@@ -34,13 +42,22 @@ struct FileDownloader: BulkFileDownloading, Sendable {
             if Task.isCancelled {
                 break
             }
-            if await download(file.type, filename: file.filename, token: token, baseURL: baseURL) {
+            switch await fetch(file.type, filename: file.filename, token: token, baseURL: baseURL) {
+            case .downloaded:
                 progress.completed += 1
-            } else {
+            case .failed:
                 progress.failed += 1
+            case .outOfSpace:
+                // everything after this would fail the same way, so stop here
+                // and count the rest as failed
+                progress.outOfSpace = true
+                progress.failed = files.count - progress.completed
             }
             let current = progress
             await onProgress(current)
+            if progress.outOfSpace {
+                break
+            }
         }
         return progress
     }
@@ -49,13 +66,17 @@ struct FileDownloader: BulkFileDownloading, Sendable {
     /// skips the fetch when the file is already on disk so a sync and an
     /// on-demand play don't download the same file twice
     func download(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> Bool {
-        if fileStore.exists(type, filename) { return true }
+        await fetch(type, filename: filename, token: token, baseURL: baseURL) == .downloaded
+    }
+
+    private func fetch(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> FetchOutcome {
+        if fileStore.exists(type, filename) { return .downloaded }
         do {
             let data = try await client.fetchFile(type, filename: filename, token: token, baseURL: baseURL)
             try fileStore.write(type, filename, data: data)
-            return true
+            return .downloaded
         } catch {
-            return false
+            return BackgroundDownload.isOutOfSpace(error) ? .outOfSpace : .failed
         }
     }
 }

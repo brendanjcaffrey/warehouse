@@ -127,6 +127,10 @@ struct SettingsView: View {
                     checkButton
                 }
             }
+        case .storageFull:
+            Label("Not enough storage to finish downloading", systemImage: "externaldrive.fill.trianglebadge.exclamationmark")
+                .foregroundStyle(.red)
+            syncButton("Retry Sync")
         case .error(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)

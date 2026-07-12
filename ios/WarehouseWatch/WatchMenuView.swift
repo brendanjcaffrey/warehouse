@@ -10,9 +10,9 @@ struct WatchMenuView: View {
     @State private var isSyncing = false
     @State private var syncOutcome: SyncOutcome?
 
-    private enum SyncOutcome {
+    private enum SyncOutcome: Equatable {
         case upToDate
-        case failed
+        case failed(String)
     }
 
     var body: some View {
@@ -56,8 +56,8 @@ struct WatchMenuView: View {
             case .upToDate:
                 Label("Up to date", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-            case .failed:
-                Label("Sync failed", systemImage: "exclamationmark.triangle.fill")
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             }
         } else {
@@ -72,16 +72,25 @@ struct WatchMenuView: View {
             syncOutcome = nil
             await sync.sync(token: settings.token, baseURL: settings.baseURL())
             isSyncing = false
-            if case .error = sync.state {
-                syncOutcome = .failed
-                WKInterfaceDevice.current().play(.failure)
-            } else {
-                syncOutcome = .upToDate
-                WKInterfaceDevice.current().play(.success)
-            }
+            let outcome = outcome(for: sync.state)
+            syncOutcome = outcome
+            WKInterfaceDevice.current().play(outcome == .upToDate ? .success : .failure)
             // hold the confirmation briefly so a no-op or instant sync is visible
             try? await Task.sleep(for: .seconds(2))
             syncOutcome = nil
+        }
+    }
+
+    private func outcome(for state: SyncStore.State) -> SyncOutcome {
+        switch state {
+        case .error:
+            return .failed("Sync failed")
+        case .storageFull:
+            return .failed("Storage full")
+        case .upToDate(let failedDownloads) where failedDownloads > 0:
+            return .failed("\(failedDownloads) failed")
+        default:
+            return .upToDate
         }
     }
 }

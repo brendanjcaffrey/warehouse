@@ -10,7 +10,9 @@ struct WatchRootView: View {
         Group {
             if !settings.isConfigured {
                 WatchWaitingView()
-            } else if songs.songs.isEmpty || sync.isTransferringLibrary {
+            } else if songs.songs.isEmpty || sync.completedSyncs == 0 || sync.isTransferringLibrary {
+                // hold the progress view through the whole launch sync, so the
+                // menu can't appear while downloads are still outstanding
                 WatchSyncProgressView()
             } else {
                 WatchMenuView()

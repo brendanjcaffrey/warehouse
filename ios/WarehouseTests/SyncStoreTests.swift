@@ -440,6 +440,29 @@ struct SyncStoreTests {
         #expect(store.state == .upToDate(failedDownloads: 1))
     }
 
+    @Test("running out of disk space surfaces the storage full state")
+    func outOfSpaceSetsStorageFullState() async throws {
+        let host = "sync-storagefull.test"
+        let suiteName = "SyncStoreTests-\(host)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let database = LibraryDatabase(inMemory: true)
+        let fileStore = FileStore(rootURL: FileManager.default.temporaryDirectory
+            .appending(path: "syncstore-storagefull-\(UUID().uuidString)"))
+        let store = SyncStore(
+            database: database, fileStore: fileStore,
+            session: MockURLProtocol.makeSession(), defaults: defaults,
+            fileDownloader: StubDownloader(failed: 3, outOfSpace: true))
+        try Self.installHandler(host: host)
+
+        await store.sync(token: "tok", baseURL: URL(string: "https://\(host)")!)
+
+        #expect(store.state == .storageFull)
+        #expect(!store.isBusy)
+        #expect(!store.isTransferringLibrary)
+    }
+
     @Test("sync does nothing without a token or base url")
     func missingCredentialsDoNothing() async throws {
         let host = "sync-notoken.test"
@@ -455,14 +478,17 @@ struct SyncStoreTests {
     }
 }
 
-/// records what it was asked to download & reports a fixed failure count, so a
-/// test can confirm SyncStore routes downloads through its injected downloader
+/// records what it was asked to download & reports a fixed outcome, so a test
+/// can confirm SyncStore routes downloads through its injected downloader and
+/// surfaces what the downloader reported
 private final class StubDownloader: BulkFileDownloading, @unchecked Sendable {
     let failed: Int
+    let outOfSpace: Bool
     private(set) var received: [FileToDownload] = []
 
-    init(failed: Int) {
+    init(failed: Int, outOfSpace: Bool = false) {
         self.failed = failed
+        self.outOfSpace = outOfSpace
     }
 
     func downloadAll(
@@ -472,7 +498,8 @@ private final class StubDownloader: BulkFileDownloading, @unchecked Sendable {
         onProgress: @escaping @MainActor @Sendable (DownloadProgress) -> Void
     ) async -> DownloadProgress {
         received = files
-        let progress = DownloadProgress(completed: files.count - failed, failed: failed, total: files.count)
+        let progress = DownloadProgress(
+            completed: files.count - failed, failed: failed, total: files.count, outOfSpace: outOfSpace)
         await onProgress(progress)
         return progress
     }

@@ -12,6 +12,7 @@ final class SyncStore {
         case savingLibrary
         case downloadingFiles(DownloadProgress)
         case upToDate(failedDownloads: Int)
+        case storageFull
         case error(String)
     }
 
@@ -81,7 +82,7 @@ final class SyncStore {
         switch state {
         case .checkingForUpdates, .fetchingLibrary, .savingLibrary, .downloadingFiles:
             return true
-        case .idle, .updateAvailable, .upToDate, .error:
+        case .idle, .updateAvailable, .upToDate, .storageFull, .error:
             return false
         }
     }
@@ -92,7 +93,7 @@ final class SyncStore {
         switch state {
         case .fetchingLibrary, .savingLibrary, .downloadingFiles:
             return true
-        case .idle, .checkingForUpdates, .updateAvailable, .upToDate, .error:
+        case .idle, .checkingForUpdates, .updateAvailable, .upToDate, .storageFull, .error:
             return false
         }
     }
@@ -155,8 +156,10 @@ final class SyncStore {
                 metadata.update(from: library)
             }
 
-            let failedDownloads = try await syncFiles(token: token, baseURL: baseURL)
-            state = .upToDate(failedDownloads: failedDownloads)
+            let progress = try await syncFiles(token: token, baseURL: baseURL)
+            state = progress.outOfSpace
+                ? .storageFull
+                : .upToDate(failedDownloads: progress.failed)
         } catch let error as URLError where error.isOfflineError {
             state = .upToDate(failedDownloads: 0)
         } catch {
@@ -209,7 +212,7 @@ final class SyncStore {
     }
 
     /// deletes files no longer referenced by any track, then downloads all missing ones
-    private func syncFiles(token: String, baseURL: URL) async throws -> Int {
+    private func syncFiles(token: String, baseURL: URL) async throws -> DownloadProgress {
         try fileStore.prepare()
         let musicFilenames = try await database.musicFilenames()
         let artworkFilenames = try await database.artworkFilenames()
@@ -217,15 +220,14 @@ final class SyncStore {
         fileStore.deleteFiles(.artwork, keeping: artworkFilenames.union(protectedArtworkFilenames()))
 
         let missing = Self.missing(music: musicFilenames, artwork: artworkFilenames, fileStore: fileStore)
-        guard !missing.isEmpty else { return 0 }
+        guard !missing.isEmpty else { return DownloadProgress() }
 
         state = .downloadingFiles(DownloadProgress(total: missing.count))
         lastDownloadRefresh = Date()
-        let progress = await fileDownloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
+        return await fileDownloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
             self?.state = .downloadingFiles(progress)
             self?.tickDownloadRefreshIfDue()
         }
-        return progress.failed
     }
 
     private func tickDownloadRefreshIfDue() {

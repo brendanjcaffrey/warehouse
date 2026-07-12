@@ -4,7 +4,8 @@ import WatchKit
 /// fetches the watch's missing files on a background url session so transfers
 /// keep running while the app is suspended, instead of stalling every time the
 /// screen sleeps. progress is read back from what actually landed on disk, so
-/// the count can't drift from reality and a relaunch mid-download just resumes
+/// the count can't drift from reality, and a relaunch mid-download adopts the
+/// transfers still in flight instead of re-fetching or abandoning them
 final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked Sendable {
     static let shared = WatchBackgroundDownloader(
         fileStore: FileStore(rootURL: FileStore.defaultRootURL()))
@@ -15,7 +16,8 @@ final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked
     // everything below is guarded by `lock`
     private var onProgress: (@MainActor @Sendable (DownloadProgress) -> Void)?
     private var targets: [FileToDownload] = []
-    private var pending = 0
+    private var outstanding: Set<FileToDownload> = []
+    private var outOfSpace = false
     private var continuation: CheckedContinuation<DownloadProgress, Never>?
     private var cancelled = false
     private var eventsCompletion: (() -> Void)?
@@ -40,12 +42,15 @@ final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked
     ) async -> DownloadProgress {
         try? fileStore.prepare()
 
-        // skip anything already on disk or still downloading from an earlier run
-        let inFlight = await inFlightFiles()
-        let toEnqueue = files.filter { !inFlight.contains($0) && !fileStore.exists($0.type, $0.filename) }
+        // skip anything already on disk, and adopt transfers still running
+        // from an earlier launch so this sync waits for them too
+        let plan = BackgroundDownload.plan(
+            files: files, inFlight: await inFlightFiles(),
+            isOnDisk: { fileStore.exists($0.type, $0.filename) })
 
         lock.lock()
         cancelled = false
+        outOfSpace = false
         lock.unlock()
 
         return await withTaskCancellationHandler {
@@ -55,27 +60,32 @@ final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked
                 // storing a continuation nothing will ever resume
                 if cancelled {
                     lock.unlock()
-                    continuation.resume(returning: progressSnapshot(for: files))
+                    continuation.resume(returning: progressSnapshot(for: files, outOfSpace: false))
                     return
                 }
                 self.onProgress = onProgress
                 self.targets = files
-                self.pending = toEnqueue.count
+                self.outstanding = plan.outstanding
                 self.continuation = continuation
                 lock.unlock()
 
                 // start the transfers only after the state above is in place, so
                 // a task that finishes immediately can't strand the continuation
-                for file in toEnqueue {
+                for file in plan.toEnqueue {
                     let task = session.downloadTask(with: request(for: file, token: token, baseURL: baseURL))
                     task.taskDescription = BackgroundDownload.taskDescription(for: file)
                     task.resume()
                 }
 
-                // nothing new to fetch: settle with whatever's already on disk,
-                // leaving any pre-existing in-flight transfers to finish on their own
-                if toEnqueue.isEmpty {
+                if plan.outstanding.isEmpty {
+                    // nothing to fetch or wait for; settle with what's on disk
                     resumeContinuationIfNeeded()
+                } else if !plan.adopted.isEmpty {
+                    // an adopted transfer may have completed between the task
+                    // snapshot and the state setup above, in which case its
+                    // delegate callback already came & went; reconcile against
+                    // the live task list so it can't stall the sync
+                    reconcileOutstanding()
                 }
             }
         } onCancel: {
@@ -118,10 +128,26 @@ final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked
         }
     }
 
+    /// drops from `outstanding` any file that no longer has a task in the
+    /// session and so will never see another delegate callback
+    private func reconcileOutstanding() {
+        session.getAllTasks { [weak self] tasks in
+            guard let self else { return }
+            let live = Set(tasks.compactMap { BackgroundDownload.file(fromURL: $0.originalRequest?.url) })
+            lock.lock()
+            outstanding.formIntersection(live)
+            let finished = outstanding.isEmpty
+            lock.unlock()
+            if finished {
+                resumeContinuationIfNeeded()
+            }
+        }
+    }
+
     /// how many of `files` have made it to disk, reported as live progress
-    private func progressSnapshot(for files: [FileToDownload]) -> DownloadProgress {
+    private func progressSnapshot(for files: [FileToDownload], outOfSpace: Bool) -> DownloadProgress {
         let done = files.filter { fileStore.exists($0.type, $0.filename) }.count
-        return DownloadProgress(completed: done, failed: 0, total: files.count)
+        return DownloadProgress(completed: done, failed: 0, total: files.count, outOfSpace: outOfSpace)
     }
 
     private func resumeContinuationIfNeeded() {
@@ -129,6 +155,7 @@ final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked
         let continuation = self.continuation
         self.continuation = nil
         let files = targets
+        let full = outOfSpace
         self.onProgress = nil
         lock.unlock()
 
@@ -136,7 +163,7 @@ final class WatchBackgroundDownloader: NSObject, BulkFileDownloading, @unchecked
         // whatever never landed on disk is a failed download
         let done = files.filter { fileStore.exists($0.type, $0.filename) }.count
         continuation.resume(returning: DownloadProgress(
-            completed: done, failed: files.count - done, total: files.count))
+            completed: done, failed: files.count - done, total: files.count, outOfSpace: full))
     }
 }
 
@@ -159,20 +186,37 @@ extension WatchBackgroundDownloader: URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let file = BackgroundDownload.file(fromURL: task.originalRequest?.url)
+
         lock.lock()
-        if pending > 0 { pending -= 1 }
+        if let file { outstanding.remove(file) }
+        let ranOutOfSpace = !outOfSpace && BackgroundDownload.isOutOfSpace(error)
+        if ranOutOfSpace { outOfSpace = true }
+        let full = outOfSpace
         let files = targets
         let callback = onProgress
-        let finished = pending <= 0
+        let finished = outstanding.isEmpty
         lock.unlock()
 
-        // count from disk so a task we couldn't map still can't stall the total
-        let snapshot = progressSnapshot(for: files)
+        // the rest of the queue can only fail the same way, so stop it now;
+        // the cancellations drain `outstanding` through this same callback
+        if ranOutOfSpace {
+            session.getAllTasks { tasks in
+                tasks.forEach { $0.cancel() }
+            }
+        }
+
+        // count from disk so the progress can't drift from reality
+        let snapshot = progressSnapshot(for: files, outOfSpace: full)
         if let callback {
             Task { @MainActor in callback(snapshot) }
         }
         if finished {
             resumeContinuationIfNeeded()
+        } else if file == nil {
+            // a task we can't map back to a file can't clear its own entry;
+            // reconcile against the live task list so it can't stall the sync
+            reconcileOutstanding()
         }
     }
 
