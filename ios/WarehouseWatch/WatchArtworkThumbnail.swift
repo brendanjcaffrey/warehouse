@@ -1,17 +1,17 @@
 import SwiftUI
 
-/// small square artwork image with a gray music note placeholder,
-/// downsampled off the main thread and cached
-struct ArtworkThumbnail: View {
+/// small square artwork image with a gray music note placeholder, like the
+/// phone's ArtworkThumbnail but without its ios-only system colors
+struct WatchArtworkThumbnail: View {
     let url: URL?
-    var maxPixelSize = 132
+    var maxPixelSize = 56
 
     @State private var image: UIImage?
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color(.systemGray5))
+                .fill(Color.gray.opacity(0.3))
             if let image {
                 Image(uiImage: image)
                     .resizable()

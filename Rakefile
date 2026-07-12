@@ -96,7 +96,7 @@ desc 'compile the protobuf definitions'
 task :proto do
   command.run('protoc --ruby_out=./shared messages.proto')
   command.run('protoc --plugin="protoc-gen-ts=./web/node_modules/.bin/protoc-gen-ts" --ts_out="./web/src/generated" ./messages.proto')
-  command.run('protoc --swift_out=./ios/Warehouse messages.proto')
+  command.run('protoc --swift_out=./ios/Shared messages.proto')
 end
 
 namespace :server do
@@ -119,6 +119,11 @@ namespace :server do
     require_relative 'server/server'
 
     Server.run!
+  end
+
+  desc 'expose the server publicly on port 443 via tailscale funnel (proxies to nginx on 20601)'
+  task :funnel do
+    exec('sudo tailscale funnel --https=443 20601')
   end
 
   desc 'run the server specs'

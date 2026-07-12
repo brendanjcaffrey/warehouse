@@ -84,11 +84,20 @@ struct FileStore: Sendable {
     }
 
     static func deviceStorage() -> DeviceStorage? {
+        #if os(watchOS)
+        // the important-usage capacity key doesn't exist on watchos
+        let values = try? URL.applicationSupportDirectory.resourceValues(
+            forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey])
+        guard let total = values?.volumeTotalCapacity,
+              let available = values?.volumeAvailableCapacity else { return nil }
+        return DeviceStorage(usedBytes: Int64(total - available), totalBytes: Int64(total))
+        #else
         let values = try? URL.applicationSupportDirectory.resourceValues(
             forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
         guard let total = values?.volumeTotalCapacity,
               let available = values?.volumeAvailableCapacityForImportantUsage else { return nil }
         return DeviceStorage(usedBytes: Int64(total) - available, totalBytes: Int64(total))
+        #endif
     }
 
     private func contents(_ type: LibraryFileType) -> [URL] {

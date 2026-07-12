@@ -9,7 +9,7 @@ opt_in_rules:
 - empty_count
 - empty_string
 excluded:
-- Warehouse/messages.pb.swift
+- Shared/messages.pb.swift
 line_length:
     warning: 150
     error: 200

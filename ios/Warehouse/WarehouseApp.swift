@@ -13,10 +13,12 @@ struct WarehouseApp: App {
     @State private var updates: UpdatesStore
     @State private var player: PlayerStore
     @State private var router: NavigationRouter
+    @State private var watchSettings: WatchSyncSettingsStore
     @State private var seeded = false
 
     private let database: LibraryDatabase
     private let intents: IntentPlaybackService
+    private let watchSession: PhoneWatchSession
 
     init() {
         let database = LibraryDatabase(inMemory: UITestSupport.enabled)
@@ -38,6 +40,17 @@ struct WarehouseApp: App {
         _updates = State(initialValue: updatesStore)
         _player = State(initialValue: playerStore)
         _router = State(initialValue: routerStore)
+
+        let watchSettings = WatchSyncSettingsStore()
+        let watchSession = PhoneWatchSession {
+            WatchPayload(
+                serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
+                token: authStore.token ?? "",
+                playlistIds: watchSettings.playlistIds)
+        }
+        watchSettings.onChange = { watchSession.push() }
+        _watchSettings = State(initialValue: watchSettings)
+        self.watchSession = watchSession
 
         // intents run outside the swiftui environment; they resolve the live
         // stores through the app intents dependency manager instead
@@ -70,6 +83,11 @@ struct WarehouseApp: App {
                 .environment(updates)
                 .environment(player)
                 .environment(router)
+                .environment(watchSettings)
+                .onChange(of: auth.token) {
+                    // keep the watch's credentials current across log in/out
+                    watchSession.push()
+                }
                 .onChange(of: scenePhase) {
                     // push any stuck updates when coming back to the foreground
                     if scenePhase == .active {
@@ -84,6 +102,7 @@ struct WarehouseApp: App {
                     Task { await intents.refreshSpotlight() }
                 }
                 .task {
+                    watchSession.activate()
                     WarehouseShortcuts.updateAppShortcutParameters()
                     await intents.refreshSpotlight()
                 }

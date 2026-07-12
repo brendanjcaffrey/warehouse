@@ -17,6 +17,14 @@ struct PlaylistDestination: Hashable {
     let song: Song?
 }
 
+/// leaf playlists grouped under their folder, for the watch sync picker
+struct PlaylistSection: Identifiable, Hashable {
+    /// the folder's playlist id, "" for the top level
+    let id: String
+    let title: String
+    let playlists: [PlaylistItem]
+}
+
 /// pure helpers for the playlists list
 enum PlaylistListBuilder {
     /// direct children of a folder ("" for the top level), folders first then
@@ -31,6 +39,24 @@ enum PlaylistListBuilder {
                 }
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
+    }
+
+    /// leaf playlists sectioned by folder, top level first then folders
+    /// depth-first with nested folder names joined; empty sections are skipped
+    static func watchSections(in playlists: [PlaylistItem]) -> [PlaylistSection] {
+        var sections = [PlaylistSection]()
+        func walk(parentId: String, title: String) {
+            let children = children(of: parentId, in: playlists)
+            let leaves = children.filter { !$0.isFolder }
+            if !leaves.isEmpty {
+                sections.append(PlaylistSection(id: parentId, title: title, playlists: leaves))
+            }
+            for folder in children where folder.isFolder {
+                walk(parentId: folder.id, title: title.isEmpty ? folder.name : "\(title) › \(folder.name)")
+            }
+        }
+        walk(parentId: "", title: "")
+        return sections
     }
 
     /// the playlists a track appears in, alphabetical; folders & the library

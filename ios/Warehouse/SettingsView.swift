@@ -23,6 +23,12 @@ struct SettingsView: View {
                     downloadRows
                 }
 
+                Section("Apple Watch") {
+                    NavigationLink("Playlists to Sync") {
+                        WatchSettingsView()
+                    }
+                }
+
                 Section {
                     Button(role: .destructive) {
                         confirmingLogOut = true

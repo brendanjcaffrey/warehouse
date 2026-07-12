@@ -9,7 +9,18 @@ server {
     ssl_certificate_key /path/to/ssl.key;
 
     root /home/user/warehouse/public;
-    listen 20600 ssl;
+    # it's strongly recommended to only expose this port on the tailscale network, not the public internet.
+    # if you run `ifconfig` and look for the tailscale interface, you can see the IP address of your
+    # machine on the tailscale network. use that IP address in place of 100.xxx.yyy.zzz below.
+    listen 100.xxx.yyy.zzz:20600 ssl;
+    # if you need to access the server publicly, use `rake server:funnel` to forward this port to the
+    # public internet. it's strongly recommended to only do this temporarily, for example to sync
+    # your music library to the apple watch app (which does not support tailscale), rather than
+    # having the app publicly available always.
+    # this is a plain-http listener (no `ssl`): funnel terminates tls on the public port 443 and
+    # forwards plain http here. keep it on a dedicated port like 20601 so it can't collide with any
+    # real https-on-443 server block on the box.
+    listen 127.0.0.1:20601;
     client_max_body_size 1G;
     keepalive_timeout 5;
 

@@ -8,9 +8,18 @@
 
 /* Begin PBXBuildFile section */
 		AA0000000000000000000003 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000002 /* SwiftProtobuf */; };
+		AA0000000000000000000027 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000026 /* SwiftProtobuf */; };
+		AA000000000000000000002B /* WarehouseWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000021 /* WarehouseWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		AA0000000000000000000028 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C64A327B2FF853BC008C79D1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000022;
+			remoteInfo = WarehouseWatch;
+		};
 		C64A32932FF853BD008C79D1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C64A327B2FF853BC008C79D1 /* Project object */;
@@ -27,13 +36,38 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		AA000000000000000000002A /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				AA000000000000000000002B /* WarehouseWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		AA0000000000000000000021 /* WarehouseWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WarehouseWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C64A32832FF853BC008C79D1 /* Warehouse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Warehouse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C64A32922FF853BD008C79D1 /* WarehouseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WarehouseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C64A329C2FF853BD008C79D1 /* WarehouseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WarehouseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000000000000000000010 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000020 /* WarehouseWatch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WarehouseWatch;
+			sourceTree = "<group>";
+		};
 		C64A32852FF853BC008C79D1 /* Warehouse */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Warehouse;
@@ -52,6 +86,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		AA0000000000000000000024 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000027 /* SwiftProtobuf in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C64A32802FF853BC008C79D1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -81,6 +123,8 @@
 			isa = PBXGroup;
 			children = (
 				C64A32852FF853BC008C79D1 /* Warehouse */,
+				AA0000000000000000000010 /* Shared */,
+				AA0000000000000000000020 /* WarehouseWatch */,
 				C64A32952FF853BD008C79D1 /* WarehouseTests */,
 				C64A329F2FF853BD008C79D1 /* WarehouseUITests */,
 				C64A32842FF853BC008C79D1 /* Products */,
@@ -93,6 +137,7 @@
 				C64A32832FF853BC008C79D1 /* Warehouse.app */,
 				C64A32922FF853BD008C79D1 /* WarehouseTests.xctest */,
 				C64A329C2FF853BD008C79D1 /* WarehouseUITests.xctest */,
+				AA0000000000000000000021 /* WarehouseWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -100,6 +145,30 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AA0000000000000000000022 /* WarehouseWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA000000000000000000002E /* Build configuration list for PBXNativeTarget "WarehouseWatch" */;
+			buildPhases = (
+				AA0000000000000000000023 /* Sources */,
+				AA0000000000000000000024 /* Frameworks */,
+				AA0000000000000000000025 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000010 /* Shared */,
+				AA0000000000000000000020 /* WarehouseWatch */,
+			);
+			name = WarehouseWatch;
+			packageProductDependencies = (
+				AA0000000000000000000026 /* SwiftProtobuf */,
+			);
+			productName = WarehouseWatch;
+			productReference = AA0000000000000000000021 /* WarehouseWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 		C64A32822FF853BC008C79D1 /* Warehouse */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C64A32A62FF853BD008C79D1 /* Build configuration list for PBXNativeTarget "Warehouse" */;
@@ -108,12 +177,15 @@
 				C64A327F2FF853BC008C79D1 /* Sources */,
 				C64A32802FF853BC008C79D1 /* Frameworks */,
 				C64A32812FF853BC008C79D1 /* Resources */,
+				AA000000000000000000002A /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA0000000000000000000029 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				AA0000000000000000000010 /* Shared */,
 				C64A32852FF853BC008C79D1 /* Warehouse */,
 			);
 			name = Warehouse;
@@ -180,6 +252,9 @@
 				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					AA0000000000000000000022 = {
+						CreatedOnToolsVersion = 26.3;
+					};
 					C64A32822FF853BC008C79D1 = {
 						CreatedOnToolsVersion = 26.3;
 					};
@@ -213,11 +288,19 @@
 				C64A32822FF853BC008C79D1 /* Warehouse */,
 				C64A32912FF853BD008C79D1 /* WarehouseTests */,
 				C64A329B2FF853BD008C79D1 /* WarehouseUITests */,
+				AA0000000000000000000022 /* WarehouseWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AA0000000000000000000025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C64A32812FF853BC008C79D1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -264,6 +347,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		AA0000000000000000000023 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C64A327F2FF853BC008C79D1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -288,6 +378,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		AA0000000000000000000029 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000022 /* WarehouseWatch */;
+			targetProxy = AA0000000000000000000028 /* PBXContainerItemProxy */;
+		};
 		C64A32942FF853BD008C79D1 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C64A32822FF853BC008C79D1 /* Warehouse */;
@@ -301,6 +396,74 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		AA000000000000000000002C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JD9296YG3D;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jcaffrey.warehouse;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcaffrey.warehouse.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		AA000000000000000000002D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JD9296YG3D;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jcaffrey.warehouse;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcaffrey.warehouse.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
 		C64A32A42FF853BD008C79D1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -585,6 +748,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		AA000000000000000000002E /* Build configuration list for PBXNativeTarget "WarehouseWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000002C /* Debug */,
+				AA000000000000000000002D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C64A327E2FF853BC008C79D1 /* Build configuration list for PBXProject "Warehouse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -636,6 +808,11 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		AA0000000000000000000002 /* SwiftProtobuf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000001 /* XCRemoteSwiftPackageReference "swift-protobuf" */;
+			productName = SwiftProtobuf;
+		};
+		AA0000000000000000000026 /* SwiftProtobuf */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000001 /* XCRemoteSwiftPackageReference "swift-protobuf" */;
 			productName = SwiftProtobuf;

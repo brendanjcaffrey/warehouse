@@ -53,6 +53,34 @@ struct PlaylistListBuilderTests {
         #expect(PlaylistListBuilder.children(of: "", in: playlists).isEmpty)
     }
 
+    @Test("watch sections group leaf playlists under their folders")
+    func watchSections() {
+        let playlists = [
+            Self.playlist(id: "lib", name: "Library", isLibrary: true),
+            Self.playlist(id: "p1", name: "Workout"),
+            Self.playlist(id: "f1", name: "Rock", isFolder: true),
+            Self.playlist(id: "p2", name: "Classic Rock", parentId: "f1"),
+            Self.playlist(id: "f2", name: "Subfolder", parentId: "f1", isFolder: true),
+            Self.playlist(id: "p3", name: "Nested", parentId: "f2")
+        ]
+
+        let sections = PlaylistListBuilder.watchSections(in: playlists)
+        #expect(sections.map(\.title) == ["", "Rock", "Rock › Subfolder"])
+        #expect(sections.map { $0.playlists.map(\.id) } == [["p1"], ["p2"], ["p3"]])
+    }
+
+    @Test("watch sections skip folders with no leaf playlists")
+    func watchSectionsSkipEmptyFolders() {
+        let playlists = [
+            Self.playlist(id: "f1", name: "Empty", isFolder: true),
+            Self.playlist(id: "p1", name: "Workout")
+        ]
+
+        let sections = PlaylistListBuilder.watchSections(in: playlists)
+        #expect(sections.map(\.title) == [""])
+        #expect(sections[0].playlists.map(\.id) == ["p1"])
+    }
+
     @Test("containing finds a track's playlists but not folders or the library")
     func containing() {
         let playlists = [
