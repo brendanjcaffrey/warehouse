@@ -411,6 +411,35 @@ struct SyncStoreTests {
         #expect(throttled.store.downloadRefreshTicks == 0)
     }
 
+    @Test("sync hands missing files to the injected downloader")
+    func injectedDownloaderReceivesMissingFiles() async throws {
+        let host = "sync-injected.test"
+        let suiteName = "SyncStoreTests-\(host)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let database = LibraryDatabase(inMemory: true)
+        let fileStore = FileStore(rootURL: FileManager.default.temporaryDirectory
+            .appending(path: "syncstore-injected-\(UUID().uuidString)"))
+        let downloader = StubDownloader(failed: 1)
+        let store = SyncStore(
+            database: database, fileStore: fileStore,
+            session: MockURLProtocol.makeSession(), defaults: defaults,
+            fileDownloader: downloader)
+        try Self.installHandler(host: host)
+
+        await store.sync(token: "tok", baseURL: URL(string: "https://\(host)")!)
+
+        // the injected downloader is used instead of the built-in one, and its
+        // failure count surfaces in the final state
+        #expect(Set(downloader.received) == [
+            FileToDownload(type: .music, filename: "m1.mp3"),
+            FileToDownload(type: .music, filename: "m2.mp3"),
+            FileToDownload(type: .artwork, filename: "a1.jpg")
+        ])
+        #expect(store.state == .upToDate(failedDownloads: 1))
+    }
+
     @Test("sync does nothing without a token or base url")
     func missingCredentialsDoNothing() async throws {
         let host = "sync-notoken.test"
@@ -423,5 +452,28 @@ struct SyncStoreTests {
         await env.store.sync(token: "tok", baseURL: nil)
         #expect(env.store.state == .idle)
         #expect(Self.requestPaths(host: host).isEmpty)
+    }
+}
+
+/// records what it was asked to download & reports a fixed failure count, so a
+/// test can confirm SyncStore routes downloads through its injected downloader
+private final class StubDownloader: BulkFileDownloading, @unchecked Sendable {
+    let failed: Int
+    private(set) var received: [FileToDownload] = []
+
+    init(failed: Int) {
+        self.failed = failed
+    }
+
+    func downloadAll(
+        _ files: [FileToDownload],
+        token: String,
+        baseURL: URL,
+        onProgress: @escaping @MainActor @Sendable (DownloadProgress) -> Void
+    ) async -> DownloadProgress {
+        received = files
+        let progress = DownloadProgress(completed: files.count - failed, failed: failed, total: files.count)
+        await onProgress(progress)
+        return progress
     }
 }

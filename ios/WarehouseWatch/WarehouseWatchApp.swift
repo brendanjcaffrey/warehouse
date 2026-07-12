@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct WarehouseWatchApp: App {
+    @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var appDelegate
+
     @State private var settings: WatchSettingsStore
     @State private var sync: SyncStore
     @State private var songs: SongsStore
@@ -13,7 +15,11 @@ struct WarehouseWatchApp: App {
         let database = LibraryDatabase()
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         let settings = WatchSettingsStore()
-        let syncStore = SyncStore(database: database, fileStore: fileStore)
+        // downloads run on a background url session so they keep going while
+        // the watch app is suspended
+        let syncStore = SyncStore(
+            database: database, fileStore: fileStore,
+            fileDownloader: WatchBackgroundDownloader.shared)
         // only the selected playlists & their tracks are kept and downloaded
         syncStore.libraryFilter = { LibraryFilter.filter($0, playlistIds: Set(settings.playlistIds)) }
         _settings = State(initialValue: settings)

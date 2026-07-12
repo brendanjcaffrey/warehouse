@@ -1,6 +1,6 @@
 import Foundation
 
-struct FileToDownload: Equatable, Sendable {
+struct FileToDownload: Hashable, Sendable {
     let type: LibraryFileType
     let filename: String
 }
@@ -19,7 +19,7 @@ struct DownloadProgress: Equatable, Sendable {
 
 /// downloads files one at a time, music before artwork, skipping over failures
 /// so one bad file can't block the rest of the library
-struct FileDownloader: Sendable {
+struct FileDownloader: BulkFileDownloading, Sendable {
     let client: LibraryClient
     let fileStore: FileStore
 

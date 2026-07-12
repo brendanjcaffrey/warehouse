@@ -54,22 +54,27 @@ final class SyncStore {
     private let fileStore: FileStore
     private let metadata: LibraryMetadata
     private let downloadRefreshInterval: TimeInterval
+    /// how missing files are fetched; the watch injects a background-session
+    /// downloader so transfers survive the app being suspended
+    private let fileDownloader: BulkFileDownloading
     private var lastDownloadRefresh = Date.distantPast
     private var syncInProgress = false
 
-    // the session, defaults & interval parameters are here for tests
+    // the session, defaults, interval & downloader parameters are here for tests
     init(
         database: LibraryDatabase,
         fileStore: FileStore,
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
-        downloadRefreshInterval: TimeInterval = 5
+        downloadRefreshInterval: TimeInterval = 5,
+        fileDownloader: BulkFileDownloading? = nil
     ) {
         client = LibraryClient(session: session)
         self.database = database
         self.fileStore = fileStore
         metadata = LibraryMetadata(defaults: defaults)
         self.downloadRefreshInterval = downloadRefreshInterval
+        self.fileDownloader = fileDownloader ?? FileDownloader(client: client, fileStore: fileStore)
     }
 
     var isBusy: Bool {
@@ -216,8 +221,7 @@ final class SyncStore {
 
         state = .downloadingFiles(DownloadProgress(total: missing.count))
         lastDownloadRefresh = Date()
-        let downloader = FileDownloader(client: client, fileStore: fileStore)
-        let progress = await downloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
+        let progress = await fileDownloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
             self?.state = .downloadingFiles(progress)
             self?.tickDownloadRefreshIfDue()
         }
