@@ -92,6 +92,17 @@ enum SongListBuilder {
         return titles.map { SongSection(title: $0, songs: songsByTitle[$0] ?? []) }
     }
 
+    /// filters a pre-ordered list by name or artist without resorting, so the
+    /// watch songs list can filter songs that already arrive in display order
+    static func filtered(_ songs: [Song], matching search: String) -> [Song] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return songs }
+        return songs.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.artistName.localizedCaseInsensitiveContains(query)
+        }
+    }
+
     /// the full unfiltered list in display order, so tapping a filtered result
     /// can play the whole list instead of just the visible matches
     static func orderedSongs(_ songs: [Song], trackIds: [String]?, sortedBy sort: SongSortOption) -> [Song] {

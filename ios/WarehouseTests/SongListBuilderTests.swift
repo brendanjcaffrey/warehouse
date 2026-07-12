@@ -109,6 +109,30 @@ struct SongListBuilderTests {
         #expect(sections.flatMap(\.songs).count == 1)
     }
 
+    @Test("filtered matches name or artist and keeps the incoming order")
+    func filteredMatches() {
+        let songs = [
+            Self.song(id: "1", name: "Zombie", artist: "The Cranberries"),
+            Self.song(id: "2", name: "Believe", artist: "Cher"),
+            Self.song(id: "3", name: "Cherry Bomb", artist: "The Runaways")
+        ]
+
+        let cher = SongListBuilder.filtered(songs, matching: "cher")
+        #expect(cher.map(\.id) == ["2", "3"])
+
+        #expect(SongListBuilder.filtered(songs, matching: "xyz").isEmpty)
+    }
+
+    @Test("filtered returns the whole list for a blank search")
+    func filteredBlank() {
+        let songs = [
+            Self.song(id: "1", name: "Zombie"),
+            Self.song(id: "2", name: "Angie")
+        ]
+
+        #expect(SongListBuilder.filtered(songs, matching: "   ").map(\.id) == ["1", "2"])
+    }
+
     @Test("playlist order keeps the incoming order in a single untitled section")
     func playlistOrder() {
         let songs = [
