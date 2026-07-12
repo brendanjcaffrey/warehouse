@@ -5,6 +5,7 @@
 /artwork/*.jpg
 /artwork/*.png
 /export.log
+/export/build/
 /export/warehouse-export.xcodeproj/project.xcworkspace/xcuserdata
 /music/*.mp3
 /music/*.m4a

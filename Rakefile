@@ -7,28 +7,40 @@ require_relative 'shared/config'
 
 ROOT = __dir__
 SIMULATOR = 'iPhone 17'.freeze
+# gitignored derived-data dir the export app builds into, kept in-repo instead
+# of the shared ~/Library DerivedData so the build is self-contained.
+EXPORT_BUILD_DIR = "#{__dir__}/export/build".freeze
 command = TTY::Command.new
 
 namespace :export do
-  desc 'export tracks via the Warehouse Export app'
-  task :run do
+  desc 'build the macos Warehouse Export app'
+  task :build do
+    sh "xcodebuild -project #{ROOT}/export/warehouse-export.xcodeproj " \
+       '-scheme warehouse-export ' \
+       "-destination 'platform=macOS' " \
+       '-configuration Release ' \
+       "-derivedDataPath #{EXPORT_BUILD_DIR} " \
+       'build'
+  end
+
+  # the headless export reads a persisted workspace-dir bookmark and the
+  # macos music-library (tcc) grant, neither of which it can establish itself.
+  # launch the ui once to pick the workspace dir and grant music access; both
+  # persist, so `rake export:run` works headless afterwards.
+  desc 'launch the Warehouse Export app ui for first-run setup (pick workspace dir, grant music access)'
+  task setup: :build do
+    app = "#{EXPORT_BUILD_DIR}/Build/Products/Release/Warehouse Export.app"
+    sh %(open -a "#{app}")
+  end
+
+  desc 'build and run the Warehouse Export app to export tracks'
+  task run: :build do
     task_name = Rake.application.top_level_tasks.first
     extra_args = task_name.include?('fast') ? ' --fast' : ''
 
-    parent_dir = File.expand_path('~/Library/Developer/Xcode/DerivedData/')
-    prefix = 'warehouse-export-*'
-    globs = Dir.glob(File.join(parent_dir, prefix))
-    if globs.empty?
-      warn "Unable to find any warehouse-export builds in #{parent_dir}, did you build the export app in Xcode?"
-      exit(1)
-    elsif globs.size > 1
-      warn "Multiple warehouse-export builds in #{parent_dir}, try deleting all and rebuilding!\n#{globs.join("\n")}"
-      exit(1)
-    end
-
-    app = File.join(globs.first, 'Build/Products/Debug/Warehouse Export.app')
+    app = "#{EXPORT_BUILD_DIR}/Build/Products/Release/Warehouse Export.app"
     unless File.exist?(app)
-      warn "Unable to find the Warehouse Export app in #{globs.first}, did you build the export app in Xcode?"
+      warn "Unable to find the Warehouse Export app at #{app}, did `rake export:build` succeed?"
       exit(1)
     end
 

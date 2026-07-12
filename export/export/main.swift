@@ -20,7 +20,10 @@ if args.headless {
         exit(1)
     }
 
-    let exportLogURL = workspaceDirURL.appendingPathComponent("export.log")
+    // honor --log if the caller passed one (rake export:run does), otherwise
+    // fall back to export.log inside the workspace dir.
+    let exportLogURL = args.logPath.map { URL(fileURLWithPath: $0) }
+        ?? workspaceDirURL.appendingPathComponent("export.log")
     if freopen(exportLogURL.relativePath, "a+", stderr) == nil {
         print("Unable to redirect stderr to \(exportLogURL.relativePath)!")
         exit(1)
