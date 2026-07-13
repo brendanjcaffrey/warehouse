@@ -21,8 +21,18 @@ struct WatchSyncProgressView: View {
                     .font(.footnote)
             case .downloadingFiles(let progress):
                 ProgressView(value: progress.fraction)
-                Text("Downloading \(progress.finished) of \(progress.total)")
-                    .font(.footnote)
+                if progress.music.total > 0 {
+                    Text("Music \(progress.music.finished) of \(progress.music.total)")
+                        .font(.footnote)
+                }
+                if progress.artwork.total > 0 {
+                    Text("Artwork \(progress.artwork.finished) of \(progress.artwork.total)")
+                        .font(.footnote)
+                }
+                Text("Keep your iPhone nearby. Transfers are faster with the watch on its charger.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             case .upToDate(let failedDownloads):
                 if failedDownloads > 0 {
                     Text("\(failedDownloads) downloads failed.")

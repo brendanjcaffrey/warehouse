@@ -463,6 +463,36 @@ struct SyncStoreTests {
         #expect(!store.isTransferringLibrary)
     }
 
+    @Test("an injected library provider replaces the network for version & library")
+    func injectedLibraryProviderIsUsed() async throws {
+        let host = "sync-provider.test"
+        let suiteName = "SyncStoreTests-\(host)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let database = LibraryDatabase(inMemory: true)
+        let fileStore = FileStore(rootURL: FileManager.default.temporaryDirectory
+            .appending(path: "syncstore-provider-\(UUID().uuidString)"))
+        let downloader = StubDownloader(failed: 0)
+        let store = SyncStore(
+            database: database, fileStore: fileStore,
+            session: MockURLProtocol.makeSession(), defaults: defaults,
+            fileDownloader: downloader,
+            libraryProvider: StubLibraryProvider(library: Self.makeLibrary()))
+        // deliberately no handler installed: any request would fail the sync
+
+        await store.sync(token: "tok", baseURL: URL(string: "https://\(host)")!)
+
+        #expect(store.state == .upToDate(failedDownloads: 0))
+        #expect(try await database.musicFilenames() == Set(["m1.mp3", "m2.mp3"]))
+        #expect(Set(downloader.received) == [
+            FileToDownload(type: .music, filename: "m1.mp3"),
+            FileToDownload(type: .music, filename: "m2.mp3"),
+            FileToDownload(type: .artwork, filename: "a1.jpg")
+        ])
+        #expect(Self.requestPaths(host: host).isEmpty)
+    }
+
     @Test("sync does nothing without a token or base url")
     func missingCredentialsDoNothing() async throws {
         let host = "sync-notoken.test"
@@ -475,6 +505,20 @@ struct SyncStoreTests {
         await env.store.sync(token: "tok", baseURL: nil)
         #expect(env.store.state == .idle)
         #expect(Self.requestPaths(host: host).isEmpty)
+    }
+}
+
+/// serves a fixed library without touching the network, standing in for the
+/// watch's phone relay
+private struct StubLibraryProvider: LibraryProviding {
+    let library: Library
+
+    func fetchVersion(token: String, baseURL: URL) async throws -> LibraryClient.VersionResult {
+        .updateTimeNs(library.updateTimeNs)
+    }
+
+    func fetchLibrary(token: String, baseURL: URL) async throws -> LibraryClient.LibraryResult {
+        .library(library)
     }
 }
 
@@ -498,8 +542,17 @@ private final class StubDownloader: BulkFileDownloading, @unchecked Sendable {
         onProgress: @escaping @MainActor @Sendable (DownloadProgress) -> Void
     ) async -> DownloadProgress {
         received = files
-        let progress = DownloadProgress(
-            completed: files.count - failed, failed: failed, total: files.count, outOfSpace: outOfSpace)
+        var progress = DownloadProgress(files: files)
+        var failuresLeft = failed
+        for file in files {
+            if failuresLeft > 0 {
+                progress[file.type].failed += 1
+                failuresLeft -= 1
+            } else {
+                progress[file.type].completed += 1
+            }
+        }
+        progress.outOfSpace = outOfSpace
         await onProgress(progress)
         return progress
     }

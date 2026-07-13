@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct WatchTrackListView: View {
-    @Environment(WatchSettingsStore.self) private var settings
     @Environment(PlayerStore.self) private var player
 
     let title: String
@@ -82,12 +81,14 @@ struct WatchTrackListView: View {
     }
 
     private func play(startingAt index: Int) {
-        player.play(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL())
+        // no credentials: the watch plays downloaded files only, anything
+        // missing arrives through the phone relay on the next sync
+        player.play(songs, startingAt: index, token: nil, baseURL: nil)
         startedPlaying()
     }
 
     private func playShuffled() {
-        player.playShuffled(songs, token: settings.token, baseURL: settings.baseURL())
+        player.playShuffled(songs, token: nil, baseURL: nil)
         startedPlaying()
     }
 

@@ -213,11 +213,6 @@ namespace :server do
     Server.run!
   end
 
-  desc 'expose the server publicly on port 443 via tailscale funnel (proxies to nginx on 20601)'
-  task :funnel do
-    exec('sudo tailscale funnel --https=443 20601')
-  end
-
   desc 'run the server specs'
   RSpec::Core::RakeTask.new(:spec) do |t|
     t.pattern = Dir.glob('server/spec/*_spec.rb')

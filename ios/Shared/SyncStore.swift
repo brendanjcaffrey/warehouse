@@ -51,6 +51,9 @@ final class SyncStore {
     private(set) var downloadRefreshTicks = 0
 
     private let client: LibraryClient
+    /// where version & library data comes from; the watch injects a relay
+    /// that asks the phone instead of the server
+    private let libraryProvider: LibraryProviding
     private let database: LibraryDatabase
     private let fileStore: FileStore
     private let metadata: LibraryMetadata
@@ -68,9 +71,11 @@ final class SyncStore {
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
         downloadRefreshInterval: TimeInterval = 5,
-        fileDownloader: BulkFileDownloading? = nil
+        fileDownloader: BulkFileDownloading? = nil,
+        libraryProvider: LibraryProviding? = nil
     ) {
         client = LibraryClient(session: session)
+        self.libraryProvider = libraryProvider ?? client
         self.database = database
         self.fileStore = fileStore
         metadata = LibraryMetadata(defaults: defaults)
@@ -174,7 +179,7 @@ final class SyncStore {
         }
 
         do {
-            switch try await client.fetchVersion(token: token, baseURL: baseURL) {
+            switch try await libraryProvider.fetchVersion(token: token, baseURL: baseURL) {
             case .updateTimeNs(let updateTimeNs):
                 return updateTimeNs == metadata.updateTimeNs ? .haveLatestVersion : .needsUpdate
             case .error(let message):
@@ -188,7 +193,7 @@ final class SyncStore {
     }
 
     private func fetchLibrary(token: String, baseURL: URL) async throws -> Library {
-        switch try await client.fetchLibrary(token: token, baseURL: baseURL) {
+        switch try await libraryProvider.fetchLibrary(token: token, baseURL: baseURL) {
         case .library(let library):
             return library
         case .error(let message):
@@ -204,7 +209,8 @@ final class SyncStore {
         return Self.missing(music: musicFilenames, artwork: artworkFilenames, fileStore: fileStore)
     }
 
-    private static func missing(music: Set<String>, artwork: Set<String>, fileStore: FileStore) -> [FileToDownload] {
+    // also used by the watch's background refresh to nudge the phone relay
+    static func missing(music: Set<String>, artwork: Set<String>, fileStore: FileStore) -> [FileToDownload] {
         let missingMusic = music.subtracting(fileStore.list(.music)).sorted()
         let missingArtwork = artwork.subtracting(fileStore.list(.artwork)).sorted()
         return missingMusic.map { FileToDownload(type: .music, filename: $0) }
@@ -222,7 +228,7 @@ final class SyncStore {
         let missing = Self.missing(music: musicFilenames, artwork: artworkFilenames, fileStore: fileStore)
         guard !missing.isEmpty else { return DownloadProgress() }
 
-        state = .downloadingFiles(DownloadProgress(total: missing.count))
+        state = .downloadingFiles(DownloadProgress(files: missing))
         lastDownloadRefresh = Date()
         return await fileDownloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
             self?.state = .downloadingFiles(progress)

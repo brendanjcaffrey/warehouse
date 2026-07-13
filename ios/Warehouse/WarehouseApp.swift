@@ -19,6 +19,7 @@ struct WarehouseApp: App {
     private let database: LibraryDatabase
     private let intents: IntentPlaybackService
     private let watchSession: PhoneWatchSession
+    private let watchRelay: WatchRelayEngine
 
     init() {
         let database = LibraryDatabase(inMemory: UITestSupport.enabled)
@@ -47,7 +48,7 @@ struct WarehouseApp: App {
         let watchSession = PhoneWatchSession(
             payload: {
                 WatchPayload(
-                    serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
+                    serverURL: authStore.serverURL,
                     token: authStore.token ?? "",
                     playlistIds: watchSettings.playlistIds)
             },
@@ -57,9 +58,11 @@ struct WarehouseApp: App {
         watchSettings.onChange = { watchSession.push() }
         _watchSettings = State(initialValue: watchSettings)
         self.watchSession = watchSession
+        watchRelay = WatchRelayWiring.install(
+            session: watchSession, fileStore: fileStore, auth: authStore)
         // activate here rather than in the scene: watch connectivity launches
-        // the app in the background to deliver queued plays, & the delegate
-        // must be in place for that
+        // the app in the background to deliver queued plays & sync requests,
+        // & the delegate must be in place for that
         watchSession.activate()
 
         // intents run outside the swiftui environment; they resolve the live

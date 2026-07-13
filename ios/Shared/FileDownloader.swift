@@ -6,12 +6,47 @@ struct FileToDownload: Hashable, Sendable {
 }
 
 struct DownloadProgress: Equatable, Sendable {
-    var completed = 0
-    var failed = 0
-    var total = 0
+    /// one file type's slice of the progress, so the ui can report music and
+    /// artwork separately
+    struct Counts: Equatable, Sendable {
+        var completed = 0
+        var failed = 0
+        var total = 0
+
+        var finished: Int { completed + failed }
+    }
+
+    var music = Counts()
+    var artwork = Counts()
     /// downloading stopped early because the device has no room left
     var outOfSpace = false
 
+    init() {}
+
+    /// starts with the per-type totals of everything the sync will download
+    init(files: [FileToDownload]) {
+        music.total = files.filter { $0.type == .music }.count
+        artwork.total = files.filter { $0.type == .artwork }.count
+    }
+
+    subscript(type: LibraryFileType) -> Counts {
+        get {
+            switch type {
+            case .music: return music
+            case .artwork: return artwork
+            }
+        }
+        set {
+            switch type {
+            case .music: music = newValue
+            case .artwork: artwork = newValue
+            }
+        }
+    }
+
+    var completed: Int { music.completed + artwork.completed }
+    var failed: Int { music.failed + artwork.failed }
+    var total: Int { music.total + artwork.total }
     var finished: Int { completed + failed }
 
     var fraction: Double {
@@ -37,21 +72,23 @@ struct FileDownloader: BulkFileDownloading, Sendable {
         baseURL: URL,
         onProgress: @escaping @MainActor @Sendable (DownloadProgress) -> Void
     ) async -> DownloadProgress {
-        var progress = DownloadProgress(total: files.count)
-        for file in files {
+        var progress = DownloadProgress(files: files)
+        for (index, file) in files.enumerated() {
             if Task.isCancelled {
                 break
             }
             switch await fetch(file.type, filename: file.filename, token: token, baseURL: baseURL) {
             case .downloaded:
-                progress.completed += 1
+                progress[file.type].completed += 1
             case .failed:
-                progress.failed += 1
+                progress[file.type].failed += 1
             case .outOfSpace:
                 // everything after this would fail the same way, so stop here
-                // and count the rest as failed
+                // and count this file & the rest as failed
                 progress.outOfSpace = true
-                progress.failed = files.count - progress.completed
+                for remaining in files[index...] {
+                    progress[remaining.type].failed += 1
+                }
             }
             let current = progress
             await onProgress(current)

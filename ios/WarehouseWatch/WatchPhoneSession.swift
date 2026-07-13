@@ -1,17 +1,31 @@
 import Foundation
 import WatchConnectivity
+import WatchKit
 
 /// receives the phone's application context & hands it to the settings
-/// store; also carries queued play reports back to the phone
+/// store, carries queued play reports back to the phone, and runs the watch
+/// side of relayed syncs: requests ride to the phone as messages & user
+/// info, and the library & media files ride back as file transfers
 @MainActor
 final class WatchPhoneSession: NSObject {
     private let settings: WatchSettingsStore
+    private let receiver: RelayFileReceiver
 
     /// fired once the session activates so held plays can be drained
     var onActivated: (@MainActor () -> Void)?
+    /// relay callbacks, wired up by whoever is awaiting a bulk download
+    var onFileReceived: (@MainActor (FileToDownload) -> Void)?
+    var onFileFailed: (@MainActor (FileToDownload) -> Void)?
+    var onFileResult: (@MainActor (FileResultPayload) -> Void)?
+    var onOutOfSpace: (@MainActor () -> Void)?
 
-    init(settings: WatchSettingsStore) {
+    private var libraryContinuation: CheckedContinuation<Data, Error>?
+    private var libraryGeneration = 0
+    private var pendingConnectivityTasks: [WKWatchConnectivityRefreshBackgroundTask] = []
+
+    init(settings: WatchSettingsStore, fileStore: FileStore) {
         self.settings = settings
+        receiver = RelayFileReceiver(fileStore: fileStore)
     }
 
     func activate() {
@@ -22,6 +36,11 @@ final class WatchPhoneSession: NSObject {
 
     var canSend: Bool {
         WCSession.isSupported() && WCSession.default.activationState == .activated
+    }
+
+    /// whether a message sent right now could reach the phone
+    nonisolated static var isPhoneReachable: Bool {
+        WCSession.isSupported() && WCSession.default.isReachable
     }
 
     /// plays already handed to the system's transfer queue, which persists
@@ -37,6 +56,94 @@ final class WatchPhoneSession: NSObject {
     func send(_ payload: PlayPayload) {
         WCSession.default.transferUserInfo(payload.encode())
     }
+
+    /// queues a file request; delivery wakes the phone app in the background
+    func send(_ request: FileRequestPayload) {
+        WCSession.default.transferUserInfo(request.encode())
+    }
+
+    /// tells the phone to drop everything queued for this watch
+    func sendCancelFileRequests() {
+        WCSession.default.transferUserInfo(RelayRequest.encode(RelayRequest.cancelFileRequests))
+    }
+
+    /// sends a message the phone answers immediately; failures surface as
+    /// thrown errors for the caller to map onto its offline path
+    func sendWithReply(_ message: [String: Any]) async throws -> [String: Any] {
+        guard canSend, WCSession.default.isReachable else {
+            throw URLError(.notConnectedToInternet)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            WCSession.default.sendMessage(message) { reply in
+                continuation.resume(returning: reply)
+            } errorHandler: { error in
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    /// waits for the phone's library transfer to land after an accepted
+    /// library request; a fresh wait supersedes a stale one
+    func awaitLibrary(timeout: TimeInterval) async throws -> Data {
+        libraryContinuation?.resume(throwing: RelayLibraryError.timeout)
+        libraryContinuation = nil
+        libraryGeneration += 1
+        let generation = libraryGeneration
+        return try await withCheckedThrowingContinuation { continuation in
+            libraryContinuation = continuation
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(timeout))
+                self?.expireLibraryWait(generation: generation)
+            }
+        }
+    }
+
+    /// holds a connectivity background task until the session has delivered
+    /// everything queued for us, then lets the app suspend again
+    func handleBackgroundTask(_ task: WKWatchConnectivityRefreshBackgroundTask) {
+        pendingConnectivityTasks.append(task)
+        completeConnectivityTasksIfIdle()
+    }
+
+    private func completeConnectivityTasksIfIdle() {
+        guard !pendingConnectivityTasks.isEmpty,
+              WCSession.default.activationState == .activated,
+              !WCSession.default.hasContentPending
+        else {
+            return
+        }
+        for task in pendingConnectivityTasks {
+            task.setTaskCompletedWithSnapshot(false)
+        }
+        pendingConnectivityTasks.removeAll()
+    }
+
+    private func expireLibraryWait(generation: Int) {
+        guard generation == libraryGeneration, let continuation = libraryContinuation else { return }
+        libraryContinuation = nil
+        continuation.resume(throwing: RelayLibraryError.timeout)
+    }
+
+    private func resolveLibrary(with result: Result<Data, Error>) {
+        guard let continuation = libraryContinuation else { return }
+        libraryContinuation = nil
+        continuation.resume(with: result)
+    }
+
+    private func handleReceived(_ received: RelayFileReceiver.Received) {
+        switch received {
+        case .library(let data):
+            resolveLibrary(with: .success(data))
+        case .file(let file):
+            onFileReceived?(file)
+        case .fileOutOfSpace:
+            onOutOfSpace?()
+        case .fileFailed(let file):
+            onFileFailed?(file)
+        case .ignored:
+            break
+        }
+    }
 }
 
 extension WatchPhoneSession: WCSessionDelegate {
@@ -51,11 +158,36 @@ extension WatchPhoneSession: WCSessionDelegate {
         apply(session.receivedApplicationContext)
         Task { @MainActor in
             onActivated?()
+            completeConnectivityTasksIfIdle()
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         apply(applicationContext)
+        Task { @MainActor in
+            completeConnectivityTasksIfIdle()
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        Task { @MainActor in
+            if let result = FileResultPayload(dictionary: userInfo) {
+                onFileResult?(result)
+            } else if let result = LibraryResultPayload(dictionary: userInfo) {
+                resolveLibrary(with: .failure(RelayLibraryError.server(result.error)))
+            }
+            completeConnectivityTasksIfIdle()
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        // the file must be claimed before this call returns; the decode &
+        // move are synchronous, only the notifications hop actors
+        let received = receiver.receive(fileAt: file.fileURL, metadata: file.metadata)
+        Task { @MainActor in
+            handleReceived(received)
+            completeConnectivityTasksIfIdle()
+        }
     }
 
     private nonisolated func apply(_ context: [String: Any]) {
