@@ -10,7 +10,73 @@ SIMULATOR = 'iPhone 17'.freeze
 # gitignored derived-data dir the export app builds into, kept in-repo instead
 # of the shared ~/Library DerivedData so the build is self-contained.
 EXPORT_BUILD_DIR = "#{__dir__}/export/build".freeze
+EXPORT_APP = "#{EXPORT_BUILD_DIR}/Build/Products/Release/Warehouse Export.app".freeze
 command = TTY::Command.new
+
+# launch the export app headless and tail its log until it reports success or
+# failure. shared by export:run (which builds first) and export:run_prebuilt.
+def run_export_app
+  extra_args = Rake.application.top_level_tasks.any? { _1.include?('fast') } ? ' --fast' : ''
+
+  unless File.exist?(EXPORT_APP)
+    warn "Unable to find the Warehouse Export app at #{EXPORT_APP}, did `rake export:build` succeed?"
+    exit(1)
+  end
+
+  # arm64 refuses to exec an unsigned binary, and launchd reports that as an
+  # opaque "Launch failed"/RBSRequestErrorDomain Code=5. a build from a session
+  # without an unlocked login keychain (ssh, cron) relinks the binary and then
+  # dies at the codesign step, leaving exactly that unsigned bundle behind, so
+  # check the signature up front and say what actually needs to happen.
+  unless system('codesign', '--verify', EXPORT_APP, out: File::NULL, err: File::NULL)
+    warn "The Warehouse Export app at #{EXPORT_APP} isn't validly signed, so macos won't launch it."
+    warn 'Run `rake export:build` from a local terminal (not ssh/cron) to rebuild and sign it.'
+    exit(1)
+  end
+
+  outfile = "#{ROOT}/export.log"
+  if File.exist?(outfile)
+    File.truncate(outfile, 0)
+  else
+    FileUtils.touch(outfile)
+  end
+  puts "Running Warehouse Export app at #{EXPORT_APP} with output in #{outfile}..."
+  puts `open -a "#{EXPORT_APP}" --args --headless --log "#{outfile}"#{extra_args}`
+
+  last_outfile_mod = File.mtime(outfile)
+  no_changes_count = 0
+  loop do
+    no_changes = true
+    new_outfile_mod = File.mtime(outfile)
+    if last_outfile_mod != new_outfile_mod
+      last_outfile_mod = new_outfile_mod
+      no_changes = false
+      contents = File.read(outfile)
+      if contents.include?('Export finished successfully')
+        puts(contents.lines.reject { _1.include?('tracks processed:') })
+        exit(0)
+      elsif contents.include?('Failed to export')
+        warn 'Export failed!'
+        puts contents
+        exit(1)
+      else
+        puts contents.lines[-1].chomp
+      end
+    end
+
+    if no_changes
+      no_changes_count += 1
+      if no_changes_count > 10
+        warn 'no log changes in 10 seconds. it probably crashed?'
+        puts File.read(outfile)
+        exit(1)
+      end
+    else
+      no_changes_count = 0
+    end
+    sleep(2.5)
+  end
+end
 
 namespace :export do
   desc 'build the macos Warehouse Export app'
@@ -29,68 +95,31 @@ namespace :export do
   # persist, so `rake export:run` works headless afterwards.
   desc 'launch the Warehouse Export app ui for first-run setup (pick workspace dir, grant music access)'
   task setup: :build do
-    app = "#{EXPORT_BUILD_DIR}/Build/Products/Release/Warehouse Export.app"
-    sh %(open -a "#{app}")
+    sh %(open -a "#{EXPORT_APP}")
   end
 
   desc 'build and run the Warehouse Export app to export tracks'
   task run: :build do
-    task_name = Rake.application.top_level_tasks.first
-    extra_args = task_name.include?('fast') ? ' --fast' : ''
+    run_export_app
+  end
 
-    app = "#{EXPORT_BUILD_DIR}/Build/Products/Release/Warehouse Export.app"
-    unless File.exist?(app)
-      warn "Unable to find the Warehouse Export app at #{app}, did `rake export:build` succeed?"
-      exit(1)
-    end
-
-    outfile = "#{__dir__}/export.log"
-    if File.exist?(outfile)
-      File.truncate(outfile, 0)
-    else
-      FileUtils.touch(outfile)
-    end
-    puts "Running Warehouse Export app at #{app} with output in #{outfile}..."
-    puts `open -a "#{app}" --args --headless --log "#{outfile}"#{extra_args}`
-
-    last_outfile_mod = File.mtime(outfile)
-    no_changes_count = 0
-    loop do
-      no_changes = true
-      new_outfile_mod = File.mtime(outfile)
-      if last_outfile_mod != new_outfile_mod
-        last_outfile_mod = new_outfile_mod
-        no_changes = false
-        contents = File.read(outfile)
-        if contents.include?('Export finished successfully')
-          puts(contents.lines.reject { _1.include?('tracks processed:') })
-          exit(0)
-        elsif contents.include?('Failed to export')
-          warn 'Export failed!'
-          puts contents
-          exit(1)
-        else
-          puts contents.lines[-1].chomp
-        end
-      end
-
-      if no_changes
-        no_changes_count += 1
-        if no_changes_count > 10
-          warn 'no log changes in 10 seconds. it probably crashed?'
-          puts File.read(outfile)
-          exit(1)
-        end
-      else
-        no_changes_count = 0
-      end
-      sleep(2.5)
-    end
+  # xcodebuild's codesign step needs an unlocked login keychain, which an ssh or
+  # cron session doesn't have, so `export:run` fails there on the build. running
+  # the already-built app needs no signing, so schedule this instead and rebuild
+  # interactively (`rake export:build`) whenever the export sources change.
+  desc 'run the already-built Warehouse Export app without rebuilding it (for cron/ssh, where codesigning fails)'
+  task :run_prebuilt do
+    run_export_app
   end
 
   desc 'fast export tracks via the Warehouse Export app'
   task :fast do
     Rake::Task['export:run'].invoke
+  end
+
+  desc 'fast export tracks via the already-built Warehouse Export app (for cron/ssh)'
+  task :fast_prebuilt do
+    Rake::Task['export:run_prebuilt'].invoke
   end
 
   desc 'regenerate the macOS Warehouse Export app icon from logo.svg (needs librsvg + imagemagick)'
