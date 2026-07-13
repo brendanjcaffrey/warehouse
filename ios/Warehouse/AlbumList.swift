@@ -13,6 +13,32 @@ struct Album: Identifiable, Hashable, Sendable {
 
     var titleSortKey: String { sortName.isEmpty ? name : sortName }
     var artistSortKey: String { artistSortName.isEmpty ? artistName : artistSortName }
+
+    /// songs split into their discs, in disc order; songs are already sorted by
+    /// disc & track number so each disc's songs stay contiguous
+    var discs: [DiscGroup] {
+        var order = [Int]()
+        var grouped = [Int: [Song]]()
+        for song in songs {
+            if grouped[song.discNumber] == nil {
+                order.append(song.discNumber)
+            }
+            grouped[song.discNumber, default: []].append(song)
+        }
+        return order.map { DiscGroup(discNumber: $0, songs: grouped[$0] ?? []) }
+    }
+
+    /// only multi disc albums show disc headers in the track list
+    var hasMultipleDiscs: Bool {
+        discs.count > 1
+    }
+}
+
+struct DiscGroup: Identifiable, Hashable, Sendable {
+    let discNumber: Int
+    let songs: [Song]
+
+    var id: Int { discNumber }
 }
 
 enum AlbumSortOption: String, Identifiable, CaseIterable {

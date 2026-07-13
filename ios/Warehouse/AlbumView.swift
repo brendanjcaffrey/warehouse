@@ -30,37 +30,17 @@ struct AlbumView: View {
             }
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-            Section {
-                ForEach(album.songs) { song in
-                    Button {
-                        play(song)
-                    } label: {
-                        HStack {
-                            Text(song.name)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Spacer(minLength: 8)
-                            if store.isDownloaded(song) {
-                                Image(systemName: "arrow.down.circle")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        // taps anywhere on the row should register, not just on its content
-                        .contentShape(Rectangle())
+            if album.hasMultipleDiscs {
+                ForEach(album.discs) { disc in
+                    Section {
+                        trackRows(disc.songs)
+                    } header: {
+                        Text("Disc \(disc.discNumber)")
                     }
-                    .buttonStyle(.plain)
-                    // no go to album since we're already on it
-                    .songContextMenu(
-                        song,
-                        library: store.songs,
-                        playlists: playlists.playlists,
-                        play: { play(song) },
-                        playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
-                        edit: updates.canEditTracks ? { editingSong = song } : nil,
-                        artistDestination: $artistDestination,
-                        songsDestination: $songsDestination,
-                        playlistDestination: $playlistDestination)
+                }
+            } else {
+                Section {
+                    trackRows(album.songs)
                 }
             }
         }
@@ -90,6 +70,40 @@ struct AlbumView: View {
         .onChange(of: sync.downloadRefreshTicks) {
             // refresh the downloaded icons periodically during long downloads
             Task { await store.load() }
+        }
+    }
+
+    private func trackRows(_ songs: [Song]) -> some View {
+        ForEach(songs) { song in
+            Button {
+                play(song)
+            } label: {
+                HStack {
+                    Text(song.name)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    if store.isDownloaded(song) {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                // taps anywhere on the row should register, not just on its content
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // no go to album since we're already on it
+            .songContextMenu(
+                song,
+                library: store.songs,
+                playlists: playlists.playlists,
+                play: { play(song) },
+                playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
+                edit: updates.canEditTracks ? { editingSong = song } : nil,
+                artistDestination: $artistDestination,
+                songsDestination: $songsDestination,
+                playlistDestination: $playlistDestination)
         }
     }
 

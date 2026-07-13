@@ -204,4 +204,32 @@ struct AlbumListBuilderTests {
         let songs = [Self.song(id: "1", name: "Single")]
         #expect(AlbumListBuilder.album(for: songs[0], in: songs) == nil)
     }
+
+    @Test("a single disc album has one disc group and no disc headers")
+    func singleDisc() {
+        let albums = AlbumListBuilder.albums(from: [
+            Self.song(id: "1", album: "Believe", track: 1),
+            Self.song(id: "2", album: "Believe", track: 2)
+        ])
+
+        #expect(albums[0].hasMultipleDiscs == false)
+        #expect(albums[0].discs.map(\.discNumber) == [0])
+        #expect(albums[0].discs[0].songs.map(\.id) == ["1", "2"])
+    }
+
+    @Test("a multi disc album splits into disc groups in disc order")
+    func multipleDiscs() {
+        let albums = AlbumListBuilder.albums(from: [
+            Self.song(id: "1", album: "The Wall", disc: 2, track: 2),
+            Self.song(id: "2", album: "The Wall", disc: 1, track: 1),
+            Self.song(id: "3", album: "The Wall", disc: 2, track: 1)
+        ])
+
+        #expect(albums[0].hasMultipleDiscs)
+        #expect(albums[0].discs.map(\.discNumber) == [1, 2])
+        #expect(albums[0].discs[0].songs.map(\.id) == ["2"])
+        #expect(albums[0].discs[1].songs.map(\.id) == ["3", "1"])
+        // the flat song list stays in the same order the discs are shown in
+        #expect(albums[0].songs.map(\.id) == ["2", "3", "1"])
+    }
 }
