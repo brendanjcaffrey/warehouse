@@ -20,8 +20,8 @@ struct AuthClient {
         let body = "username=\(Self.formEncode(username))&password=\(Self.formEncode(password))"
         request.httpBody = Data(body.utf8)
 
-        let (data, _) = try await session.data(for: request)
-        return try Self.parse(data)
+        let (data, response) = try await session.data(for: request)
+        return try Self.parse(data, response)
     }
 
     /// PUT /api/auth with a bearer token to verify and refresh it
@@ -30,11 +30,17 @@ struct AuthClient {
         request.httpMethod = "PUT"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, _) = try await session.data(for: request)
-        return try Self.parse(data)
+        let (data, response) = try await session.data(for: request)
+        return try Self.parse(data, response)
     }
 
-    private static func parse(_ data: Data) throws -> Result {
+    private static func parse(_ data: Data, _ response: URLResponse) throws -> Result {
+        // only a 200 carries a real answer, anything else is the network or a broken
+        // server talking & must not read as the server rejecting the token
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw URLError(.badServerResponse)
+        }
+
         let response = try AuthResponse(serializedBytes: data)
         switch response.response {
         case .token(let token):

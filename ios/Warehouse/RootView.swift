@@ -9,8 +9,6 @@ struct RootView: View {
             switch auth.phase {
             case .unauthenticated:
                 AuthFormView()
-            case .verifying:
-                AuthVerifierView()
             case .authenticated:
                 MainTabView()
             }
@@ -19,6 +17,11 @@ struct RootView: View {
             // tell the updates store where to send queued plays & edits
             updates.configure(token: auth.token, baseURL: auth.baseURL())
             await updates.flush()
+        }
+        // deliberately not keyed on the token: a refresh writes a new one, which would
+        // re-fire the task & refresh forever
+        .task {
+            await auth.refresh()
         }
     }
 }

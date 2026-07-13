@@ -6,13 +6,10 @@ import Observation
 final class AuthStore {
     enum Phase {
         case unauthenticated
-        case verifying
         case authenticated
     }
 
     private(set) var token: String?
-    private(set) var verified = false
-    private(set) var verifyError: String?
     var serverURL: String
 
     private let client: AuthClient
@@ -25,17 +22,26 @@ final class AuthStore {
         if UITestSupport.enabled {
             // ui tests skip the login flow & run offline against fixtures
             token = "ui-tests"
-            verified = true
             serverURL = ""
             return
         }
-        token = Keychain.readToken()
         serverURL = UserDefaults.standard.string(forKey: Self.serverURLKey) ?? ""
+
+        // a stored token is trusted on sight so the app opens without waiting on the
+        // network. a token we can't use is dropped here, still without a request: it's
+        // expired, or it outlived the server url (the keychain survives a reinstall,
+        // user defaults doesn't) & only the login form can set that back
+        if let stored = Keychain.readToken() {
+            if JWT.isExpired(stored) || baseURL() == nil {
+                Keychain.setToken(nil)
+            } else {
+                token = stored
+            }
+        }
     }
 
     var phase: Phase {
-        if token == nil { return .unauthenticated }
-        return verified ? .authenticated : .verifying
+        token == nil ? .unauthenticated : .authenticated
     }
 
     func logIn(username: String, password: String, serverURL: String) async -> String? {
@@ -60,35 +66,28 @@ final class AuthStore {
         }
     }
 
-    func verify() async {
-        guard let token else { return }
-
-        verifyError = nil
-
-        guard let baseURL = baseURL() else {
-            logOut()
-            return
-        }
+    /// refreshes the stored token in the background. this never gates the ui: the only
+    /// thing it can do is end the session, & only when the server explicitly rejects us
+    func refresh() async {
+        guard let token, let baseURL = baseURL() else { return }
 
         do {
             switch try await client.verify(token: token, baseURL: baseURL) {
             case .token(let refreshed):
                 setToken(refreshed)
-                verified = true
-            case .error, .empty:
+            case .error:
                 logOut()
+            case .empty:
+                // an answer we can't read, leave the session alone
+                break
             }
-        } catch let error as URLError where error.isOfflineError {
-            verified = true
         } catch {
-            verifyError = "An error occurred while trying to verify authentication."
+            // couldn't reach the server. the local library still works, stay logged in
         }
     }
 
     func logOut() {
         setToken(nil)
-        verified = false
-        verifyError = nil
     }
 
     private func setToken(_ token: String?) {
