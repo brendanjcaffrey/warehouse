@@ -59,7 +59,7 @@ struct WarehouseApp: App {
         _watchSettings = State(initialValue: watchSettings)
         self.watchSession = watchSession
         watchRelay = WatchRelayWiring.install(
-            session: watchSession, fileStore: fileStore, auth: authStore)
+            session: watchSession, fileStore: fileStore, auth: authStore, watchSettings: watchSettings)
         // activate here rather than in the scene: watch connectivity launches
         // the app in the background to deliver queued plays & sync requests,
         // & the delegate must be in place for that

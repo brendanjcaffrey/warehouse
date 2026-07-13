@@ -242,32 +242,6 @@ struct SyncStoreTests {
         #expect(env.fileStore.list(.artwork) == ["a1.jpg", "queued.jpg"])
     }
 
-    @Test("the library filter trims what gets saved, downloaded and kept")
-    func libraryFilterTrimsSyncedData() async throws {
-        let host = "sync-filter.test"
-        let env = Self.makeEnv(host: host)
-        try Self.installHandler(host: host)
-
-        // as if a deselected playlist's file was downloaded by an earlier sync
-        try env.fileStore.write(.music, "m2.mp3", data: Data("old".utf8))
-        env.store.libraryFilter = { library in
-            var filtered = library
-            filtered.tracks = library.tracks.filter { $0.id == "t1" }
-            return filtered
-        }
-
-        await env.store.sync(token: "tok", baseURL: env.baseURL)
-
-        #expect(env.store.state == .upToDate(failedDownloads: 0))
-        #expect(try await env.database.trackCount() == 1)
-        // the filtered-out track's file is pruned, not downloaded
-        #expect(env.fileStore.list(.music) == ["m1.mp3"])
-        #expect(env.fileStore.list(.artwork) == ["a1.jpg"])
-        #expect(!Self.requestPaths(host: host).contains("/music/m2.mp3"))
-        // the metadata still comes from the filtered library
-        #expect(env.metadata.updateTimeNs == 43)
-    }
-
     @Test("existing files are not downloaded again")
     func existingFilesAreSkipped() async throws {
         let host = "sync-skip.test"

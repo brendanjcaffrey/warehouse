@@ -46,6 +46,11 @@ struct WatchMenuView: View {
                     syncLabel
                 }
                 .disabled(isSyncing)
+                NavigationLink {
+                    WatchSyncDetailView()
+                } label: {
+                    Label("Sync Detail", systemImage: "list.bullet.rectangle")
+                }
             }
             .navigationTitle("Warehouse")
         }

@@ -7,6 +7,9 @@ final class SongsStore {
     private(set) var songs = [Song]()
     private(set) var downloadedMusic = Set<String>()
     private(set) var errorMessage: String?
+    /// music filename -> track name, so the sync activity feed can name the
+    /// files as they land instead of showing hashes
+    private(set) var musicNames = [String: String]()
 
     private let database: LibraryDatabase
     private let fileStore: FileStore
@@ -19,11 +22,17 @@ final class SongsStore {
     func load() async {
         do {
             songs = try await database.allSongs()
+            musicNames = SyncActivityFormatting.nameIndex(songs)
             downloadedMusic = fileStore.list(.music)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// how a file arriving from the phone should read in the activity feed
+    func describe(_ file: FileToDownload) -> String {
+        SyncActivityFormatting.describe(file, index: musicNames)
     }
 
     /// persists an edited track & refreshes the songs list so every view

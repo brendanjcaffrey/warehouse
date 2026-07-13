@@ -10,6 +10,10 @@ import WatchKit
 final class WatchPhoneSession: NSObject {
     private let settings: WatchSettingsStore
     private let receiver: RelayFileReceiver
+    /// arrivals are logged here rather than through the relay callbacks below,
+    /// which are only wired up while a sync is awaiting them; files keep
+    /// landing when nothing is, and those are the ones worth showing
+    private let activity: SyncActivityLog
 
     /// fired once the session activates so held plays can be drained
     var onActivated: (@MainActor () -> Void)?
@@ -18,13 +22,19 @@ final class WatchPhoneSession: NSObject {
     var onFileFailed: (@MainActor (FileToDownload) -> Void)?
     var onFileResult: (@MainActor (FileResultPayload) -> Void)?
     var onOutOfSpace: (@MainActor () -> Void)?
+    var onReachabilityChange: (@MainActor (Bool) -> Void)?
 
     private var libraryContinuation: CheckedContinuation<Data, Error>?
     private var libraryGeneration = 0
-    private var pendingConnectivityTasks: [WKWatchConnectivityRefreshBackgroundTask] = []
+    private lazy var connectivityTasks = ConnectivityTaskHolder<WKWatchConnectivityRefreshBackgroundTask>(
+        isIdle: {
+            WCSession.default.activationState == .activated && !WCSession.default.hasContentPending
+        },
+        complete: { $0.setTaskCompletedWithSnapshot(false) })
 
-    init(settings: WatchSettingsStore, fileStore: FileStore) {
+    init(settings: WatchSettingsStore, fileStore: FileStore, activity: SyncActivityLog) {
         self.settings = settings
+        self.activity = activity
         receiver = RelayFileReceiver(fileStore: fileStore)
     }
 
@@ -98,24 +108,16 @@ final class WatchPhoneSession: NSObject {
         }
     }
 
-    /// holds a connectivity background task until the session has delivered
-    /// everything queued for us, then lets the app suspend again
+    /// holds a connectivity background task while the session still has content
+    /// queued for us, then lets the app suspend again. a task held past the
+    /// system's 15s allowance gets the app killed outright, so the holder lets
+    /// go on a deadline too; the remaining transfers just wake us again
     func handleBackgroundTask(_ task: WKWatchConnectivityRefreshBackgroundTask) {
-        pendingConnectivityTasks.append(task)
-        completeConnectivityTasksIfIdle()
+        connectivityTasks.hold(task)
     }
 
     private func completeConnectivityTasksIfIdle() {
-        guard !pendingConnectivityTasks.isEmpty,
-              WCSession.default.activationState == .activated,
-              !WCSession.default.hasContentPending
-        else {
-            return
-        }
-        for task in pendingConnectivityTasks {
-            task.setTaskCompletedWithSnapshot(false)
-        }
-        pendingConnectivityTasks.removeAll()
+        connectivityTasks.completeIfIdle()
     }
 
     private func expireLibraryWait(generation: Int) {
@@ -133,12 +135,16 @@ final class WatchPhoneSession: NSObject {
     private func handleReceived(_ received: RelayFileReceiver.Received) {
         switch received {
         case .library(let data):
+            activity.receivedLibrary()
             resolveLibrary(with: .success(data))
         case .file(let file):
+            activity.received(file)
             onFileReceived?(file)
         case .fileOutOfSpace:
+            activity.outOfSpace()
             onOutOfSpace?()
         case .fileFailed(let file):
+            activity.failed(file)
             onFileFailed?(file)
         case .ignored:
             break
@@ -156,9 +162,18 @@ extension WatchPhoneSession: WCSessionDelegate {
         // the last received context persists across launches, so settings
         // are available even when the phone isn't reachable
         apply(session.receivedApplicationContext)
+        let reachable = session.isReachable
         Task { @MainActor in
             onActivated?()
+            onReachabilityChange?(reachable)
             completeConnectivityTasksIfIdle()
+        }
+    }
+
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        let reachable = session.isReachable
+        Task { @MainActor in
+            onReachabilityChange?(reachable)
         }
     }
 
@@ -172,6 +187,7 @@ extension WatchPhoneSession: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         Task { @MainActor in
             if let result = FileResultPayload(dictionary: userInfo) {
+                activity.failed(result.failed)
                 onFileResult?(result)
             } else if let result = LibraryResultPayload(dictionary: userInfo) {
                 resolveLibrary(with: .failure(RelayLibraryError.server(result.error)))

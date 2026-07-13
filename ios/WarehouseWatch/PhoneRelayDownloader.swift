@@ -9,29 +9,28 @@ import WatchKit
 /// go out when the app leaves the foreground
 @MainActor
 final class PhoneRelayDownloader: BulkFileDownloading {
-    /// how often to re-send the missing list while awaiting a download
-    private static let nudgeInterval: TimeInterval = 60
-    /// give up waiting after this long with no arrival or result at all;
-    /// comfortably longer than the background refresh interval, so a quiet
-    /// stretch while both apps are suspended isn't mistaken for a dead
-    /// pipeline
-    private static let stallTimeout: TimeInterval = 35 * 60
-    /// how long until the next background wake that keeps nudging
-    private static let backgroundRefreshInterval: TimeInterval = 15 * 60
-
     private let phone: WatchPhoneSession
     private let database: LibraryDatabase
     private let fileStore: FileStore
+    /// what this side intends: requests, nudges & how a sync ended. arrivals
+    /// are logged by the session, which sees them even when no sync is running
+    private let activity: SyncActivityLog
 
     private var tracker: RelayDownloadTracker?
     private var continuation: CheckedContinuation<DownloadProgress, Never>?
     private var nudgeTask: Task<Void, Never>?
     private var lastActivity = Date()
 
-    init(phone: WatchPhoneSession, database: LibraryDatabase, fileStore: FileStore) {
+    init(
+        phone: WatchPhoneSession,
+        database: LibraryDatabase,
+        fileStore: FileStore,
+        activity: SyncActivityLog
+    ) {
         self.phone = phone
         self.database = database
         self.fileStore = fileStore
+        self.activity = activity
     }
 
     nonisolated func downloadAll(
@@ -81,6 +80,8 @@ final class PhoneRelayDownloader: BulkFileDownloading {
         Self.scheduleBackgroundRefresh()
 
         lastActivity = Date()
+        activity.startedSync(total: files.count)
+        activity.requested(count: tracker.missing.count, reason: .initial)
         phone.send(FileRequestPayload(files: tracker.missing))
         startNudging()
 
@@ -110,6 +111,7 @@ final class PhoneRelayDownloader: BulkFileDownloading {
         let artwork = (try? await database.artworkFilenames()) ?? []
         let missing = SyncStore.missing(music: music, artwork: artwork, fileStore: fileStore)
         guard !missing.isEmpty else { return }
+        activity.requested(count: missing.count, reason: .background)
         phone.send(FileRequestPayload(files: missing))
         Self.scheduleBackgroundRefresh()
     }
@@ -126,7 +128,7 @@ final class PhoneRelayDownloader: BulkFileDownloading {
     private func startNudging() {
         nudgeTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Self.nudgeInterval))
+                try? await Task.sleep(for: .seconds(RelayTiming.nudgeInterval))
                 guard !Task.isCancelled else { return }
                 self?.nudge()
             }
@@ -135,13 +137,15 @@ final class PhoneRelayDownloader: BulkFileDownloading {
 
     private func nudge() {
         guard let tracker, !tracker.isComplete else { return }
-        if Date().timeIntervalSince(lastActivity) > Self.stallTimeout {
+        if Date().timeIntervalSince(lastActivity) > RelayTiming.stallTimeout {
             // nothing has moved in a long time; count the rest as failed and
             // let a future sync ask again
+            activity.stalled()
             tracker.filesFailed(tracker.missing)
             finish()
             return
         }
+        activity.requested(count: tracker.missing.count, reason: .nudge)
         phone.send(FileRequestPayload(files: tracker.missing))
     }
 
@@ -154,16 +158,20 @@ final class PhoneRelayDownloader: BulkFileDownloading {
         phone.onOutOfSpace = nil
         WKExtension.shared().isFrontmostTimeoutExtended = false
 
+        // this runs twice when cancellation races completion; the guard is
+        // what makes it idempotent, so the feed only gets one closing line
         guard let continuation, let tracker else { return }
         self.continuation = nil
         self.tracker = nil
-        continuation.resume(returning: tracker.progress())
+        let progress = tracker.progress()
+        activity.finishedSync(progress)
+        continuation.resume(returning: progress)
     }
 
     @MainActor
     private static func scheduleBackgroundRefresh() {
         WKApplication.shared().scheduleBackgroundRefresh(
-            withPreferredDate: Date(timeIntervalSinceNow: backgroundRefreshInterval),
+            withPreferredDate: Date(timeIntervalSinceNow: RelayTiming.backgroundRefreshInterval),
             userInfo: nil) { _ in }
     }
 }

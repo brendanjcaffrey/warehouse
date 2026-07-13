@@ -1,5 +1,4 @@
 import Foundation
-import SwiftProtobuf
 import UIKit
 
 /// connects the relay engine to the wc session, file store & server client,
@@ -9,7 +8,8 @@ enum WatchRelayWiring {
     static func install(
         session: PhoneWatchSession,
         fileStore: FileStore,
-        auth: AuthStore
+        auth: AuthStore,
+        watchSettings: WatchSyncSettingsStore
     ) -> WatchRelayEngine {
         let client = LibraryClient()
 
@@ -55,40 +55,25 @@ enum WatchRelayWiring {
                 return .error(error.localizedDescription)
             }
         }
+        // the library is trimmed to the selected playlists here rather than on
+        // the watch, so a watch that syncs two playlists isn't sent the whole
+        // library just to throw most of it away
+        let librarySender = WatchLibrarySender(
+            credentials: {
+                guard let token = auth.token, let baseURL = auth.baseURL() else { return nil }
+                return WatchLibrarySender.Credentials(token: token, baseURL: baseURL)
+            },
+            playlistIds: { watchSettings.playlistIds },
+            fetchLibrary: { try await client.fetchLibrary(token: $0, baseURL: $1) },
+            transfer: { session.transferFile(at: $0, metadata: $1) },
+            sendError: { session.send(LibraryResultPayload(error: $0)) })
         session.onLibraryRequest = {
             Task { @MainActor in
-                await sendLibrary(session: session, client: client, auth: auth)
+                await withPhoneRuntime { await librarySender.send() }
             }
         }
 
         return engine
-    }
-
-    @MainActor
-    private static func sendLibrary(session: PhoneWatchSession, client: LibraryClient, auth: AuthStore) async {
-        guard let token = auth.token, let baseURL = auth.baseURL() else {
-            session.send(LibraryResultPayload(error: "The phone isn't logged in."))
-            return
-        }
-        do {
-            try await withPhoneRuntime {
-                switch try await client.fetchLibrary(token: token, baseURL: baseURL) {
-                case .library(let library):
-                    // the watch trims this to its synced playlists itself,
-                    // the same way it does for a direct fetch today
-                    let url = FileManager.default.temporaryDirectory
-                        .appending(path: "watch-library-\(UUID().uuidString).pb")
-                    try library.serializedData().write(to: url)
-                    session.transferFile(at: url, metadata: .library(updateTimeNs: library.updateTimeNs))
-                case .error(let message):
-                    session.send(LibraryResultPayload(error: message))
-                case .empty:
-                    session.send(LibraryResultPayload(error: "The server returned an empty response."))
-                }
-            }
-        } catch {
-            session.send(LibraryResultPayload(error: error.localizedDescription))
-        }
     }
 
     /// keeps ios from suspending the app mid-fetch when a watch request woke

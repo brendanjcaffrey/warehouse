@@ -9,6 +9,7 @@ struct WarehouseWatchApp: App {
     @State private var songs: SongsStore
     @State private var playlists: PlaylistsStore
     @State private var player: PlayerStore
+    @State private var activity: SyncActivityLog
 
     private let phone: WatchPhoneSession
     private let plays: PlayReportQueue
@@ -17,10 +18,16 @@ struct WarehouseWatchApp: App {
         let database = LibraryDatabase()
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         let settings = WatchSettingsStore()
-        let phone = WatchPhoneSession(settings: settings, fileStore: fileStore)
+        // built before the log so arrivals can be named as tracks, and owned
+        // for the life of the app so the feed outlives any one sync
+        let songs = SongsStore(database: database, fileStore: fileStore)
+        let activity = SyncActivityLog(describe: { songs.describe($0) })
+        let phone = WatchPhoneSession(settings: settings, fileStore: fileStore, activity: activity)
+        phone.onReachabilityChange = { activity.phoneReachabilityChanged(to: $0) }
         // the library & every file arrive from the phone over watch
         // connectivity, so the watch never has to reach the server
-        let downloader = PhoneRelayDownloader(phone: phone, database: database, fileStore: fileStore)
+        let downloader = PhoneRelayDownloader(
+            phone: phone, database: database, fileStore: fileStore, activity: activity)
         let syncStore = SyncStore(
             database: database, fileStore: fileStore,
             fileDownloader: downloader,
@@ -28,12 +35,11 @@ struct WarehouseWatchApp: App {
                 isReachable: { WatchPhoneSession.isPhoneReachable },
                 sendWithReply: { try await phone.sendWithReply($0) },
                 awaitLibrary: { try await phone.awaitLibrary(timeout: $0) }))
-        // only the selected playlists & their tracks are kept and downloaded
-        syncStore.libraryFilter = { LibraryFilter.filter($0, playlistIds: Set(settings.playlistIds)) }
         _settings = State(initialValue: settings)
         _sync = State(initialValue: syncStore)
-        _songs = State(initialValue: SongsStore(database: database, fileStore: fileStore))
+        _songs = State(initialValue: songs)
         _playlists = State(initialValue: PlaylistsStore(database: database))
+        _activity = State(initialValue: activity)
         // finished plays queue here & ride the connectivity session back to
         // the phone, which pushes them to the server
         let plays = PlayReportQueue(
@@ -66,6 +72,7 @@ struct WarehouseWatchApp: App {
                 .environment(songs)
                 .environment(playlists)
                 .environment(player)
+                .environment(activity)
         }
     }
 }

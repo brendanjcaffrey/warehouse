@@ -40,7 +40,8 @@ final class WatchSettingsStore {
 
     func apply(_ payload: WatchPayload) {
         if payload.playlistIds != playlistIds {
-            // force a library refetch so the next sync refilters it
+            // force a library refetch: the phone trims the library to the
+            // selection, so a new selection means a different library
             metadata.updateTimeNs = 0
             selectionChanges += 1
         }

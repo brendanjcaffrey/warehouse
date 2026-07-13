@@ -40,9 +40,6 @@ final class SyncStore {
     /// artwork filenames to keep even when no track references them, e.g.
     /// files still waiting in the update queue to be uploaded
     var protectedArtworkFilenames: () -> Set<String> = { [] }
-    /// lets the watch trim the fetched library to just its synced playlists
-    /// before anything is saved or downloaded
-    var libraryFilter: (Library) -> Library = { $0 }
     /// bumped when a sync attempt finishes, so views can reload without
     /// observing every per-file progress update in `state`
     private(set) var completedSyncs = 0
@@ -155,7 +152,7 @@ final class SyncStore {
                 break
             case .needsUpdate:
                 state = .fetchingLibrary
-                let library = libraryFilter(try await fetchLibrary(token: token, baseURL: baseURL))
+                let library = try await fetchLibrary(token: token, baseURL: baseURL)
                 state = .savingLibrary
                 try await database.replaceLibrary(with: library)
                 metadata.update(from: library)

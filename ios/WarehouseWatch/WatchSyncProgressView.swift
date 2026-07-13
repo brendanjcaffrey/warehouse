@@ -3,8 +3,20 @@ import SwiftUI
 struct WatchSyncProgressView: View {
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SyncStore.self) private var sync
+    @Environment(SyncActivityLog.self) private var activity
 
     var body: some View {
+        // this view stands in for the whole app while a sync runs, so it owns
+        // its own stack to push the detail view onto
+        NavigationStack {
+            ScrollView {
+                content
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         VStack(spacing: 8) {
             switch sync.state {
             case .idle, .checkingForUpdates, .updateAvailable:
@@ -29,6 +41,7 @@ struct WatchSyncProgressView: View {
                     Text("Artwork \(progress.artwork.finished) of \(progress.artwork.total)")
                         .font(.footnote)
                 }
+                heartbeat
                 Text("Keep your iPhone nearby. Transfers are faster with the watch on its charger.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -59,8 +72,28 @@ struct WatchSyncProgressView: View {
                     .multilineTextAlignment(.center)
                 retryButton("Retry")
             }
+            NavigationLink {
+                WatchSyncDetailView()
+            } label: {
+                Label("Details", systemImage: "list.bullet.rectangle")
+                    .font(.footnote)
+            }
         }
         .padding()
+    }
+
+    /// the counts above can sit unchanged for minutes while the phone works
+    /// through its queue; this ticks every second so a slow sync still reads
+    /// as a live one
+    private var heartbeat: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let line = SyncActivityFormatting.heartbeat(activity.status(now: context.date)) {
+                Text(line)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
     }
 
     private func retryButton(_ title: String) -> some View {
