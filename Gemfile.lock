@@ -19,6 +19,7 @@ GEM
     language_server-protocol (3.17.0.6)
     lint_roller (1.1.0)
     logger (1.7.0)
+    minitar (1.1.0)
     multi_json (1.15.0)
     mustermann (3.0.4)
       ruby2_keywords (~> 0.0.1)
@@ -116,6 +117,7 @@ DEPENDENCIES
   connection_pool
   google-protobuf
   jwt
+  minitar
   openssl
   pg
   puma

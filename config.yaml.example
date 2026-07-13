@@ -1,6 +1,7 @@
 local:
   music_path: /Users/you/warehouse/music/
   artwork_path: /Users/you/warehouse/artwork/
+  bundles_path: /Users/you/warehouse/bundles/
   database_host: localhost
   database_port: 5432
   database_username: user
@@ -15,6 +16,7 @@ remote:
   base_url: http://example.com/
   music_path: /home/user/music/
   artwork_path: /home/user/artwork/
+  bundles_path: /home/user/bundles/
   database_host: localhost
   database_port: 5432
   database_username: user

@@ -1465,6 +1465,278 @@ export class LibraryResponse extends pb_1.Message {
         return LibraryResponse.deserialize(bytes);
     }
 }
+export class LibraryRequest extends pb_1.Message {
+    #one_of_decls: number[][] = [];
+    constructor(data?: any[] | {
+        playlistIds?: string[];
+    }) {
+        super();
+        pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [1], this.#one_of_decls);
+        if (!Array.isArray(data) && typeof data == "object") {
+            if ("playlistIds" in data && data.playlistIds != undefined) {
+                this.playlistIds = data.playlistIds;
+            }
+        }
+    }
+    get playlistIds() {
+        return pb_1.Message.getFieldWithDefault(this, 1, []) as string[];
+    }
+    set playlistIds(value: string[]) {
+        pb_1.Message.setField(this, 1, value);
+    }
+    static fromObject(data: {
+        playlistIds?: string[];
+    }): LibraryRequest {
+        const message = new LibraryRequest({});
+        if (data.playlistIds != null) {
+            message.playlistIds = data.playlistIds;
+        }
+        return message;
+    }
+    toObject() {
+        const data: {
+            playlistIds?: string[];
+        } = {};
+        if (this.playlistIds != null) {
+            data.playlistIds = this.playlistIds;
+        }
+        return data;
+    }
+    serialize(): Uint8Array;
+    serialize(w: pb_1.BinaryWriter): void;
+    serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+        const writer = w || new pb_1.BinaryWriter();
+        if (this.playlistIds.length)
+            writer.writeRepeatedString(1, this.playlistIds);
+        if (!w)
+            return writer.getResultBuffer();
+    }
+    static deserialize(bytes: Uint8Array | pb_1.BinaryReader): LibraryRequest {
+        const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new LibraryRequest();
+        while (reader.nextField()) {
+            if (reader.isEndGroup())
+                break;
+            switch (reader.getFieldNumber()) {
+                case 1:
+                    pb_1.Message.addToRepeatedField(message, 1, reader.readString());
+                    break;
+                default: reader.skipField();
+            }
+        }
+        return message;
+    }
+    serializeBinary(): Uint8Array {
+        return this.serialize();
+    }
+    static deserializeBinary(bytes: Uint8Array): LibraryRequest {
+        return LibraryRequest.deserialize(bytes);
+    }
+}
+export class BundleRequest extends pb_1.Message {
+    #one_of_decls: number[][] = [];
+    constructor(data?: any[] | {
+        type?: BundleRequest.Type;
+        filenames?: string[];
+    }) {
+        super();
+        pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [2], this.#one_of_decls);
+        if (!Array.isArray(data) && typeof data == "object") {
+            if ("type" in data && data.type != undefined) {
+                this.type = data.type;
+            }
+            if ("filenames" in data && data.filenames != undefined) {
+                this.filenames = data.filenames;
+            }
+        }
+    }
+    get type() {
+        return pb_1.Message.getFieldWithDefault(this, 1, BundleRequest.Type.MUSIC) as BundleRequest.Type;
+    }
+    set type(value: BundleRequest.Type) {
+        pb_1.Message.setField(this, 1, value);
+    }
+    get filenames() {
+        return pb_1.Message.getFieldWithDefault(this, 2, []) as string[];
+    }
+    set filenames(value: string[]) {
+        pb_1.Message.setField(this, 2, value);
+    }
+    static fromObject(data: {
+        type?: BundleRequest.Type;
+        filenames?: string[];
+    }): BundleRequest {
+        const message = new BundleRequest({});
+        if (data.type != null) {
+            message.type = data.type;
+        }
+        if (data.filenames != null) {
+            message.filenames = data.filenames;
+        }
+        return message;
+    }
+    toObject() {
+        const data: {
+            type?: BundleRequest.Type;
+            filenames?: string[];
+        } = {};
+        if (this.type != null) {
+            data.type = this.type;
+        }
+        if (this.filenames != null) {
+            data.filenames = this.filenames;
+        }
+        return data;
+    }
+    serialize(): Uint8Array;
+    serialize(w: pb_1.BinaryWriter): void;
+    serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+        const writer = w || new pb_1.BinaryWriter();
+        if (this.type != BundleRequest.Type.MUSIC)
+            writer.writeEnum(1, this.type);
+        if (this.filenames.length)
+            writer.writeRepeatedString(2, this.filenames);
+        if (!w)
+            return writer.getResultBuffer();
+    }
+    static deserialize(bytes: Uint8Array | pb_1.BinaryReader): BundleRequest {
+        const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new BundleRequest();
+        while (reader.nextField()) {
+            if (reader.isEndGroup())
+                break;
+            switch (reader.getFieldNumber()) {
+                case 1:
+                    message.type = reader.readEnum();
+                    break;
+                case 2:
+                    pb_1.Message.addToRepeatedField(message, 2, reader.readString());
+                    break;
+                default: reader.skipField();
+            }
+        }
+        return message;
+    }
+    serializeBinary(): Uint8Array {
+        return this.serialize();
+    }
+    static deserializeBinary(bytes: Uint8Array): BundleRequest {
+        return BundleRequest.deserialize(bytes);
+    }
+}
+export namespace BundleRequest {
+    export enum Type {
+        MUSIC = 0,
+        ARTWORK = 1
+    }
+}
+export class BundleResponse extends pb_1.Message {
+    #one_of_decls: number[][] = [[1, 2]];
+    constructor(data?: any[] | ({} & (({
+        id?: string;
+        error?: never;
+    } | {
+        id?: never;
+        error?: string;
+    })))) {
+        super();
+        pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
+        if (!Array.isArray(data) && typeof data == "object") {
+            if ("id" in data && data.id != undefined) {
+                this.id = data.id;
+            }
+            if ("error" in data && data.error != undefined) {
+                this.error = data.error;
+            }
+        }
+    }
+    get id() {
+        return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
+    }
+    set id(value: string) {
+        pb_1.Message.setOneofField(this, 1, this.#one_of_decls[0], value);
+    }
+    get has_id() {
+        return pb_1.Message.getField(this, 1) != null;
+    }
+    get error() {
+        return pb_1.Message.getFieldWithDefault(this, 2, "") as string;
+    }
+    set error(value: string) {
+        pb_1.Message.setOneofField(this, 2, this.#one_of_decls[0], value);
+    }
+    get has_error() {
+        return pb_1.Message.getField(this, 2) != null;
+    }
+    get response() {
+        const cases: {
+            [index: number]: "none" | "id" | "error";
+        } = {
+            0: "none",
+            1: "id",
+            2: "error"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [1, 2])];
+    }
+    static fromObject(data: {
+        id?: string;
+        error?: string;
+    }): BundleResponse {
+        const message = new BundleResponse({});
+        if (data.id != null) {
+            message.id = data.id;
+        }
+        if (data.error != null) {
+            message.error = data.error;
+        }
+        return message;
+    }
+    toObject() {
+        const data: {
+            id?: string;
+            error?: string;
+        } = {};
+        if (this.id != null) {
+            data.id = this.id;
+        }
+        if (this.error != null) {
+            data.error = this.error;
+        }
+        return data;
+    }
+    serialize(): Uint8Array;
+    serialize(w: pb_1.BinaryWriter): void;
+    serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+        const writer = w || new pb_1.BinaryWriter();
+        if (this.has_id)
+            writer.writeString(1, this.id);
+        if (this.has_error)
+            writer.writeString(2, this.error);
+        if (!w)
+            return writer.getResultBuffer();
+    }
+    static deserialize(bytes: Uint8Array | pb_1.BinaryReader): BundleResponse {
+        const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new BundleResponse();
+        while (reader.nextField()) {
+            if (reader.isEndGroup())
+                break;
+            switch (reader.getFieldNumber()) {
+                case 1:
+                    message.id = reader.readString();
+                    break;
+                case 2:
+                    message.error = reader.readString();
+                    break;
+                default: reader.skipField();
+            }
+        }
+        return message;
+    }
+    serializeBinary(): Uint8Array {
+        return this.serialize();
+    }
+    static deserializeBinary(bytes: Uint8Array): BundleResponse {
+        return BundleResponse.deserialize(bytes);
+    }
+}
 export class TrackUpdate extends pb_1.Message {
     #one_of_decls: number[][] = [[1], [2], [3], [4], [5], [6], [7], [8], [9], [10]];
     constructor(data?: any[] | ({} & (({

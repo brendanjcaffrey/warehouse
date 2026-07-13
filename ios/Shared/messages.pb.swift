@@ -311,6 +311,101 @@ struct LibraryResponse: Sendable {
   init() {}
 }
 
+/// trims the library to just these playlists (for the watch)
+struct LibraryRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var playlistIds: [String] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct BundleRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var type: BundleRequest.TypeEnum = .music
+
+  var filenames: [String] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum TypeEnum: SwiftProtobuf.Enum, Swift.CaseIterable {
+    typealias RawValue = Int
+    case music // = 0
+    case artwork // = 1
+    case UNRECOGNIZED(Int)
+
+    init() {
+      self = .music
+    }
+
+    init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .music
+      case 1: self = .artwork
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    var rawValue: Int {
+      switch self {
+      case .music: return 0
+      case .artwork: return 1
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    static let allCases: [BundleRequest.TypeEnum] = [
+      .music,
+      .artwork,
+    ]
+
+  }
+
+  init() {}
+}
+
+struct BundleResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var response: BundleResponse.OneOf_Response? = nil
+
+  var id: String {
+    get {
+      if case .id(let v)? = response {return v}
+      return String()
+    }
+    set {response = .id(newValue)}
+  }
+
+  var error: String {
+    get {
+      if case .error(let v)? = response {return v}
+      return String()
+    }
+    set {response = .error(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum OneOf_Response: Equatable, Sendable {
+    case id(String)
+    case error(String)
+
+  }
+
+  init() {}
+}
+
 /// edited track fields; only fields that are present are updated, and a
 /// present but empty album/albumArtist/artwork clears the value
 struct TrackUpdate: Sendable {
@@ -1116,6 +1211,132 @@ extension LibraryResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
   }
 
   static func ==(lhs: LibraryResponse, rhs: LibraryResponse) -> Bool {
+    if lhs.response != rhs.response {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension LibraryRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = "LibraryRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}playlistIds\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedStringField(value: &self.playlistIds) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.playlistIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.playlistIds, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: LibraryRequest, rhs: LibraryRequest) -> Bool {
+    if lhs.playlistIds != rhs.playlistIds {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension BundleRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = "BundleRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}filenames\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.type) }()
+      case 2: try { try decoder.decodeRepeatedStringField(value: &self.filenames) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.type != .music {
+      try visitor.visitSingularEnumField(value: self.type, fieldNumber: 1)
+    }
+    if !self.filenames.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.filenames, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: BundleRequest, rhs: BundleRequest) -> Bool {
+    if lhs.type != rhs.type {return false}
+    if lhs.filenames != rhs.filenames {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension BundleRequest.TypeEnum: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MUSIC\0\u{1}ARTWORK\0")
+}
+
+extension BundleResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = "BundleResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}error\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.response != nil {try decoder.handleConflictingOneOf()}
+          self.response = .id(v)
+        }
+      }()
+      case 2: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.response != nil {try decoder.handleConflictingOneOf()}
+          self.response = .error(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.response {
+    case .id?: try {
+      guard case .id(let v)? = self.response else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 1)
+    }()
+    case .error?: try {
+      guard case .error(let v)? = self.response else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 2)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: BundleResponse, rhs: BundleResponse) -> Bool {
     if lhs.response != rhs.response {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

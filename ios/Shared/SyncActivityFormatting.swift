@@ -46,30 +46,12 @@ enum SyncActivityFormatting {
         return max(0, now.timeIntervalSince(lastArrivalAt))
     }
 
-    /// how long until the downloader re-sends its missing list; nil when
-    /// nothing is downloading or nothing has been asked for yet
-    static func untilNextNudge(
-        lastRequestAt: Date?,
-        isDownloading: Bool,
-        interval: TimeInterval = RelayTiming.nudgeInterval,
-        now: Date
-    ) -> TimeInterval? {
-        guard isDownloading, let lastRequestAt else { return nil }
-        return max(0, interval - now.timeIntervalSince(lastRequestAt))
-    }
-
-    /// the proof-of-life line: "Last file 1m 12s ago · asking again in 23s"
+    /// the proof-of-life line: "Last file 1m 12s ago"
     static func heartbeat(_ status: SyncActivityLog.Status) -> String? {
-        var parts: [String] = []
         if let sinceLastFile = status.sinceLastFile {
-            parts.append("Last file \(elapsed(sinceLastFile)) ago")
-        } else if status.untilNextNudge != nil {
-            parts.append("No files yet")
+            return "Last file \(elapsed(sinceLastFile)) ago"
         }
-        if let untilNextNudge = status.untilNextNudge {
-            parts.append("asking again in \(elapsed(untilNextNudge))")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return status.isDownloading ? "No files yet" : nil
     }
 
     /// music filename -> track name, so arrivals read as songs not hashes

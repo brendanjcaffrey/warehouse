@@ -8,14 +8,10 @@ struct SyncActivityFormattingTests {
     private let now = Date(timeIntervalSince1970: 10_000)
 
     private func status(
-        reachable: Bool = true,
         sinceLastFile: TimeInterval? = nil,
-        untilNextNudge: TimeInterval? = nil
+        isDownloading: Bool = false
     ) -> SyncActivityLog.Status {
-        SyncActivityLog.Status(
-            isPhoneReachable: reachable,
-            sinceLastFile: sinceLastFile,
-            untilNextNudge: untilNextNudge)
+        SyncActivityLog.Status(sinceLastFile: sinceLastFile, isDownloading: isDownloading)
     }
 
     @Test("elapsed reads as a short duration")
@@ -36,28 +32,13 @@ struct SyncActivityFormattingTests {
         #expect(SyncActivityFormatting.sinceLastFile(lastArrivalAt: now + 5, now: now) == 0)
     }
 
-    @Test("the nudge countdown runs down from the nudge interval & clamps at zero")
-    func untilNextNudge() {
-        let asked = now - 20
-        #expect(SyncActivityFormatting.untilNextNudge(
-            lastRequestAt: asked, isDownloading: true, interval: 60, now: now) == 40)
-        // overdue: the nudge task hasn't fired yet
-        #expect(SyncActivityFormatting.untilNextNudge(
-            lastRequestAt: now - 90, isDownloading: true, interval: 60, now: now) == 0)
-        #expect(SyncActivityFormatting.untilNextNudge(
-            lastRequestAt: asked, isDownloading: false, interval: 60, now: now) == nil)
-        #expect(SyncActivityFormatting.untilNextNudge(
-            lastRequestAt: nil, isDownloading: true, interval: 60, now: now) == nil)
-    }
-
     @Test("the heartbeat line degrades as parts go missing")
     func heartbeat() {
-        #expect(SyncActivityFormatting.heartbeat(status(sinceLastFile: 72, untilNextNudge: 23))
-            == "Last file 1m 12s ago · asking again in 23s")
-        #expect(SyncActivityFormatting.heartbeat(status(untilNextNudge: 23))
-            == "No files yet · asking again in 23s")
+        #expect(SyncActivityFormatting.heartbeat(status(sinceLastFile: 72, isDownloading: true))
+            == "Last file 1m 12s ago")
         #expect(SyncActivityFormatting.heartbeat(status(sinceLastFile: 240))
             == "Last file 4m ago")
+        #expect(SyncActivityFormatting.heartbeat(status(isDownloading: true)) == "No files yet")
         #expect(SyncActivityFormatting.heartbeat(status()) == nil)
     }
 

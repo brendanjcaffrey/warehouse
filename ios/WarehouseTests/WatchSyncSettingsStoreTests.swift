@@ -33,9 +33,11 @@ struct WatchSyncSettingsStoreTests {
         let store = WatchSyncSettingsStore(defaults: defaults)
         store.toggle("p1")
         store.toggle("p2")
+        store.setServerURLOverride("funnel.example.com:8443")
 
         let reloaded = WatchSyncSettingsStore(defaults: defaults)
         #expect(reloaded.playlistIds == ["p1", "p2"])
+        #expect(reloaded.serverURLOverride == "funnel.example.com:8443")
     }
 
     @Test("onChange fires after every change")
@@ -48,5 +50,25 @@ struct WatchSyncSettingsStoreTests {
         store.toggle("p2")
         store.toggle("p1")
         #expect(changes == 3)
+
+        store.setServerURLOverride("funnel.example.com:8443")
+        #expect(changes == 4)
+
+        // setting the same value again shouldn't ping the watch
+        store.setServerURLOverride("funnel.example.com:8443")
+        #expect(changes == 4)
+    }
+
+    @Test("the override wins over the phone's server url when set")
+    func effectiveServerURL() {
+        let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("effective"))
+        #expect(store.effectiveServerURL(phoneServerURL: "phone.example.com") == "phone.example.com")
+
+        store.setServerURLOverride("   ")
+        #expect(store.effectiveServerURL(phoneServerURL: "phone.example.com") == "phone.example.com")
+
+        store.setServerURLOverride(" https://funnel.example.com:8443 ")
+        #expect(store.effectiveServerURL(phoneServerURL: "phone.example.com")
+            == "https://funnel.example.com:8443")
     }
 }

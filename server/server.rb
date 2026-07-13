@@ -8,6 +8,7 @@ require 'sinatra/namespace'
 require_relative '../update/database'
 require_relative '../shared/messages_pb'
 require_relative '../shared/jwt'
+require_relative 'bundles'
 require_relative 'helpers'
 require_relative 'errors'
 require_relative 'sql'
@@ -48,6 +49,7 @@ class Server < Sinatra::Base
     AUDIO_MIME_TYPES.each do |key, value|
       mime_type key.to_sym, value
     end
+    mime_type :tar, 'application/x-tar'
   end
 
   set :public_folder, proc { File.join(root, '..', 'public') }
@@ -108,6 +110,25 @@ class Server < Sinatra::Base
     end
   end
 
+  get '/bundle/:id' do
+    if authed?
+      id = params[:id]
+      valid_id = id.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
+      full_path = File.join(Config.env.bundles_path, "#{id}.tar")
+      raise Sinatra::NotFound unless valid_id && File.exist?(full_path)
+
+      if Config.remote?
+        headers['X-Accel-Redirect'] = "/accel/bundles/#{id}.tar"
+        headers['Content-Type'] = 'application/x-tar'
+        ''
+      else
+        send_file(full_path, type: :tar)
+      end
+    else
+      redirect to('/')
+    end
+  end
+
   namespace '/api' do
     def proto(msg)
       content_type 'application/octet-stream'
@@ -147,63 +168,128 @@ class Server < Sinatra::Base
       end
     end
 
+    # playlist_ids trims the library for the watch: only those playlists (with
+    # folder ancestry dropped) and the tracks that belong to them survive
+    def build_library(username, playlist_ids: nil)
+      library = Library.new(trackUserChanges: Config.track_user_changes?(username))
+      library_playlist_ids = query(LIBRARY_PLAYLIST_IDS_SQL).map(&:values).flatten
+
+      query(GENRE_SQL).each do |genre|
+        library.genres[genre['id'].to_i] = Name.new(name: genre['name'])
+      end
+
+      query(ARTIST_SQL).each do |artist|
+        library.artists[artist['id'].to_i] = SortName.new(name: artist['name'], sortName: artist['sort_name'])
+      end
+
+      query(ALBUM_SQL).each do |album|
+        library.albums[album['id'].to_i] = SortName.new(name: album['name'], sortName: album['sort_name'])
+      end
+
+      kept_track_ids = nil
+      playlists = query(PLAYLIST_SQL)
+      unless playlist_ids.nil?
+        playlists = playlists.select { |playlist| playlist_ids.include?(playlist['id']) }
+        playlists.each { |playlist| playlist['parent_id'] = '' }
+        kept_track_ids = playlists.flat_map { |playlist| (playlist['track_ids'] || '').split(',') }.to_set
+      end
+
+      query(TRACK_SQL).each do |track|
+        next unless kept_track_ids.nil? || kept_track_ids.include?(track['id'])
+
+        library.tracks << Track.new(id: track['id'],
+                                    name: track['name'],
+                                    sortName: track['sort_name'],
+                                    artistId: track['artist_id'].to_i,
+                                    albumArtistId: track['album_artist_id'].to_i,
+                                    albumId: track['album_id'].to_i,
+                                    genreId: track['genre_id'].to_i,
+                                    year: track['year'].to_i,
+                                    duration: track['duration'].to_f,
+                                    start: track['start'].to_f,
+                                    finish: track['finish'].to_f,
+                                    trackNumber: track['track_number'].to_i,
+                                    discNumber: track['disc_number'].to_i,
+                                    playCount: track['play_count'].to_i,
+                                    rating: track['rating'].to_i,
+                                    musicFilename: track['music_filename'].strip,
+                                    artworkFilename: (track['artwork_filename'] || '').strip,
+                                    playlistIds: (track['playlist_ids'] || '').split(',').concat(library_playlist_ids))
+      end
+
+      playlists.each do |playlist|
+        library.playlists << Playlist.new(id: playlist['id'],
+                                          name: playlist['name'],
+                                          parentId: playlist['parent_id'],
+                                          isLibrary: playlist['is_library'] == '1',
+                                          trackIds: (playlist['track_ids'] || '').split(','))
+      end
+
+      metadata_rows = query(LIBRARY_METADATA_SQL)
+      export_finished_rows = query(EXPORT_FINISHED_SQL)
+      halt 500, 'export did not finish!' if metadata_rows.empty? || export_finished_rows.empty?
+
+      library.totalFileSize = metadata_rows[0]['total_file_size'].to_i
+      library.updateTimeNs = timestamp_to_ns(export_finished_rows[0]['finished_at'])
+      library
+    end
+
     get '/library' do
       username = get_validated_username
       if username.nil?
         proto(LibraryResponse.new(error: NOT_AUTHED_ERROR))
       else
-        library = Library.new(trackUserChanges: Config.track_user_changes?(username))
-        library_playlist_ids = query(LIBRARY_PLAYLIST_IDS_SQL).map(&:values).flatten
-
-        query(GENRE_SQL).each do |genre|
-          library.genres[genre['id'].to_i] = Name.new(name: genre['name'])
-        end
-
-        query(ARTIST_SQL).each do |artist|
-          library.artists[artist['id'].to_i] = SortName.new(name: artist['name'], sortName: artist['sort_name'])
-        end
-
-        query(ALBUM_SQL).each do |album|
-          library.albums[album['id'].to_i] = SortName.new(name: album['name'], sortName: album['sort_name'])
-        end
-
-        query(TRACK_SQL).each do |track|
-          library.tracks << Track.new(id: track['id'],
-                                      name: track['name'],
-                                      sortName: track['sort_name'],
-                                      artistId: track['artist_id'].to_i,
-                                      albumArtistId: track['album_artist_id'].to_i,
-                                      albumId: track['album_id'].to_i,
-                                      genreId: track['genre_id'].to_i,
-                                      year: track['year'].to_i,
-                                      duration: track['duration'].to_f,
-                                      start: track['start'].to_f,
-                                      finish: track['finish'].to_f,
-                                      trackNumber: track['track_number'].to_i,
-                                      discNumber: track['disc_number'].to_i,
-                                      playCount: track['play_count'].to_i,
-                                      rating: track['rating'].to_i,
-                                      musicFilename: track['music_filename'].strip,
-                                      artworkFilename: (track['artwork_filename'] || '').strip,
-                                      playlistIds: (track['playlist_ids'] || '').split(',').concat(library_playlist_ids))
-        end
-
-        query(PLAYLIST_SQL).each do |playlist|
-          library.playlists << Playlist.new(id: playlist['id'],
-                                            name: playlist['name'],
-                                            parentId: playlist['parent_id'],
-                                            isLibrary: playlist['is_library'] == '1',
-                                            trackIds: (playlist['track_ids'] || '').split(','))
-        end
-
-        metadata_rows = query(LIBRARY_METADATA_SQL)
-        export_finished_rows = query(EXPORT_FINISHED_SQL)
-        halt 500, 'export did not finish!' if metadata_rows.empty? || export_finished_rows.empty?
-
-        library.totalFileSize = metadata_rows[0]['total_file_size'].to_i
-        library.updateTimeNs = timestamp_to_ns(export_finished_rows[0]['finished_at'])
-        proto(LibraryResponse.new(library: library))
+        proto(LibraryResponse.new(library: build_library(username)))
       end
+    end
+
+    post '/library' do
+      username = get_validated_username
+      return proto(LibraryResponse.new(error: NOT_AUTHED_ERROR)) if username.nil?
+
+      begin
+        req = LibraryRequest.decode(request.body.read)
+      rescue Google::Protobuf::ParseError
+        return proto(LibraryResponse.new(error: INVALID_REQUEST_ERROR))
+      end
+
+      proto(LibraryResponse.new(library: build_library(username, playlist_ids: req.playlistIds.to_a)))
+    end
+
+    post '/bundle' do
+      return proto(BundleResponse.new(error: NOT_AUTHED_ERROR)) unless authed?
+
+      begin
+        req = BundleRequest.decode(request.body.read)
+      rescue Google::Protobuf::ParseError
+        return proto(BundleResponse.new(error: INVALID_REQUEST_ERROR))
+      end
+
+      music = req.type == :MUSIC
+      type = music ? :music : :artwork
+      filenames = req.filenames.to_a
+      return proto(BundleResponse.new(error: INVALID_REQUEST_ERROR)) if filenames.empty?
+      return proto(BundleResponse.new(error: BUNDLE_TOO_LARGE_ERROR)) if filenames.size > Bundles::CAPS[type]
+
+      mime_types = music ? AUDIO_MIME_TYPES : IMAGE_MIME_TYPES
+      valid_names = filenames.all? do |filename|
+        !filename.include?('/') && mime_types.key?(File.extname(filename).delete('.').downcase)
+      end
+      return proto(BundleResponse.new(error: INVALID_FILENAME_ERROR)) unless valid_names
+
+      # a filename the database doesn't know about means the client's library
+      # is stale; reject the whole request so it refetches instead of retrying
+      sql = music ? MATCHING_MUSIC_FILENAMES_SQL : MATCHING_ARTWORK_FILENAMES_SQL
+      encoded = PG::TextEncoder::Array.new.encode(filenames)
+      known = query(sql, [encoded]).flat_map(&:values).to_set
+      return proto(BundleResponse.new(error: INVALID_FILENAME_ERROR)) unless filenames.all? { |filename| known.include?(filename) }
+
+      source_path = music ? Config.env.music_path : Config.env.artwork_path
+      all_exist = filenames.all? { |filename| File.exist?(File.join(source_path, filename)) }
+      return proto(BundleResponse.new(error: MISSING_FILE_ERROR)) unless all_exist
+
+      uuid = Bundles.create(type: type, filenames: filenames, source_path: source_path, bundles_path: Config.env.bundles_path)
+      proto(BundleResponse.new(id: uuid))
     end
 
     get '/updates' do

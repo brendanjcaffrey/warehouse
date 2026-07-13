@@ -11,6 +11,8 @@
 /music/*.m4a
 /music/*.mp4
 /music/*.wav
+/bundles/
+/server/spec/bundles/
 /changes/tracks/*.json
 /changes/playlists/*.json
 /changes/updated_track_ids.json

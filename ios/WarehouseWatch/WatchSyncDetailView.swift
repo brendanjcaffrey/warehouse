@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// shows what the relay is actually doing: whether the phone is in range, how
-/// long since anything last landed, and a running feed of every request &
-/// arrival. a sync can go minutes between files, so without this the progress
-/// view is indistinguishable from a dead one
+/// shows what the bundle downloader is actually doing: how long since
+/// anything last landed, and a running feed of every request, bundle &
+/// arrival. an overnight sync can go a while between bundles, so without
+/// this the progress view is indistinguishable from a dead one
 struct WatchSyncDetailView: View {
     @Environment(SyncStore.self) private var sync
     @Environment(SyncActivityLog.self) private var activity
@@ -15,7 +15,7 @@ struct WatchSyncDetailView: View {
         // relative times tick together without a timer per row
         TimelineView(.periodic(from: .now, by: 1)) { context in
             List {
-                phoneSection(now: context.date)
+                syncSection(now: context.date)
                 storageSection
                 activitySection(now: context.date)
             }
@@ -31,18 +31,10 @@ struct WatchSyncDetailView: View {
     }
 
     @ViewBuilder
-    private func phoneSection(now: Date) -> some View {
-        Section("iPhone") {
-            let status = activity.status(now: now)
-            Label {
-                Text(status.isPhoneReachable ? "Reachable" : "Not reachable")
-            } icon: {
-                Image(systemName: status.isPhoneReachable
-                    ? "iphone.radiowaves.left.and.right"
-                    : "iphone.slash")
-                    .foregroundStyle(status.isPhoneReachable ? .green : .orange)
-            }
-            if let heartbeat = SyncActivityFormatting.heartbeat(status) {
+    private func syncSection(now: Date) -> some View {
+        let status = activity.status(now: now)
+        if let heartbeat = SyncActivityFormatting.heartbeat(status) {
+            Section("Sync") {
                 Text(heartbeat)
                     .font(.footnote)
                     .foregroundStyle(.secondary)

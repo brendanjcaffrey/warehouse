@@ -77,6 +77,27 @@ message LibraryResponse {
   }
 }
 
+// trims the library to just these playlists (for the watch)
+message LibraryRequest {
+  repeated string playlistIds = 1;
+}
+
+message BundleRequest {
+  enum Type {
+    MUSIC = 0;
+    ARTWORK = 1;
+  }
+  Type type = 1;
+  repeated string filenames = 2;
+}
+
+message BundleResponse {
+  oneof response {
+    string id = 1;
+    string error = 2;
+  }
+}
+
 // edited track fields; only fields that are present are updated, and a
 // present but empty album/albumArtist/artwork clears the value
 message TrackUpdate {

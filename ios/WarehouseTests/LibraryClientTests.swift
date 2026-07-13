@@ -77,6 +77,28 @@ struct LibraryClientTests {
         #expect(MockURLProtocol.requests(forHost: host).first?.url?.path == "/api/library")
     }
 
+    @Test("fetchLibrary with playlist ids posts a LibraryRequest")
+    func fetchLibraryPostsPlaylistIds() async throws {
+        let host = "library-filtered.test"
+        let data = try LibraryResponse.with { $0.library = Library() }.serializedData()
+        MockURLProtocol.setHandler(forHost: host, Self.ok(data))
+
+        let client = LibraryClient(session: MockURLProtocol.makeSession())
+        let result = try await client.fetchLibrary(
+            token: "tok", baseURL: Self.baseURL(host), playlistIds: ["p1", "p2"])
+
+        guard case .library = result else {
+            Issue.record("expected .library, got \(result)")
+            return
+        }
+        let request = try #require(MockURLProtocol.requests(forHost: host).first)
+        #expect(request.url?.path == "/api/library")
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/octet-stream")
+        let body = try #require(SyncStoreTests.body(of: request))
+        #expect(try LibraryRequest(serializedBytes: body).playlistIds == ["p1", "p2"])
+    }
+
     @Test("fetchFile returns the file bytes and hits the right path")
     func fetchFileReturnsData() async throws {
         let host = "file-ok.test"

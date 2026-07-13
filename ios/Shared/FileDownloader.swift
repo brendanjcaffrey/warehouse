@@ -1,6 +1,6 @@
 import Foundation
 
-struct FileToDownload: Hashable, Sendable {
+struct FileToDownload: Hashable, Codable, Sendable {
     let type: LibraryFileType
     let filename: String
 }

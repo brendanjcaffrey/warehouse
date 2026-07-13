@@ -1,20 +1,18 @@
 import Foundation
 import Observation
 
-/// one thing the relay did, for the watch's sync detail feed
+/// one thing the bundle downloader did, for the watch's sync detail feed
 struct SyncActivityEvent: Identifiable, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case syncStarted(total: Int)
-        case requestedFiles(count: Int)
-        case nudgedPhone(count: Int)
-        case backgroundNudge(count: Int)
         case libraryReceived
+        case requestedBundle(type: LibraryFileType, count: Int)
+        case bundleRegistered
+        case downloadedBundle
         case fileReceived(name: String)
-        case fileFailed(name: String)
-        case filesFailed(count: Int)
+        case bundleExtracted(type: LibraryFileType, count: Int)
+        case bundleFailed(reason: String)
         case outOfSpace
-        case stalled
-        case phoneReachable(Bool)
         case syncFinished(completed: Int, failed: Int)
     }
 
@@ -41,26 +39,22 @@ extension SyncActivityEvent.Kind {
         switch self {
         case .syncStarted(let total):
             return "Syncing \(total) \(Self.files(total))"
-        case .requestedFiles(let count):
-            return "Asked iPhone for \(count) \(Self.files(count))"
-        case .nudgedPhone(let count):
-            return "Asking iPhone again for \(count) \(Self.files(count))"
-        case .backgroundNudge(let count):
-            return "Background check: \(count) \(Self.files(count)) still missing"
         case .libraryReceived:
             return "Received library"
+        case .requestedBundle(let type, let count):
+            return "Requested a bundle of \(count) \(Self.noun(type, count))"
+        case .bundleRegistered:
+            return "Server prepared the bundle"
+        case .downloadedBundle:
+            return "Bundle downloaded, unpacking"
         case .fileReceived(let name):
             return "Received \(name)"
-        case .fileFailed(let name):
-            return "iPhone doesn't have \(name)"
-        case .filesFailed(let count):
-            return "iPhone couldn't send \(count) \(Self.files(count))"
+        case .bundleExtracted(let type, let count):
+            return "Unpacked \(count) \(Self.noun(type, count))"
+        case .bundleFailed(let reason):
+            return "Bundle failed: \(reason)"
         case .outOfSpace:
             return "Out of space on this watch"
-        case .stalled:
-            return "Gave up waiting for the iPhone"
-        case .phoneReachable(let reachable):
-            return reachable ? "iPhone reachable" : "iPhone out of range"
         case .syncFinished(let completed, let failed):
             if failed > 0 {
                 return "Finished: \(completed) downloaded, \(failed) failed"
@@ -73,18 +67,18 @@ extension SyncActivityEvent.Kind {
         switch self {
         case .syncStarted:
             return "arrow.trianglehead.2.clockwise"
-        case .requestedFiles, .nudgedPhone, .backgroundNudge:
+        case .requestedBundle:
             return "arrow.up.circle"
-        case .libraryReceived, .fileReceived:
+        case .bundleRegistered:
+            return "shippingbox"
+        case .downloadedBundle:
+            return "arrow.down.circle"
+        case .libraryReceived, .fileReceived, .bundleExtracted:
             return "checkmark.circle"
-        case .fileFailed, .filesFailed:
+        case .bundleFailed:
             return "xmark.circle"
         case .outOfSpace:
             return "externaldrive.badge.exclamationmark"
-        case .stalled:
-            return "clock.badge.exclamationmark"
-        case .phoneReachable(let reachable):
-            return reachable ? "iphone.radiowaves.left.and.right" : "iphone.slash"
         case .syncFinished:
             return "checkmark.circle.fill"
         }
@@ -92,16 +86,14 @@ extension SyncActivityEvent.Kind {
 
     var tone: SyncActivityEvent.Tone {
         switch self {
-        case .syncStarted, .requestedFiles, .nudgedPhone, .backgroundNudge:
+        case .syncStarted, .requestedBundle, .bundleRegistered, .downloadedBundle:
             return .normal
-        case .libraryReceived, .fileReceived:
+        case .libraryReceived, .fileReceived, .bundleExtracted:
             return .good
-        case .fileFailed, .filesFailed:
+        case .bundleFailed:
             return .warning
-        case .outOfSpace, .stalled:
+        case .outOfSpace:
             return .bad
-        case .phoneReachable(let reachable):
-            return reachable ? .good : .warning
         case .syncFinished(_, let failed):
             return failed > 0 ? .warning : .good
         }
@@ -110,38 +102,35 @@ extension SyncActivityEvent.Kind {
     private static func files(_ count: Int) -> String {
         count == 1 ? "file" : "files"
     }
+
+    private static func noun(_ type: LibraryFileType, _ count: Int) -> String {
+        switch type {
+        case .music: return count == 1 ? "song" : "songs"
+        case .artwork: return count == 1 ? "artwork file" : "artwork files"
+        }
+    }
 }
 
-/// a rolling record of what the phone relay is doing, so the watch can show
-/// that a quiet sync is still alive rather than just a stalled spinner. owned
-/// for the life of the app, so the feed survives a sync ending & keeps
-/// filling while files land in the background
+/// a rolling record of what the bundle downloader is doing, so the watch can
+/// show that a quiet overnight sync is still alive rather than just a stalled
+/// spinner. owned for the life of the app, so the feed survives a sync ending
+/// & keeps filling while bundles land in the background
 @MainActor
 @Observable
 final class SyncActivityLog {
-    enum RequestReason: Equatable, Sendable {
-        case initial
-        case nudge
-        case background
-    }
-
     /// what the heartbeat line is built from
     struct Status: Equatable, Sendable {
-        let isPhoneReachable: Bool
         /// nil until a file has ever arrived
         let sinceLastFile: TimeInterval?
-        /// nil when no download is outstanding
-        let untilNextNudge: TimeInterval?
+        let isDownloading: Bool
     }
 
     nonisolated static let defaultCapacity = 50
 
     /// newest first
     private(set) var events: [SyncActivityEvent] = []
-    private(set) var isPhoneReachable = false
     private(set) var isDownloading = false
     private(set) var lastArrivalAt: Date?
-    private(set) var lastRequestAt: Date?
 
     private let now: () -> Date
     private let capacity: Int
@@ -162,48 +151,40 @@ final class SyncActivityLog {
         record(.syncStarted(total: total))
     }
 
-    func requested(count: Int, reason: RequestReason) {
-        lastRequestAt = now()
-        switch reason {
-        case .initial:
-            record(.requestedFiles(count: count))
-        case .nudge:
-            record(.nudgedPhone(count: count))
-        case .background:
-            record(.backgroundNudge(count: count))
-        }
-    }
-
     func receivedLibrary() {
         record(.libraryReceived)
     }
 
-    func received(_ file: FileToDownload) {
+    func requestedBundle(type: LibraryFileType, count: Int) {
+        record(.requestedBundle(type: type, count: count))
+    }
+
+    func bundleRegistered() {
+        record(.bundleRegistered)
+    }
+
+    func downloadedBundle() {
+        record(.downloadedBundle)
+    }
+
+    /// music arrivals get a line per song; artwork lands a thousand at a time,
+    /// so only the per-bundle summary is worth a line
+    func extracted(_ files: [FileToDownload], type: LibraryFileType) {
         lastArrivalAt = now()
-        record(.fileReceived(name: describe(file)))
-    }
-
-    func failed(_ file: FileToDownload) {
-        record(.fileFailed(name: describe(file)))
-    }
-
-    /// one line for a batch the phone reported it couldn't send, rather than
-    /// flooding the feed with a line per file
-    func failed(_ files: [FileToDownload]) {
-        guard !files.isEmpty else { return }
-        if files.count == 1, let file = files.first {
-            failed(file)
-        } else {
-            record(.filesFailed(count: files.count))
+        if type == .music {
+            for file in files {
+                record(.fileReceived(name: describe(file)))
+            }
         }
+        record(.bundleExtracted(type: type, count: files.count))
+    }
+
+    func bundleFailed(reason: String) {
+        record(.bundleFailed(reason: reason))
     }
 
     func outOfSpace() {
         record(.outOfSpace)
-    }
-
-    func stalled() {
-        record(.stalled)
     }
 
     func finishedSync(_ progress: DownloadProgress) {
@@ -215,24 +196,14 @@ final class SyncActivityLog {
         }
     }
 
-    /// reachability flaps every time the phone app leaves the foreground, so
-    /// only transitions are worth a line; otherwise the feed is nothing else
-    func phoneReachabilityChanged(to reachable: Bool) {
-        guard reachable != isPhoneReachable else { return }
-        isPhoneReachable = reachable
-        record(.phoneReachable(reachable))
-    }
-
     func clear() {
         events.removeAll()
     }
 
     func status(now: Date) -> Status {
         Status(
-            isPhoneReachable: isPhoneReachable,
             sinceLastFile: SyncActivityFormatting.sinceLastFile(lastArrivalAt: lastArrivalAt, now: now),
-            untilNextNudge: SyncActivityFormatting.untilNextNudge(
-                lastRequestAt: lastRequestAt, isDownloading: isDownloading, now: now))
+            isDownloading: isDownloading)
     }
 
     private func record(_ kind: SyncActivityEvent.Kind) {

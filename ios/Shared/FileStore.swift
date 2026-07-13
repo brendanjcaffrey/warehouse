@@ -1,6 +1,6 @@
 import Foundation
 
-enum LibraryFileType: String, CaseIterable, Sendable {
+enum LibraryFileType: String, CaseIterable, Codable, Sendable {
     case music
     case artwork
 

@@ -42,7 +42,7 @@ struct WatchSyncProgressView: View {
                         .font(.footnote)
                 }
                 heartbeat
-                Text("Keep your iPhone nearby. Transfers are faster with the watch on its charger.")
+                Text("Downloads continue in the background, and are faster with the watch on its charger.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

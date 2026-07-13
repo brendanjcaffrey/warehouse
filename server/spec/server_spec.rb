@@ -11,7 +11,7 @@ GET_TABLES_SQL = 'SELECT table_name FROM information_schema.tables WHERE table_s
 DROP_TABLE_SQL = 'DROP TABLE IF EXISTS %s CASCADE;'
 INSERT_EXPORT_FINISHED_SQL = 'INSERT INTO export_finished (finished_at) VALUES (current_timestamp)'
 
-TestConfig = Struct.new(:music_path, :artwork_path, :database_host, :database_port, :database_username, :database_password, :database_name, :port, :secret)
+TestConfig = Struct.new(:music_path, :artwork_path, :bundles_path, :database_host, :database_port, :database_username, :database_password, :database_name, :port, :secret)
 if ENV['CI']
   database_username = 'ci'
   database_password = 'ci'
@@ -22,8 +22,9 @@ else
 end
 database_name = 'warehouse_test'
 
-TEST_CONFIG = TestConfig.new(__dir__, __dir__, 'localhost', 5432, database_username, database_password, database_name,
-                             8046, '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0')
+TEST_CONFIG = TestConfig.new(__dir__, __dir__, File.join(__dir__, 'bundles'), 'localhost', 5432, database_username,
+                             database_password, database_name, 8046,
+                             '01c814ac4499d22193c43cd6d4c3af62cab90ec76ba14bccf896c7add0415db0')
 USERNAMES = %w[test123 notrack].freeze
 
 module Config
@@ -111,6 +112,7 @@ describe 'Warehouse Server' do
     `echo "fake jpg contents" > "#{__dir__}/__artwork.jpg"`
     `echo "fake png contents" > "#{__dir__}/__artwork.png"`
     File.symlink(File.expand_path("#{__dir__}/__test.mp3"), "#{__dir__}/06dbe92c2a5dab2f7911e20a9e157521.mp3")
+    FileUtils.rm_rf(TEST_CONFIG.bundles_path)
 
     DB_POOL.with do |conn|
       orig_tables = conn.exec(GET_TABLES_SQL).map(&:values).flatten
@@ -131,6 +133,7 @@ describe 'Warehouse Server' do
     `rm "#{__dir__}/06dbe92c2a5dab2f7911e20a9e157521.mp3"`
     `rm "#{__dir__}/__artwork.jpg"`
     `rm "#{__dir__}/__artwork.png"`
+    FileUtils.rm_rf(TEST_CONFIG.bundles_path)
   end
 
   let(:track_id1) { '21D8E2441A5E2204' }
@@ -225,6 +228,169 @@ describe 'Warehouse Server' do
       get "/artwork/#{artwork_filename}", {}, get_auth_header
       expect(last_response.headers['Content-Type']).to eq('image/jpeg')
       expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/artwork/__artwork.jpg')
+    end
+  end
+
+  describe 'post /api/bundle' do
+    def register_bundle(type, filenames, headers = get_auth_header)
+      post '/api/bundle', BundleRequest.new(type: type, filenames: filenames).to_proto,
+           headers.merge('CONTENT_TYPE' => 'application/octet-stream')
+      BundleResponse.decode(last_response.body)
+    end
+
+    def read_bundle(id)
+      entries = {}
+      File.open(File.join(TEST_CONFIG.bundles_path, "#{id}.tar"), 'rb') do |io|
+        Minitar::Reader.open(io) do |reader|
+          reader.each_entry do |entry|
+            entries[entry.name] = entry.read
+          end
+        end
+      end
+      entries
+    end
+
+    it 'returns an error if no jwt' do
+      post '/api/bundle', BundleRequest.new(type: :MUSIC, filenames: ['a.mp3']).to_proto,
+           'CONTENT_TYPE' => 'application/octet-stream'
+      expect(BundleResponse.decode(last_response.body).error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'returns an error if invalid jwt' do
+      response = register_bundle(:MUSIC, [music_filename], get_invalid_auth_header)
+      expect(response.error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'returns an error if expired jwt' do
+      response = register_bundle(:MUSIC, [music_filename], get_expired_auth_header)
+      expect(response.error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'returns an error for an unparseable body' do
+      post '/api/bundle', "\xff\xff\xff\xff".b, get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+      expect(BundleResponse.decode(last_response.body).error).to eq(INVALID_REQUEST_ERROR)
+    end
+
+    it 'returns an error for an empty file list' do
+      response = register_bundle(:MUSIC, [])
+      expect(response.error).to eq(INVALID_REQUEST_ERROR)
+    end
+
+    it 'returns an error for more than 50 music files' do
+      response = register_bundle(:MUSIC, (0..50).map { |i| "#{i}.mp3" })
+      expect(response.error).to eq(BUNDLE_TOO_LARGE_ERROR)
+    end
+
+    it 'returns an error for more than 1000 artwork files' do
+      response = register_bundle(:ARTWORK, (0..1000).map { |i| "#{i}.jpg" })
+      expect(response.error).to eq(BUNDLE_TOO_LARGE_ERROR)
+    end
+
+    it 'returns an error for a filename with a slash' do
+      response = register_bundle(:MUSIC, ['../evil.mp3'])
+      expect(response.error).to eq(INVALID_FILENAME_ERROR)
+    end
+
+    it 'returns an error for a disallowed extension' do
+      response = register_bundle(:MUSIC, ['file.txt'])
+      expect(response.error).to eq(INVALID_FILENAME_ERROR)
+    end
+
+    it 'returns an error for an artwork filename on a music bundle' do
+      response = register_bundle(:MUSIC, ['__artwork.jpg'])
+      expect(response.error).to eq(INVALID_FILENAME_ERROR)
+    end
+
+    it 'returns an error if any filename is not in the database' do
+      response = register_bundle(:MUSIC, [music_filename, '__unknown.mp3'])
+      expect(response.error).to eq(INVALID_FILENAME_ERROR)
+    end
+
+    it 'returns an error if a known file is missing from disk' do
+      DB_POOL.with do |conn|
+        conn.exec_params('INSERT INTO tracks (id,name,sort_name,artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,music_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15);',
+                         [track_id2, 'missing', '', artist_id, album_id, genre_id, 2018, 1.0, 0, 1.0, 1, 1, 0, 0, '__missing.mp3'])
+      end
+      response = register_bundle(:MUSIC, ['__missing.mp3'])
+      expect(response.error).to eq(MISSING_FILE_ERROR)
+    end
+
+    it 'builds a music bundle with dereferenced contents' do
+      response = register_bundle(:MUSIC, [music_filename])
+      expect(response.response).to eq(:id)
+      expect(response.id).to match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
+      entries = read_bundle(response.id)
+      expect(entries).to eq({ "music/#{music_filename}" => "fake mp3 contents\n" })
+    end
+
+    it 'builds an artwork bundle' do
+      DB_POOL.with do |conn|
+        conn.exec_params('INSERT INTO tracks (id,name,sort_name,artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,music_filename,artwork_filename) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);',
+                         [track_id2, 'png artwork', '', artist_id, album_id, genre_id, 2018, 1.0, 0, 1.0, 1, 1, 0, 0, '__test2.mp3', '__artwork.png'])
+      end
+      response = register_bundle(:ARTWORK, %w[__artwork.jpg __artwork.png])
+      expect(response.response).to eq(:id)
+      entries = read_bundle(response.id)
+      expect(entries).to eq({ 'artwork/__artwork.jpg' => "fake jpg contents\n",
+                              'artwork/__artwork.png' => "fake png contents\n" })
+    end
+
+    it 'requires artwork to be in the database' do
+      DB_POOL.with { |conn| conn.exec('UPDATE tracks SET artwork_filename=NULL') }
+      response = register_bundle(:ARTWORK, ['__artwork.jpg'])
+      expect(response.error).to eq(INVALID_FILENAME_ERROR)
+    end
+  end
+
+  describe 'get /bundle/:id' do
+    def registered_bundle_id
+      post '/api/bundle', BundleRequest.new(type: :MUSIC, filenames: [music_filename]).to_proto,
+           get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+      BundleResponse.decode(last_response.body).id
+    end
+
+    it 'redirects if not logged in' do
+      get "/bundle/#{registered_bundle_id}"
+      follow_redirect!
+      expect(last_request.url).to eq('http://localhost/')
+    end
+
+    it 'redirects if invalid jwt' do
+      get "/bundle/#{registered_bundle_id}", {}, get_invalid_auth_header
+      follow_redirect!
+      expect(last_request.url).to eq('http://localhost/')
+    end
+
+    it 'redirects if expired jwt' do
+      get "/bundle/#{registered_bundle_id}", {}, get_expired_auth_header
+      follow_redirect!
+      expect(last_request.url).to eq('http://localhost/')
+    end
+
+    it 'returns 404 for a malformed id' do
+      get '/bundle/not-a-uuid', {}, get_auth_header
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'returns 404 for an unknown id' do
+      get '/bundle/00000000-0000-0000-0000-000000000000', {}, get_auth_header
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'sends the contents of the tar' do
+      id = registered_bundle_id
+      get "/bundle/#{id}", {}, get_auth_header
+      expect(last_response.headers['Content-Type']).to eq('application/x-tar')
+      expect(last_response.body).to eq(File.binread(File.join(TEST_CONFIG.bundles_path, "#{id}.tar")))
+    end
+
+    it 'sends a path to the tar in remote mode' do
+      id = registered_bundle_id
+      Config.set_remote(true)
+      get "/bundle/#{id}", {}, get_auth_header
+      expect(last_response.headers['Content-Type']).to eq('application/x-tar')
+      expect(last_response.headers['X-Accel-Redirect']).to eq("/accel/bundles/#{id}.tar")
+      expect(last_response.body).to eq('')
     end
   end
 
@@ -443,6 +609,84 @@ describe 'Warehouse Server' do
       get '/api/library', {}, get_auth_header
       library = LibraryResponse.decode(last_response.body).library
       expect(library.tracks[0].artworkFilename).to eq('')
+    end
+  end
+
+  describe 'post /api/library' do
+    before do
+      DB_POOL.with do |conn|
+        conn.exec_params('INSERT INTO library_metadata (total_file_size) VALUES ($1)', [1001])
+        conn.exec(INSERT_EXPORT_FINISHED_SQL)
+        conn.exec_params('INSERT INTO playlists (id, name, is_library, parent_id) VALUES ($1,$2,$3,$4),($5,$6,$7,$8),($9,$10,$11,$12),($13,$14,$15,$16)',
+                         [
+                           playlistX, 'library', 1, '',
+                           playlist0, 'test_playlist0', 0, '',
+                           playlist1, 'test_playlist1', 0, playlist0,
+                           playlist2, 'test_playlist2', 0, ''
+                         ])
+        conn.exec_params('INSERT INTO playlist_tracks (playlist_id, track_id) VALUES ($1,$2),($3,$4),($5,$6)',
+                         [playlist1, track_id3, playlist2, track_id2, playlist2, track_id1])
+      end
+    end
+
+    def fetch_filtered_library(playlist_ids, headers = get_auth_header)
+      post '/api/library', LibraryRequest.new(playlistIds: playlist_ids).to_proto,
+           headers.merge('CONTENT_TYPE' => 'application/octet-stream')
+      LibraryResponse.decode(last_response.body)
+    end
+
+    it 'returns an error if no jwt' do
+      post '/api/library', LibraryRequest.new(playlistIds: [playlist2]).to_proto,
+           'CONTENT_TYPE' => 'application/octet-stream'
+      expect(LibraryResponse.decode(last_response.body).error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'returns an error if invalid jwt' do
+      expect(fetch_filtered_library([playlist2], get_invalid_auth_header).error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'returns an error if expired jwt' do
+      expect(fetch_filtered_library([playlist2], get_expired_auth_header).error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'returns an error for an unparseable body' do
+      post '/api/library', "\xff\xff\xff\xff".b, get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+      expect(LibraryResponse.decode(last_response.body).error).to eq(INVALID_REQUEST_ERROR)
+    end
+
+    it 'trims to the requested playlists and their tracks' do
+      library = fetch_filtered_library([playlist2]).library
+
+      expect(library.playlists.length).to eq(1)
+      playlist = library.playlists[0]
+      expect(playlist.id).to eq(playlist2)
+      expect(playlist.trackIds).to eq([track_id2, track_id1])
+
+      expect(library.tracks.length).to eq(1)
+      track = library.tracks.first
+      expect(track.id).to eq(track_id1)
+      expect(track.playlistIds).to eq([playlist2, playlistX])
+
+      expect(library.genres.length).to eq(1)
+      expect(library.artists.length).to eq(1)
+      expect(library.albums.length).to eq(1)
+      expect(library.totalFileSize).to eq(1001)
+      expect(library.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+
+    it 'clears the parent of a nested playlist' do
+      library = fetch_filtered_library([playlist1]).library
+      expect(library.playlists.length).to eq(1)
+      expect(library.playlists[0].id).to eq(playlist1)
+      expect(library.playlists[0].parentId).to eq('')
+      expect(library.tracks).to be_empty
+    end
+
+    it 'returns no playlists or tracks for an empty selection' do
+      library = fetch_filtered_library([]).library
+      expect(library.playlists).to be_empty
+      expect(library.tracks).to be_empty
+      expect(library.genres.length).to eq(1)
     end
   end
 

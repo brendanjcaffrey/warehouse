@@ -40,6 +40,11 @@ final class SyncStore {
     /// artwork filenames to keep even when no track references them, e.g.
     /// files still waiting in the update queue to be uploaded
     var protectedArtworkFilenames: () -> Set<String> = { [] }
+    /// when set (the watch), library fetches are trimmed server-side to just
+    /// these playlists
+    var syncedPlaylistIds: (() -> [String])?
+    /// fired when new library data lands, for the watch's activity feed
+    var onLibraryReceived: (@MainActor () -> Void)?
     /// bumped when a sync attempt finishes, so views can reload without
     /// observing every per-file progress update in `state`
     private(set) var completedSyncs = 0
@@ -48,9 +53,6 @@ final class SyncStore {
     private(set) var downloadRefreshTicks = 0
 
     private let client: LibraryClient
-    /// where version & library data comes from; the watch injects a relay
-    /// that asks the phone instead of the server
-    private let libraryProvider: LibraryProviding
     private let database: LibraryDatabase
     private let fileStore: FileStore
     private let metadata: LibraryMetadata
@@ -68,11 +70,9 @@ final class SyncStore {
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
         downloadRefreshInterval: TimeInterval = 5,
-        fileDownloader: BulkFileDownloading? = nil,
-        libraryProvider: LibraryProviding? = nil
+        fileDownloader: BulkFileDownloading? = nil
     ) {
         client = LibraryClient(session: session)
-        self.libraryProvider = libraryProvider ?? client
         self.database = database
         self.fileStore = fileStore
         metadata = LibraryMetadata(defaults: defaults)
@@ -153,6 +153,7 @@ final class SyncStore {
             case .needsUpdate:
                 state = .fetchingLibrary
                 let library = try await fetchLibrary(token: token, baseURL: baseURL)
+                onLibraryReceived?()
                 state = .savingLibrary
                 try await database.replaceLibrary(with: library)
                 metadata.update(from: library)
@@ -176,7 +177,7 @@ final class SyncStore {
         }
 
         do {
-            switch try await libraryProvider.fetchVersion(token: token, baseURL: baseURL) {
+            switch try await client.fetchVersion(token: token, baseURL: baseURL) {
             case .updateTimeNs(let updateTimeNs):
                 return updateTimeNs == metadata.updateTimeNs ? .haveLatestVersion : .needsUpdate
             case .error(let message):
@@ -190,7 +191,7 @@ final class SyncStore {
     }
 
     private func fetchLibrary(token: String, baseURL: URL) async throws -> Library {
-        switch try await libraryProvider.fetchLibrary(token: token, baseURL: baseURL) {
+        switch try await client.fetchLibrary(token: token, baseURL: baseURL, playlistIds: syncedPlaylistIds?()) {
         case .library(let library):
             return library
         case .error(let message):
@@ -206,7 +207,6 @@ final class SyncStore {
         return Self.missing(music: musicFilenames, artwork: artworkFilenames, fileStore: fileStore)
     }
 
-    // also used by the watch's background refresh to nudge the phone relay
     static func missing(music: Set<String>, artwork: Set<String>, fileStore: FileStore) -> [FileToDownload] {
         let missingMusic = music.subtracting(fileStore.list(.music)).sorted()
         let missingArtwork = artwork.subtracting(fileStore.list(.artwork)).sorted()

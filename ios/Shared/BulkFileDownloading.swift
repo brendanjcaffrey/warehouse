@@ -1,8 +1,8 @@
 import Foundation
 
 /// abstracts how the missing files get fetched, so the watch can swap the
-/// in-process downloader for one that asks the phone to relay files over
-/// watch connectivity instead of reaching the server
+/// in-process downloader for one backed by a background url session that keeps
+/// running while the app is suspended, instead of stalling every screen sleep
 protocol BulkFileDownloading: Sendable {
     func downloadAll(
         _ files: [FileToDownload],
@@ -12,11 +12,14 @@ protocol BulkFileDownloading: Sendable {
     ) async -> DownloadProgress
 }
 
-/// pure helpers shared by the downloaders, the relay & their tests: when a
-/// failed fetch is worth another try, and whether an error means the device
-/// is out of storage
+/// pure helpers shared by the downloaders and their tests: when a failed
+/// fetch is worth another try, whether a finished task returned a file worth
+/// keeping, and whether an error means the device is out of storage
 enum BackgroundDownload {
-    /// how many times one sync re-enqueues a file whose download failed
+    /// identifies the watch's single background url session across relaunches
+    static let sessionIdentifier = "com.jcaffrey.warehouse.watchkitapp.downloads"
+
+    /// how many times one sync re-tries a request that failed
     static let retriesPerFile = 2
 
     /// whether a finished task's file is worth fetching again: it never landed
@@ -47,5 +50,12 @@ enum BackgroundDownload {
             }
         }
         return false
+    }
+
+    /// mirrors LibraryClient.fetchFile: only a 200 that isn't the auth-failure
+    /// html redirect is a real file, so we don't save an error page as music
+    static func isAcceptable(_ response: URLResponse?) -> Bool {
+        guard let http = response as? HTTPURLResponse else { return false }
+        return http.statusCode == 200 && http.mimeType != "text/html"
     }
 }

@@ -41,4 +41,18 @@ struct BackgroundDownloadTests {
         #expect(!BackgroundDownload.shouldRetry(
             error: CocoaError(.fileWriteOutOfSpace), isOnDisk: false, retriesUsed: 0))
     }
+
+    @Test("response acceptability matches LibraryClient.fetchFile")
+    func acceptabilityMatchesFetchFile() {
+        let url = URL(string: "https://example.test/music/x.mp3")!
+        func response(status: Int, contentType: String) -> HTTPURLResponse {
+            HTTPURLResponse(url: url, statusCode: status, httpVersion: nil,
+                            headerFields: ["Content-Type": contentType])!
+        }
+
+        #expect(BackgroundDownload.isAcceptable(response(status: 200, contentType: "application/octet-stream")))
+        #expect(!BackgroundDownload.isAcceptable(response(status: 200, contentType: "text/html")))
+        #expect(!BackgroundDownload.isAcceptable(response(status: 404, contentType: "application/octet-stream")))
+        #expect(!BackgroundDownload.isAcceptable(nil))
+    }
 }

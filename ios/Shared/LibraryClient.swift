@@ -36,9 +36,17 @@ struct LibraryClient: Sendable {
         }
     }
 
-    /// GET /api/library to fetch the entire library
-    func fetchLibrary(token: String, baseURL: URL) async throws -> LibraryResult {
-        let data = try await get(path: "api/library", token: token, baseURL: baseURL)
+    /// GET /api/library for the entire library, or POST /api/library with
+    /// playlist ids for one trimmed to just those playlists (the watch)
+    func fetchLibrary(token: String, baseURL: URL, playlistIds: [String]? = nil) async throws -> LibraryResult {
+        let data: Data
+        if let playlistIds {
+            var libraryRequest = LibraryRequest()
+            libraryRequest.playlistIds = playlistIds
+            data = try await post(path: "api/library", body: libraryRequest.serializedData(), token: token, baseURL: baseURL)
+        } else {
+            data = try await get(path: "api/library", token: token, baseURL: baseURL)
+        }
         let response = try LibraryResponse(serializedBytes: data)
         switch response.response {
         case .library(let library):
@@ -73,6 +81,15 @@ struct LibraryClient: Sendable {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, _) = try await session.data(for: request)
+        return data
+    }
+
+    private func post(path: String, body: Data, token: String, baseURL: URL) async throws -> Data {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        let (data, _) = try await session.upload(for: request, from: body)
         return data
     }
 }

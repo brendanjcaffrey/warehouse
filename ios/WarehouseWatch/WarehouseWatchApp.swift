@@ -22,19 +22,19 @@ struct WarehouseWatchApp: App {
         // for the life of the app so the feed outlives any one sync
         let songs = SongsStore(database: database, fileStore: fileStore)
         let activity = SyncActivityLog(describe: { songs.describe($0) })
-        let phone = WatchPhoneSession(settings: settings, fileStore: fileStore, activity: activity)
-        phone.onReachabilityChange = { activity.phoneReachabilityChanged(to: $0) }
-        // the library & every file arrive from the phone over watch
-        // connectivity, so the watch never has to reach the server
-        let downloader = PhoneRelayDownloader(
-            phone: phone, database: database, fileStore: fileStore, activity: activity)
+        let phone = WatchPhoneSession(settings: settings)
+        // files arrive from the server as tar bundles on a background url
+        // session, so the chain keeps advancing while the app is suspended
+        let downloader = WatchBundleDownloader.shared
+        downloader.configure(activity: activity) {
+            guard let token = settings.token, let baseURL = settings.baseURL() else { return nil }
+            return (token: token, baseURL: baseURL)
+        }
         let syncStore = SyncStore(
-            database: database, fileStore: fileStore,
-            fileDownloader: downloader,
-            libraryProvider: RelayLibraryProvider(
-                isReachable: { WatchPhoneSession.isPhoneReachable },
-                sendWithReply: { try await phone.sendWithReply($0) },
-                awaitLibrary: { try await phone.awaitLibrary(timeout: $0) }))
+            database: database, fileStore: fileStore, fileDownloader: downloader)
+        // the library is trimmed server-side to the playlists chosen on the phone
+        syncStore.syncedPlaylistIds = { settings.playlistIds }
+        syncStore.onLibraryReceived = { activity.receivedLibrary() }
         _settings = State(initialValue: settings)
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: songs)
@@ -52,15 +52,8 @@ struct WarehouseWatchApp: App {
         self.phone = phone
         self.plays = plays
 
-        WatchAppDelegate.onConnectivityTask = { phone.handleBackgroundTask($0) }
-        WatchAppDelegate.onAppRefresh = { completion in
-            Task { @MainActor in
-                await downloader.keepDownloadsMoving()
-                completion()
-            }
-        }
-        // activate in init rather than the scene: incoming transfers launch
-        // the app in the background & the delegate must be in place for that
+        // activate in init rather than the scene: the phone's settings pushes
+        // can launch the app in the background & the delegate must be in place
         phone.activate()
     }
 

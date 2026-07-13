@@ -37,6 +37,8 @@ EXPORT_FINISHED_SQL = 'SELECT finished_at FROM export_finished;'
 TRACK_EXISTS_SQL = 'SELECT COUNT(*) FROM tracks WHERE id=$1;'
 TRACK_HAS_MUSIC_SQL = 'SELECT EXISTS(SELECT 1 FROM tracks WHERE music_filename=$1);'
 TRACK_HAS_ARTWORK_SQL = 'SELECT EXISTS(SELECT 1 FROM tracks WHERE artwork_filename=$1);'
+MATCHING_MUSIC_FILENAMES_SQL = 'SELECT DISTINCT music_filename FROM tracks WHERE music_filename = ANY($1::text[]);'
+MATCHING_ARTWORK_FILENAMES_SQL = 'SELECT DISTINCT artwork_filename FROM tracks WHERE artwork_filename = ANY($1::text[]);'
 
 CREATE_PLAY_SQL = 'INSERT INTO plays (track_id) VALUES ($1);'
 INCREMENT_PLAY_SQL = 'UPDATE tracks SET play_count=play_count+1 WHERE id=$1;'

@@ -437,34 +437,50 @@ struct SyncStoreTests {
         #expect(!store.isTransferringLibrary)
     }
 
-    @Test("an injected library provider replaces the network for version & library")
-    func injectedLibraryProviderIsUsed() async throws {
-        let host = "sync-provider.test"
-        let suiteName = "SyncStoreTests-\(host)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
+    @Test("synced playlist ids route the library fetch through the post endpoint")
+    func syncedPlaylistIdsUsePost() async throws {
+        let host = "sync-playlists.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host)
+        env.store.syncedPlaylistIds = { ["p1", "p2"] }
 
-        let database = LibraryDatabase(inMemory: true)
-        let fileStore = FileStore(rootURL: FileManager.default.temporaryDirectory
-            .appending(path: "syncstore-provider-\(UUID().uuidString)"))
-        let downloader = StubDownloader(failed: 0)
-        let store = SyncStore(
-            database: database, fileStore: fileStore,
-            session: MockURLProtocol.makeSession(), defaults: defaults,
-            fileDownloader: downloader,
-            libraryProvider: StubLibraryProvider(library: Self.makeLibrary()))
-        // deliberately no handler installed: any request would fail the sync
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
 
-        await store.sync(token: "tok", baseURL: URL(string: "https://\(host)")!)
+        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        let request = try #require(MockURLProtocol.requests(forHost: host).first { $0.url?.path == "/api/library" })
+        #expect(request.httpMethod == "POST")
+        let body = try #require(Self.body(of: request))
+        #expect(try LibraryRequest(serializedBytes: body).playlistIds == ["p1", "p2"])
+    }
 
-        #expect(store.state == .upToDate(failedDownloads: 0))
-        #expect(try await database.musicFilenames() == Set(["m1.mp3", "m2.mp3"]))
-        #expect(Set(downloader.received) == [
-            FileToDownload(type: .music, filename: "m1.mp3"),
-            FileToDownload(type: .music, filename: "m2.mp3"),
-            FileToDownload(type: .artwork, filename: "a1.jpg")
-        ])
-        #expect(Self.requestPaths(host: host).isEmpty)
+    @Test("without playlist ids the library fetch stays a get")
+    func libraryFetchDefaultsToGet() async throws {
+        let host = "sync-get.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host)
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        let request = MockURLProtocol.requests(forHost: host).first { $0.url?.path == "/api/library" }
+        #expect(request?.httpMethod == "GET")
+    }
+
+    /// an upload task's body reaches the url protocol as a stream, not a blob
+    nonisolated static func body(of request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 4096
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let read = stream.read(buffer, maxLength: bufferSize)
+            guard read > 0 else { break }
+            data.append(buffer, count: read)
+        }
+        return data
     }
 
     @Test("sync does nothing without a token or base url")
@@ -479,20 +495,6 @@ struct SyncStoreTests {
         await env.store.sync(token: "tok", baseURL: nil)
         #expect(env.store.state == .idle)
         #expect(Self.requestPaths(host: host).isEmpty)
-    }
-}
-
-/// serves a fixed library without touching the network, standing in for the
-/// watch's phone relay
-private struct StubLibraryProvider: LibraryProviding {
-    let library: Library
-
-    func fetchVersion(token: String, baseURL: URL) async throws -> LibraryClient.VersionResult {
-        .updateTimeNs(library.updateTimeNs)
-    }
-
-    func fetchLibrary(token: String, baseURL: URL) async throws -> LibraryClient.LibraryResult {
-        .library(library)
     }
 }
 
