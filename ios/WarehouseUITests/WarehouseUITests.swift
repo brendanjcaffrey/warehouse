@@ -29,9 +29,8 @@ final class WarehouseUITests: XCTestCase {
     func testShowInSongsScrollsToSong() throws {
         let app = launchWithFixtures()
 
-        // library tab → playlists → the fixture playlist, where song 100 is
-        // pinned near the top in playlist order
-        app.buttons["Playlists"].firstMatch.tap()
+        // library tab → the fixture playlist in the playlists section, where
+        // song 100 is pinned near the top in playlist order
         let playlistRow = app.buttons["Fixture Playlist"]
         XCTAssertTrue(playlistRow.waitForExistence(timeout: 5))
         playlistRow.tap()
