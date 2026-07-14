@@ -21,6 +21,8 @@ import { filterTracks, searchTracks, FilterState } from "./TrackFilter";
 import { searchAtom } from "./State";
 import { trackLayoutAtom } from "./Settings";
 import { useTrackListReveal } from "./Reveal";
+import { useFollowPlaying } from "./FollowPlaying";
+import PlayingIndicator from "./PlayingIndicator";
 import { useTrackContextMenu } from "./TrackContextMenu";
 import {
   buildTemplate,
@@ -271,6 +273,20 @@ function TrackList({ playlistId }: TrackListProps) {
   }, []);
   useTrackListReveal(playlistId, tracks.length > 0, rows, revealTrack);
 
+  // follow playback as it moves: the selection is the user's own cursor, so
+  // this only scrolls. a track the search or filters have hidden isn't in rows,
+  // and then there is nothing to scroll to
+  const scrollToPlaying = useCallback(
+    (trackId: string) => {
+      const index = rows.findIndex((track) => track.id === trackId);
+      if (index !== -1) {
+        listRef.current?.scrollToItem(index, "center");
+      }
+    },
+    [rows]
+  );
+  useFollowPlaying(scrollToPlaying);
+
   // one shared grid template keeps the header cells lined up with the body cells;
   // it reflects the live drag width so the column tracks the cursor as you resize
   const template = useMemo(() => {
@@ -474,15 +490,17 @@ function TrackList({ playlistId }: TrackListProps) {
             <div
               key={column.id}
               role="cell"
-              className={`px-2 text-truncate${
-                column.align === "end" ? " text-end" : ""
+              className={`px-2 d-flex align-items-center${
+                column.align === "end" ? " justify-content-end" : ""
               }`}
             >
               {column.id === "rating" ? (
                 <TrackRating track={track} />
               ) : (
-                column.render(track)
+                // only the text truncates, so the playing icon stays visible
+                <span className="text-truncate">{column.render(track)}</span>
               )}
+              {column.id === "name" && <PlayingIndicator trackId={track.id} />}
             </div>
           ))}
         </div>

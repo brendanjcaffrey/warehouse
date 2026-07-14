@@ -7,6 +7,7 @@ import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
 import { TrackMenuActions } from "./TrackContextMenu";
 import { player } from "./Player";
 import IconButton from "./IconButton";
+import PlayingIndicator from "./PlayingIndicator";
 import TrackRating from "./TrackRating";
 
 export const ARTWORK_SIZE = 160;
@@ -121,7 +122,15 @@ function TrackRows({
           className={track.id === selectedTrackId ? "table-active" : ""}
           style={{ cursor: "pointer" }}
         >
-          <td>{track.name}</td>
+          {/* max-width 0 lets the cell shrink below its content so the name can
+              truncate; the other cells are sized to their content */}
+          <td style={{ maxWidth: 0 }}>
+            <div className="d-flex align-items-center">
+              {/* only the name truncates, so the playing icon stays visible */}
+              <span className="text-truncate">{track.name}</span>
+              <PlayingIndicator trackId={track.id} />
+            </div>
+          </td>
           <td className="text-end text-nowrap" style={{ width: 1 }}>
             <TrackRating track={track} />
           </td>

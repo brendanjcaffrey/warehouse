@@ -8,6 +8,7 @@ import {
 import { Track } from "./Library";
 import { RevealView } from "./State";
 import { useDetailTrackReveal } from "./Reveal";
+import { useFollowPlaying } from "./FollowPlaying";
 import { useTypeToSearch } from "./useTypeToSearch";
 
 // keyboard selection and type-to-search for a scrollable track list: arrow keys
@@ -30,6 +31,19 @@ export function useTrackListNav(
     containerRef,
     setSelectedTrackId
   );
+
+  // follow playback as it moves: the selection is the user's own cursor, so this
+  // only scrolls. the query misses when the playing track isn't in this
+  // artist/album, and then there is nothing to scroll to
+  const scrollToPlaying = useCallback(
+    (trackId: string) => {
+      containerRef.current
+        ?.querySelector(`[data-track-id="${CSS.escape(trackId)}"]`)
+        ?.scrollIntoView({ block: "center" });
+    },
+    [containerRef]
+  );
+  useFollowPlaying(scrollToPlaying);
 
   const selectIndex = useCallback(
     (index: number) => {
