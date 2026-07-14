@@ -1,8 +1,8 @@
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { useSetAtom } from "jotai";
 import useAuthToken from "./useAuthToken";
 import AuthForm from "./AuthForm";
-import AuthVerifier from "./AuthVerifier";
+import refreshAuthToken from "./AuthRefresh";
 import { DownloadWorker } from "./DownloadWorker";
 import { AuthTokenMessage, SET_AUTH_TOKEN_TYPE } from "./WorkerTypes";
 import { clearAuthFnAtom } from "./State";
@@ -14,8 +14,10 @@ interface AuthWrapperProps {
 
 function AuthWrapper({ children }: AuthWrapperProps) {
   const [authToken, setAuthToken] = useAuthToken();
-  const [authVerified, setAuthVerified] = useState(false);
   const setClearAuthFn = useSetAtom(clearAuthFnAtom);
+  const refreshed = useRef(false);
+  const tokenRef = useRef(authToken);
+  tokenRef.current = authToken;
 
   useEffect(() => {
     DownloadWorker.postMessage({
@@ -26,27 +28,24 @@ function AuthWrapper({ children }: AuthWrapperProps) {
   }, [authToken]);
 
   useEffect(() => {
-    setClearAuthFn({
-      fn: () => {
-        setAuthToken("");
-        setAuthVerified(false);
-      },
-    });
-  }, [authToken, setAuthToken, setAuthVerified, setClearAuthFn]);
+    setClearAuthFn({ fn: () => setAuthToken("") });
+  }, [setAuthToken, setClearAuthFn]);
+
+  // refreshes the token stored at startup, once. deliberately not keyed on the token: a
+  // refresh writes a new one, which would re-fire the effect & refresh forever
+  useEffect(() => {
+    const stored = tokenRef.current;
+    if (refreshed.current || !stored) return;
+    refreshed.current = true;
+
+    refreshAuthToken(stored).then((token) => setAuthToken(token ?? ""));
+  }, [setAuthToken]);
 
   if (!authToken) {
     return <AuthForm setAuthToken={setAuthToken} />;
-  } else if (!authVerified) {
-    return (
-      <AuthVerifier
-        authToken={authToken}
-        setAuthVerified={setAuthVerified}
-        setAuthToken={setAuthToken}
-      />
-    );
-  } else {
-    return <>{children}</>;
   }
+
+  return <>{children}</>;
 }
 
 export default AuthWrapper;
