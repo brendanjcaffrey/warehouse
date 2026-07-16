@@ -241,6 +241,9 @@ function TrackList({ playlistId }: TrackListProps) {
   const trackMenu = useTrackContextMenu(playlistId);
   const openTrackMenu = trackMenu.openMenu;
   const listRef = useRef<FixedSizeList>(null);
+  // react-window's scroll container, so following playback can read its live
+  // offset and height and leave a track already fully in view alone
+  const outerRef = useRef<HTMLDivElement>(null);
   // the queue tracks carry this as their source; the library has no real
   // playlist id so it falls back to a sentinel
   const source = playlistId ?? "library";
@@ -275,13 +278,26 @@ function TrackList({ playlistId }: TrackListProps) {
 
   // follow playback as it moves: the selection is the user's own cursor, so
   // this only scrolls. a track the search or filters have hidden isn't in rows,
-  // and then there is nothing to scroll to
+  // and then there is nothing to scroll to. a row already fully on screen is
+  // left where it is rather than yanked to the centre; a row clipped at either
+  // edge counts as off screen and is centred
   const scrollToPlaying = useCallback(
     (trackId: string) => {
       const index = rows.findIndex((track) => track.id === trackId);
-      if (index !== -1) {
-        listRef.current?.scrollToItem(index, "center");
+      if (index === -1) {
+        return;
       }
+      const outer = outerRef.current;
+      if (outer) {
+        const top = index * ROW_HEIGHT;
+        if (
+          top >= outer.scrollTop &&
+          top + ROW_HEIGHT <= outer.scrollTop + outer.clientHeight
+        ) {
+          return;
+        }
+      }
+      listRef.current?.scrollToItem(index, "center");
     },
     [rows]
   );
@@ -644,6 +660,7 @@ function TrackList({ playlistId }: TrackListProps) {
             </div>
             <FixedSizeList
               ref={listRef}
+              outerRef={outerRef}
               height={Math.max(0, height - HEADER_HEIGHT)}
               width={width}
               itemCount={rows.length}

@@ -57,12 +57,24 @@ const ROW_HEIGHT = 30;
 // TrackList's own wiring in miniature
 function VirtualList({ rows }: { rows: Track[] }) {
   const listRef = useRef<FixedSizeList>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const scrollToPlaying = useCallback(
     (trackId: string) => {
       const index = rows.findIndex((row) => row.id === trackId);
-      if (index !== -1) {
-        listRef.current?.scrollToItem(index, "center");
+      if (index === -1) {
+        return;
       }
+      const outer = outerRef.current;
+      if (outer) {
+        const top = index * ROW_HEIGHT;
+        if (
+          top >= outer.scrollTop &&
+          top + ROW_HEIGHT <= outer.scrollTop + outer.clientHeight
+        ) {
+          return;
+        }
+      }
+      listRef.current?.scrollToItem(index, "center");
     },
     [rows]
   );
@@ -71,6 +83,7 @@ function VirtualList({ rows }: { rows: Track[] }) {
     <div data-testid="list">
       <FixedSizeList
         ref={listRef}
+        outerRef={outerRef}
         height={LIST_HEIGHT}
         width={400}
         itemCount={rows.length}
@@ -124,6 +137,60 @@ test("the songs list scrolls to the next track and marks it when playback moves 
   ).toHaveLength(1);
 });
 
+test("the songs list stays put when the next track is already on screen", async () => {
+  const rows = Array.from({ length: 200 }, (_, i) => track(`t${i}`));
+  const store = playingStore("t0");
+  render(
+    <Provider store={store}>
+      <VirtualList rows={rows} />
+    </Provider>
+  );
+
+  // give react-window a frame to report the on-screen range
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+
+  // the song ends and the next one starts a few rows down, still within the
+  // fold, so there's no need to move the list under the user
+  act(() => play(store, "t3"));
+
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(scroller().scrollTop).toBe(0);
+  // and the newly playing row carries the mark right where it already sat
+  const row = document.querySelector('[data-track-id="t3"]') as HTMLElement;
+  expect(row.querySelector('[data-testid="playing-indicator"]')).not.toBeNull();
+});
+
+test("the songs list centres a track only partly on screen", async () => {
+  const rows = Array.from({ length: 200 }, (_, i) => track(`t${i}`));
+  const store = playingStore("t0");
+  render(
+    <Provider store={store}>
+      <VirtualList rows={rows} />
+    </Provider>
+  );
+
+  // jump far down so the hook centres t120
+  act(() => play(store, "t120"));
+  const scroll = scroller();
+  await waitFor(() => expect(scroll.scrollTop).toBeGreaterThan(0));
+  const centred = scroll.scrollTop;
+
+  // t120 sits centred, so its neighbour a few rows up is now clipped at the top
+  // edge. following back to it must pull it fully in, not leave it half shown
+  act(() => play(store, "t115"));
+  const row = await waitFor(() => {
+    const found = document.querySelector('[data-track-id="t115"]');
+    expect(found).not.toBeNull();
+    return found as HTMLElement;
+  });
+  expectWithin(row, scroll);
+  expect(scroll.scrollTop).not.toBe(centred);
+});
+
 test("the songs list stays put when it mounts on a track already playing", async () => {
   const rows = Array.from({ length: 200 }, (_, i) => track(`t${i}`));
   const store = playingStore("t120");
@@ -150,9 +217,22 @@ const DETAIL_ROW_HEIGHT = 40;
 function DetailList({ tracks }: { tracks: Track[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollToPlaying = useCallback((trackId: string) => {
-    containerRef.current
-      ?.querySelector(`[data-track-id="${CSS.escape(trackId)}"]`)
-      ?.scrollIntoView({ block: "center" });
+    const container = containerRef.current;
+    const row = container?.querySelector(
+      `[data-track-id="${CSS.escape(trackId)}"]`
+    );
+    if (!container || !row) {
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    if (
+      rowRect.top >= containerRect.top &&
+      rowRect.bottom <= containerRect.bottom
+    ) {
+      return;
+    }
+    row.scrollIntoView({ block: "center" });
   }, []);
   useFollowPlaying(scrollToPlaying);
   return (
@@ -200,6 +280,61 @@ test("an album view scrolls to the next track and marks it when playback moves o
   const row = document.querySelector('[data-track-id="t40"]') as HTMLElement;
   expectWithin(row, container);
   expect(offsetFromCentre(row, container)).toBeLessThan(DETAIL_ROW_HEIGHT);
+  expect(row.querySelector('[data-testid="playing-indicator"]')).not.toBeNull();
+});
+
+test("an album view stays put when the next track is already on screen", async () => {
+  const tracks = Array.from({ length: 60 }, (_, i) => track(`t${i}`));
+  const store = playingStore("t0");
+  render(
+    <Provider store={store}>
+      <DetailList tracks={tracks} />
+    </Provider>
+  );
+
+  const container = document.querySelector(
+    '[data-testid="scroll"]'
+  ) as HTMLElement;
+  expect(container.scrollTop).toBe(0);
+
+  // the next track is a couple of rows down, still visible in the 200px view,
+  // so the container is left where it is
+  act(() => play(store, "t2"));
+
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(container.scrollTop).toBe(0);
+  const row = document.querySelector('[data-track-id="t2"]') as HTMLElement;
+  expect(row.querySelector('[data-testid="playing-indicator"]')).not.toBeNull();
+});
+
+test("an album view centres a track only partly on screen", async () => {
+  const tracks = Array.from({ length: 60 }, (_, i) => track(`t${i}`));
+  const store = playingStore("t0");
+  render(
+    <Provider store={store}>
+      <DetailList tracks={tracks} />
+    </Provider>
+  );
+  const container = document.querySelector(
+    '[data-testid="scroll"]'
+  ) as HTMLElement;
+
+  // nudge the list so a row at the bottom edge is clipped: with 40px rows in a
+  // 200px view, a 20px scroll leaves row 5 straddling the fold
+  act(() => {
+    container.scrollTop = 20;
+  });
+
+  // following to that clipped row must pull it fully into view
+  act(() => play(store, "t5"));
+
+  const row = await waitFor(() => {
+    const found = document.querySelector('[data-track-id="t5"]') as HTMLElement;
+    expectWithin(found, container);
+    return found;
+  });
   expect(row.querySelector('[data-testid="playing-indicator"]')).not.toBeNull();
 });
 

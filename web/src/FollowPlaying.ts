@@ -10,7 +10,9 @@ import { playingTrackAtom } from "./State";
 // or landing on one from a "go to", should leave the list where the user asked
 // to be rather than yanking it to whatever happens to be playing; only a change
 // after that is playback moving on. onScroll takes the track id and is expected
-// to do nothing when this list doesn't hold that track
+// to do nothing when this list doesn't hold that track, or when the track's row
+// is already fully on screen, so a row the user can already see is left where it
+// is; a row clipped at an edge counts as off screen and is scrolled to
 export function useFollowPlaying(onScroll: (trackId: string) => void) {
   const playingTrack = useAtomValue(playingTrackAtom);
   const trackId = playingTrack?.track.id;

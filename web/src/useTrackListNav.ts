@@ -34,12 +34,27 @@ export function useTrackListNav(
 
   // follow playback as it moves: the selection is the user's own cursor, so this
   // only scrolls. the query misses when the playing track isn't in this
-  // artist/album, and then there is nothing to scroll to
+  // artist/album, and then there is nothing to scroll to. a row already fully
+  // on screen is left where it is rather than centred; a row clipped at either
+  // edge counts as off screen and is centred
   const scrollToPlaying = useCallback(
     (trackId: string) => {
-      containerRef.current
-        ?.querySelector(`[data-track-id="${CSS.escape(trackId)}"]`)
-        ?.scrollIntoView({ block: "center" });
+      const container = containerRef.current;
+      const row = container?.querySelector(
+        `[data-track-id="${CSS.escape(trackId)}"]`
+      );
+      if (!container || !row) {
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      if (
+        rowRect.top >= containerRect.top &&
+        rowRect.bottom <= containerRect.bottom
+      ) {
+        return;
+      }
+      row.scrollIntoView({ block: "center" });
     },
     [containerRef]
   );
