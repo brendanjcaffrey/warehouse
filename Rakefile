@@ -298,6 +298,19 @@ namespace :web do
     dest   = "#{ROOT}/web/public/favicon"
     abort "missing #{source}" unless File.exist?(source)
 
+    # the scalable favicon is the source vector with a dark-mode rule injected so
+    # the glyph flips to near-white in dark browser chrome. the !important beats
+    # the path's inline dark fill, which a normal rule wouldn't. only svg favicons
+    # can react to the tab theme, so the rasterized icons below stay single-tone.
+    dark_rule = <<~CSS
+      @media (prefers-color-scheme: dark) {
+          .fil1 {fill:#f4f4f5 !important}
+          .str1 {stroke:#f4f4f5 !important}
+        }
+    CSS
+    svg = File.read(source).sub('</style>', "#{dark_rule}  </style>")
+    File.write("#{dest}/favicon.svg", svg)
+
     # rasterize the vector at a high density so curves stay crisp when scaled
     # down, and -background none keeps the source glyph transparent. both must
     # precede the source so they apply during rasterization.
