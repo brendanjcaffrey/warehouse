@@ -29,6 +29,8 @@ export interface Track {
   rating: number;
   musicFilename: string;
   artworkFilename: string | null;
+  // epoch seconds the track entered the library; 0 when the source had none
+  addedDate: number;
   playlistIds: string[];
 }
 

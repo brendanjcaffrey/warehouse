@@ -133,7 +133,8 @@ struct TrackEditForm: Equatable {
             playCount: song.playCount,
             rating: ratingValue,
             musicFilename: song.musicFilename,
-            artworkFilename: artworkCleared ? nil : artworkFilename)
+            artworkFilename: artworkCleared ? nil : artworkFilename,
+            addedDate: song.addedDate)
     }
 
     /// the stars back in 0-100 form

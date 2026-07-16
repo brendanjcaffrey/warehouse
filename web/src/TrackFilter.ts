@@ -2,8 +2,12 @@ import { Track } from "./Library";
 import { TrackColumn } from "./TrackColumns";
 
 // filtering needs a column's id, type and comparable value plus, for text
-// columns, the display text people actually type against
-type FilterColumn = Pick<TrackColumn, "id" | "type" | "value" | "text">;
+// columns, the display text people actually type against; filterable lets a
+// column opt out of per-column filtering entirely
+type FilterColumn = Pick<
+  TrackColumn,
+  "id" | "type" | "value" | "text" | "filterable"
+>;
 
 // a raw string per column, straight from the filter inputs; blank means the
 // column isn't filtered
@@ -86,7 +90,7 @@ export function filterTracks(
   for (const [columnId, raw] of Object.entries(filters)) {
     const column = byId.get(columnId);
     const query = raw.trim();
-    if (!column || query === "") {
+    if (!column || column.filterable === false || query === "") {
       continue;
     }
 

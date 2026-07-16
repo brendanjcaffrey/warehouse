@@ -45,7 +45,8 @@ message Track {
   uint32 discNumber = 13;
   uint64 playCount = 14;
   int32 rating = 15;
-  // skip 16-18
+  optional int64 addedDate = 16;
+  // skip 17-18
   string artworkFilename = 19;
   repeated string playlistIds = 20;
   string musicFilename = 21;

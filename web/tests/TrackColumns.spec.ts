@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { TRACK_COLUMNS } from "../src/TrackColumns";
+import { TRACK_COLUMNS, formatDateAdded } from "../src/TrackColumns";
 import { Track } from "../src/Library";
 
 function makeTrack(overrides: Partial<Track>): Track {
@@ -24,6 +24,7 @@ function makeTrack(overrides: Partial<Track>): Track {
     rating: 80,
     musicFilename: "song.mp3",
     artworkFilename: null,
+    addedDate: 0,
     playlistIds: [],
     ...overrides,
   };
@@ -80,4 +81,28 @@ test("empty numeric fields render blank rather than zero", () => {
 
 test("duration renders as a minutes:seconds string", () => {
   expect(column("duration").render(makeTrack({ duration: 185 }))).toBe("3:05");
+});
+
+test("the added column sorts on its raw epoch seconds", () => {
+  expect(column("added").value(makeTrack({ addedDate: 1783082096 }))).toBe(
+    1783082096
+  );
+  expect(column("added").defaultDirection).toBe("desc");
+  expect(column("added").filterable).toBe(false);
+});
+
+test("added renders as a medium date and blank when missing", () => {
+  const epoch = 1783082096;
+  const expected = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).format(new Date(epoch * 1000));
+  expect(column("added").render(makeTrack({ addedDate: epoch }))).toBe(
+    expected
+  );
+  expect(column("added").render(makeTrack({ addedDate: 0 }))).toBe("");
+});
+
+test("formatDateAdded blanks the epoch-0 sentinel", () => {
+  expect(formatDateAdded(0)).toBe("");
+  expect(formatDateAdded(1783082096)).not.toBe("");
 });

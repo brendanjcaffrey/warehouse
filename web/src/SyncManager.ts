@@ -200,6 +200,7 @@ export class SyncManager {
         musicFilename: track.musicFilename,
         artworkFilename:
           track.artworkFilename === "" ? null : track.artworkFilename,
+        addedDate: track.addedDate,
         playlistIds: track.playlistIds,
       };
       await library().putTrack(dto);

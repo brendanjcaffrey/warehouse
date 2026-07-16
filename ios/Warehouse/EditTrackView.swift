@@ -62,6 +62,12 @@ struct EditTrackView: View {
                         Text("\(song.playCount)")
                             .foregroundStyle(.secondary)
                     }
+                    HStack {
+                        Text("Added")
+                        Spacer()
+                        Text(formattedAddedDate)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 artworkSection
             }
@@ -93,6 +99,12 @@ struct EditTrackView: View {
             // re-check the clipboard after copying an image in another app
             if scenePhase == .active { canPasteArtwork = ArtworkPasteboard.hasImage() }
         }
+    }
+
+    /// date-only, locale medium ("Jul 3, 2026"); blank when the track has none
+    private var formattedAddedDate: String {
+        guard let addedDate = song.addedDate else { return "" }
+        return addedDate.formatted(date: .abbreviated, time: .omitted)
     }
 
     private var showingError: Binding<Bool> {

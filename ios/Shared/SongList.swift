@@ -22,6 +22,8 @@ struct Song: Identifiable, Hashable, Sendable {
     var rating = 0
     let musicFilename: String
     let artworkFilename: String?
+    /// wall-clock instant the track entered the library; nil when the source had none
+    var addedDate: Date?
 
     var titleSortKey: String { sortName.isEmpty ? name : sortName }
     var artistSortKey: String { artistSortName.isEmpty ? artistName : artistSortName }
@@ -31,10 +33,11 @@ enum SongSortOption: String, Identifiable {
     case playlistOrder
     case title
     case artist
+    case dateAdded
 
     /// playlist order only makes sense inside a playlist
-    static let libraryOptions: [SongSortOption] = [.title, .artist]
-    static let playlistOptions: [SongSortOption] = [.playlistOrder, .title, .artist]
+    static let libraryOptions: [SongSortOption] = [.title, .artist, .dateAdded]
+    static let playlistOptions: [SongSortOption] = [.playlistOrder, .title, .artist, .dateAdded]
 
     var id: String { rawValue }
 
@@ -46,7 +49,14 @@ enum SongSortOption: String, Identifiable {
             return "Title"
         case .artist:
             return "Artist"
+        case .dateAdded:
+            return "Date Added"
         }
+    }
+
+    /// sorts that show one flat list with no alphabetical section index
+    var isFlat: Bool {
+        self == .playlistOrder || self == .dateAdded
     }
 }
 
@@ -73,6 +83,14 @@ enum SongListBuilder {
         if sort == .playlistOrder {
             // playlist order keeps the incoming order and skips letter sections
             return filtered.isEmpty ? [] : [SongSection(title: "", songs: filtered)]
+        }
+
+        if sort == .dateAdded {
+            // newest-first, one flat section; a missing date sorts as oldest
+            let sorted = filtered.sorted {
+                ($0.addedDate ?? .distantPast) > ($1.addedDate ?? .distantPast)
+            }
+            return sorted.isEmpty ? [] : [SongSection(title: "", songs: sorted)]
         }
 
         let keyed = filtered
@@ -137,7 +155,8 @@ enum SongListBuilder {
 
     static func sortKey(for song: Song, sort: SongSortOption) -> (primary: String, secondary: String) {
         switch sort {
-        case .title, .playlistOrder:
+        // playlistOrder & dateAdded skip this path; fall back to the title key
+        case .title, .playlistOrder, .dateAdded:
             return (fold(song.titleSortKey), fold(song.artistSortKey))
         case .artist:
             return (fold(song.artistSortKey), fold(song.titleSortKey))

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Form, Modal } from "react-bootstrap";
 import { Track } from "./Library";
 import StarRating from "./StarRating";
+import { formatDateAdded } from "./TrackColumns";
 import { submitTrackEdit } from "./TrackEdit";
 import {
   formFromTrack,
@@ -142,9 +143,15 @@ function EditTrackForm({
               onRate={(rating) => update({ rating: rating / RATING_PER_STAR })}
             />
           </div>
-          <div className="d-flex align-items-center justify-content-between">
+          <div className="mb-3 d-flex align-items-center justify-content-between">
             <Form.Label className="mb-0">Plays</Form.Label>
             <span className="text-secondary">{track.playCount}</span>
+          </div>
+          <div className="d-flex align-items-center justify-content-between">
+            <Form.Label className="mb-0">Added</Form.Label>
+            <span className="text-secondary">
+              {formatDateAdded(track.addedDate)}
+            </span>
           </div>
         </Form>
       </Modal.Body>

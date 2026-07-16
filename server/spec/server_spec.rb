@@ -553,6 +553,7 @@ describe 'Warehouse Server' do
       expect(track.rating).to eq(100)
       expect(track.musicFilename).to eq('06dbe92c2a5dab2f7911e20a9e157521.mp3')
       expect(track.artworkFilename).to eq('__artwork.jpg')
+      expect(track).not_to have_addedDate
       expect(track.playlistIds).to eq([playlist2, playlistX])
 
       expect(library.playlists.length).to eq(4)
@@ -586,6 +587,27 @@ describe 'Warehouse Server' do
 
       expect(library.totalFileSize).to eq(1001)
       expect(library.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+
+    it 'passes added_date through as epoch seconds' do
+      DB_POOL.with do |conn|
+        conn.exec(INSERT_EXPORT_FINISHED_SQL)
+        conn.exec_params('UPDATE tracks SET added_date=$1 WHERE id=$2', ['2026-07-03 12:34:56+00', track_id1])
+      end
+
+      get '/api/library', {}, get_auth_header
+      track = LibraryResponse.decode(last_response.body).library.tracks.first
+      expect(track).to have_addedDate
+      expect(track.addedDate).to eq(Time.utc(2026, 7, 3, 12, 34, 56).to_i)
+    end
+
+    it 'leaves added_date unset when the column is null' do
+      DB_POOL.with { |conn| conn.exec(INSERT_EXPORT_FINISHED_SQL) }
+
+      get '/api/library', {}, get_auth_header
+      track = LibraryResponse.decode(last_response.body).library.tracks.first
+      expect(track).not_to have_addedDate
+      expect(track.addedDate).to eq(0)
     end
 
     it 'includes whether to track changes or not' do

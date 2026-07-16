@@ -34,6 +34,7 @@ struct LibraryDatabaseTests {
         track1.rating = 100
         track1.musicFilename = "m1.mp3"
         track1.artworkFilename = "a1.jpg"
+        track1.addedDate = 1_600_000_000
         track1.playlistIds = ["lib", "c1"]
 
         var track2 = Track()
@@ -112,12 +113,14 @@ struct LibraryDatabaseTests {
         #expect(track1.rating == 100)
         #expect(track1.musicFilename == "m1.mp3")
         #expect(track1.artworkFilename == "a1.jpg")
+        #expect(track1.addedDate == Date(timeIntervalSince1970: 1_600_000_000))
         #expect(track1.playlistIds == ["lib", "c1"])
 
         let track2 = try #require(tracks["t2"])
         #expect(track2.artistName == "Cher")
         #expect(track2.albumArtistName.isEmpty) // unknown ids resolve to empty
         #expect(track2.albumName.isEmpty)
+        #expect(track2.addedDate == nil) // unset on the wire stays nil
         #expect(track2.genre.isEmpty)
         #expect(track2.artworkFilename == nil) // empty artwork becomes nil
     }
@@ -194,12 +197,14 @@ struct LibraryDatabaseTests {
         #expect(song1.rating == 100)
         #expect(song1.musicFilename == "m1.mp3")
         #expect(song1.artworkFilename == "a1.jpg")
+        #expect(song1.addedDate == Date(timeIntervalSince1970: 1_600_000_000))
         #expect(song1.titleSortKey == "Come Together")
         #expect(song1.artistSortKey == "Beatles, The")
 
         let song2 = try #require(byId["t2"])
         #expect(song2.albumName.isEmpty)
         #expect(song2.artworkFilename == nil)
+        #expect(song2.addedDate == nil)
         #expect(song2.artistSortKey == "Cher")
     }
 

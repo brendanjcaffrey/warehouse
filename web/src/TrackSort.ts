@@ -13,32 +13,36 @@ export interface SortKey {
 type SortColumn = Pick<TrackColumn, "id" | "type" | "value">;
 
 // advances the sort state for a clicked header. a plain click sorts by that
-// column alone, cycling asc -> desc -> unsorted; a shift click (additive) keeps
-// the other keys and cycles just this one, dropping it on the third click. this
-// is the multi-column behaviour people expect from a spreadsheet grid
+// column alone, cycling the column's default direction -> its opposite ->
+// unsorted; a shift click (additive) keeps the other keys and cycles just this
+// one, dropping it on the third click. this is the multi-column behaviour people
+// expect from a spreadsheet grid. defaultDirection leads with desc for columns
+// like date-added that read newest-first; it defaults to asc for the rest
 export function cycleSort(
   sortKeys: SortKey[],
   columnId: string,
-  additive: boolean
+  additive: boolean,
+  defaultDirection: SortDirection = "asc"
 ): SortKey[] {
+  const opposite: SortDirection = defaultDirection === "asc" ? "desc" : "asc";
   const existing = sortKeys.find((key) => key.columnId === columnId);
 
   if (!additive) {
     if (!existing || sortKeys.length > 1) {
-      return [{ columnId, direction: "asc" }];
+      return [{ columnId, direction: defaultDirection }];
     }
-    if (existing.direction === "asc") {
-      return [{ columnId, direction: "desc" }];
+    if (existing.direction === defaultDirection) {
+      return [{ columnId, direction: opposite }];
     }
     return [];
   }
 
   if (!existing) {
-    return [...sortKeys, { columnId, direction: "asc" }];
+    return [...sortKeys, { columnId, direction: defaultDirection }];
   }
-  if (existing.direction === "asc") {
+  if (existing.direction === defaultDirection) {
     return sortKeys.map((key) =>
-      key.columnId === columnId ? { columnId, direction: "desc" } : key
+      key.columnId === columnId ? { columnId, direction: opposite } : key
     );
   }
   return sortKeys.filter((key) => key.columnId !== columnId);

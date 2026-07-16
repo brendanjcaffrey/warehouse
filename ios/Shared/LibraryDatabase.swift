@@ -23,6 +23,7 @@ final class TrackEntity: NSManagedObject {
     @NSManaged var rating: Int32
     @NSManaged var musicFilename: String
     @NSManaged var artworkFilename: String?
+    @NSManaged var addedDate: Date?
     @NSManaged var playlistIds: [String]
 }
 
@@ -88,6 +89,7 @@ final class LibraryDatabase {
                 entity.rating = track.rating
                 entity.musicFilename = track.musicFilename
                 entity.artworkFilename = track.artworkFilename.isEmpty ? nil : track.artworkFilename
+                entity.addedDate = track.hasAddedDate ? Date(timeIntervalSince1970: TimeInterval(track.addedDate)) : nil
                 entity.playlistIds = track.playlistIds
             }
 
@@ -172,7 +174,8 @@ final class LibraryDatabase {
                     playCount: Int($0.playCount),
                     rating: Int($0.rating),
                     musicFilename: $0.musicFilename,
-                    artworkFilename: $0.artworkFilename)
+                    artworkFilename: $0.artworkFilename,
+                    addedDate: $0.addedDate)
             }
         }
     }
@@ -273,6 +276,7 @@ final class LibraryDatabase {
             numberAttribute("rating", .integer32AttributeType),
             stringAttribute("musicFilename"),
             stringAttribute("artworkFilename", optional: true),
+            dateAttribute("addedDate"),
             stringArrayAttribute("playlistIds")
         ]
 
@@ -302,6 +306,14 @@ final class LibraryDatabase {
         if !optional {
             attribute.defaultValue = ""
         }
+        return attribute
+    }
+
+    private static func dateAttribute(_ name: String) -> NSAttributeDescription {
+        let attribute = NSAttributeDescription()
+        attribute.name = name
+        attribute.attributeType = .dateAttributeType
+        attribute.isOptional = true
         return attribute
     }
 

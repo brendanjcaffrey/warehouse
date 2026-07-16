@@ -470,8 +470,8 @@ export class SortName extends pb_1.Message {
     }
 }
 export class Track extends pb_1.Message {
-    #one_of_decls: number[][] = [];
-    constructor(data?: any[] | {
+    #one_of_decls: number[][] = [[16]];
+    constructor(data?: any[] | ({
         id?: string;
         name?: string;
         sortName?: string;
@@ -490,7 +490,9 @@ export class Track extends pb_1.Message {
         artworkFilename?: string;
         playlistIds?: string[];
         musicFilename?: string;
-    }) {
+    } & (({
+        addedDate?: number;
+    })))) {
         super();
         pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [20], this.#one_of_decls);
         if (!Array.isArray(data) && typeof data == "object") {
@@ -538,6 +540,9 @@ export class Track extends pb_1.Message {
             }
             if ("rating" in data && data.rating != undefined) {
                 this.rating = data.rating;
+            }
+            if ("addedDate" in data && data.addedDate != undefined) {
+                this.addedDate = data.addedDate;
             }
             if ("artworkFilename" in data && data.artworkFilename != undefined) {
                 this.artworkFilename = data.artworkFilename;
@@ -640,6 +645,15 @@ export class Track extends pb_1.Message {
     set rating(value: number) {
         pb_1.Message.setField(this, 15, value);
     }
+    get addedDate() {
+        return pb_1.Message.getFieldWithDefault(this, 16, 0) as number;
+    }
+    set addedDate(value: number) {
+        pb_1.Message.setOneofField(this, 16, this.#one_of_decls[0], value);
+    }
+    get has_addedDate() {
+        return pb_1.Message.getField(this, 16) != null;
+    }
     get artworkFilename() {
         return pb_1.Message.getFieldWithDefault(this, 19, "") as string;
     }
@@ -658,6 +672,15 @@ export class Track extends pb_1.Message {
     set musicFilename(value: string) {
         pb_1.Message.setField(this, 21, value);
     }
+    get _addedDate() {
+        const cases: {
+            [index: number]: "none" | "addedDate";
+        } = {
+            0: "none",
+            16: "addedDate"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [16])];
+    }
     static fromObject(data: {
         id?: string;
         name?: string;
@@ -674,6 +697,7 @@ export class Track extends pb_1.Message {
         discNumber?: number;
         playCount?: number;
         rating?: number;
+        addedDate?: number;
         artworkFilename?: string;
         playlistIds?: string[];
         musicFilename?: string;
@@ -724,6 +748,9 @@ export class Track extends pb_1.Message {
         if (data.rating != null) {
             message.rating = data.rating;
         }
+        if (data.addedDate != null) {
+            message.addedDate = data.addedDate;
+        }
         if (data.artworkFilename != null) {
             message.artworkFilename = data.artworkFilename;
         }
@@ -752,6 +779,7 @@ export class Track extends pb_1.Message {
             discNumber?: number;
             playCount?: number;
             rating?: number;
+            addedDate?: number;
             artworkFilename?: string;
             playlistIds?: string[];
             musicFilename?: string;
@@ -801,6 +829,9 @@ export class Track extends pb_1.Message {
         if (this.rating != null) {
             data.rating = this.rating;
         }
+        if (this.addedDate != null) {
+            data.addedDate = this.addedDate;
+        }
         if (this.artworkFilename != null) {
             data.artworkFilename = this.artworkFilename;
         }
@@ -846,6 +877,8 @@ export class Track extends pb_1.Message {
             writer.writeUint64(14, this.playCount);
         if (this.rating != 0)
             writer.writeInt32(15, this.rating);
+        if (this.has_addedDate)
+            writer.writeInt64(16, this.addedDate);
         if (this.artworkFilename.length)
             writer.writeString(19, this.artworkFilename);
         if (this.playlistIds.length)
@@ -905,6 +938,9 @@ export class Track extends pb_1.Message {
                     break;
                 case 15:
                     message.rating = reader.readInt32();
+                    break;
+                case 16:
+                    message.addedDate = reader.readInt64();
                     break;
                 case 19:
                     message.artworkFilename = reader.readString();

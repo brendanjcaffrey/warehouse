@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Track } from "./Library";
+import type { SortDirection } from "./TrackSort";
 import StarRating from "./StarRating";
 import { FormatPlaybackPosition } from "./PlaybackPositionFormatters";
 
@@ -13,6 +14,11 @@ export interface TrackColumn {
   width: string;
   align: "start" | "end";
   type: ColumnType;
+  // the direction the first sort click applies, so a column can lead with desc;
+  // defaults to asc when unset
+  defaultDirection?: SortDirection;
+  // whether the header offers a filter box; defaults to true when unset
+  filterable?: boolean;
   // the comparable value sorting works against; text columns sort on their
   // sort-name variant so "the beatles" files under "beatles"
   value: (track: Track) => string | number;
@@ -25,6 +31,17 @@ export interface TrackColumn {
 // blank rather than "0" for the numeric columns itunes leaves empty
 function numberOrBlank(value: number): string {
   return value > 0 ? String(value) : "";
+}
+
+// absolute date-only, locale medium ("Jul 3, 2026"); blank for the epoch-0
+// sentinel a track with no added date carries
+const dateAddedFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+});
+export function formatDateAdded(epochSeconds: number): string {
+  return epochSeconds > 0
+    ? dateAddedFormat.format(new Date(epochSeconds * 1000))
+    : "";
 }
 
 // the itunes-standard column set; adjust freely, everything downstream keys off
@@ -106,5 +123,17 @@ export const TRACK_COLUMNS: TrackColumn[] = [
     type: "number",
     value: (track) => track.playCount,
     render: (track) => numberOrBlank(track.playCount),
+  },
+  {
+    id: "added",
+    header: "added",
+    width: "110px",
+    align: "end",
+    type: "number",
+    // newest-first on the first click; a raw-epoch filter box would be unusable
+    defaultDirection: "desc",
+    filterable: false,
+    value: (track) => track.addedDate,
+    render: (track) => formatDateAdded(track.addedDate),
   },
 ];

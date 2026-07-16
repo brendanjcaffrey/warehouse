@@ -59,7 +59,7 @@ func insertAlbumsQuery(_ albums: [InsertAlbumQuery]) -> PostgresQuery {
     return insertSortNamesQuery(table: "albums", sortNames: albums)
 }
 
-let NUM_TRACK_VALUES = 17
+let NUM_TRACK_VALUES = 18
 struct InsertTrackQuery {
     var id: String
     var name: String
@@ -78,6 +78,7 @@ struct InsertTrackQuery {
     var rating: Int
     var musicFilename: String
     var artworkFilename: Optional<String>
+    var addedDate: Optional<Date>
 }
 func insertTracksQuery(_ tracks: [InsertTrackQuery]) -> PostgresQuery {
     var binds = PostgresBindings(capacity: tracks.count * NUM_TRACK_VALUES)
@@ -102,9 +103,10 @@ func insertTracksQuery(_ tracks: [InsertTrackQuery]) -> PostgresQuery {
         binds.append(track.rating)
         binds.append(track.musicFilename)
         binds.append(track.artworkFilename)
+        binds.append(track.addedDate)
     }
 
-    let query = "INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,music_filename,artwork_filename) VALUES \(values.joined(separator: ","));"
+    let query = "INSERT INTO tracks (id,name,sort_name,artist_id,album_artist_id,album_id,genre_id,year,duration,start,finish,track_number,disc_number,play_count,rating,music_filename,artwork_filename,added_date) VALUES \(values.joined(separator: ","));"
     return PostgresQuery(unsafeSQL: query, binds: binds)
 }
 
@@ -151,4 +153,3 @@ func insertLibraryMetadata(totalFileSize: Int64) -> PostgresQuery {
 func insertExportFinished() -> PostgresQuery {
     return PostgresQuery(stringLiteral: "INSERT INTO export_finished (finished_at) VALUES (current_timestamp)")
 }
-

@@ -29,7 +29,8 @@ CREATE TABLE tracks (
     play_count INTEGER NOT NULL,
     rating INTEGER NOT NULL,
     music_filename TEXT NOT NULL,
-    artwork_filename TEXT
+    artwork_filename TEXT,
+    added_date TIMESTAMPTZ
 );
 CREATE TABLE playlists (
     id CHAR(16) PRIMARY KEY NOT NULL,

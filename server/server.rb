@@ -2,6 +2,7 @@
 
 require 'connection_pool'
 require 'pg'
+require 'time'
 require 'rack/utils'
 require 'sinatra/base'
 require 'sinatra/namespace'
@@ -214,6 +215,7 @@ class Server < Sinatra::Base
                                     rating: track['rating'].to_i,
                                     musicFilename: track['music_filename'].strip,
                                     artworkFilename: (track['artwork_filename'] || '').strip,
+                                    addedDate: track['added_date'] ? Time.parse(track['added_date']).to_i : nil,
                                     playlistIds: (track['playlist_ids'] || '').split(',').concat(library_playlist_ids))
       end
 

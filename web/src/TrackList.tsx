@@ -298,7 +298,14 @@ function TrackList({ playlistId }: TrackListProps) {
 
   const sortByColumn = useCallback(
     (columnId: string, additive: boolean) =>
-      setSortKeys((prev) => cycleSort(prev, columnId, additive)),
+      setSortKeys((prev) =>
+        cycleSort(
+          prev,
+          columnId,
+          additive,
+          TRACK_COLUMNS.find((c) => c.id === columnId)?.defaultDirection
+        )
+      ),
     []
   );
 
@@ -618,11 +625,13 @@ function TrackList({ playlistId }: TrackListProps) {
                         </span>
                       )}
                     </span>
-                    <ColumnFilter
-                      column={column}
-                      value={filters[column.id] ?? ""}
-                      onChange={(value) => setColumnFilter(column.id, value)}
-                    />
+                    {column.filterable !== false && (
+                      <ColumnFilter
+                        column={column}
+                        value={filters[column.id] ?? ""}
+                        onChange={(value) => setColumnFilter(column.id, value)}
+                      />
+                    )}
                     <span
                       className="track-column-resize-handle"
                       onMouseDown={(event) =>

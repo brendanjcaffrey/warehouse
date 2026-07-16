@@ -39,6 +39,7 @@ function makeTrack(overrides: Partial<Track> & { id: string }): Track {
     rating: 0,
     musicFilename: "",
     artworkFilename: null,
+    addedDate: 0,
     playlistIds: [],
     ...overrides,
   };
@@ -122,6 +123,23 @@ test("an invalid number filter leaves the column unfiltered", () => {
 test("an all-blank state returns the tracks untouched", () => {
   const tracks = [makeTrack({ id: "a" }), makeTrack({ id: "b" })];
   expect(filterTracks(tracks, { name: "  ", year: "" }, columns)).toBe(tracks);
+});
+
+test("a non-filterable column ignores any filter set against it", () => {
+  const addedColumns = [
+    ...columns,
+    {
+      id: "added",
+      type: "number" as const,
+      filterable: false,
+      value: (t: Track) => t.addedDate,
+    },
+  ];
+  const tracks = [
+    makeTrack({ id: "a", addedDate: 1000 }),
+    makeTrack({ id: "b", addedDate: 3000 }),
+  ];
+  expect(filterTracks(tracks, { added: ">2000" }, addedColumns)).toBe(tracks);
 });
 
 const searchColumns = [

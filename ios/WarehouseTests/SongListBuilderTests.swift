@@ -9,7 +9,8 @@ struct SongListBuilderTests {
         name: String,
         sortName: String = "",
         artist: String = "",
-        artistSortName: String = ""
+        artistSortName: String = "",
+        addedDate: Date? = nil
     ) -> Song {
         Song(
             id: id,
@@ -29,7 +30,8 @@ struct SongListBuilderTests {
             discNumber: 0,
             trackNumber: 0,
             musicFilename: "\(id).mp3",
-            artworkFilename: nil)
+            artworkFilename: nil,
+            addedDate: addedDate)
     }
 
     @Test("title sort uses sort names and sections by first letter")
@@ -144,6 +146,28 @@ struct SongListBuilderTests {
         let sections = SongListBuilder.sections(songs, sortedBy: .playlistOrder, matching: "")
         #expect(sections.map(\.title) == [""])
         #expect(sections[0].songs.map(\.id) == ["1", "2", "3"])
+    }
+
+    @Test("date added sorts newest-first in one untitled section, missing last")
+    func dateAddedSort() {
+        let day: TimeInterval = 86_400
+        let songs = [
+            Self.song(id: "1", name: "Angie", addedDate: Date(timeIntervalSince1970: day)),
+            Self.song(id: "2", name: "Believe", addedDate: nil),
+            Self.song(id: "3", name: "Zombie", addedDate: Date(timeIntervalSince1970: 3 * day))
+        ]
+
+        let sections = SongListBuilder.sections(songs, sortedBy: .dateAdded, matching: "")
+        #expect(sections.map(\.title) == [""])
+        #expect(sections[0].songs.map(\.id) == ["3", "1", "2"])
+    }
+
+    @Test("date added is offered in both the library and playlist sort options")
+    func dateAddedOption() {
+        #expect(SongSortOption.libraryOptions.contains(.dateAdded))
+        #expect(SongSortOption.playlistOptions.contains(.dateAdded))
+        #expect(SongSortOption.dateAdded.isFlat)
+        #expect(SongSortOption.dateAdded.label == "Date Added")
     }
 
     @Test("playlist order still filters by search")

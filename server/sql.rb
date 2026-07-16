@@ -7,7 +7,7 @@ TRACK_SQL = <<~SQL
   SELECT
       t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
       t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating,
-      t.music_filename, t.artwork_filename, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
+      t.music_filename, t.artwork_filename, t.added_date, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
   FROM
       tracks t
   LEFT JOIN

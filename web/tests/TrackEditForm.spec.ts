@@ -33,6 +33,7 @@ function makeTrack(overrides: Partial<Track> & { id: string }): Track {
     rating: 60,
     musicFilename: "song.mp3",
     artworkFilename: null,
+    addedDate: 0,
     playlistIds: [],
     ...overrides,
   };

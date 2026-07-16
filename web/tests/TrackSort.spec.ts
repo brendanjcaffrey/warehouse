@@ -10,6 +10,7 @@ const columns = [
     value: (t: Track) => t.artistSortName,
   },
   { id: "year", type: "number" as const, value: (t: Track) => t.year },
+  { id: "added", type: "number" as const, value: (t: Track) => t.addedDate },
 ];
 
 function makeTrack(overrides: Partial<Track> & { id: string }): Track {
@@ -33,6 +34,7 @@ function makeTrack(overrides: Partial<Track> & { id: string }): Track {
     rating: 0,
     musicFilename: "",
     artworkFilename: null,
+    addedDate: 0,
     playlistIds: [],
     ...overrides,
   };
@@ -46,6 +48,42 @@ test("a plain click cycles a single column asc, desc, then unsorted", () => {
   expect(keys).toEqual([{ columnId: "name", direction: "desc" }]);
   keys = cycleSort(keys, "name", false);
   expect(keys).toEqual([]);
+});
+
+test("a desc-default column leads with desc, then asc, then unsorted", () => {
+  let keys: SortKey[] = [];
+  keys = cycleSort(keys, "added", false, "desc");
+  expect(keys).toEqual([{ columnId: "added", direction: "desc" }]);
+  keys = cycleSort(keys, "added", false, "desc");
+  expect(keys).toEqual([{ columnId: "added", direction: "asc" }]);
+  keys = cycleSort(keys, "added", false, "desc");
+  expect(keys).toEqual([]);
+});
+
+test("a desc-default column also leads with desc on a shift click", () => {
+  const keys = cycleSort(
+    [{ columnId: "name", direction: "asc" }],
+    "added",
+    true,
+    "desc"
+  );
+  expect(keys).toEqual([
+    { columnId: "name", direction: "asc" },
+    { columnId: "added", direction: "desc" },
+  ]);
+});
+
+test("newest-first sorts a missing added date as oldest", () => {
+  const tracks = [
+    makeTrack({ id: "a", addedDate: 1000 }),
+    makeTrack({ id: "b", addedDate: 0 }),
+    makeTrack({ id: "c", addedDate: 3000 }),
+  ];
+  expect(
+    sortTracks(tracks, [{ columnId: "added", direction: "desc" }], columns).map(
+      (t) => t.id
+    )
+  ).toEqual(["c", "a", "b"]);
 });
 
 test("a plain click on another column replaces the whole sort", () => {

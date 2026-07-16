@@ -263,6 +263,7 @@ describe("SyncManager", () => {
         rating: 100,
         musicFilename: "md5hash2.wav",
         artworkFilename: "artwork1",
+        addedDate: 1783082096,
         playlistIds: ["p3", "p4"],
       })
     );
@@ -294,6 +295,7 @@ describe("SyncManager", () => {
       rating: 80,
       musicFilename: "md5hash1.mp3",
       artworkFilename: null,
+      addedDate: 0,
       playlistIds: ["p1", "p2"],
     });
     expect(library().putTrack).toHaveBeenCalledWith({
@@ -317,6 +319,7 @@ describe("SyncManager", () => {
       rating: 100,
       musicFilename: "md5hash2.wav",
       artworkFilename: "artwork1",
+      addedDate: 1783082096,
       playlistIds: ["p3", "p4"],
     });
   });

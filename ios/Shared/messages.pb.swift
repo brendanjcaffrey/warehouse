@@ -208,7 +208,16 @@ struct Track: @unchecked Sendable {
     set {_uniqueStorage()._rating = newValue}
   }
 
-  /// skip 16-18
+  var addedDate: Int64 {
+    get {_storage._addedDate ?? 0}
+    set {_uniqueStorage()._addedDate = newValue}
+  }
+  /// Returns true if `addedDate` has been explicitly set.
+  var hasAddedDate: Bool {_storage._addedDate != nil}
+  /// Clears the value of `addedDate`. Subsequent reads from it will return its default value.
+  mutating func clearAddedDate() {_uniqueStorage()._addedDate = nil}
+
+  /// skip 17-18
   var artworkFilename: String {
     get {_storage._artworkFilename}
     set {_uniqueStorage()._artworkFilename = newValue}
@@ -857,7 +866,7 @@ extension SortName: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationB
 
 extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = "Track"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}sortName\0\u{1}artistId\0\u{1}albumArtistId\0\u{1}albumId\0\u{1}genreId\0\u{1}year\0\u{1}duration\0\u{1}start\0\u{1}finish\0\u{1}trackNumber\0\u{1}discNumber\0\u{1}playCount\0\u{1}rating\0\u{2}\u{4}artworkFilename\0\u{1}playlistIds\0\u{1}musicFilename\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}sortName\0\u{1}artistId\0\u{1}albumArtistId\0\u{1}albumId\0\u{1}genreId\0\u{1}year\0\u{1}duration\0\u{1}start\0\u{1}finish\0\u{1}trackNumber\0\u{1}discNumber\0\u{1}playCount\0\u{1}rating\0\u{1}addedDate\0\u{2}\u{3}artworkFilename\0\u{1}playlistIds\0\u{1}musicFilename\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -875,6 +884,7 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
     var _discNumber: UInt32 = 0
     var _playCount: UInt64 = 0
     var _rating: Int32 = 0
+    var _addedDate: Int64? = nil
     var _artworkFilename: String = String()
     var _playlistIds: [String] = []
     var _musicFilename: String = String()
@@ -903,6 +913,7 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
       _discNumber = source._discNumber
       _playCount = source._playCount
       _rating = source._rating
+      _addedDate = source._addedDate
       _artworkFilename = source._artworkFilename
       _playlistIds = source._playlistIds
       _musicFilename = source._musicFilename
@@ -939,6 +950,7 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
         case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._discNumber) }()
         case 14: try { try decoder.decodeSingularUInt64Field(value: &_storage._playCount) }()
         case 15: try { try decoder.decodeSingularInt32Field(value: &_storage._rating) }()
+        case 16: try { try decoder.decodeSingularInt64Field(value: &_storage._addedDate) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._artworkFilename) }()
         case 20: try { try decoder.decodeRepeatedStringField(value: &_storage._playlistIds) }()
         case 21: try { try decoder.decodeSingularStringField(value: &_storage._musicFilename) }()
@@ -950,6 +962,10 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
       if !_storage._id.isEmpty {
         try visitor.visitSingularStringField(value: _storage._id, fieldNumber: 1)
       }
@@ -995,6 +1011,9 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
       if _storage._rating != 0 {
         try visitor.visitSingularInt32Field(value: _storage._rating, fieldNumber: 15)
       }
+      try { if let v = _storage._addedDate {
+        try visitor.visitSingularInt64Field(value: v, fieldNumber: 16)
+      } }()
       if !_storage._artworkFilename.isEmpty {
         try visitor.visitSingularStringField(value: _storage._artworkFilename, fieldNumber: 19)
       }
@@ -1028,6 +1047,7 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
         if _storage._discNumber != rhs_storage._discNumber {return false}
         if _storage._playCount != rhs_storage._playCount {return false}
         if _storage._rating != rhs_storage._rating {return false}
+        if _storage._addedDate != rhs_storage._addedDate {return false}
         if _storage._artworkFilename != rhs_storage._artworkFilename {return false}
         if _storage._playlistIds != rhs_storage._playlistIds {return false}
         if _storage._musicFilename != rhs_storage._musicFilename {return false}

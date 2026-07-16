@@ -68,7 +68,7 @@ class Library {
 
     var totalTrackFileSize: Int64 = 0
     var totalArtworkFileSize: Int64 = 0
-    
+
     let musicDirURL: URL
     var oldMusicFiles: Set<String> = []
     var newMusicFiles: Set<String> = []
@@ -335,7 +335,7 @@ class Library {
                 id: persistentId, name: title, sortName: sortTitle, artistId: artistId, albumArtistId: albumArtistId,
                 albumId: albumId, genreId: genreId, year: item.year, duration: totalTime, start: startTime, finish: finishTime,
                 trackNumber: item.trackNumber, discNumber: item.album.discNumber, playCount: item.playCount, rating: rating,
-                musicFilename: musicFilename, artworkFilename: artworkFilename
+                musicFilename: musicFilename, artworkFilename: artworkFilename, addedDate: item.addedDate
             ))
             trackIds.insert(persistentId)
 

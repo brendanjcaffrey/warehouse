@@ -145,7 +145,7 @@ struct SongsView: View {
                 }
             }
             .listStyle(.plain)
-            .listSectionIndexVisibility(sort == .playlistOrder ? .hidden : .visible)
+            .listSectionIndexVisibility(sort.isFlat ? .hidden : .visible)
             .searchable(text: $search, prompt: "Search")
             .background(ListScrollerAnchor(scroller: listScroller))
             .onChange(of: sections) {
