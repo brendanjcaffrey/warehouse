@@ -25,6 +25,7 @@ import { playingAtom } from "./State";
 
 const ACTIVE_COLOR = "var(--bs-body-color)";
 const DISABLED_COLOR = "var(--bs-secondary-color)";
+const TOGGLE_ON_COLOR = "var(--bs-primary)";
 
 function Controls() {
   const isSmallScreen = useBreakpoint("lg", "down");
@@ -82,7 +83,10 @@ function Controls() {
         overlay={<Tooltip>{shuffle ? "Shuffle On" : "Shuffle Off"}</Tooltip>}
       >
         <IconButton onClick={toggleShuffle}>
-          <Shuffle size={26} color={shuffle ? ACTIVE_COLOR : DISABLED_COLOR} />
+          <Shuffle
+            size={26}
+            color={shuffle ? TOGGLE_ON_COLOR : DISABLED_COLOR}
+          />
         </IconButton>
       </OverlayTrigger>
       <OverlayTrigger
@@ -92,7 +96,7 @@ function Controls() {
         <IconButton onClick={toggleRepeat}>
           <RepeatIcon
             size={26}
-            color={repeatActive ? ACTIVE_COLOR : DISABLED_COLOR}
+            color={repeatActive ? TOGGLE_ON_COLOR : DISABLED_COLOR}
           />
         </IconButton>
       </OverlayTrigger>
