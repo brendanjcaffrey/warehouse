@@ -54,7 +54,7 @@ Sinatra serves the built web app and streams the music & artwork files directly
 
 It listens on the port from the `local:` block (20601), so open
 `http://<machine>:20601`. To reach it from other devices, expose it over
-Tailscale (see [Syncing the Apple Watch](#syncing-the-apple-watch)).
+Tailscale (see [The Apple Watch and Tailscale Funnel](#the-apple-watch-and-tailscale-funnel)).
 
 ### Remote
 
@@ -184,38 +184,27 @@ rsync --archive --compress --itemize-changes --delete-during --copy-links \
   ./music/ <server>:~/warehouse/music/
 ```
 
-## Syncing the Apple Watch
+## The Apple Watch and Tailscale Funnel
 
-The watch app downloads music & artwork straight from the server over wifi.
-To keep the number of network requests down, the watch registers a bundle of
-the files it's missing (up to 50 music files or 1000 artwork files at a time)
-with `POST /api/bundle`, and the server builds a tar it then downloads with a
-single background request. Only one transfer is in flight at a time, and the
-chain keeps advancing while the app is suspended (background URLSession), so
-big libraries sync overnight — faster with the watch on its charger.
+The watch app downloads music & artwork straight from the server. watchOS can't
+join a tailnet — there's no third-party NetworkExtension on watchOS, and Go can't
+target it either — so when the server is only reachable over Tailscale the watch
+needs a public ingress. That ingress is
+[Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel).
 
-watchOS can't join a tailnet (there's no VPN support and Go can't target
-watchOS), so when the server is only reachable over Tailscale, temporarily
-expose it with [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel)
-while syncing:
-
-- The nginx config has a second, plain-http listener on `127.0.0.1:20601`
-  for Funnel to proxy to. Funnel can only target a localhost TCP port — it
-  can't talk to Puma's unix socket, and pointing it at Puma directly would
-  break downloads anyway, since `/music/`, `/artwork/` & `/bundle/` responses
-  are empty `X-Accel-Redirect` replies that only nginx knows how to fulfill.
-- On the server, run `rake server:funnel` while syncing (it runs
-  `tailscale funnel --https=443 20601`; ctrl-c to stop). Funnel terminates
-  TLS on the public port 443 and forwards plain http to nginx on 20601.
-- In the iOS app, set the watch sync URL under Settings → Playlists to Sync
-  to `https://<machine>.<tailnet>.ts.net`. That connects on the public Funnel
-  port 443 (the https default, so no port suffix) — **not** nginx's internal
-  `20601`, which is never exposed publicly. Leave it blank if the watch can
-  reach the same server URL the phone uses.
-
-Every `/api/`, `/music/`, `/artwork/` & `/bundle/` route requires a valid JWT,
-so while the funnel is up the unauthenticated surface is just the login
-endpoint and the web app's static files.
+- `rake server:funnel` starts it in the background (`tailscale funnel --bg --https=443 20601`)
+  and prints the resulting funnel status; `rake server:unfunnel` takes it back down.
+  Funnel terminates TLS on the public port 443 and forwards plain http to nginx on 20601.
+- The nginx config has a second, plain-http listener on `127.0.0.1:20601` for
+  Funnel to proxy to. Funnel can only target a localhost TCP port — it can't talk
+  to Puma's unix socket, and pointing it at Puma directly would break downloads
+  anyway, since `/music/` & `/artwork/` responses are empty
+  `X-Accel-Redirect` replies that only nginx knows how to fulfill.
+- In the iOS app, set the watch sync URL under Settings → Playlists to Sync to
+  `https://<machine>.<tailnet>.ts.net`. That connects on the public Funnel port
+  443 (the https default, so no port suffix) — **not** nginx's internal `20601`,
+  which is never exposed publicly. Leave it blank if the watch can reach the same
+  server URL the phone uses.
 
 ## Development
 

@@ -3,6 +3,40 @@ upstream puma_server {
     server unix:/tmp/warehouse.sock fail_timeout=0;
 }
 
+# the funnel listener is public, so it gets limits the tailnet listener does not. tailscale
+# does not forward the client's public ip to the backend (tailscale/tailscale#12972), so every
+# funnel request arrives from 127.0.0.1 and per-client limiting is impossible. these zones key
+# on the listening port instead: nginx does not count a request whose key is empty, so the
+# tailnet listener is exempt and all funnel traffic shares one global bucket.
+map $server_port $funnel {
+    default '';
+    20601   'funnel';
+}
+
+# funnel terminates tls on the public 443 and forwards plain http, so $scheme lies there.
+map $funnel $forwarded_proto {
+    default $scheme;
+    'funnel' 'https';
+}
+
+# every authed route wants `Authorization: Bearer <jwt>`; requests without one can be turned
+# away at nginx instead of waking puma. only POST /api/auth is exempt (it is the login).
+map $http_authorization $bearer {
+    default          0;
+    '~*^Bearer\s+\S+' 1;
+}
+
+map $funnel$bearer $funnel_unauthed {
+    default   0;
+    'funnel0' 1;
+}
+
+limit_req_zone  $funnel zone=funnel_req:1m  rate=10r/s;
+limit_req_zone  $funnel zone=funnel_auth:1m rate=5r/m;
+limit_conn_zone $funnel zone=funnel_conn:1m;
+limit_req_status  429;
+limit_conn_status 429;
+
 server {
     server_name         [DOMAIN NAME HERE];
     ssl_certificate     /path/to/ssl.crt;
@@ -13,70 +47,84 @@ server {
     # if you run `ifconfig` and look for the tailscale interface, you can see the IP address of your
     # machine on the tailscale network. use that IP address in place of 100.xxx.yyy.zzz below.
     listen 100.xxx.yyy.zzz:20600 ssl;
-    # if you need to access the server publicly, use `rake server:funnel` to forward this port to the
-    # public internet. it's strongly recommended to only do this temporarily, for example to sync
-    # your music library to the apple watch app (which does not support tailscale), rather than
-    # having the app publicly available always.
-    # this is a plain-http listener (no `ssl`): funnel terminates tls on the public port 443 and
-    # forwards plain http here. keep it on a dedicated port like 20601 so it can't collide with any
-    # real https-on-443 server block on the box.
+    # the apple watch cannot join the tailnet, so `rake server:funnel` runs a permanent tailscale
+    # funnel that forwards the public https port to this plain-http listener (no `ssl`: funnel
+    # terminates tls itself). keep it on a dedicated port like 20601 so it can't collide with any
+    # real https-on-443 server block on the box, and so the limits above can tell the two apart.
+    # funnel must point here rather than at puma's unix socket, because /music/ and /artwork/
+    # responses are empty X-Accel-Redirect replies that only nginx can fulfil.
     listen 127.0.0.1:20601;
-    client_max_body_size 1G;
+
+    server_tokens off;
+    add_header X-Content-Type-Options nosniff always;
+
+    # the funnel hostname is effectively public and the bearer token is the only gate, so cap
+    # what any one caller can spend. the burst covers a screenful of artwork fetches.
+    limit_req  zone=funnel_req burst=30 nodelay;
+    limit_conn funnel_conn 12;
+
+    # only artwork uploads need a large body, and those come from the export driver on the
+    # tailnet. everything else is a small protobuf.
+    client_max_body_size 1m;
     keepalive_timeout 5;
 
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    proxy_set_header Host $http_host;
+    proxy_redirect off;
+    proxy_max_temp_file_size 0;
+    proxy_read_timeout 600;
+    proxy_send_timeout 600;
+    proxy_buffering off;
+
     location ^~ /api/ {
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $http_host;
-        proxy_redirect off;
+        if ($funnel_unauthed) { return 401; }
         proxy_pass http://puma_server;
-        proxy_max_temp_file_size 0;
-        proxy_read_timeout 600;
-        proxy_send_timeout 600;
-        proxy_buffering off;
+    }
+
+    # login is the only route reachable without a token, so it is the brute-force target. the
+    # server-level limit has to be repeated because limit_req is not inherited once this level
+    # declares one of its own.
+    location = /api/auth {
+        limit_req zone=funnel_req  burst=30 nodelay;
+        limit_req zone=funnel_auth burst=5  nodelay;
+        proxy_pass http://puma_server;
+    }
+
+    # artwork uploads come from the export driver over the tailnet, never from a client.
+    location = /api/artwork {
+        if ($funnel) { return 403; }
+        client_max_body_size 1G;
+        proxy_pass http://puma_server;
     }
 
     location ^~ /music/ {
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $http_host;
-        proxy_redirect off;
+        if ($funnel_unauthed) { return 401; }
+        limit_except GET { deny all; }
         proxy_pass http://puma_server;
-        proxy_max_temp_file_size 0;
-        proxy_read_timeout 600;
-        proxy_send_timeout 600;
-        proxy_buffering off;
     }
 
     location ^~ /artwork/ {
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $http_host;
-        proxy_redirect off;
+        if ($funnel_unauthed) { return 401; }
+        limit_except GET { deny all; }
         proxy_pass http://puma_server;
-        proxy_max_temp_file_size 0;
-        proxy_read_timeout 600;
-        proxy_send_timeout 600;
-        proxy_buffering off;
     }
 
     location ^~ /bundle/ {
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $http_host;
-        proxy_redirect off;
+        if ($funnel_unauthed) { return 401; }
+        limit_except GET { deny all; }
         proxy_pass http://puma_server;
-        proxy_max_temp_file_size 0;
-        proxy_read_timeout 600;
-        proxy_send_timeout 600;
-        proxy_buffering off;
     }
 
+    # the web app is only served on the tailnet. the watch never loads it, and there is no
+    # reason to publish the spa shell on the funnel hostname.
     location = / {
+        if ($funnel) { return 404; }
         try_files /index.html =404;
     }
 
     location / {
+        if ($funnel) { return 404; }
         try_files $uri =404;
     }
 
