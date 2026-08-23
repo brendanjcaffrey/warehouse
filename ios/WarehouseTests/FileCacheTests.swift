@@ -245,12 +245,12 @@ struct FileCacheTests {
         #expect(small.artwork == 16_000_000)
 
         let middling = FileCacheBudget.forSpace(8_000_000_000)
-        #expect(middling.music == 2_000_000_000) // a quarter of the space
-        #expect(middling.artwork == 128_000_000) // a fiftieth would be over the cap
+        #expect(middling.music == 4_000_000_000) // half the space
+        #expect(middling.artwork == 400_000_000) // a twentieth, under the cap
 
         let huge = FileCacheBudget.forSpace(1_000_000_000_000)
-        #expect(huge.music == 4_000_000_000) // capped
-        #expect(huge.artwork == 128_000_000)
+        #expect(huge.music == 16_000_000_000) // capped
+        #expect(huge.artwork == 1_000_000_000)
     }
 
     @Test("the budget is offered what the cache already holds, not just free space")

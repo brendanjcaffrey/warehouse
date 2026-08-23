@@ -20,14 +20,14 @@ struct FileCacheBudget: Equatable, Sendable {
         forSpace((FileStore.deviceStorage()?.availableBytes ?? 0) + heldBytes)
     }
 
-    /// a quarter of the space for music, floored so a nearly full disk still
-    /// caches a few tracks & capped so a roomy one isn't handed over whole.
-    /// artwork is small and hot, so it gets its own slice rather than
-    /// competing with tracks hundreds of times its size
+    /// half the space for music, floored so a nearly full disk still caches a
+    /// few tracks & capped so a roomy one isn't handed over whole. artwork is
+    /// small and hot, so it gets its own slice rather than competing with
+    /// tracks hundreds of times its size
     static func forSpace(_ bytes: Int64) -> FileCacheBudget {
         FileCacheBudget(
-            music: clamp(bytes / 4, low: 256_000_000, high: 4_000_000_000),
-            artwork: clamp(bytes / 50, low: 16_000_000, high: 128_000_000))
+            music: clamp(bytes / 2, low: 256_000_000, high: 16_000_000_000),
+            artwork: clamp(bytes / 20, low: 16_000_000, high: 1_000_000_000))
     }
 
     private static func clamp(_ value: Int64, low: Int64, high: Int64) -> Int64 {
