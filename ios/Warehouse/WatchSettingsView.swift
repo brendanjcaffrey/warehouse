@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// picks which playlists the watch app syncs and optionally where it syncs from
+/// picks which playlists the watch's library is trimmed to, and the url it
+/// reaches the server on
 struct WatchSettingsView: View {
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(WatchSyncSettingsStore.self) private var settings
@@ -13,12 +14,14 @@ struct WatchSettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             } header: {
-                Text("Sync URL")
+                Text("Server URL")
             } footer: {
-                Text("Where the watch downloads music from, if it can't reach "
-                    + "the phone's server URL — e.g. a Tailscale Funnel URL. "
-                    + "Use the public Funnel port 443 (the https default, so no "
-                    + "port suffix), not nginx's internal 20601 port.")
+                Text("Where the watch reaches the server, for its library and "
+                    + "for tracks as they play. The watch can't join the tailnet, "
+                    + "so this needs to be a public URL — the Tailscale Funnel URL, "
+                    + "on the default HTTPS port 443 (no port suffix), not nginx's "
+                    + "internal 20601. Left blank, the watch uses the phone's server "
+                    + "URL, which only works if that's reachable off the tailnet.")
             }
             let sections = PlaylistListBuilder.watchSections(in: playlists.playlists)
             if sections.isEmpty {
@@ -33,7 +36,7 @@ struct WatchSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Watch Playlists")
+        .navigationTitle("Apple Watch")
         .task {
             await playlists.load()
         }

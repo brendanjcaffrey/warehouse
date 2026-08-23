@@ -2,44 +2,44 @@ import SwiftUI
 
 @main
 struct WarehouseWatchApp: App {
-    @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var appDelegate
-
+    @Environment(\.scenePhase) private var scenePhase
     @State private var settings: WatchSettingsStore
     @State private var sync: SyncStore
     @State private var songs: SongsStore
     @State private var playlists: PlaylistsStore
     @State private var player: PlayerStore
-    @State private var activity: SyncActivityLog
 
     private let phone: WatchPhoneSession
     private let plays: PlayReportQueue
+    private let artwork: WatchArtworkFetcher
 
     init() {
         let database = LibraryDatabase()
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         let settings = WatchSettingsStore()
-        // built before the log so arrivals can be named as tracks, and owned
-        // for the life of the app so the feed outlives any one sync
         let songs = SongsStore(database: database, fileStore: fileStore)
-        let activity = SyncActivityLog(describe: { songs.describe($0) })
         let phone = WatchPhoneSession(settings: settings)
-        // files arrive from the server as tar bundles on a background url
-        // session, so the chain keeps advancing while the app is suspended
-        let downloader = WatchBundleDownloader.shared
-        downloader.configure(activity: activity) {
+        let credentials: @Sendable () -> (token: String, baseURL: URL)? = {
             guard let token = settings.token, let baseURL = settings.baseURL() else { return nil }
             return (token: token, baseURL: baseURL)
         }
+        // what the watch keeps is a bounded cache, not a mirror: files arrive
+        // on demand & the least recently used are evicted once over budget.
+        // one instance shared by everything that touches those files, so the
+        // in-use set the player writes is honoured by every eviction pass
+        let fileCache = FileCache(fileStore: fileStore)
+        // music & artwork aren't synced, so the player & the rows pull them as
+        // they need them
+        let artwork = WatchArtworkFetcher(fileCache: fileCache, credentials: credentials)
+        // the library still syncs; the files it references do not
         let syncStore = SyncStore(
-            database: database, fileStore: fileStore, fileDownloader: downloader)
+            database: database, fileStore: fileStore, transfersFiles: false)
         // the library is trimmed server-side to the playlists chosen on the phone
         syncStore.syncedPlaylistIds = { settings.playlistIds }
-        syncStore.onLibraryReceived = { activity.receivedLibrary() }
         _settings = State(initialValue: settings)
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: songs)
         _playlists = State(initialValue: PlaylistsStore(database: database))
-        _activity = State(initialValue: activity)
         // finished plays queue here & ride the connectivity session back to
         // the phone, which pushes them to the server
         let plays = PlayReportQueue(
@@ -48,13 +48,26 @@ struct WarehouseWatchApp: App {
             send: { phone.send($0) })
         phone.onActivated = { plays.drain() }
         _player = State(initialValue: PlayerStore(
-            fileStore: fileStore, onTrackPlayed: { plays.add(trackId: $0) }))
+            fileStore: fileStore,
+            fileCache: fileCache,
+            fetchArtwork: { await artwork.fetch($0, priority: .nowPlaying) },
+            onTrackPlayed: { plays.add(trackId: $0) }))
         self.phone = phone
         self.plays = plays
+        self.artwork = artwork
 
         // activate in init rather than the scene: the phone's settings pushes
-        // can launch the app in the background & the delegate must be in place
+        // can launch the app in the background & the session delegate must be
+        // in place before the scene builds
         phone.activate()
+
+        // one pass at launch, off the critical path: it is what collects the
+        // mirror sync's leftovers on an upgraded watch — the index has never
+        // seen those files, so they sort ahead of anything played — and it is
+        // the only pass a session that plays nothing but cached tracks and
+        // browses nothing new ever gets. nothing is playing yet, so the empty
+        // in-use set costs nothing here
+        Task { @MainActor in fileCache.evict() }
     }
 
     var body: some Scene {
@@ -65,7 +78,16 @@ struct WarehouseWatchApp: App {
                 .environment(songs)
                 .environment(playlists)
                 .environment(player)
-                .environment(activity)
+                .environment(\.artworkFetcher, artwork)
+                .onChange(of: scenePhase) {
+                    // the prefetch gets its one shot as a track starts, which
+                    // is when the wrist is dropping & watchos starts throttling
+                    // the transfer; coming back to the foreground is the chance
+                    // to fill a miss before the next track needs it
+                    if scenePhase == .active && player.isPlaying {
+                        player.prefetchNext()
+                    }
+                }
         }
     }
 }

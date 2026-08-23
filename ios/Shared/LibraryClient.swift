@@ -58,23 +58,27 @@ struct LibraryClient: Sendable {
         }
     }
 
-    /// GET /music/<filename> or /artwork/<filename>
-    func fetchFile(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async throws -> Data {
+    /// GET /music/<filename> or /artwork/<filename>, streamed straight to a
+    /// temporary file so a track never has to fit in memory whole. the caller
+    /// owns the returned url and must move or delete it
+    func downloadFile(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async throws -> URL {
         let url = baseURL.appendingPathComponent(type.directory).appendingPathComponent(filename)
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await session.data(for: request)
+        let (temporaryURL, response) = try await session.download(for: request)
         if let http = response as? HTTPURLResponse {
             guard http.statusCode == 200 else {
+                try? FileManager.default.removeItem(at: temporaryURL)
                 throw FileError.badStatus(http.statusCode)
             }
             // the server redirects to the web app on auth failures, don't save that as a file
             if http.mimeType == "text/html" {
+                try? FileManager.default.removeItem(at: temporaryURL)
                 throw FileError.notAFile
             }
         }
-        return data
+        return temporaryURL
     }
 
     private func get(path: String, token: String, baseURL: URL) async throws -> Data {

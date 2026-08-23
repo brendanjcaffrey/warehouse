@@ -9,7 +9,6 @@ require 'sinatra/namespace'
 require_relative '../update/database'
 require_relative '../shared/messages_pb'
 require_relative '../shared/jwt'
-require_relative 'bundles'
 require_relative 'helpers'
 require_relative 'errors'
 require_relative 'sql'
@@ -105,25 +104,6 @@ class Server < Sinatra::Base
         headers['Content-Type'] = IMAGE_MIME_TYPES[file.split('.').last]
       else
         send_file(full_path)
-      end
-    else
-      redirect to('/')
-    end
-  end
-
-  get '/bundle/:id' do
-    if authed?
-      id = params[:id]
-      valid_id = id.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
-      full_path = File.join(Config.env.bundles_path, "#{id}.tar")
-      raise Sinatra::NotFound unless valid_id && File.exist?(full_path)
-
-      if Config.remote?
-        headers['X-Accel-Redirect'] = "/accel/bundles/#{id}.tar"
-        headers['Content-Type'] = 'application/x-tar'
-        ''
-      else
-        send_file(full_path, type: :tar)
       end
     else
       redirect to('/')
@@ -256,42 +236,6 @@ class Server < Sinatra::Base
       end
 
       proto(LibraryResponse.new(library: build_library(username, playlist_ids: req.playlistIds.to_a)))
-    end
-
-    post '/bundle' do
-      return proto(BundleResponse.new(error: NOT_AUTHED_ERROR)) unless authed?
-
-      begin
-        req = BundleRequest.decode(request.body.read)
-      rescue Google::Protobuf::ParseError
-        return proto(BundleResponse.new(error: INVALID_REQUEST_ERROR))
-      end
-
-      music = req.type == :MUSIC
-      type = music ? :music : :artwork
-      filenames = req.filenames.to_a
-      return proto(BundleResponse.new(error: INVALID_REQUEST_ERROR)) if filenames.empty?
-      return proto(BundleResponse.new(error: BUNDLE_TOO_LARGE_ERROR)) if filenames.size > Bundles::CAPS[type]
-
-      mime_types = music ? AUDIO_MIME_TYPES : IMAGE_MIME_TYPES
-      valid_names = filenames.all? do |filename|
-        !filename.include?('/') && mime_types.key?(File.extname(filename).delete('.').downcase)
-      end
-      return proto(BundleResponse.new(error: INVALID_FILENAME_ERROR)) unless valid_names
-
-      # a filename the database doesn't know about means the client's library
-      # is stale; reject the whole request so it refetches instead of retrying
-      sql = music ? MATCHING_MUSIC_FILENAMES_SQL : MATCHING_ARTWORK_FILENAMES_SQL
-      encoded = PG::TextEncoder::Array.new.encode(filenames)
-      known = query(sql, [encoded]).flat_map(&:values).to_set
-      return proto(BundleResponse.new(error: INVALID_FILENAME_ERROR)) unless filenames.all? { |filename| known.include?(filename) }
-
-      source_path = music ? Config.env.music_path : Config.env.artwork_path
-      all_exist = filenames.all? { |filename| File.exist?(File.join(source_path, filename)) }
-      return proto(BundleResponse.new(error: MISSING_FILE_ERROR)) unless all_exist
-
-      uuid = Bundles.create(type: type, filenames: filenames, source_path: source_path, bundles_path: Config.env.bundles_path)
-      proto(BundleResponse.new(id: uuid))
     end
 
     get '/updates' do

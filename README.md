@@ -200,11 +200,12 @@ needs a public ingress. That ingress is
   to Puma's unix socket, and pointing it at Puma directly would break downloads
   anyway, since `/music/` & `/artwork/` responses are empty
   `X-Accel-Redirect` replies that only nginx knows how to fulfill.
-- In the iOS app, set the watch sync URL under Settings → Playlists to Sync to
-  `https://<machine>.<tailnet>.ts.net`. That connects on the public Funnel port
-  443 (the https default, so no port suffix) — **not** nginx's internal `20601`,
-  which is never exposed publicly. Leave it blank if the watch can reach the same
-  server URL the phone uses.
+- In the iOS app, set the watch's server URL under Settings → Playlists & Server
+  URL to `https://<machine>.<tailnet>.ts.net`. That connects on the public Funnel
+  port 443 (the https default, so no port suffix) — **not** nginx's internal
+  `20601`, which is never exposed publicly. Leave it blank only if the watch can
+  reach the same server URL the phone uses, which it can't when that's a tailnet
+  address.
 
 ## Development
 

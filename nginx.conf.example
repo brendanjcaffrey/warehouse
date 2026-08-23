@@ -77,17 +77,34 @@ server {
     proxy_send_timeout 600;
     proxy_buffering off;
 
-    location ^~ /api/ {
+    # login is the only route reachable without a token, so it is the brute-force target, and
+    # the watch never logs in -- it gets its token from the phone over watchconnectivity -- so
+    # the funnel has no reason to publish it at all. the server-level limit has to be repeated
+    # because limit_req is not inherited once this level declares one of its own.
+    location = /api/auth {
+        if ($funnel) { return 404; }
+        limit_req zone=funnel_req  burst=30 nodelay;
+        limit_req zone=funnel_auth burst=5  nodelay;
+        proxy_pass http://puma_server;
+    }
+
+    # the only two api routes the watch calls (ios/Shared/LibraryClient.swift). an exact match
+    # wins over the ^~ prefix below, so these stay reachable on the funnel with a bearer token.
+    location = /api/version {
         if ($funnel_unauthed) { return 401; }
         proxy_pass http://puma_server;
     }
 
-    # login is the only route reachable without a token, so it is the brute-force target. the
-    # server-level limit has to be repeated because limit_req is not inherited once this level
-    # declares one of its own.
-    location = /api/auth {
-        limit_req zone=funnel_req  burst=30 nodelay;
-        limit_req zone=funnel_auth burst=5  nodelay;
+    location = /api/library {
+        if ($funnel_unauthed) { return 401; }
+        proxy_pass http://puma_server;
+    }
+
+    # everything else under /api/ is a phone & web write (updates, track edits, plays) that the
+    # watch never makes, so a leaked watch token should not reach any of it from the public
+    # hostname. 404 rather than 403 to match what / and the spa shell already do on the funnel.
+    location ^~ /api/ {
+        if ($funnel) { return 404; }
         proxy_pass http://puma_server;
     }
 
@@ -105,12 +122,6 @@ server {
     }
 
     location ^~ /artwork/ {
-        if ($funnel_unauthed) { return 401; }
-        limit_except GET { deny all; }
-        proxy_pass http://puma_server;
-    }
-
-    location ^~ /bundle/ {
         if ($funnel_unauthed) { return 401; }
         limit_except GET { deny all; }
         proxy_pass http://puma_server;
@@ -135,11 +146,6 @@ server {
 
     location ^~ /accel/artwork/ {
         alias /home/user/warehouse/artwork/;
-        internal;
-    }
-
-    location ^~ /accel/bundles/ {
-        alias /home/user/warehouse/bundles/;
         internal;
     }
 }

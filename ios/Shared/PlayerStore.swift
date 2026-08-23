@@ -39,19 +39,42 @@ enum RepeatMode: Sendable {
     }
 }
 
+/// what the player is doing with the current track beyond playing or paused.
+/// the watch fetches tracks on demand, so a tap can mean "downloading" or
+/// "not here and no way to get it" rather than an instant start
+enum PlaybackStatus: Equatable, Sendable {
+    case ready
+    /// the file isn't on disk yet & is being fetched before playback starts
+    case fetching
+    /// not on disk & the server can't be reached, so there's nothing to play
+    case unavailable
+}
+
 @MainActor
 @Observable
 final class PlayerStore {
     private(set) var queue = PlayQueue(songs: [])
     private(set) var isPlaying = false
     private(set) var repeatMode: RepeatMode = .off
+    private(set) var status: PlaybackStatus = .ready
     private(set) var window = PlaybackWindow()
     /// the playhead position within the file, not the window
     private(set) var currentTime: TimeInterval = 0
 
     var song: Song? { queue.current?.song }
+    /// whether a track is loaded & playable right now. exposed for the tests:
+    /// an unavailable track has to leave nothing behind of the previous one,
+    /// & the player's item is the only place that shows
+    var hasLoadedTrack: Bool { player.currentItem != nil }
 
     private let fileStore: FileStore
+    /// the watch bounds what it keeps & passes one in; the phone mirrors the
+    /// whole library, so there is nothing to evict and it leaves this nil
+    private let fileCache: FileCache?
+    /// pulls an artwork file that isn't on disk, for the now playing info. the
+    /// watch fetches artwork on demand & wires this to its fetcher; the phone
+    /// mirrors the library and leaves it nil
+    private let fetchArtwork: (@MainActor (String) async -> Bool)?
     /// called with the track id when a track plays through to its finish; the
     /// phone records a play to push back into itunes, the watch leaves it nil
     private let onTrackPlayed: (@MainActor (String) -> Void)?
@@ -78,14 +101,47 @@ final class PlayerStore {
     /// bumped every time a new track starts, so a download that finishes after
     /// the user has moved on doesn't hijack playback
     private var startGeneration = 0
+    /// the fetch running ahead of the current track, kept by name so starting
+    /// that very track can join it instead of racing a second download of the
+    /// same file
+    private var prefetch: (filename: String, task: Task<Bool, Never>)?
+    /// the second attempt at a prefetch that missed, waiting out the rest of
+    /// its delay
+    private var prefetchRetry: Task<Void, Never>?
+    /// whether this track has already spent its one prefetch retry, so a miss
+    /// on a dead link can't turn into a loop
+    private var prefetchRetried = false
+    /// the now playing artwork being fetched for the current track, cancelled
+    /// when another track starts
+    private var artworkFetch: Task<Void, Never>?
+    /// how long a failed fetch waits before its one retry
+    private let retryDelay: TimeInterval
+    /// how far into the track a missed prefetch waits before trying again;
+    /// long enough to be a different moment on the network, short enough to
+    /// still land before the track it's for
+    private let prefetchRetryDelay: TimeInterval
+    /// tracks that couldn't be fetched since the last one that started; past
+    /// the limit the network is plainly gone & skipping on through the queue
+    /// at a request timeout apiece is worse than stopping
+    private var consecutiveFailures = 0
+    private static let failureLimit = 3
 
+    // the retry delay parameters are here for tests
     init(
         fileStore: FileStore,
         client: LibraryClient = LibraryClient(),
-        onTrackPlayed: (@MainActor (String) -> Void)? = nil
+        fileCache: FileCache? = nil,
+        fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
+        onTrackPlayed: (@MainActor (String) -> Void)? = nil,
+        retryDelay: TimeInterval = 1,
+        prefetchRetryDelay: TimeInterval = 30
     ) {
         self.fileStore = fileStore
+        self.fileCache = fileCache
+        self.fetchArtwork = fetchArtwork
         self.onTrackPlayed = onTrackPlayed
+        self.retryDelay = retryDelay
+        self.prefetchRetryDelay = prefetchRetryDelay
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
         observeAudioSession()
     }
@@ -105,6 +161,9 @@ final class PlayerStore {
 
     private func start(_ newQueue: PlayQueue, repeating mode: RepeatMode, token: String?, baseURL: URL?) {
         guard newQueue.current != nil else { return }
+        // a queue the user just picked starts with a clean slate; whatever the
+        // last one couldn't fetch shouldn't count against it
+        consecutiveFailures = 0
         repeatMode = mode
         self.token = token
         self.baseURL = baseURL
@@ -121,12 +180,21 @@ final class PlayerStore {
         guard let song else { return }
         startGeneration += 1
         let generation = startGeneration
+        // the retry budget is per track start, not per session
+        prefetchRetried = false
 
         let isDownloaded = fileStore.exists(.music, song.musicFilename)
+        // a prefetch already running for this very track is the fetch we're
+        // about to need, so let it finish; anything else has been superseded
+        if prefetch?.filename != song.musicFilename {
+            cancelPrefetch()
+        }
+        // hold the file against eviction before anything else touches disk,
+        // and release the track we just moved off
+        refreshInUse()
         // without the file or a way to fetch it there's nothing to play
         guard isDownloaded || (token != nil && baseURL != nil) else {
-            player.pause()
-            isPlaying = false
+            markUnavailable()
             return
         }
 
@@ -137,6 +205,9 @@ final class PlayerStore {
         currentTime = window.start
         ignoresFinish = false
         isPlaying = true
+        // isPlaying goes up optimistically, so an uncached track on a slow
+        // link needs this to tell the ui it's downloading, not stuck
+        status = isDownloaded ? .ready : .fetching
         setNowPlayingInfo(for: song)
         updateNowPlayingPlaybackState()
 
@@ -148,27 +219,73 @@ final class PlayerStore {
             guard generation == startGeneration else { return }
             guard activated else {
                 isPlaying = false
+                status = .ready
                 updateNowPlayingPlaybackState()
                 return
             }
             if isDownloaded {
+                fileCache?.recordUse(.music, song.musicFilename)
                 beginPlayback(of: song)
             } else if let token, let baseURL {
-                let ok = await downloader.download(.music, filename: song.musicFilename, token: token, baseURL: baseURL)
+                let ok = await fetchMusic(
+                    song.musicFilename, token: token, baseURL: baseURL, generation: generation)
                 guard generation == startGeneration else { return }
                 if ok {
+                    fileCache?.recordUse(.music, song.musicFilename)
+                    // a fetch is the only thing that grows the cache on this
+                    // side, so it is where the budget gets checked; the
+                    // artwork fetcher runs a pass of its own for the browse
+                    // path, which the player never sees
+                    fileCache?.evict()
                     beginPlayback(of: song)
                 } else {
-                    isPlaying = false
-                    updateNowPlayingPlaybackState()
+                    handleFailedFetch()
                 }
             }
         }
     }
 
+    /// a track we couldn't get shouldn't end the session the way a scratched
+    /// track doesn't end the album, so move on to the next one instead
+    private func handleFailedFetch() {
+        // counted before the skip: this is what stops an offline queue from
+        // walking every one of its entries a request timeout at a time
+        consecutiveFailures += 1
+        // settle here once the network is plainly gone, & when the user paused
+        // during the download, since starting something else on their behalf
+        // isn't what pause means
+        guard consecutiveFailures < Self.failureLimit, isPlaying else {
+            markUnavailable()
+            return
+        }
+        // the same queue rules as the next button: repeat all wraps around,
+        // the end of a queue that doesn't repeat is the end
+        if queue.advance(wrapping: repeatMode == .all) {
+            startCurrent()
+        } else {
+            markUnavailable()
+        }
+    }
+
+    /// there is nothing playable for the current track, so drop the item the
+    /// last one left in the player: it is fully loaded & seekable, so a stray
+    /// play() would resume the wrong audio under this track's title, and its
+    /// finish would report a play for a track that never started
+    private func markUnavailable() {
+        player.pause()
+        removeEndObserver()
+        player.replaceCurrentItem(with: nil)
+        isPlaying = false
+        status = .unavailable
+        updateNowPlayingPlaybackState()
+    }
+
     /// swaps the downloaded file into the player and starts it, unless the user
     /// paused while it was still downloading
     private func beginPlayback(of song: Song) {
+        // something is playing again, so whatever was skipped to get here
+        // doesn't count toward giving up on the queue
+        consecutiveFailures = 0
         let item = AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename))
         observeEnd(of: item)
         observeTimeIfNeeded()
@@ -181,7 +298,124 @@ final class PlayerStore {
         if isPlaying {
             player.play()
         }
+        status = .ready
         updateNowPlayingPlaybackState()
+        // the gap between tracks is only hidden if the next one is already
+        // here, so start it now rather than when the current track ends
+        prefetchNext()
+    }
+
+    /// downloads a track, joining the prefetch already running for it rather
+    /// than racing a second download of the same file. a failure earns one
+    /// retry: the funnel is derp-relayed with fairness throttling, so one bad
+    /// hop says very little about the next
+    private func fetchMusic(
+        _ filename: String, token: String, baseURL: URL, generation: Int
+    ) async -> Bool {
+        if let prefetch, prefetch.filename == filename {
+            // a prefetch that fails clears itself, so the retry below goes out
+            // fresh rather than joining a finished task for the same answer
+            if await prefetch.task.value { return true }
+        } else if await downloader.download(.music, filename: filename, token: token, baseURL: baseURL) {
+            return true
+        }
+        // a moment between the attempts so a blip has a chance to clear
+        try? await Task.sleep(for: .seconds(retryDelay))
+        // the user moved on while we waited, so this track isn't wanted now
+        guard generation == startGeneration else { return false }
+        return await downloader.download(.music, filename: filename, token: token, baseURL: baseURL)
+    }
+
+    /// fetches the track after this one while the current one is playing.
+    /// failures are silent: the track falls back to being fetched when it's
+    /// actually reached & nothing about the playing track changes.
+    ///
+    /// safe to call at any point — the queue is re-read every time — so the
+    /// watch re-arms it when it comes back to the foreground, where transfers
+    /// aren't throttled, rather than living with the one shot it gets as a
+    /// track starts
+    func prefetchNext() {
+        let filename = nextPrefetchFilename
+        // whatever is outstanding is for a track that isn't next any more
+        if let prefetch, prefetch.filename != filename {
+            cancelPrefetch()
+        }
+        guard let filename, let token, let baseURL else { return }
+        // already here, or already on its way: restarting a transfer in flight
+        // would throw away its progress on exactly the slow link that makes
+        // prefetching worth doing
+        guard !fileStore.exists(.music, filename), prefetch == nil else { return }
+
+        let generation = startGeneration
+        prefetch = (filename, Task { @MainActor in
+            let ok = await downloader.download(.music, filename: filename, token: token, baseURL: baseURL)
+            guard !Task.isCancelled else { return ok }
+            guard ok else {
+                // a finished task hands the same answer to everything that
+                // joins it, so a failure left in place would answer for the
+                // retry and for the fetch when the track is reached
+                prefetch = nil
+                refreshInUse()
+                retryPrefetch(generation: generation)
+                return ok
+            }
+            guard generation == startGeneration else { return ok }
+            // deliberately no recordUse: it hasn't been played yet, and
+            // ranking it above the track actually playing would be a lie
+            fileCache?.evict()
+            return ok
+        })
+        refreshInUse()
+    }
+
+    /// the file the prefetch should be pointed at, or nil when there's nothing
+    /// worth pulling ahead of the current track
+    private var nextPrefetchFilename: String? {
+        // repeat one plays the same file again, which is already on disk
+        guard repeatMode != .one else { return nil }
+        return queue.next(wrapping: repeatMode == .all)?.song.musicFilename
+    }
+
+    /// the prefetch missed & the track that needs it is still minutes out, so
+    /// try once more rather than letting the next track arrive cold on a link
+    /// that is background-throttled by then. once per track, not a loop: the
+    /// fetch at the point of need has a retry of its own
+    private func retryPrefetch(generation: Int) {
+        guard !prefetchRetried else { return }
+        prefetchRetried = true
+        prefetchRetry = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(prefetchRetryDelay))
+            // the track moved on while we waited, or the user stopped it, so
+            // whatever is next now isn't wanted yet
+            guard !Task.isCancelled, generation == startGeneration, isPlaying else { return }
+            prefetchNext()
+        }
+    }
+
+    private func cancelPrefetch() {
+        prefetch?.task.cancel()
+        prefetch = nil
+        prefetchRetry?.cancel()
+        prefetchRetry = nil
+    }
+
+    /// the files eviction may not take: the track playing, the one being
+    /// fetched behind it, and the cover on screen. the now playing artwork is
+    /// read from disk lazily every time the system asks for it, so losing the
+    /// file mid-track blanks the cover that is already up
+    private func refreshInUse() {
+        guard let fileCache else { return }
+        var held: Set<String> = []
+        if let song {
+            held.insert(song.musicFilename)
+        }
+        if let prefetch {
+            held.insert(prefetch.filename)
+        }
+        fileCache.setInUse(.music, held)
+        // only the playing track's cover: nothing pulls artwork ahead, so a
+        // prefetched track has no artwork file on disk to protect
+        fileCache.setInUse(.artwork, song?.artworkFilename.map { [$0] } ?? [])
     }
 
     func togglePlayPause() {
@@ -201,6 +435,12 @@ final class PlayerStore {
 
     func resume() {
         guard song != nil, !isPlaying else { return }
+        // nothing is loaded to resume, only a fetch that didn't land, so tapping
+        // play means try again — the state has no other way to recover
+        guard status != .unavailable else {
+            startCurrent()
+            return
+        }
         // play again after the track ended restarts it
         if effectiveEnd > 0 && currentTime >= effectiveEnd {
             seek(to: window.start)
@@ -252,6 +492,9 @@ final class PlayerStore {
             play([song], token: token, baseURL: baseURL)
         } else {
             queue.playNext(song)
+            // the inserted track is the next one now, so whatever was being
+            // pulled ahead is a track further out
+            prefetchNext()
         }
     }
 
@@ -302,11 +545,16 @@ final class PlayerStore {
     func setRepeatMode(_ mode: RepeatMode) {
         repeatMode = mode
         updateRemoteCommandModes()
+        // the mode decides what comes next: repeat one has nothing to pull
+        // ahead, & repeat all makes the first track next at the end of a queue
+        prefetchNext()
     }
 
     /// reorders the upcoming tracks from the queue view
     func moveUpcoming(fromOffsets offsets: IndexSet, toOffset destination: Int) {
         queue.moveUpcoming(fromOffsets: offsets, toOffset: destination)
+        // the reorder may have put a different track next
+        prefetchNext()
     }
 
     func seek(to time: TimeInterval) {
@@ -507,14 +755,41 @@ final class PlayerStore {
 
     private func setNowPlayingInfo(for song: Song) {
         var info = Self.baseNowPlayingInfo(for: song, duration: window.duration)
-        if let filename = song.artworkFilename, fileStore.exists(.artwork, filename) {
-            let url = fileStore.fileURL(.artwork, filename)
-            let size = CGSize(width: 600, height: 600)
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: size) { _ in
-                UIImage(contentsOfFile: url.path) ?? UIImage()
+        artworkFetch?.cancel()
+        artworkFetch = nil
+        if let filename = song.artworkFilename {
+            if fileStore.exists(.artwork, filename) {
+                info[MPMediaItemPropertyArtwork] = artwork(filename)
+            } else if let fetchArtwork {
+                fetchNowPlayingArtwork(filename, using: fetchArtwork)
             }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func artwork(_ filename: String) -> MPMediaItemArtwork {
+        let url = fileStore.fileURL(.artwork, filename)
+        let size = CGSize(width: 600, height: 600)
+        return MPMediaItemArtwork(boundsSize: size) { _ in
+            UIImage(contentsOfFile: url.path) ?? UIImage()
+        }
+    }
+
+    /// the info above went up without artwork because the file isn't here yet,
+    /// so fetch it & fold it in, as long as the same track is still playing
+    private func fetchNowPlayingArtwork(
+        _ filename: String, using fetch: @escaping @MainActor (String) async -> Bool
+    ) {
+        let generation = startGeneration
+        artworkFetch = Task { @MainActor in
+            let downloaded = await fetch(filename)
+            guard downloaded, !Task.isCancelled, generation == startGeneration,
+                  song?.artworkFilename == filename,
+                  var info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+            else { return }
+            info[MPMediaItemPropertyArtwork] = artwork(filename)
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
     }
 
     private func updateNowPlayingPlaybackState() {
@@ -537,9 +812,7 @@ final class PlayerStore {
     }
 
     private func observeEnd(of item: AVPlayerItem) {
-        if let endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
-        }
+        removeEndObserver()
         // this fires at forwardPlaybackEndTime too, so custom stop times are respected
         endObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
@@ -548,6 +821,12 @@ final class PlayerStore {
                 self?.handleTrackEnd()
             }
         }
+    }
+
+    private func removeEndObserver() {
+        guard let endObserver else { return }
+        NotificationCenter.default.removeObserver(endObserver)
+        self.endObserver = nil
     }
 
     /// a track played through to its finish: count a play, then repeat it,

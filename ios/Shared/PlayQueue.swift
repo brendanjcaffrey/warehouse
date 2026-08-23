@@ -51,6 +51,14 @@ struct PlayQueue: Sendable {
     /// the total number of tracks in the queue
     var count: Int { entries.count }
 
+    /// the entry that would play next without moving the queue, for
+    /// prefetching it while the current track is still going
+    func next(wrapping: Bool) -> QueueEntry? {
+        guard current != nil else { return nil }
+        if index + 1 < entries.count { return entries[index + 1] }
+        return wrapping ? entries.first : nil
+    }
+
     /// queues the songs in order, positioned at the given one
     init(songs: [Song], startingAt start: Int = 0) {
         entries = songs.map(QueueEntry.init)

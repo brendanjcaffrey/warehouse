@@ -19,40 +19,7 @@ struct BackgroundDownloadTests {
         #expect(!BackgroundDownload.isOutOfSpace(URLError(.notConnectedToInternet)))
         #expect(!BackgroundDownload.isOutOfSpace(URLError(.cancelled)))
         #expect(!BackgroundDownload.isOutOfSpace(CocoaError(.fileWriteNoPermission)))
-    }
-
-    @Test("failed downloads retry until their budget runs out")
-    func failuresRetryWithinBudget() {
-        #expect(BackgroundDownload.shouldRetry(error: URLError(.timedOut), isOnDisk: false, retriesUsed: 0))
-        // a task can finish without error yet leave nothing on disk, e.g. a 404
-        #expect(BackgroundDownload.shouldRetry(error: nil, isOnDisk: false, retriesUsed: 1))
-        #expect(!BackgroundDownload.shouldRetry(
-            error: URLError(.timedOut), isOnDisk: false, retriesUsed: BackgroundDownload.retriesPerFile))
-    }
-
-    @Test("retries are skipped when they can't help")
-    func pointlessRetriesAreSkipped() {
-        // the file made it after all
-        #expect(!BackgroundDownload.shouldRetry(error: nil, isOnDisk: true, retriesUsed: 0))
-        // the transfer was deliberately cancelled
-        #expect(!BackgroundDownload.shouldRetry(error: URLError(.cancelled), isOnDisk: false, retriesUsed: 0))
-        // the device is out of storage
-        #expect(!BackgroundDownload.shouldRetry(error: POSIXError(.ENOSPC), isOnDisk: false, retriesUsed: 0))
-        #expect(!BackgroundDownload.shouldRetry(
-            error: CocoaError(.fileWriteOutOfSpace), isOnDisk: false, retriesUsed: 0))
-    }
-
-    @Test("response acceptability matches LibraryClient.fetchFile")
-    func acceptabilityMatchesFetchFile() {
-        let url = URL(string: "https://example.test/music/x.mp3")!
-        func response(status: Int, contentType: String) -> HTTPURLResponse {
-            HTTPURLResponse(url: url, statusCode: status, httpVersion: nil,
-                            headerFields: ["Content-Type": contentType])!
-        }
-
-        #expect(BackgroundDownload.isAcceptable(response(status: 200, contentType: "application/octet-stream")))
-        #expect(!BackgroundDownload.isAcceptable(response(status: 200, contentType: "text/html")))
-        #expect(!BackgroundDownload.isAcceptable(response(status: 404, contentType: "application/octet-stream")))
-        #expect(!BackgroundDownload.isAcceptable(nil))
+        // a rejected filename must degrade to one failed file, not stop the run
+        #expect(!BackgroundDownload.isOutOfSpace(FileStore.FilenameError.invalid("../evil.mp3")))
     }
 }

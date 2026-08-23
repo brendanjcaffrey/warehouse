@@ -43,8 +43,6 @@ final class SyncStore {
     /// when set (the watch), library fetches are trimmed server-side to just
     /// these playlists
     var syncedPlaylistIds: (() -> [String])?
-    /// fired when new library data lands, for the watch's activity feed
-    var onLibraryReceived: (@MainActor () -> Void)?
     /// bumped when a sync attempt finishes, so views can reload without
     /// observing every per-file progress update in `state`
     private(set) var completedSyncs = 0
@@ -57,9 +55,11 @@ final class SyncStore {
     private let fileStore: FileStore
     private let metadata: LibraryMetadata
     private let downloadRefreshInterval: TimeInterval
-    /// how missing files are fetched; the watch injects a background-session
-    /// downloader so transfers survive the app being suspended
+    /// how missing files are fetched
     private let fileDownloader: BulkFileDownloading
+    /// the phone mirrors the whole library onto disk; the watch fetches tracks
+    /// on demand into a bounded cache, so its sync stops after the library
+    private let transfersFiles: Bool
     private var lastDownloadRefresh = Date.distantPast
     private var syncInProgress = false
 
@@ -70,7 +70,8 @@ final class SyncStore {
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
         downloadRefreshInterval: TimeInterval = 5,
-        fileDownloader: BulkFileDownloading? = nil
+        fileDownloader: BulkFileDownloading? = nil,
+        transfersFiles: Bool = true
     ) {
         client = LibraryClient(session: session)
         self.database = database
@@ -78,6 +79,7 @@ final class SyncStore {
         metadata = LibraryMetadata(defaults: defaults)
         self.downloadRefreshInterval = downloadRefreshInterval
         self.fileDownloader = fileDownloader ?? FileDownloader(client: client, fileStore: fileStore)
+        self.transfersFiles = transfersFiles
     }
 
     var isBusy: Bool {
@@ -131,8 +133,8 @@ final class SyncStore {
         }
     }
 
-    /// checks for new library data, replaces the local database if there is any,
-    /// then downloads all missing music & artwork files
+    /// checks for new library data and replaces the local database if there is
+    /// any; when this store transfers files it then downloads everything missing
     func sync(token: String?, baseURL: URL?) async {
         guard let token, let baseURL, !syncInProgress else { return }
         syncInProgress = true
@@ -142,6 +144,10 @@ final class SyncStore {
         }
 
         do {
+            // here rather than in syncFiles so the cache directories exist &
+            // stay out of backups even when this store never transfers files
+            try fileStore.prepare()
+
             state = .checkingForUpdates
             switch try await fetchLibraryStatus(token: token, baseURL: baseURL) {
             case .offline:
@@ -153,10 +159,16 @@ final class SyncStore {
             case .needsUpdate:
                 state = .fetchingLibrary
                 let library = try await fetchLibrary(token: token, baseURL: baseURL)
-                onLibraryReceived?()
                 state = .savingLibrary
                 try await database.replaceLibrary(with: library)
                 metadata.update(from: library)
+            }
+
+            // the cache decides what the watch keeps on disk, so there's
+            // nothing to enumerate, delete or download here
+            guard transfersFiles else {
+                state = .upToDate(failedDownloads: 0)
+                return
             }
 
             let progress = try await syncFiles(token: token, baseURL: baseURL)
@@ -216,7 +228,6 @@ final class SyncStore {
 
     /// deletes files no longer referenced by any track, then downloads all missing ones
     private func syncFiles(token: String, baseURL: URL) async throws -> DownloadProgress {
-        try fileStore.prepare()
         let musicFilenames = try await database.musicFilenames()
         let artworkFilenames = try await database.artworkFilenames()
         fileStore.deleteFiles(.music, keeping: musicFilenames)

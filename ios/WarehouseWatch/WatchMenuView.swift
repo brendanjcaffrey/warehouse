@@ -46,11 +46,6 @@ struct WatchMenuView: View {
                     syncLabel
                 }
                 .disabled(isSyncing)
-                NavigationLink {
-                    WatchSyncDetailView()
-                } label: {
-                    Label("Sync Detail", systemImage: "list.bullet.rectangle")
-                }
             }
             .navigationTitle("Warehouse")
         }
@@ -60,7 +55,7 @@ struct WatchMenuView: View {
     private var syncLabel: some View {
         if isSyncing {
             Label {
-                Text("Syncing…")
+                Text("Checking…")
             } icon: {
                 ProgressView()
             }
@@ -74,7 +69,7 @@ struct WatchMenuView: View {
                     .foregroundStyle(.red)
             }
         } else {
-            Label("Sync", systemImage: "arrow.trianglehead.2.clockwise")
+            Label("Check for Updates", systemImage: "arrow.trianglehead.2.clockwise")
         }
     }
 
@@ -94,14 +89,12 @@ struct WatchMenuView: View {
         }
     }
 
+    /// the watch only ever fetches library data, so the file-transfer states
+    /// can't happen here
     private func outcome(for state: SyncStore.State) -> SyncOutcome {
         switch state {
         case .error:
-            return .failed("Sync failed")
-        case .storageFull:
-            return .failed("Storage full")
-        case .upToDate(let failedDownloads) where failedDownloads > 0:
-            return .failed("\(failedDownloads) failed")
+            return .failed("Check failed")
         default:
             return .upToDate
         }

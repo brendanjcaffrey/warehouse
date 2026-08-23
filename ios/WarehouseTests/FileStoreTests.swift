@@ -9,6 +9,17 @@ struct FileStoreTests {
             .appending(path: "filestore-tests-\(UUID().uuidString)"))
     }
 
+    /// names that could climb out of, or stand in for, the type directory
+    static let rejectedFilenames = ["../evil.mp3", "a/b.mp3", ""]
+
+    /// a file standing in for what `LibraryClient.downloadFile` hands over
+    static func makeSource() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "filestore-source-\(UUID().uuidString)")
+        try Data("downloaded".utf8).write(to: url)
+        return url
+    }
+
     @Test("prepare creates the music & artwork directories")
     func prepareCreatesDirectories() throws {
         let store = Self.makeStore()
@@ -70,11 +81,59 @@ struct FileStoreTests {
         #expect(stats.totalBytes == 158)
     }
 
+    @Test("write, moveIn & delete reject filenames that could leave the type directory")
+    func mutatorsRejectTraversingFilenames() throws {
+        let store = Self.makeStore()
+        try store.prepare()
+        // sits where "../evil.mp3" would land from the music directory
+        let canary = store.rootURL.appending(path: "evil.mp3")
+        try Data("canary".utf8).write(to: canary)
+        try store.write(.music, "keep.mp3", data: Data("keep".utf8))
+
+        for filename in Self.rejectedFilenames {
+            #expect(throws: FileStore.FilenameError.invalid(filename)) {
+                try store.write(.music, filename, data: Data("bad".utf8))
+            }
+            let source = try Self.makeSource()
+            #expect(throws: FileStore.FilenameError.invalid(filename)) {
+                try store.moveIn(.music, filename, from: source)
+            }
+            // the temp file is consumed on the rejection path too
+            #expect(!FileManager.default.fileExists(atPath: source.path))
+            #expect(throws: FileStore.FilenameError.invalid(filename)) {
+                try store.delete(.music, filename)
+            }
+        }
+
+        #expect(try Data(contentsOf: canary) == Data("canary".utf8))
+        #expect(store.list(.music) == ["keep.mp3"])
+        #expect(store.list(.artwork).isEmpty)
+    }
+
+    @Test("an md5 style filename round trips through write, moveIn & delete")
+    func validFilenameRoundTrips() throws {
+        let store = Self.makeStore()
+        let filename = "d41d8cd98f00b204e9800998ecf8427e.mp3"
+
+        try store.write(.music, filename, data: Data("written".utf8))
+        #expect(try Data(contentsOf: store.fileURL(.music, filename)) == Data("written".utf8))
+
+        let source = try Self.makeSource()
+        try store.moveIn(.music, filename, from: source)
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+        #expect(try Data(contentsOf: store.fileURL(.music, filename)) == Data("downloaded".utf8))
+
+        try store.delete(.music, filename)
+        #expect(!store.exists(.music, filename))
+    }
+
     @Test("device storage reports a sensible used & total")
     func deviceStorage() throws {
         let storage = try #require(FileStore.deviceStorage())
         #expect(storage.totalBytes > 0)
         #expect(storage.usedBytes > 0)
         #expect(storage.usedBytes <= storage.totalBytes)
+        #expect(storage.availableBytes > 0)
+        #expect(storage.availableBytes <= storage.totalBytes)
     }
 }

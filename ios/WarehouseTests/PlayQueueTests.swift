@@ -312,4 +312,33 @@ struct PlayQueueTests {
         #expect(queue.current?.song.id == "1")
         #expect(queue.upcoming.map(\.song.name) == ["Renamed 2", "Song 3", "Song 4", "Song 5"])
     }
+
+    @Test("next peeks at the following entry without moving the queue")
+    func nextPeeksAhead() {
+        let queue = PlayQueue(songs: Self.songs(3))
+
+        #expect(queue.next(wrapping: false)?.song.id == "2")
+        #expect(queue.next(wrapping: true)?.song.id == "2")
+        // peeking doesn't advance or record a play
+        #expect(queue.current?.song.id == "1")
+        #expect(queue.history.isEmpty)
+    }
+
+    @Test("next at the end of the queue only wraps when asked")
+    func nextWrapsAtTheEnd() {
+        var queue = PlayQueue(songs: Self.songs(2))
+        queue.advance()
+
+        #expect(queue.current?.song.id == "2")
+        #expect(queue.next(wrapping: false) == nil)
+        #expect(queue.next(wrapping: true)?.song.id == "1")
+    }
+
+    @Test("an empty queue has nothing to play next")
+    func nextOnAnEmptyQueue() {
+        let queue = PlayQueue(songs: [])
+
+        #expect(queue.next(wrapping: false) == nil)
+        #expect(queue.next(wrapping: true) == nil)
+    }
 }

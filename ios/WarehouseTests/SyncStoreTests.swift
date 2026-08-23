@@ -15,7 +15,12 @@ struct SyncStoreTests {
         let host: String
     }
 
-    static func makeEnv(host: String, downloadRefreshInterval: TimeInterval = 5) -> Env {
+    static func makeEnv(
+        host: String,
+        downloadRefreshInterval: TimeInterval = 5,
+        fileDownloader: BulkFileDownloading? = nil,
+        transfersFiles: Bool = true
+    ) -> Env {
         let suiteName = "SyncStoreTests-\(host)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
@@ -26,7 +31,8 @@ struct SyncStoreTests {
         let store = SyncStore(
             database: database, fileStore: fileStore,
             session: MockURLProtocol.makeSession(), defaults: defaults,
-            downloadRefreshInterval: downloadRefreshInterval)
+            downloadRefreshInterval: downloadRefreshInterval,
+            fileDownloader: fileDownloader, transfersFiles: transfersFiles)
         return Env(
             store: store, database: database, fileStore: fileStore,
             metadata: LibraryMetadata(defaults: defaults),
@@ -495,6 +501,57 @@ struct SyncStoreTests {
         await env.store.sync(token: "tok", baseURL: nil)
         #expect(env.store.state == .idle)
         #expect(Self.requestPaths(host: host).isEmpty)
+    }
+
+    @Test("a library-only sync saves the library and transfers no files")
+    func libraryOnlySyncSkipsFileTransfer() async throws {
+        let host = "sync-libraryonly.test"
+        let downloader = StubDownloader(failed: 0)
+        let env = Self.makeEnv(host: host, fileDownloader: downloader, transfersFiles: false)
+        try Self.installHandler(host: host)
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(env.store.completedSyncs == 1)
+        // the library still lands
+        #expect(try await env.database.trackCount() == 2)
+        #expect(env.metadata.updateTimeNs == 43)
+        // & nothing else is asked for
+        #expect(Self.requestPaths(host: host) == ["/api/library"])
+        #expect(downloader.received.isEmpty)
+        #expect(env.fileStore.list(.music).isEmpty)
+        #expect(env.fileStore.list(.artwork).isEmpty)
+    }
+
+    @Test("a library-only sync keeps cached files the library no longer references")
+    func libraryOnlySyncKeepsCachedFiles() async throws {
+        let host = "sync-libraryonly-cache.test"
+        let env = Self.makeEnv(host: host, transfersFiles: false)
+        try Self.installHandler(host: host)
+
+        // played recently, then dropped from the synced playlists: the cache
+        // decides when these go, not the sync
+        try env.fileStore.write(.music, "cached.mp3", data: Data("x".utf8))
+        try env.fileStore.write(.artwork, "cached.jpg", data: Data("x".utf8))
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(env.fileStore.list(.music) == ["cached.mp3"])
+        #expect(env.fileStore.list(.artwork) == ["cached.jpg"])
+    }
+
+    @Test("a library-only sync never reports transferring after the library lands")
+    func libraryOnlySyncStopsTransferring() async throws {
+        let host = "sync-libraryonly-idle.test"
+        let env = Self.makeEnv(host: host, transfersFiles: false)
+        try Self.installHandler(host: host)
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(!env.store.isTransferringLibrary)
+        #expect(!env.store.isBusy)
     }
 }
 

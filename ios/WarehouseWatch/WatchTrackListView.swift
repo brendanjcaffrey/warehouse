@@ -108,13 +108,11 @@ struct WatchTrackListView: View {
 }
 
 struct WatchSongRow: View {
-    @Environment(SongsStore.self) private var songs
-
     let song: Song
 
     var body: some View {
         HStack(spacing: 8) {
-            WatchArtworkThumbnail(url: songs.artworkURL(song))
+            WatchArtworkThumbnail(filename: song.artworkFilename)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading) {
                 Text(song.name)

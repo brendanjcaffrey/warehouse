@@ -56,7 +56,7 @@ struct DownloadProgress: Equatable, Sendable {
 
 /// downloads files one at a time, music before artwork, skipping over failures
 /// so one bad file can't block the rest of the library
-struct FileDownloader: BulkFileDownloading, Sendable {
+struct FileDownloader: BulkFileDownloading, SingleFileDownloading, Sendable {
     let client: LibraryClient
     let fileStore: FileStore
 
@@ -109,8 +109,8 @@ struct FileDownloader: BulkFileDownloading, Sendable {
     private func fetch(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> FetchOutcome {
         if fileStore.exists(type, filename) { return .downloaded }
         do {
-            let data = try await client.fetchFile(type, filename: filename, token: token, baseURL: baseURL)
-            try fileStore.write(type, filename, data: data)
+            let temporaryURL = try await client.downloadFile(type, filename: filename, token: token, baseURL: baseURL)
+            try fileStore.moveIn(type, filename, from: temporaryURL)
             return .downloaded
         } catch {
             return BackgroundDownload.isOutOfSpace(error) ? .outOfSpace : .failed

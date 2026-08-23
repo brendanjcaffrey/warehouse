@@ -1,9 +1,20 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    /// nil outside the app (previews, a view built without the wiring), which
+    /// just leaves the placeholder in place
+    @Entry var artworkFetcher: WatchArtworkFetcher?
+}
+
 /// small square artwork image with a gray music note placeholder, like the
-/// phone's ArtworkThumbnail but without its ios-only system colors
+/// phone's ArtworkThumbnail but without its ios-only system colors. the watch
+/// holds a bounded cache rather than a mirror, so the file usually isn't on
+/// disk yet and the thumbnail fetches it before loading
 struct WatchArtworkThumbnail: View {
-    let url: URL?
+    @Environment(\.artworkFetcher) private var fetcher
+
+    let filename: String?
+    var priority: WatchArtworkFetcher.Priority = .list
     var maxPixelSize = 56
 
     @State private var image: UIImage?
@@ -25,7 +36,11 @@ struct WatchArtworkThumbnail: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 4))
-        .task(id: url) {
+        // cancelled when the row scrolls away, which is what keeps a long list
+        // from queueing a fetch for every song in it
+        .task(id: filename) {
+            image = nil
+            guard let url = await fetcher?.artworkURL(filename, priority: priority) else { return }
             image = await ArtworkLoader.thumbnail(for: url, maxPixelSize: maxPixelSize)
         }
     }

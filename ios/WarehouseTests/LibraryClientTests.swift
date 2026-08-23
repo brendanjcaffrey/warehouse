@@ -99,23 +99,24 @@ struct LibraryClientTests {
         #expect(try LibraryRequest(serializedBytes: body).playlistIds == ["p1", "p2"])
     }
 
-    @Test("fetchFile returns the file bytes and hits the right path")
-    func fetchFileReturnsData() async throws {
+    @Test("downloadFile streams the file to disk and hits the right path")
+    func downloadFileReturnsTemporaryFile() async throws {
         let host = "file-ok.test"
         let bytes = Data("music bytes".utf8)
         MockURLProtocol.setHandler(forHost: host, Self.ok(bytes, contentType: "audio/mpeg"))
 
         let client = LibraryClient(session: MockURLProtocol.makeSession())
-        let data = try await client.fetchFile(.music, filename: "abc.mp3", token: "tok", baseURL: Self.baseURL(host))
+        let url = try await client.downloadFile(.music, filename: "abc.mp3", token: "tok", baseURL: Self.baseURL(host))
+        defer { try? FileManager.default.removeItem(at: url) }
 
-        #expect(data == bytes)
+        #expect(try Data(contentsOf: url) == bytes)
         let request = try #require(MockURLProtocol.requests(forHost: host).first)
         #expect(request.url?.path == "/music/abc.mp3")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
     }
 
-    @Test("fetchFile throws on a non-200 status")
-    func fetchFileThrowsOnBadStatus() async throws {
+    @Test("downloadFile throws on a non-200 status")
+    func downloadFileThrowsOnBadStatus() async throws {
         let host = "file-404.test"
         MockURLProtocol.setHandler(forHost: host) { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!
@@ -124,18 +125,18 @@ struct LibraryClientTests {
 
         let client = LibraryClient(session: MockURLProtocol.makeSession())
         await #expect(throws: LibraryClient.FileError.badStatus(404)) {
-            try await client.fetchFile(.artwork, filename: "abc.jpg", token: "tok", baseURL: Self.baseURL(host))
+            try await client.downloadFile(.artwork, filename: "abc.jpg", token: "tok", baseURL: Self.baseURL(host))
         }
     }
 
-    @Test("fetchFile rejects an html response from an auth redirect")
-    func fetchFileRejectsHTML() async throws {
+    @Test("downloadFile rejects an html response from an auth redirect")
+    func downloadFileRejectsHTML() async throws {
         let host = "file-html.test"
         MockURLProtocol.setHandler(forHost: host, Self.ok(Data("<html></html>".utf8), contentType: "text/html"))
 
         let client = LibraryClient(session: MockURLProtocol.makeSession())
         await #expect(throws: LibraryClient.FileError.notAFile) {
-            try await client.fetchFile(.music, filename: "abc.mp3", token: "tok", baseURL: Self.baseURL(host))
+            try await client.downloadFile(.music, filename: "abc.mp3", token: "tok", baseURL: Self.baseURL(host))
         }
     }
 }

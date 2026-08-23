@@ -1,8 +1,8 @@
 import Foundation
 
-/// abstracts how the missing files get fetched, so the watch can swap the
-/// in-process downloader for one backed by a background url session that keeps
-/// running while the app is suspended, instead of stalling every screen sleep
+/// abstracts how the missing files get fetched. there's one real
+/// implementation now that the watch fetches on demand, but SyncStore's tests
+/// inject a stub through it to assert what a sync asks for
 protocol BulkFileDownloading: Sendable {
     func downloadAll(
         _ files: [FileToDownload],
@@ -12,28 +12,14 @@ protocol BulkFileDownloading: Sendable {
     ) async -> DownloadProgress
 }
 
-/// pure helpers shared by the downloaders and their tests: when a failed
-/// fetch is worth another try, whether a finished task returned a file worth
-/// keeping, and whether an error means the device is out of storage
+/// abstracts fetching one file on demand. the watch's artwork fetcher takes it
+/// this way so tests can hand back a downloader they finish by hand, instead
+/// of racing whatever the mock url protocol gets around to serving
+protocol SingleFileDownloading: Sendable {
+    func download(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> Bool
+}
+
 enum BackgroundDownload {
-    /// identifies the watch's single background url session across relaunches
-    static let sessionIdentifier = "com.jcaffrey.warehouse.watchkitapp.downloads"
-
-    /// how many times one sync re-tries a request that failed
-    static let retriesPerFile = 2
-
-    /// whether a finished task's file is worth fetching again: it never landed
-    /// on disk, it has retries left, and the failure isn't one a retry can't
-    /// fix (out of storage, or the transfer was deliberately cancelled)
-    static func shouldRetry(error: Error?, isOnDisk: Bool, retriesUsed: Int) -> Bool {
-        guard !isOnDisk, retriesUsed < retriesPerFile, !isOutOfSpace(error) else { return false }
-        if let error, (error as NSError).domain == NSURLErrorDomain,
-           (error as NSError).code == NSURLErrorCancelled {
-            return false
-        }
-        return true
-    }
-
     /// whether an error (or any of its underlying errors) means the device has
     /// run out of storage, so a sync can stop early and say why
     static func isOutOfSpace(_ error: Error?) -> Bool {
@@ -50,12 +36,5 @@ enum BackgroundDownload {
             }
         }
         return false
-    }
-
-    /// mirrors LibraryClient.fetchFile: only a 200 that isn't the auth-failure
-    /// html redirect is a real file, so we don't save an error page as music
-    static func isAcceptable(_ response: URLResponse?) -> Bool {
-        guard let http = response as? HTTPURLResponse else { return false }
-        return http.statusCode == 200 && http.mimeType != "text/html"
     }
 }

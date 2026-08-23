@@ -15,15 +15,30 @@ struct DownloadStats: Equatable, Sendable {
     var totalBytes: Int64 = 0
 }
 
-/// used & total capacity of the device, shown in settings
+/// used & total capacity of the device, shown in settings; the available
+/// count is what the file cache sizes its budget against
 struct DeviceStorage: Equatable, Sendable {
     let usedBytes: Int64
     let totalBytes: Int64
+    let availableBytes: Int64
+}
+
+/// one file on disk, as the cache's eviction pass needs to see it
+struct FileEntry: Equatable, Sendable {
+    let filename: String
+    let sizeBytes: Int64
+    /// stands in for last-used when the recency index has no entry for the
+    /// file, which is the case for anything the mirror sync left behind
+    let createdAt: Date
 }
 
 /// stores downloaded music & artwork files under a root directory,
 /// mirroring the server's filenames (md5-based, extension included)
 struct FileStore: Sendable {
+    enum FilenameError: Error, Equatable {
+        case invalid(String)
+    }
+
     let rootURL: URL
 
     static func defaultRootURL() -> URL {
@@ -54,11 +69,28 @@ struct FileStore: Sendable {
     }
 
     func write(_ type: LibraryFileType, _ filename: String, data: Data) throws {
+        try Self.checkFilename(filename)
         try FileManager.default.createDirectory(at: directoryURL(type), withIntermediateDirectories: true)
         try data.write(to: fileURL(type, filename), options: .atomic)
     }
 
+    /// moves a freshly downloaded file into the store, replacing whatever was
+    /// there; the source is consumed either way, a rejected filename included
+    func moveIn(_ type: LibraryFileType, _ filename: String, from source: URL) throws {
+        do {
+            try Self.checkFilename(filename)
+            try FileManager.default.createDirectory(at: directoryURL(type), withIntermediateDirectories: true)
+            let destination = fileURL(type, filename)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: source, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: source)
+            throw error
+        }
+    }
+
     func delete(_ type: LibraryFileType, _ filename: String) throws {
+        try Self.checkFilename(filename)
         try FileManager.default.removeItem(at: fileURL(type, filename))
     }
 
@@ -75,12 +107,31 @@ struct FileStore: Sendable {
     }
 
     func downloadStats() -> DownloadStats {
-        let music = contents(.music)
-        let artwork = contents(.artwork)
+        let music = entries(.music)
+        let artwork = entries(.artwork)
         return DownloadStats(
             trackCount: music.count,
             artworkCount: artwork.count,
             totalBytes: totalSize(of: music) + totalSize(of: artwork))
+    }
+
+    /// every file of the given type with the metadata eviction sorts on
+    func entries(_ type: LibraryFileType) -> [FileEntry] {
+        let keys: [URLResourceKey] = [.fileSizeKey, .creationDateKey]
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directoryURL(type),
+            includingPropertiesForKeys: keys)) ?? []
+        return urls.map { url in
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return FileEntry(
+                filename: url.lastPathComponent,
+                sizeBytes: Int64(values?.fileSize ?? 0),
+                createdAt: values?.creationDate ?? .distantPast)
+        }
+    }
+
+    func totalSize(_ type: LibraryFileType) -> Int64 {
+        totalSize(of: entries(type))
     }
 
     static func deviceStorage() -> DeviceStorage? {
@@ -90,27 +141,34 @@ struct FileStore: Sendable {
             forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey])
         guard let total = values?.volumeTotalCapacity,
               let available = values?.volumeAvailableCapacity else { return nil }
-        return DeviceStorage(usedBytes: Int64(total - available), totalBytes: Int64(total))
+        return DeviceStorage(
+            usedBytes: Int64(total - available),
+            totalBytes: Int64(total),
+            availableBytes: Int64(available))
         #else
         let values = try? URL.applicationSupportDirectory.resourceValues(
             forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
         guard let total = values?.volumeTotalCapacity,
               let available = values?.volumeAvailableCapacityForImportantUsage else { return nil }
-        return DeviceStorage(usedBytes: Int64(total) - available, totalBytes: Int64(total))
+        return DeviceStorage(
+            usedBytes: Int64(total) - available,
+            totalBytes: Int64(total),
+            availableBytes: available)
         #endif
     }
 
-    private func contents(_ type: LibraryFileType) -> [URL] {
-        let urls = try? FileManager.default.contentsOfDirectory(
-            at: directoryURL(type),
-            includingPropertiesForKeys: [.fileSizeKey])
-        return urls ?? []
+    /// filenames come from the server's library data & are md5-based; anything
+    /// that could climb out of the type directory is not one of ours. only the
+    /// methods that mutate the filesystem check, since a name this rejects
+    /// should never reach the read paths either. throwing rather than skipping
+    /// keeps a compromised library from looking like a network failure
+    private static func checkFilename(_ filename: String) throws {
+        guard !filename.isEmpty, !filename.hasPrefix("."), !filename.contains("/") else {
+            throw FilenameError.invalid(filename)
+        }
     }
 
-    private func totalSize(of files: [URL]) -> Int64 {
-        files.reduce(0) { total, url in
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-            return total + Int64(size)
-        }
+    private func totalSize(of files: [FileEntry]) -> Int64 {
+        files.reduce(0) { $0 + $1.sizeBytes }
     }
 }

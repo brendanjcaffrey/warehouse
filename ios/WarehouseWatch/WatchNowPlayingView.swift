@@ -4,7 +4,6 @@ import SwiftUI
 /// in the middle and the shuffle & repeat toggles along the bottom
 struct WatchNowPlayingView: View {
     @Environment(PlayerStore.self) private var player
-    @Environment(SongsStore.self) private var songs
 
     var body: some View {
         Group {
@@ -20,7 +19,7 @@ struct WatchNowPlayingView: View {
     private func content(_ song: Song) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                WatchArtworkThumbnail(url: songs.artworkURL(song), maxPixelSize: 132)
+                WatchArtworkThumbnail(filename: song.artworkFilename, priority: .nowPlaying, maxPixelSize: 132)
                     .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.name)
@@ -30,6 +29,14 @@ struct WatchNowPlayingView: View {
                         Text(song.artistName)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    // tracks arrive on demand, so say so rather than looking
+                    // like a tap that did nothing
+                    if player.status == .unavailable {
+                        Text("Unavailable Offline")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
                             .lineLimit(1)
                     }
                 }
@@ -55,11 +62,18 @@ struct WatchNowPlayingView: View {
             Button {
                 player.togglePlayPause()
             } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                Group {
+                    if player.status == .fetching {
+                        ProgressView()
+                    } else {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.title)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .disabled(player.status == .fetching)
+            .accessibilityLabel(playPauseLabel)
             Button {
                 player.skipToNext()
             } label: {
@@ -69,6 +83,13 @@ struct WatchNowPlayingView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private var playPauseLabel: String {
+        switch player.status {
+        case .fetching: "Downloading"
+        case .ready, .unavailable: player.isPlaying ? "Pause" : "Play"
+        }
     }
 
     private var modes: some View {

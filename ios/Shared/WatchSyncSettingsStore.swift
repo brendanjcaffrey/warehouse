@@ -1,9 +1,10 @@
 import Foundation
 import Observation
 
-/// phone-side settings for the watch app's sync: which playlists to sync,
-/// plus an optional server url override (e.g. a tailscale funnel url) for
-/// when the watch can't reach the same server the phone uses
+/// phone-side settings for the watch app: which playlists its library is
+/// trimmed to, plus the url it reaches the server on. the watch can't join
+/// the tailnet, so that's normally a tailscale funnel url; left blank it
+/// falls back to the phone's own server url
 @MainActor
 @Observable
 final class WatchSyncSettingsStore {
@@ -44,8 +45,8 @@ final class WatchSyncSettingsStore {
         onChange()
     }
 
-    /// the url the watch should sync from: the override if set, otherwise the
-    /// phone's own server url
+    /// the url the watch reaches the server on: the override if set,
+    /// otherwise the phone's own server url
     func effectiveServerURL(phoneServerURL: String) -> String {
         let trimmed = serverURLOverride.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? phoneServerURL : trimmed
