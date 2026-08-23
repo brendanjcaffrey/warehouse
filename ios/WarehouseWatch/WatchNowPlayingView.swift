@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// the watch player screen: artwork & track info up top, transport controls
-/// in the middle and the shuffle & repeat toggles along the bottom
+/// in the middle and the shuffle toggle, crown driven volume button & repeat
+/// toggle along the bottom
 struct WatchNowPlayingView: View {
     @Environment(PlayerStore.self) private var player
 
@@ -45,7 +46,7 @@ struct WatchNowPlayingView: View {
             }
             Spacer(minLength: 8)
             transport
-            Spacer(minLength: 8)
+            Spacer(minLength: 16)
             modes
         }
         .padding(.horizontal, 4)
@@ -117,6 +118,11 @@ struct WatchNowPlayingView: View {
                     .frame(maxWidth: .infinity, minHeight: 36)
             }
             .accessibilityLabel(player.queue.isShuffled ? "Shuffle Off" : "Shuffle On")
+            // watchkit draws its own circular button here, so pin it to the
+            // same box the icon buttons get rather than letting it stretch
+            WatchVolumeControl()
+                .frame(width: 36, height: 36)
+                .frame(maxWidth: .infinity, minHeight: 36)
             Button {
                 player.cycleRepeatMode()
             } label: {
