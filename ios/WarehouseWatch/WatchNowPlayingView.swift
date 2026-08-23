@@ -31,10 +31,11 @@ struct WatchNowPlayingView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    // tracks arrive on demand, so say so rather than looking
-                    // like a tap that did nothing
-                    if player.status == .unavailable {
-                        Text("Unavailable Offline")
+                    // tracks arrive on demand & the audio session needs a
+                    // bluetooth output, so say which one is missing rather
+                    // than looking like a tap that did nothing
+                    if let note = statusNote {
+                        Text(note)
                             .font(.caption2)
                             .foregroundStyle(.orange)
                             .lineLimit(1)
@@ -48,6 +49,16 @@ struct WatchNowPlayingView: View {
             modes
         }
         .padding(.horizontal, 4)
+    }
+
+    /// what to say under the track name when a tap can't start playback
+    private var statusNote: String? {
+        switch player.status {
+        case .unavailable: "Unavailable Offline"
+        // watchos won't play long form audio through the watch speaker
+        case .needsOutput: "Connect Headphones"
+        case .ready, .fetching: nil
+        }
     }
 
     private var transport: some View {
@@ -88,9 +99,13 @@ struct WatchNowPlayingView: View {
     private var playPauseLabel: String {
         switch player.status {
         case .fetching: "Downloading"
-        case .ready, .unavailable: player.isPlaying ? "Pause" : "Play"
+        case .ready, .unavailable, .needsOutput: player.isPlaying ? "Pause" : "Play"
         }
     }
+
+    /// watchos' default accent barely separates from secondary on a small
+    /// screen, so tint the on states the same blue the phone app picks up
+    private static let onTint = Color.blue
 
     private var modes: some View {
         HStack {
@@ -98,20 +113,20 @@ struct WatchNowPlayingView: View {
                 player.setShuffled(!player.queue.isShuffled)
             } label: {
                 Image(systemName: "shuffle")
-                    .foregroundStyle(player.queue.isShuffled ? Color.accentColor : Color.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .foregroundStyle(player.queue.isShuffled ? Self.onTint : Color.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 36)
             }
             .accessibilityLabel(player.queue.isShuffled ? "Shuffle Off" : "Shuffle On")
             Button {
                 player.cycleRepeatMode()
             } label: {
                 Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                    .foregroundStyle(player.repeatMode == .off ? Color.secondary : Color.accentColor)
-                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .foregroundStyle(player.repeatMode == .off ? Color.secondary : Self.onTint)
+                    .frame(maxWidth: .infinity, minHeight: 36)
             }
             .accessibilityLabel("Repeat")
         }
-        .font(.footnote)
+        .font(.title3)
         .buttonStyle(.plain)
     }
 }

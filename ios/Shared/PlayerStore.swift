@@ -2,7 +2,10 @@ import AVFoundation
 import Foundation
 import MediaPlayer
 import Observation
+import OSLog
 import UIKit
+
+private let log = Logger(subsystem: "com.jcaffrey.warehouse", category: "player")
 
 /// what happens when a track finishes: stop at the end of the queue,
 /// repeat the whole queue, or repeat the current track
@@ -48,6 +51,10 @@ enum PlaybackStatus: Equatable, Sendable {
     case fetching
     /// not on disk & the server can't be reached, so there's nothing to play
     case unavailable
+    /// watchos only: the audio session wouldn't activate. long form audio has
+    /// to go to a bluetooth output there, so this is what no headphones looks
+    /// like from here
+    case needsOutput
 }
 
 @MainActor
@@ -85,6 +92,9 @@ final class PlayerStore {
     private var baseURL: URL?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    /// watches whether the current item actually loaded, which avfoundation
+    /// reports nowhere else
+    private var itemStatusObserver: NSKeyValueObservation?
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
     private var audioSessionConfigured = false
@@ -124,9 +134,16 @@ final class PlayerStore {
     /// the limit the network is plainly gone & skipping on through the queue
     /// at a request timeout apiece is worse than stopping
     private var consecutiveFailures = 0
+    /// tracks whose file arrived but wouldn't load, counted apart from the
+    /// fetch failures above: the fetch succeeds every time in that case, so
+    /// the budget it resets on a successful fetch would never open
+    private var consecutiveItemFailures = 0
     private static let failureLimit = 3
+    /// stands in for the platform's audio session activation, so tests can
+    /// reproduce the watch refusing to activate without a bluetooth output
+    private let activateSessionForTests: (@MainActor () async -> Bool)?
 
-    // the retry delay parameters are here for tests
+    // the retry delay & activation parameters are here for tests
     init(
         fileStore: FileStore,
         client: LibraryClient = LibraryClient(),
@@ -134,7 +151,8 @@ final class PlayerStore {
         fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
         onTrackPlayed: (@MainActor (String) -> Void)? = nil,
         retryDelay: TimeInterval = 1,
-        prefetchRetryDelay: TimeInterval = 30
+        prefetchRetryDelay: TimeInterval = 30,
+        activateSessionForTests: (@MainActor () async -> Bool)? = nil
     ) {
         self.fileStore = fileStore
         self.fileCache = fileCache
@@ -142,6 +160,7 @@ final class PlayerStore {
         self.onTrackPlayed = onTrackPlayed
         self.retryDelay = retryDelay
         self.prefetchRetryDelay = prefetchRetryDelay
+        self.activateSessionForTests = activateSessionForTests
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
         observeAudioSession()
     }
@@ -162,8 +181,9 @@ final class PlayerStore {
     private func start(_ newQueue: PlayQueue, repeating mode: RepeatMode, token: String?, baseURL: URL?) {
         guard newQueue.current != nil else { return }
         // a queue the user just picked starts with a clean slate; whatever the
-        // last one couldn't fetch shouldn't count against it
+        // last one couldn't fetch or load shouldn't count against it
         consecutiveFailures = 0
+        consecutiveItemFailures = 0
         repeatMode = mode
         self.token = token
         self.baseURL = baseURL
@@ -194,7 +214,7 @@ final class PlayerStore {
         refreshInUse()
         // without the file or a way to fetch it there's nothing to play
         guard isDownloaded || (token != nil && baseURL != nil) else {
-            markUnavailable()
+            markNotLoaded(.unavailable)
             return
         }
 
@@ -218,9 +238,9 @@ final class PlayerStore {
             // drop it if the user skipped to another track in the meantime
             guard generation == startGeneration else { return }
             guard activated else {
-                isPlaying = false
-                status = .ready
-                updateNowPlayingPlaybackState()
+                // this track never loaded, so say so & take the last one's
+                // item down with it rather than looking ready to play
+                markNotLoaded(.needsOutput)
                 return
             }
             if isDownloaded {
@@ -255,7 +275,7 @@ final class PlayerStore {
         // during the download, since starting something else on their behalf
         // isn't what pause means
         guard consecutiveFailures < Self.failureLimit, isPlaying else {
-            markUnavailable()
+            markNotLoaded(.unavailable)
             return
         }
         // the same queue rules as the next button: repeat all wraps around,
@@ -263,20 +283,22 @@ final class PlayerStore {
         if queue.advance(wrapping: repeatMode == .all) {
             startCurrent()
         } else {
-            markUnavailable()
+            markNotLoaded(.unavailable)
         }
     }
 
-    /// there is nothing playable for the current track, so drop the item the
-    /// last one left in the player: it is fully loaded & seekable, so a stray
-    /// play() would resume the wrong audio under this track's title, and its
-    /// finish would report a play for a track that never started
-    private func markUnavailable() {
+    /// the current track didn't start, so drop the item the last one left in
+    /// the player: it is fully loaded & seekable, so a stray play() would
+    /// resume the wrong audio under this track's title, and its finish would
+    /// report a play for a track that never started
+    private func markNotLoaded(_ reason: PlaybackStatus) {
         player.pause()
         removeEndObserver()
+        itemStatusObserver?.invalidate()
+        itemStatusObserver = nil
         player.replaceCurrentItem(with: nil)
         isPlaying = false
-        status = .unavailable
+        status = reason
         updateNowPlayingPlaybackState()
     }
 
@@ -288,6 +310,7 @@ final class PlayerStore {
         consecutiveFailures = 0
         let item = AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename))
         observeEnd(of: item)
+        observeStatus(of: item)
         observeTimeIfNeeded()
 
         player.replaceCurrentItem(with: item)
@@ -435,9 +458,11 @@ final class PlayerStore {
 
     func resume() {
         guard song != nil, !isPlaying else { return }
-        // nothing is loaded to resume, only a fetch that didn't land, so tapping
-        // play means try again — the state has no other way to recover
-        guard status != .unavailable else {
+        // there is nothing loaded to resume — a fetch that didn't land, or an
+        // audio session that never activated — so tapping play means start the
+        // track again; the state has no other way to recover. a fetch still in
+        // flight is the exception: it begins playback itself when it lands
+        if !hasLoadedTrack, status != .fetching {
             startCurrent()
             return
         }
@@ -454,6 +479,7 @@ final class PlayerStore {
             guard await activateSession() else {
                 if generation == startGeneration {
                     isPlaying = false
+                    status = .needsOutput
                     updateNowPlayingPlaybackState()
                 }
                 return
@@ -635,6 +661,7 @@ final class PlayerStore {
     /// async & prompts the user to pick a bluetooth output, which can be
     /// declined, so playback only starts once it succeeds
     private func activateSession() async -> Bool {
+        if let activateSessionForTests { return await activateSessionForTests() }
         #if os(watchOS)
         if sessionActivated { return true }
         sessionActivated = (try? await AVAudioSession.sharedInstance().activate(options: [])) ?? false
@@ -827,6 +854,50 @@ final class PlayerStore {
         guard let endObserver else { return }
         NotificationCenter.default.removeObserver(endObserver)
         self.endObserver = nil
+    }
+
+    /// a file can be on disk, the right size & still not play — a download
+    /// that was truncated without erroring, or a format avfoundation won't
+    /// take. nothing surfaces that on its own: the player just sits there
+    /// reporting the track as playing, which is indistinguishable from silence
+    private func observeStatus(of item: AVPlayerItem) {
+        itemStatusObserver?.invalidate()
+        let generation = startGeneration
+        itemStatusObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            let status = item.status
+            guard status != .unknown else { return }
+            // the error can't cross into the actor, so reduce it here
+            let reason = item.error?.localizedDescription ?? "unknown"
+            Task { @MainActor [weak self] in
+                guard let self, generation == self.startGeneration else { return }
+                if status == .failed {
+                    self.handleItemFailure(reason)
+                } else {
+                    // a track that loaded clears the run of ones that didn't
+                    self.consecutiveItemFailures = 0
+                }
+            }
+        }
+    }
+
+    /// the file we handed the player is no good. leaving it on disk would be
+    /// worse than not having it: every later fetch short circuits on the file
+    /// already being there, so the track would never play again. drop it and
+    /// treat this like a fetch that missed, which skips on & re-pulls the file
+    /// if the queue comes back around to it
+    private func handleItemFailure(_ reason: String) {
+        guard let song else { return }
+        log.error("item failed for \(song.musicFilename, privacy: .public): \(reason, privacy: .public)")
+        try? fileStore.delete(.music, song.musicFilename)
+        consecutiveItemFailures += 1
+        // the file is re-fetchable, so without a budget of its own a queue of
+        // tracks that all fail to load would be walked forever, downloading
+        // every one of them again on each pass
+        guard consecutiveItemFailures < Self.failureLimit else {
+            markNotLoaded(.unavailable)
+            return
+        }
+        handleFailedFetch()
     }
 
     /// a track played through to its finish: count a play, then repeat it,

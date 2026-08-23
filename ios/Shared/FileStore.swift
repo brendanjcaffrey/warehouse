@@ -136,15 +136,18 @@ struct FileStore: Sendable {
 
     static func deviceStorage() -> DeviceStorage? {
         #if os(watchOS)
-        // the important-usage capacity key doesn't exist on watchos
-        let values = try? URL.applicationSupportDirectory.resourceValues(
-            forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey])
-        guard let total = values?.volumeTotalCapacity,
-              let available = values?.volumeAvailableCapacity else { return nil }
+        // the important-usage capacity key doesn't exist on watchos, and the
+        // plain capacity keys are typed as int, which is 32 bits there, so
+        // they wrap on any volume over 2gb. the file system attributes come
+        // back as nsnumbers and survive the trip. the home directory is on the
+        // same volume as application support and always exists
+        let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+        guard let total = (attributes?[.systemSize] as? NSNumber)?.int64Value,
+              let available = (attributes?[.systemFreeSize] as? NSNumber)?.int64Value else { return nil }
         return DeviceStorage(
-            usedBytes: Int64(total - available),
-            totalBytes: Int64(total),
-            availableBytes: Int64(available))
+            usedBytes: total - available,
+            totalBytes: total,
+            availableBytes: available)
         #else
         let values = try? URL.applicationSupportDirectory.resourceValues(
             forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey])

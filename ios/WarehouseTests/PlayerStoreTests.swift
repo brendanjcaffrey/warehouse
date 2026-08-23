@@ -27,7 +27,7 @@ struct PlayerStoreTests {
             finish: 0,
             discNumber: 0,
             trackNumber: 0,
-            musicFilename: "\(id).mp3",
+            musicFilename: "\(id).wav",
             artworkFilename: artwork)
     }
 
@@ -51,7 +51,7 @@ struct PlayerStoreTests {
     static func makePlayerWithServer(host: String) -> (PlayerStore, FileStore, URL) {
         let baseURL = URL(string: "https://\(host)")!
         MockURLProtocol.setHandler(forHost: host) { _ in
-            (HTTPURLResponse(url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("music-bytes".utf8))
+            (HTTPURLResponse(url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil)!, Self.musicBytes)
         }
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
@@ -84,6 +84,58 @@ struct PlayerStoreTests {
             fileStore: fileStore, client: client, retryDelay: retryDelay,
             prefetchRetryDelay: prefetchRetryDelay)
         return (player, fileStore, baseURL)
+    }
+
+    /// a player whose audio session activation is under the test's control,
+    /// standing in for the watch, where it fails until headphones are on
+    @MainActor
+    static func makePlayerWithoutOutput(
+        host: String, output: AudioOutput
+    ) -> (PlayerStore, FileStore, URL) {
+        let baseURL = URL(string: "https://\(host)")!
+        MockURLProtocol.setHandler(forHost: host) { request in
+            (Self.okResponse(request.url!), Self.musicBytes)
+        }
+        let fileStore = FileStore(
+            rootURL: FileManager.default.temporaryDirectory
+                .appending(path: "player-tests-files-\(UUID().uuidString)"))
+        var client = LibraryClient()
+        client.session = MockURLProtocol.makeSession()
+        let player = PlayerStore(
+            fileStore: fileStore, client: client, retryDelay: 0.01,
+            activateSessionForTests: { output.isConnected })
+        return (player, fileStore, baseURL)
+    }
+
+    /// a real, playable file for the mock server to hand back. the player now
+    /// drops an item avfoundation won't load, so "music-bytes" would fail every
+    /// track in here; this is silence, but it is silence in a format it takes.
+    /// long enough that no test reaches the end of it & plays on to the next
+    static let musicBytes: Data = wav(seconds: 30)
+
+    /// 8khz 16 bit mono pcm, built by hand so the tests carry no fixture file
+    static func wav(seconds: Double) -> Data {
+        let sampleRate = 8000
+        let bytes = Int(Double(sampleRate) * seconds) * 2
+        var data = Data()
+        func ascii(_ text: String) { data.append(contentsOf: Array(text.utf8)) }
+        func u32(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        func u16(_ value: UInt16) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        ascii("RIFF")
+        u32(UInt32(36 + bytes))
+        ascii("WAVE")
+        ascii("fmt ")
+        u32(16)
+        u16(1)
+        u16(1)
+        u32(UInt32(sampleRate))
+        u32(UInt32(sampleRate * 2))
+        u16(2)
+        u16(16)
+        ascii("data")
+        u32(UInt32(bytes))
+        data.append(Data(count: bytes))
+        return data
     }
 
     static func okResponse(_ url: URL) -> HTTPURLResponse {
@@ -379,7 +431,7 @@ struct PlayerStoreTests {
             finish: finish,
             discNumber: 0,
             trackNumber: 0,
-            musicFilename: "\(id).mp3",
+            musicFilename: "\(id).wav",
             artworkFilename: nil)
     }
 
@@ -417,10 +469,10 @@ struct PlayerStoreTests {
         let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "2.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
 
         // the second track is on disk before it's ever reached
-        #expect(fileStore.exists(.music, "2.mp3"))
+        #expect(fileStore.exists(.music, "2.wav"))
         #expect(player.song?.id == "1")
         #expect(player.status == .ready)
     }
@@ -432,7 +484,7 @@ struct PlayerStoreTests {
         let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "1.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "1.wav") }
         try await Self.settle()
 
         // repeat is off, so there is no next entry to fetch
@@ -446,24 +498,24 @@ struct PlayerStoreTests {
         // hold the prefetch open so it is still in flight when the queue changes
         let gate = DispatchSemaphore(value: 0)
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3" {
+            if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(3), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.mp3") }
-        #expect(Self.requested(host, "2.mp3"))
+        try await Self.waitFor { Self.requested(host, "2.wav") }
+        #expect(Self.requested(host, "2.wav"))
 
         player.play([Self.song(id: "9")], token: "tok", baseURL: baseURL)
         gate.signal()
-        try await Self.waitFor { fileStore.exists(.music, "9.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "9.wav") }
         try await Self.settle()
 
         // the superseded prefetch neither lands nor takes over playback
         #expect(player.song?.id == "9")
-        #expect(!fileStore.exists(.music, "2.mp3"))
+        #expect(!fileStore.exists(.music, "2.wav"))
     }
 
     @Test("a failed prefetch leaves the playing track alone")
@@ -471,17 +523,17 @@ struct PlayerStoreTests {
     func prefetchFailureIsSilent() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3" {
+            if request.url?.lastPathComponent == "2.wav" {
                 throw URLError(.notConnectedToInternet)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.mp3") }
+        try await Self.waitFor { Self.requested(host, "2.wav") }
         try await Self.settle()
 
-        #expect(!fileStore.exists(.music, "2.mp3"))
+        #expect(!fileStore.exists(.music, "2.wav"))
         #expect(player.song?.id == "1")
         #expect(player.isPlaying)
         #expect(player.status == .ready)
@@ -495,17 +547,17 @@ struct PlayerStoreTests {
         let (player, fileStore, baseURL) = Self.makePlayer(
             host: host, prefetchRetryDelay: 0.05
         ) { request in
-            if request.url?.lastPathComponent == "2.mp3", failOnce.shouldFail() {
+            if request.url?.lastPathComponent == "2.wav", failOnce.shouldFail() {
                 throw URLError(.timedOut)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
         // the first attempt missed, so the file is only here because a second
         // one went out for it part way through the current track
-        try await Self.waitFor { fileStore.exists(.music, "2.mp3") }
-        #expect(fileStore.exists(.music, "2.mp3"))
+        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
+        #expect(fileStore.exists(.music, "2.wav"))
 
         // & the track playing is untouched by the miss
         #expect(player.song?.id == "1")
@@ -521,23 +573,23 @@ struct PlayerStoreTests {
         // file can land is a later re-arm
         let failOnce = Self.FailOnce()
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3", failOnce.shouldFail() {
+            if request.url?.lastPathComponent == "2.wav", failOnce.shouldFail() {
                 throw URLError(.notConnectedToInternet)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.mp3") }
+        try await Self.waitFor { Self.requested(host, "2.wav") }
 
         player.setRepeatMode(.one)
         try await Self.settle()
         // repeat one plays the same file again, so there is nothing to pull
-        #expect(!fileStore.exists(.music, "2.mp3"))
+        #expect(!fileStore.exists(.music, "2.wav"))
 
         player.setRepeatMode(.off)
-        try await Self.waitFor { fileStore.exists(.music, "2.mp3") }
-        #expect(fileStore.exists(.music, "2.mp3"))
+        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
+        #expect(fileStore.exists(.music, "2.wav"))
         #expect(player.song?.id == "1")
     }
 
@@ -549,24 +601,24 @@ struct PlayerStoreTests {
         // flight when the new one is inserted ahead of it
         let gate = DispatchSemaphore(value: 0)
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3" {
+            if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(3), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.mp3") }
+        try await Self.waitFor { Self.requested(host, "2.wav") }
 
         player.playNext(Self.song(id: "9"), token: "tok", baseURL: baseURL)
         gate.signal()
-        try await Self.waitFor { fileStore.exists(.music, "9.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "9.wav") }
         try await Self.settle()
 
         #expect(player.queue.upcoming.first?.song.id == "9")
-        #expect(fileStore.exists(.music, "9.mp3"))
+        #expect(fileStore.exists(.music, "9.wav"))
         // the prefetch of the track that used to be next was cancelled
-        #expect(!fileStore.exists(.music, "2.mp3"))
+        #expect(!fileStore.exists(.music, "2.wav"))
         #expect(player.song?.id == "1")
     }
 
@@ -577,12 +629,12 @@ struct PlayerStoreTests {
         let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
 
         player.play(Self.songs(3), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "2.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
 
         player.moveUpcoming(fromOffsets: IndexSet(integer: 1), toOffset: 0)
-        try await Self.waitFor { fileStore.exists(.music, "3.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "3.wav") }
         #expect(player.queue.upcoming.first?.song.id == "3")
-        #expect(fileStore.exists(.music, "3.mp3"))
+        #expect(fileStore.exists(.music, "3.wav"))
     }
 
     @Test("re-arming the prefetch with the next track on disk asks for nothing")
@@ -592,7 +644,7 @@ struct PlayerStoreTests {
         let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "2.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
         let requests = MockURLProtocol.requests(forHost: host).count
 
         player.prefetchNext()
@@ -610,27 +662,27 @@ struct PlayerStoreTests {
         let host = "player-\(UUID().uuidString).example.com"
         let gate = DispatchSemaphore(value: 0)
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3" {
+            if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.mp3") }
+        try await Self.waitFor { Self.requested(host, "2.wav") }
 
         player.prefetchNext()
         player.prefetchNext()
         try await Self.settle()
         gate.signal()
-        try await Self.waitFor { fileStore.exists(.music, "2.mp3") }
+        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
         try await Self.settle()
 
         // the transfer that was already running finished, rather than being
         // cancelled & started over from nothing
-        #expect(fileStore.exists(.music, "2.mp3"))
+        #expect(fileStore.exists(.music, "2.wav"))
         let requests = MockURLProtocol.requests(forHost: host)
-            .filter { $0.url?.lastPathComponent == "2.mp3" }
+            .filter { $0.url?.lastPathComponent == "2.wav" }
         #expect(requests.count == 1)
     }
 
@@ -686,10 +738,10 @@ struct PlayerStoreTests {
     func failedFetchDropsThePreviousTrack() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3" {
+            if request.url?.lastPathComponent == "2.wav" {
                 throw URLError(.notConnectedToInternet)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
@@ -711,7 +763,7 @@ struct PlayerStoreTests {
         #expect(!player.isPlaying)
         #expect(!player.hasLoadedTrack)
         #expect(player.song?.id == "2")
-        #expect(!fileStore.exists(.music, "2.mp3"))
+        #expect(!fileStore.exists(.music, "2.wav"))
     }
 
     @Test("an uncached track with no credentials doesn't leave the last one loaded either")
@@ -719,7 +771,7 @@ struct PlayerStoreTests {
     func uncachedWithoutCredentialsDropsThePreviousTrack() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let (player, _, baseURL) = Self.makePlayer(host: host) { request in
-            (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
@@ -740,18 +792,18 @@ struct PlayerStoreTests {
             if offline.isDown {
                 throw URLError(.notConnectedToInternet)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
         try await Self.waitFor { player.status == .unavailable }
-        #expect(!fileStore.exists(.music, "1.mp3"))
+        #expect(!fileStore.exists(.music, "1.wav"))
 
         offline.recover()
         player.togglePlayPause()
         try await Self.waitFor { player.status == .ready }
 
-        #expect(fileStore.exists(.music, "1.mp3"))
+        #expect(fileStore.exists(.music, "1.wav"))
         #expect(player.hasLoadedTrack)
         #expect(player.isPlaying)
         #expect(player.song?.id == "1")
@@ -781,7 +833,7 @@ struct PlayerStoreTests {
             if failOnce.shouldFail() {
                 throw URLError(.timedOut)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
@@ -789,7 +841,7 @@ struct PlayerStoreTests {
 
         #expect(player.status == .ready)
         #expect(player.isPlaying)
-        #expect(fileStore.exists(.music, "1.mp3"))
+        #expect(fileStore.exists(.music, "1.wav"))
         // the first request failed, so the track is only playing because a
         // second one went out for it
         #expect(MockURLProtocol.requests(forHost: host).count == 2)
@@ -800,10 +852,10 @@ struct PlayerStoreTests {
     func failedFetchSkipsToTheNextTrack() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.mp3" {
+            if request.url?.lastPathComponent == "2.wav" {
                 throw URLError(.notConnectedToInternet)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(3), token: "tok", baseURL: baseURL)
@@ -815,7 +867,7 @@ struct PlayerStoreTests {
         #expect(player.status == .ready)
         #expect(player.isPlaying)
         #expect(player.hasLoadedTrack)
-        #expect(fileStore.exists(.music, "3.mp3"))
+        #expect(fileStore.exists(.music, "3.wav"))
     }
 
     @Test("a queue with no network gives up instead of walking every track")
@@ -846,10 +898,10 @@ struct PlayerStoreTests {
         // only 3 & 6 can be fetched, so each is reached across two failures
         let (player, _, baseURL) = Self.makePlayer(host: host) { request in
             let filename = request.url?.lastPathComponent
-            guard filename == "3.mp3" || filename == "6.mp3" else {
+            guard filename == "3.wav" || filename == "6.wav" else {
                 throw URLError(.notConnectedToInternet)
             }
-            return (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            return (Self.okResponse(request.url!), Self.musicBytes)
         }
 
         player.play(Self.songs(6), token: "tok", baseURL: baseURL)
@@ -900,7 +952,7 @@ struct PlayerStoreTests {
     static func makePlayer(host: String, fetches: ArtworkFetches) -> (PlayerStore, FileStore, URL) {
         let baseURL = URL(string: "https://\(host)")!
         MockURLProtocol.setHandler(forHost: host) { request in
-            (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            (Self.okResponse(request.url!), Self.musicBytes)
         }
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
@@ -962,7 +1014,7 @@ struct PlayerStoreTests {
     static func makePlayer(host: String, budget: FileCacheBudget) -> (PlayerStore, FileCache, URL) {
         let baseURL = URL(string: "https://\(host)")!
         MockURLProtocol.setHandler(forHost: host) { request in
-            (Self.okResponse(request.url!), Data("music-bytes".utf8))
+            (Self.okResponse(request.url!), Self.musicBytes)
         }
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
@@ -1001,5 +1053,128 @@ struct PlayerStoreTests {
         // the fetch that started the track already ran an eviction pass
         #expect(cache.evict().isEmpty)
         #expect(store.list(.artwork) == ["cover.jpg", "other.jpg"])
+    }
+
+    /// a bluetooth output the test can plug in or pull out partway through,
+    /// since that is all the watch's audio session activation turns on
+    @MainActor
+    final class AudioOutput {
+        private(set) var isConnected: Bool
+
+        init(connected: Bool = false) {
+            isConnected = connected
+        }
+
+        func connect() {
+            isConnected = true
+        }
+
+        func disconnect() {
+            isConnected = false
+        }
+    }
+
+    @Test("a track that can't activate the audio session says so instead of looking ready")
+    @MainActor
+    func failedActivationIsReported() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let output = AudioOutput()
+        let (player, fileStore, baseURL) = Self.makePlayerWithoutOutput(host: host, output: output)
+
+        player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
+        try await Self.waitFor { player.status != .fetching }
+
+        #expect(player.status == .needsOutput)
+        #expect(!player.isPlaying)
+        #expect(!player.hasLoadedTrack)
+        // the fetch is downstream of activation, so nothing was pulled either
+        #expect(!fileStore.exists(.music, "1.wav"))
+    }
+
+    @Test("the play button starts the track once an output is connected")
+    @MainActor
+    func playRecoversAfterFailedActivation() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let output = AudioOutput()
+        let (player, fileStore, baseURL) = Self.makePlayerWithoutOutput(host: host, output: output)
+
+        player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
+        try await Self.waitFor { player.status == .needsOutput }
+
+        // without this the tap only reached player.play() on a player holding
+        // no item, which could never start anything however long you pressed
+        output.connect()
+        player.togglePlayPause()
+        try await Self.waitFor { player.status == .ready }
+
+        #expect(player.isPlaying)
+        #expect(player.hasLoadedTrack)
+        #expect(fileStore.exists(.music, "1.wav"))
+    }
+
+    @Test("a failed activation doesn't leave the previous track loaded under the new one")
+    @MainActor
+    func failedActivationDropsThePreviousTrack() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let output = AudioOutput(connected: true)
+        let (player, _, baseURL) = Self.makePlayerWithoutOutput(host: host, output: output)
+
+        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
+        try await Self.waitFor { player.hasLoadedTrack }
+        #expect(player.song?.id == "1")
+
+        // the headphones come off between the two tracks
+        output.disconnect()
+        player.skipToNext()
+        try await Self.waitFor { player.status == .needsOutput }
+
+        // track 1's item is gone, so a tap can't resume it under track 2's
+        // title & its finish can't be counted as a play of track 2
+        #expect(player.song?.id == "2")
+        #expect(!player.hasLoadedTrack)
+        #expect(!player.isPlaying)
+    }
+
+    @Test("a track whose file won't load is dropped from disk & the queue moves on")
+    @MainActor
+    func unplayableFileIsDroppedAndSkipped() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        // 1 downloads fine & is still not something avfoundation can play,
+        // which is what a truncated transfer leaves behind
+        let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
+            let data = request.url?.lastPathComponent == "1.wav"
+                ? Data("not-audio".utf8) : Self.musicBytes
+            return (Self.okResponse(request.url!), data)
+        }
+
+        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
+        try await Self.waitFor { player.song?.id == "2" && player.status == .ready }
+
+        #expect(player.song?.id == "2")
+        #expect(player.isPlaying)
+        #expect(player.hasLoadedTrack)
+        // left on disk it would short circuit every later fetch of that track,
+        // so the file would never become playable again
+        #expect(!fileStore.exists(.music, "1.wav"))
+        #expect(fileStore.exists(.music, "2.wav"))
+    }
+
+    @Test("a queue of files that won't load gives up instead of pulling them forever")
+    @MainActor
+    func unplayableQueueGivesUp() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let (player, _, baseURL) = Self.makePlayer(host: host) { request in
+            (Self.okResponse(request.url!), Data("not-audio".utf8))
+        }
+
+        player.play(Self.songs(6), token: "tok", baseURL: baseURL)
+        try await Self.waitFor { player.status == .unavailable }
+
+        #expect(player.status == .unavailable)
+        #expect(!player.isPlaying)
+        #expect(!player.hasLoadedTrack)
+        // every fetch here succeeds, so the fetch budget never opens & only a
+        // budget of its own stops this walking the queue re-downloading it all
+        #expect(!Self.requested(host, "6.wav"))
     }
 }
