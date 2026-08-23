@@ -199,10 +199,13 @@ struct PlayerStoreTests {
 
     @Test("an interruption pauses playback & resumes when told to")
     @MainActor
-    func interruptionPausesAndResumes() {
+    func interruptionPausesAndResumes() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let (player, _, baseURL) = Self.makePlayerWithServer(host: host)
         player.play([Self.song()], token: "tok", baseURL: baseURL)
+        // an interruption only pauses a track that is actually playing, so
+        // let the download land first
+        try await Self.waitFor { player.status == .ready }
         #expect(player.isPlaying)
 
         player.handleInterruption(Self.interruption(.began))
@@ -214,6 +217,64 @@ struct PlayerStoreTests {
 
         // ended with shouldResume starts it again
         player.handleInterruption(Self.interruption(.ended, options: .shouldResume))
+        #expect(player.isPlaying)
+    }
+
+    @Test("an interruption while a track is downloading doesn't cancel the start")
+    @MainActor
+    func interruptionDuringFetchKeepsThePendingStart() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let (player, _, baseURL) = Self.makePlayerWithServer(host: host)
+
+        player.play([Self.song()], token: "tok", baseURL: baseURL)
+        #expect(player.status == .fetching)
+        // watchos raises one of these as the audio session activates for a
+        // bluetooth output, which is while the file is still coming down
+        player.handleInterruption(Self.interruption(.began))
+
+        // the download lands into a track that starts, not one sitting at a
+        // play button waiting to be tapped a second time
+        try await Self.waitFor { player.status == .ready }
+        #expect(player.status == .ready)
+        #expect(player.isPlaying)
+        #expect(player.hasLoadedTrack)
+    }
+
+    @Test("play during a download restores the intent without starting the last track")
+    @MainActor
+    func resumeDuringFetchWaitsForTheDownload() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        // track 2 is slow enough to still be coming down while the test plays
+        // with the transport
+        let (player, _, baseURL) = Self.makePlayer(host: host) { request in
+            if request.url?.lastPathComponent == "2.wav" {
+                Thread.sleep(forTimeInterval: 1.5)
+            }
+            return (Self.okResponse(request.url!), Self.musicBytes)
+        }
+
+        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
+        try await Self.waitFor { player.status == .ready }
+        player.skipToNext()
+        #expect(player.song?.id == "2")
+        #expect(player.status == .fetching)
+        // track 1's item is still in the player until track 2's file lands
+        #expect(player.hasLoadedTrack)
+
+        player.pause()
+        #expect(!player.isPlaying)
+        player.resume()
+        #expect(player.isPlaying)
+        #expect(player.status == .fetching)
+
+        // longer than the time observer's interval, so track 1 playing on
+        // under track 2's name would have moved the playhead by now
+        try await Task.sleep(nanoseconds: 700_000_000)
+        #expect(player.status == .fetching)
+        #expect(player.currentTime == 0)
+
+        try await Self.waitFor { player.status == .ready }
+        #expect(player.song?.id == "2")
         #expect(player.isPlaying)
     }
 

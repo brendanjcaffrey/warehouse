@@ -458,11 +458,18 @@ final class PlayerStore {
 
     func resume() {
         guard song != nil, !isPlaying else { return }
+        // the fetch running for this track starts it itself when it lands, and
+        // the item still in the player belongs to the track before it, so all
+        // a play here can do is put the intent back for the fetch to find
+        if status == .fetching {
+            isPlaying = true
+            updateNowPlayingPlaybackState()
+            return
+        }
         // there is nothing loaded to resume — a fetch that didn't land, or an
         // audio session that never activated — so tapping play means start the
-        // track again; the state has no other way to recover. a fetch still in
-        // flight is the exception: it begins playback itself when it lands
-        if !hasLoadedTrack, status != .fetching {
+        // track again; the state has no other way to recover
+        if !hasLoadedTrack {
             startCurrent()
             return
         }
@@ -698,6 +705,11 @@ final class PlayerStore {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
+            // a track that hasn't started yet has no audio to interrupt, and
+            // watchos raises one of these as the audio session activates for a
+            // bluetooth output; taking the pending start down with it is what
+            // left a finished download sitting at a play button
+            guard status != .fetching else { break }
             pause()
         case .ended:
             let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
