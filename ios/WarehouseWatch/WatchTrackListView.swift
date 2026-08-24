@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WatchTrackListView: View {
     @Environment(WatchSettingsStore.self) private var settings
+    @Environment(SongsStore.self) private var store
     @Environment(PlayerStore.self) private var player
 
     let title: String
@@ -61,7 +62,7 @@ struct WatchTrackListView: View {
                             // a tap always plays the whole list, dropping any filter
                             play(startingAt: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
                         } label: {
-                            WatchSongRow(song: song)
+                            WatchSongRow(song: song, downloaded: store.isDownloaded(song))
                         }
                     }
                 }
@@ -109,6 +110,9 @@ struct WatchTrackListView: View {
 
 struct WatchSongRow: View {
     let song: Song
+    /// whether the track's file is in the watch's cache, so it plays without
+    /// the network
+    let downloaded: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -121,6 +125,13 @@ struct WatchSongRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+            if downloaded {
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.down.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Downloaded")
             }
         }
     }

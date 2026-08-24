@@ -271,4 +271,64 @@ struct FileCacheTests {
 
         #expect(offered == 120)
     }
+
+    @Test("a track landing tells the listener the cached set moved")
+    func notifiesWhenATrackLands() {
+        let cache = Self.makeCache(Self.makeStore())
+        var changes = 0
+        cache.onMusicChanged = { changes += 1 }
+
+        cache.noteMusicStored()
+
+        #expect(changes == 1)
+    }
+
+    @Test("eviction that drops a track tells the listener")
+    func notifiesWhenATrackIsEvicted() throws {
+        let store = Self.makeStore()
+        let cache = Self.makeCache(store, music: 150)
+        try Self.write(store, .music, "a.mp3", bytes: 100)
+        try Self.write(store, .music, "b.mp3", bytes: 100, created: Date(timeIntervalSince1970: 500))
+        var changes = 0
+        cache.onMusicChanged = { changes += 1 }
+
+        #expect(cache.evict().count == 1)
+
+        #expect(changes == 1)
+    }
+
+    @Test("an eviction pass that takes no track leaves the listener alone")
+    func staysQuietWhenOnlyArtworkGoes() throws {
+        let store = Self.makeStore()
+        let cache = Self.makeCache(store, music: .max, artwork: 150)
+        try Self.write(store, .music, "a.mp3", bytes: 100)
+        try Self.write(store, .artwork, "a.jpg", bytes: 100)
+        try Self.write(store, .artwork, "b.jpg", bytes: 100, created: Date(timeIntervalSince1970: 500))
+        var changes = 0
+        cache.onMusicChanged = { changes += 1 }
+
+        // the artwork half is over budget & the music half isn't, so the pass
+        // removes a cover & no track
+        #expect(cache.evict() == [FileToDownload(type: .artwork, filename: "a.jpg")])
+
+        #expect(changes == 0)
+    }
+
+    @Test("tracks landing on disk tell the listener, so the rows can mark them")
+    func notifiesWhenThePlayerFetchesTracks() async throws {
+        // the player is the only thing that grows the music half of the
+        // cache, so it is where the marks on the watch's rows come from
+        let host = "filecache-\(UUID().uuidString).example.com"
+        let (player, cache, baseURL) = PlayerStoreTests.makePlayer(
+            host: host, budget: FileCacheBudget(music: .max, artwork: .max))
+        var changes = 0
+        cache.onMusicChanged = { changes += 1 }
+
+        player.play(PlayerStoreTests.songs(2), token: "tok", baseURL: baseURL)
+        // the track that started, then the one pulled ahead of it
+        try await PlayerStoreTests.waitFor { cache.fileStore.exists(.music, "2.wav") }
+        try await PlayerStoreTests.settle()
+
+        #expect(changes == 2)
+    }
 }

@@ -338,6 +338,9 @@ final class PlayerStore {
                 guard generation == startGeneration else { return }
                 if ok {
                     fileCache?.recordUse(.music, song.musicFilename)
+                    // the track is on disk now, so the rows showing what's
+                    // cached are out of date until they're told
+                    fileCache?.noteMusicStored()
                     // a fetch is the only thing that grows the cache on this
                     // side, so it is where the budget gets checked; the
                     // artwork fetcher runs a pass of its own for the browse
@@ -507,6 +510,7 @@ final class PlayerStore {
             guard generation == startGeneration else { return ok }
             // deliberately no recordUse: it hasn't been played yet, and
             // ranking it above the track actually playing would be a lie
+            fileCache?.noteMusicStored()
             fileCache?.evict()
             // the file is here now, so the slot behind the current track can
             // hold it rather than holding nothing at all

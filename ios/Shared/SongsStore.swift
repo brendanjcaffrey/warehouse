@@ -26,6 +26,13 @@ final class SongsStore {
         }
     }
 
+    /// re-reads which music files are on disk without touching the library.
+    /// the watch fills & evicts its cache as tracks play, so its rows need
+    /// this far more often than a sync happens
+    func refreshDownloads() {
+        downloadedMusic = fileStore.list(.music)
+    }
+
     /// persists an edited track & refreshes the songs list so every view
     /// built from it picks up the change
     func applyTrackEdit(_ song: Song) async {

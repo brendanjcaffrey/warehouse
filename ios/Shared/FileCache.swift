@@ -45,6 +45,11 @@ struct FileCacheBudget: Equatable, Sendable {
 final class FileCache {
     let fileStore: FileStore
 
+    /// called whenever the music files held change — one lands or eviction
+    /// takes one — so the watch's rows can refresh which tracks are cached.
+    /// the phone mirrors the library & has no cache to leave a listener on
+    var onMusicChanged: (@MainActor () -> Void)?
+
     private let budget: @MainActor (Int64) -> FileCacheBudget
     private let now: @Sendable () -> Date
     /// type directory -> filename -> seconds since the epoch
@@ -68,6 +73,14 @@ final class FileCache {
     func recordUse(_ type: LibraryFileType, _ filename: String) {
         recency[type.directory, default: [:]][filename] = now().timeIntervalSince1970
         save()
+    }
+
+    /// notes a music file landing on disk, so anything showing what the cache
+    /// holds picks it up. the recency index is deliberately left alone: a
+    /// prefetched track hasn't been played, & the player records the tracks it
+    /// actually starts itself
+    func noteMusicStored() {
+        onMusicChanged?()
     }
 
     /// replaces the set of files of one type that eviction may not touch,
@@ -94,6 +107,9 @@ final class FileCache {
             removed += evict(type, entries: entries[type] ?? [], budget: budget[type])
         }
         save()
+        if removed.contains(where: { $0.type == .music }) {
+            onMusicChanged?()
+        }
         return removed
     }
 

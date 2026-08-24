@@ -31,6 +31,9 @@ struct WarehouseWatchApp: App {
         // music & artwork aren't synced, so the player & the rows pull them as
         // they need them
         let artwork = WatchArtworkFetcher(fileCache: fileCache, credentials: credentials)
+        // tracks arrive & are evicted as the user plays, so the download marks
+        // on the rows follow the cache rather than the last sync
+        fileCache.onMusicChanged = { songs.refreshDownloads() }
         // the library still syncs; the files it references do not
         let syncStore = SyncStore(
             database: database, fileStore: fileStore, transfersFiles: false)
