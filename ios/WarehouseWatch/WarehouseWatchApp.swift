@@ -51,7 +51,11 @@ struct WarehouseWatchApp: App {
             fileStore: fileStore,
             fileCache: fileCache,
             fetchArtwork: { await artwork.fetch($0, priority: .nowPlaying) },
-            onTrackPlayed: { plays.add(trackId: $0) }))
+            onTrackPlayed: { plays.add(trackId: $0) },
+            // a track that isn't cached is played straight off the server.
+            // the download it replaces ran in this process & died whenever
+            // watchos stopped scheduling us, which is every wrist drop
+            streams: true))
         self.phone = phone
         self.plays = plays
         self.artwork = artwork
@@ -79,14 +83,13 @@ struct WarehouseWatchApp: App {
                 .environment(playlists)
                 .environment(player)
                 .environment(\.artworkFetcher, artwork)
-                .onChange(of: scenePhase) {
-                    // the prefetch gets its one shot as a track starts, which
-                    // is when the wrist is dropping & watchos starts throttling
-                    // the transfer; coming back to the foreground is the chance
-                    // to fill a miss before the next track needs it
-                    if scenePhase == .active && player.isPlaying {
-                        player.prefetchNext()
-                    }
+                .onChange(of: scenePhase, initial: true) {
+                    // prefetch only runs frontmost. out of sight the app is
+                    // most likely on a wrist mid-workout, where a download
+                    // would be competing with the stream that is actually
+                    // making sound; coming back is the chance to fill the
+                    // cache & cover the next dead zone
+                    player.setForeground(scenePhase == .active)
                 }
         }
     }

@@ -69,7 +69,7 @@ class Server < Sinatra::Base
   end
 
   get '/music/*' do
-    if authed?
+    if authed?(allow_cookie: true)
       file = params['splat'][0]
       full_path = File.expand_path(File.join(Config.env.music_path, file))
       ext = File.extname(file).delete('.').downcase
@@ -90,7 +90,7 @@ class Server < Sinatra::Base
   end
 
   get '/artwork/*' do
-    if authed?(allow_export_user: true)
+    if authed?(allow_export_user: true, allow_cookie: true)
       file = params['splat'][0]
       full_path = File.expand_path(File.join(Config.env.artwork_path, file))
       ext = File.extname(file).delete('.').downcase

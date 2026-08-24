@@ -15,11 +15,24 @@ module Helpers
     result.cmd_tuples
   end
 
-  def get_validated_username(allow_export_user: false)
+  # avplayer can't be given an authorization header, so the watch streams the
+  # file routes with the token in a cookie instead. only those routes take it:
+  # a cookie rides along on requests this app didn't make, & the api can write
+  # to the library, so the bearer header stays the only way in there
+  TOKEN_COOKIE = 'token'.freeze
+
+  def bearer_token
     auth_header = request.env['HTTP_AUTHORIZATION']
     return nil if auth_header.nil? || !auth_header.start_with?('Bearer ')
 
-    token = auth_header.gsub('Bearer ', '')
+    auth_header.gsub('Bearer ', '')
+  end
+
+  def get_validated_username(allow_export_user: false, allow_cookie: false)
+    token = bearer_token
+    token = request.cookies[TOKEN_COOKIE] if token.nil? && allow_cookie
+    return nil if token.nil? || token.empty?
+
     begin
       payload, header = decode_jwt(token, Config.env.secret)
     rescue StandardError
@@ -36,8 +49,8 @@ module Helpers
     username
   end
 
-  def authed?(allow_export_user: false)
-    !get_validated_username(allow_export_user: allow_export_user).nil?
+  def authed?(allow_export_user: false, allow_cookie: false)
+    !get_validated_username(allow_export_user: allow_export_user, allow_cookie: allow_cookie).nil?
   end
 
   def track_exists?(track_id)

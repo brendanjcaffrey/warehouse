@@ -31,6 +31,27 @@ map $funnel$bearer $funnel_unauthed {
     'funnel0' 1;
 }
 
+# avplayer streams /music/ and /artwork/ straight off the server and has nowhere to put a
+# bearer header, so those requests carry the token in a cookie instead (see
+# ios/Shared/StreamingAsset.swift). only presence is checked here -- this gate exists to keep
+# credential-less requests from waking puma, and puma still validates the jwt.
+map $cookie_token $token_cookie {
+    default 0;
+    '~.+'   1;
+}
+
+map $bearer$token_cookie $credentialed {
+    default 1;
+    '00'    0;
+}
+
+# the file routes take either; everything else stays header-only, matching the server, where
+# `allow_cookie:` is passed on those two routes and nowhere else.
+map $funnel$credentialed $funnel_unauthed_file {
+    default   0;
+    'funnel0' 1;
+}
+
 limit_req_zone  $funnel zone=funnel_req:1m  rate=10r/s;
 limit_req_zone  $funnel zone=funnel_auth:1m rate=5r/m;
 limit_conn_zone $funnel zone=funnel_conn:1m;
@@ -115,14 +136,18 @@ server {
         proxy_pass http://puma_server;
     }
 
+    # the watch streams these rather than downloading them, so a request here may authenticate
+    # with a cookie instead of a bearer header. nginx serves the bytes itself off the internal
+    # /accel/ aliases below once puma has authorized, and honours the client's Range header
+    # there, which is what lets avplayer seek without pulling the whole file.
     location ^~ /music/ {
-        if ($funnel_unauthed) { return 401; }
+        if ($funnel_unauthed_file) { return 401; }
         limit_except GET { deny all; }
         proxy_pass http://puma_server;
     }
 
     location ^~ /artwork/ {
-        if ($funnel_unauthed) { return 401; }
+        if ($funnel_unauthed_file) { return 401; }
         limit_except GET { deny all; }
         proxy_pass http://puma_server;
     }

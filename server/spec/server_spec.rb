@@ -87,6 +87,16 @@ describe 'Warehouse Server' do
     { 'HTTP_AUTHORIZATION' => "Bearer #{token}" }
   end
 
+  def get_auth_cookie(username = 'test123')
+    headers = { exp: Time.now.to_i + 5 }
+    JWT.encode({ username: username }, TEST_CONFIG.secret, JWT_ALGO, headers)
+  end
+
+  def get_expired_auth_cookie(username = 'test123')
+    headers = { exp: Time.now.to_i - 5 }
+    JWT.encode({ username: username }, TEST_CONFIG.secret, JWT_ALGO, headers)
+  end
+
   def get_expired_auth_header(username = 'test123')
     headers = { exp: Time.now.to_i - 5 }
     token = JWT.encode({ username: username }, TEST_CONFIG.secret, JWT_ALGO, headers)
@@ -148,6 +158,7 @@ describe 'Warehouse Server' do
   let(:artwork_filename) { '__artwork.jpg' }
 
   before do
+    clear_cookies
     Server.set :environment, :test
     Server.set :raise_errors, true
     Server.set :show_exceptions, false
@@ -197,6 +208,27 @@ describe 'Warehouse Server' do
       expect(last_response.headers['Content-Type']).to eq('audio/mpeg')
       expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/music/06dbe92c2a5dab2f7911e20a9e157521.mp3')
     end
+
+    # avplayer streams this route & can't send an authorization header
+    it 'accepts the token in a cookie' do
+      set_cookie("token=#{get_auth_cookie}")
+      get "/music/#{music_filename}"
+      expect(last_response.body).to eq("fake mp3 contents\n")
+    end
+
+    it 'redirects if the cookie token is expired' do
+      set_cookie("token=#{get_expired_auth_cookie}")
+      get "/music/#{music_filename}"
+      follow_redirect!
+      expect(last_request.url).to eq('http://localhost/')
+    end
+
+    it 'redirects if the cookie token is garbage' do
+      set_cookie('token=not-a-jwt')
+      get "/music/#{music_filename}"
+      follow_redirect!
+      expect(last_request.url).to eq('http://localhost/')
+    end
   end
 
   describe '/artwork/*' do
@@ -226,6 +258,33 @@ describe 'Warehouse Server' do
       get "/artwork/#{artwork_filename}", {}, get_auth_header
       expect(last_response.headers['Content-Type']).to eq('image/jpeg')
       expect(last_response.headers['X-Accel-Redirect']).to eq('/accel/artwork/__artwork.jpg')
+    end
+
+    it 'accepts the token in a cookie' do
+      set_cookie("token=#{get_auth_cookie}")
+      get "/artwork/#{artwork_filename}"
+      expect(last_response.body).to eq("fake jpg contents\n")
+    end
+  end
+
+  # the cookie is only there because avplayer has nowhere to put a bearer
+  # header, and it rides along on requests this app didn't make. the api can
+  # write to the library, so it stays header-only
+  describe 'cookie auth' do
+    it 'is not accepted by the api' do
+      set_cookie("token=#{get_auth_cookie}")
+      get '/api/library'
+      response = LibraryResponse.decode(last_response.body)
+      expect(response.response).to eq(:error)
+      expect(response.error).to eq(NOT_AUTHED_ERROR)
+    end
+
+    it 'does not let a cookie stand in for the header on a write' do
+      set_cookie("token=#{get_auth_cookie}")
+      post "/api/play/#{track_id1}"
+      response = OperationResponse.decode(last_response.body)
+      expect(response.success).to be(false)
+      expect(response.error).to eq(NOT_AUTHED_ERROR)
     end
   end
 

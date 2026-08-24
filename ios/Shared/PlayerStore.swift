@@ -73,6 +73,21 @@ final class PlayerStore {
     /// an unavailable track has to leave nothing behind of the previous one,
     /// & the player's item is the only place that shows
     var hasLoadedTrack: Bool { player.currentItem != nil }
+    /// what the loaded item is reading: a file on disk, or the server when the
+    /// track is streaming. exposed for the tests, which have no other way to
+    /// tell the two paths apart
+    var currentItemURL: URL? { (player.currentItem?.asset as? AVURLAsset)?.url }
+    /// how far ahead the loaded item is asked to buffer, 0 meaning the daemon
+    /// decides. exposed for the tests, which have nothing else to read it from
+    var forwardBufferDuration: TimeInterval? { player.currentItem?.preferredForwardBufferDuration }
+    /// what the item queued behind the current track is reading, nil when the
+    /// slot is empty. exposed for the tests, which have no other view of it
+    var nextItemURL: URL? { (nextItem?.item.asset as? AVURLAsset)?.url }
+    /// whether the track playing is the item that was already enqueued behind
+    /// the last one, rather than one built from scratch. exposed for the
+    /// tests: the two read the same url off the same file, so there is nothing
+    /// else that tells a step onto the tail apart from a restart
+    private(set) var advancedOntoEnqueuedItem = false
 
     private let fileStore: FileStore
     /// the watch bounds what it keeps & passes one in; the phone mirrors the
@@ -86,7 +101,11 @@ final class PlayerStore {
     /// phone records a play to push back into itunes, the watch leaves it nil
     private let onTrackPlayed: (@MainActor (String) -> Void)?
     private let downloader: FileDownloader
-    private let player = AVPlayer()
+    /// a queue player so the track after this one can be handed over before it
+    /// is needed. an enqueued item is loaded by the media daemon rather than
+    /// by us, so it keeps pulling ahead while the app is backgrounded — which
+    /// is the whole of a workout, & the only kind of prefetch that works there
+    private let player = AVQueuePlayer()
     /// kept from the last play call for loading later tracks in the queue
     private var token: String?
     private var baseURL: URL?
@@ -95,6 +114,12 @@ final class PlayerStore {
     /// watches whether the current item actually loaded, which avfoundation
     /// reports nowhere else
     private var itemStatusObserver: NSKeyValueObservation?
+    /// the same for the enqueued item, which can fail on its own without the
+    /// track that is making sound being affected
+    private var nextItemStatusObserver: NSKeyValueObservation?
+    /// notices the daemon stepping onto the enqueued item, which is the only
+    /// sign that a track started when we weren't the ones to start it
+    private var currentItemObserver: NSKeyValueObservation?
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
     private var audioSessionConfigured = false
@@ -115,6 +140,13 @@ final class PlayerStore {
     /// that very track can join it instead of racing a second download of the
     /// same file
     private var prefetch: (filename: String, task: Task<Bool, Never>)?
+    /// the one item enqueued behind the current track. the play queue stays
+    /// the source of truth for order, history, shuffle & repeat; this is a
+    /// derived cache of the single slot after it
+    private var nextItem: NextItem?
+    /// a queue row whose enqueued item wouldn't load, so re-pointing the slot
+    /// can't put the same broken item straight back into the player
+    private var failedNextEntryID: UUID?
     /// the second attempt at a prefetch that missed, waiting out the rest of
     /// its delay
     private var prefetchRetry: Task<Void, Never>?
@@ -142,6 +174,41 @@ final class PlayerStore {
     /// stands in for the platform's audio session activation, so tests can
     /// reproduce the watch refusing to activate without a bluetooth output
     private let activateSessionForTests: (@MainActor () async -> Bool)?
+    /// whether a track that isn't on disk is handed to the player as a server
+    /// url rather than downloaded first. the watch turns this on: its fetches
+    /// happen mid-workout with the app backgrounded, where a download stalls
+    /// and a stream doesn't. the phone mirrors the library & leaves it off
+    private let streams: Bool
+    /// how far ahead of the playhead a stream is asked to buffer. the default
+    /// is 0, meaning the media daemon picks, and it picks for the general case
+    /// rather than for a watch that is about to lose signal under a bridge; a
+    /// minute of slack is the difference between riding a dead zone out and
+    /// stopping. long enough to cover one, short enough not to pull most of a
+    /// track down before the user has skipped it. only ever a hint — the
+    /// daemon may buffer less, so nothing here assumes the audio is there
+    private static let streamForwardBufferDuration: TimeInterval = 60
+    /// whether the item in the player is reading from the server. a stream has
+    /// no file of ours behind it, so the things that clean up after a bad
+    /// download have nothing to clean up
+    private(set) var isStreamingCurrentTrack = false
+    /// whether the app is frontmost. prefetch is a cache fill, not the path
+    /// that makes sound, and it shares one slow link with whatever is
+    /// streaming right now — so it only runs where the user can see it. during
+    /// a workout the app is never active, which is exactly when pulling the
+    /// next track ahead would starve the stream it is meant to cover for
+    private var isForeground = true
+
+    /// the item queued behind the one playing, and what it stands for
+    private struct NextItem {
+        /// the queue row it was built for, so a reorder can tell whether it is
+        /// still the track that plays next
+        let entryID: UUID
+        let songID: String
+        let filename: String
+        let item: AVPlayerItem
+        /// reading from the server rather than off disk
+        let streaming: Bool
+    }
 
     // the retry delay & activation parameters are here for tests
     init(
@@ -150,6 +217,7 @@ final class PlayerStore {
         fileCache: FileCache? = nil,
         fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
         onTrackPlayed: (@MainActor (String) -> Void)? = nil,
+        streams: Bool = false,
         retryDelay: TimeInterval = 1,
         prefetchRetryDelay: TimeInterval = 30,
         activateSessionForTests: (@MainActor () async -> Bool)? = nil
@@ -158,11 +226,16 @@ final class PlayerStore {
         self.fileCache = fileCache
         self.fetchArtwork = fetchArtwork
         self.onTrackPlayed = onTrackPlayed
+        self.streams = streams
         self.retryDelay = retryDelay
         self.prefetchRetryDelay = prefetchRetryDelay
         self.activateSessionForTests = activateSessionForTests
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
+        // the point of the queue: at the end of a track the daemon plays
+        // straight on into the item behind it instead of waiting for us
+        player.actionAtItemEnd = .advance
         observeAudioSession()
+        observeCurrentItem()
     }
 
     /// starts playing songs in order, positioned at the tapped one so previous
@@ -202,6 +275,10 @@ final class PlayerStore {
         let generation = startGeneration
         // the retry budget is per track start, not per session
         prefetchRetried = false
+        // whatever was lined up behind the track we're leaving stands for a
+        // different position in the queue now
+        removeNextItem()
+        failedNextEntryID = nil
 
         let isDownloaded = fileStore.exists(.music, song.musicFilename)
         // a prefetch already running for this very track is the fetch we're
@@ -247,6 +324,15 @@ final class PlayerStore {
                 fileCache?.recordUse(.music, song.musicFilename)
                 beginPlayback(of: song)
             } else if let token, let baseURL {
+                // hand the server url straight to the player where we can: the
+                // loading then happens outside this process & survives the app
+                // being backgrounded, which a download at a track boundary
+                // does not
+                if streams, let asset = StreamingAsset.make(
+                    .music, filename: song.musicFilename, token: token, baseURL: baseURL) {
+                    beginPlayback(of: song, streaming: asset)
+                    return
+                }
                 let ok = await fetchMusic(
                     song.musicFilename, token: token, baseURL: baseURL, generation: generation)
                 guard generation == startGeneration else { return }
@@ -296,7 +382,11 @@ final class PlayerStore {
         removeEndObserver()
         itemStatusObserver?.invalidate()
         itemStatusObserver = nil
-        player.replaceCurrentItem(with: nil)
+        removeNextItem()
+        player.removeAllItems()
+        // the item it described is gone, & left set it would have prefetch
+        // standing down for a stream that isn't there any more
+        isStreamingCurrentTrack = false
         isPlaying = false
         status = reason
         updateNowPlayingPlaybackState()
@@ -305,15 +395,30 @@ final class PlayerStore {
     /// swaps the downloaded file into the player and starts it, unless the user
     /// paused while it was still downloading
     private func beginPlayback(of song: Song) {
+        beginPlayback(of: song, item: AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename)))
+    }
+
+    /// plays the track off the server rather than off disk. the item goes into
+    /// the player right away & buffers there, so unlike a download this leaves
+    /// no silent stretch for watchos to suspend the app in
+    private func beginPlayback(of song: Song, streaming asset: AVURLAsset) {
+        beginPlayback(of: song, item: AVPlayerItem(asset: asset), streaming: true)
+    }
+
+    private func beginPlayback(of song: Song, item: AVPlayerItem, streaming: Bool = false) {
         // something is playing again, so whatever was skipped to get here
         // doesn't count toward giving up on the queue
         consecutiveFailures = 0
-        let item = AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename))
+        isStreamingCurrentTrack = streaming
+        advancedOntoEnqueuedItem = false
         observeEnd(of: item)
         observeStatus(of: item)
         observeTimeIfNeeded()
 
-        player.replaceCurrentItem(with: item)
+        // the player's queue is rebuilt around this item; the slot behind it
+        // is filled again below, once the track we're actually on is known
+        player.removeAllItems()
+        player.insert(item, after: nil)
         applyStopTime()
         if window.start > 0 {
             seekPlayer(to: window.start)
@@ -321,11 +426,17 @@ final class PlayerStore {
         if isPlaying {
             player.play()
         }
-        status = .ready
+        // a file on disk is ready the moment it's handed over; a stream still
+        // has to fill a buffer, & saying ready here would show a play button
+        // over silence. observeStatus clears it once the item can play
+        if !streaming {
+            status = .ready
+        }
         updateNowPlayingPlaybackState()
         // the gap between tracks is only hidden if the next one is already
         // here, so start it now rather than when the current track ends
         prefetchNext()
+        reconcileNextItem()
     }
 
     /// downloads a track, joining the prefetch already running for it rather
@@ -364,6 +475,17 @@ final class PlayerStore {
             cancelPrefetch()
         }
         guard let filename, let token, let baseURL else { return }
+        // backgrounded, this is a download competing with a stream over one
+        // slow link, for a track that can stream itself when it's reached.
+        // one already running is left to finish — it is a single track & has
+        // progress worth keeping — but no new one starts out of sight
+        guard isForeground else { return }
+        // the stream is what's making sound; pulling the next track down
+        // alongside it is how it stops. wait until it has filled its buffer
+        // and is holding — observeStatus re-arms this the moment it is, and a
+        // stream still working on its first bytes is the worst time of all to
+        // put a second transfer on the same link
+        if isStreamingCurrentTrack, player.currentItem?.isPlaybackLikelyToKeepUp != true { return }
         // already here, or already on its way: restarting a transfer in flight
         // would throw away its progress on exactly the slow link that makes
         // prefetching worth doing
@@ -386,9 +508,22 @@ final class PlayerStore {
             // deliberately no recordUse: it hasn't been played yet, and
             // ranking it above the track actually playing would be a lie
             fileCache?.evict()
+            // the file is here now, so the slot behind the current track can
+            // hold it rather than holding nothing at all
+            reconcileNextItem()
             return ok
         })
         refreshInUse()
+    }
+
+    /// tracks whether the app is frontmost, which is the only place prefetch
+    /// runs. coming back to the foreground is also the chance to fill a miss,
+    /// so it re-arms on the way in
+    func setForeground(_ foreground: Bool) {
+        isForeground = foreground
+        if foreground, isPlaying {
+            prefetchNext()
+        }
     }
 
     /// the file the prefetch should be pointed at, or nil when there's nothing
@@ -434,6 +569,12 @@ final class PlayerStore {
         }
         if let prefetch {
             held.insert(prefetch.filename)
+        }
+        if let nextItem {
+            // an enqueued item can be reading a file off disk, & a cache that
+            // deletes a track already queued to play leaves a gap with no way
+            // back: nothing re-points the slot before the daemon reaches it
+            held.insert(nextItem.filename)
         }
         fileCache.setInUse(.music, held)
         // only the playing track's cover: nothing pulls artwork ahead, so a
@@ -511,6 +652,9 @@ final class PlayerStore {
     /// otherwise playback stops once past the last track
     func skipToNext() {
         guard song != nil else { return }
+        // the next track is already enqueued & loading, so step onto it rather
+        // than tearing it down and starting it over from nothing
+        if advanceOntoNextItem(.skipped) { return }
         if queue.advance(wrapping: repeatMode == .all) {
             startCurrent()
         } else {
@@ -528,6 +672,7 @@ final class PlayerStore {
             // the inserted track is the next one now, so whatever was being
             // pulled ahead is a track further out
             prefetchNext()
+            reconcileNextItem()
         }
     }
 
@@ -551,6 +696,11 @@ final class PlayerStore {
     func trackUpdated(_ song: Song) {
         let current = self.song
         queue.updateSong(song)
+        // an edit to the track queued behind this one moves the marker the
+        // daemon advances at, which was armed when the item was enqueued
+        if let nextItem, nextItem.songID == song.id {
+            nextItem.item.forwardPlaybackEndTime = Self.stopTime(for: song)
+        }
         guard let current, current.id == song.id else { return }
 
         // only rebuild the window when the edit moved the markers, so a name
@@ -568,6 +718,9 @@ final class PlayerStore {
     func setShuffled(_ shuffled: Bool) {
         queue.setShuffled(shuffled)
         updateRemoteCommandModes()
+        // a reshuffle puts a different track next, & unlike a prefetch that
+        // went to the wrong file an item left in the player would be played
+        reconcileNextItem()
     }
 
     /// steps the repeat button through off, repeat all & repeat one
@@ -581,6 +734,7 @@ final class PlayerStore {
         // the mode decides what comes next: repeat one has nothing to pull
         // ahead, & repeat all makes the first track next at the end of a queue
         prefetchNext()
+        reconcileNextItem()
     }
 
     /// reorders the upcoming tracks from the queue view
@@ -588,6 +742,7 @@ final class PlayerStore {
         queue.moveUpcoming(fromOffsets: offsets, toOffset: destination)
         // the reorder may have put a different track next
         prefetchNext()
+        reconcileNextItem()
     }
 
     func seek(to time: TimeInterval) {
@@ -852,12 +1007,17 @@ final class PlayerStore {
 
     private func observeEnd(of item: AVPlayerItem) {
         removeEndObserver()
+        let generation = startGeneration
         // this fires at forwardPlaybackEndTime too, so custom stop times are respected
         endObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.handleTrackEnd()
+                // a notification already on its way to the main queue when the
+                // daemon's own advance was picked up would otherwise count the
+                // finished track a second time & skip the one after it
+                guard let self, generation == self.startGeneration else { return }
+                self.handleTrackEnd()
             }
         }
     }
@@ -887,6 +1047,27 @@ final class PlayerStore {
                 } else {
                     // a track that loaded clears the run of ones that didn't
                     self.consecutiveItemFailures = 0
+                    // the buffer filled, so a stream that started out
+                    // .fetching is actually playing now
+                    if self.status == .fetching {
+                        self.status = .ready
+                        self.updateNowPlayingPlaybackState()
+                    }
+                    // the prefetch armed as this track started stood down for
+                    // the stream; now that it is holding, there is room on the
+                    // link for the next track
+                    if self.isStreamingCurrentTrack {
+                        self.prefetchNext()
+                        // asked for here rather than when the item went into
+                        // the player: up front it competes with the first fill,
+                        // which is the moment the user is waiting on a sound,
+                        // and a target the buffer is nowhere near could hold
+                        // isPlaybackLikelyToKeepUp false — which is the very
+                        // thing the prefetch above stands down on, and nothing
+                        // re-arms it a second time. after it, both are safe
+                        self.player.currentItem?.preferredForwardBufferDuration =
+                            Self.streamForwardBufferDuration
+                    }
                 }
             }
         }
@@ -900,7 +1081,13 @@ final class PlayerStore {
     private func handleItemFailure(_ reason: String) {
         guard let song else { return }
         log.error("item failed for \(song.musicFilename, privacy: .public): \(reason, privacy: .public)")
-        try? fileStore.delete(.music, song.musicFilename)
+        // only a file we wrote can be the bad one. a stream that failed says
+        // something about the link, not about the disk — and by the time it
+        // fails a prefetch may well have landed the very file it was standing
+        // in for, which deleting would throw away
+        if !isStreamingCurrentTrack {
+            try? fileStore.delete(.music, song.musicFilename)
+        }
         consecutiveItemFailures += 1
         // the file is re-fetchable, so without a budget of its own a queue of
         // tracks that all fail to load would be walked forever, downloading
@@ -912,9 +1099,239 @@ final class PlayerStore {
         handleFailedFetch()
     }
 
+    /// why the player moved onto the item enqueued behind the current track
+    private enum Advance {
+        /// the track played through to its end, so it counts as a play & the
+        /// audio session is by definition still live
+        case trackEnded
+        /// the user stepped onto it, which is no play at all & can happen long
+        /// after the session went away
+        case skipped
+        /// the daemon moved onto it without us asking. this exists so the play
+        /// queue can follow the player, & deliberately reports no play whatever
+        /// the reason for the move: didPlayToEndTime is the only signal that a
+        /// track actually reached its end, so handleTrackEnd is the only path
+        /// that writes a play back into itunes. a fabricated play is then not
+        /// something a guard has to prevent — there is no call here to make one
+        case daemonAdvanced
+    }
+
+    /// the player is on the item that was enqueued behind the current track.
+    /// this is where the play queue follows the player instead of driving it:
+    /// the daemon advances on its own with the app backgrounded, and nothing
+    /// else here would ever find out that a new track had started.
+    ///
+    /// false when the slot isn't holding what the queue says plays next,
+    /// leaving the caller to start the right track from scratch
+    @discardableResult
+    private func advanceOntoNextItem(_ reason: Advance) -> Bool {
+        guard let next = nextItem, let target = nextEnqueueEntry, target.id == next.entryID,
+              let finished = song else { return false }
+        // emptied before the player moves, so the currentItem observation this
+        // is about to set off finds nothing left to do: the end notification &
+        // the observation both land here for the same advance
+        nextItem = nil
+        nextItemStatusObserver?.invalidate()
+        nextItemStatusObserver = nil
+        if player.currentItem !== next.item {
+            // didPlayToEndTime can arrive before the daemon has stepped off the
+            // finished item, & at a custom stop time it is the only thing that
+            // knows the track is over at all
+            player.advanceToNextItem()
+        }
+        guard player.currentItem === next.item else {
+            // the slot isn't what's playing, so there is nothing here to follow
+            player.remove(next.item)
+            return false
+        }
+
+        // a track the daemon started is a track start like any other, so
+        // everything captured for the one before it — a fetch still in flight,
+        // a prefetch retry, an artwork pull, the old item's end & status
+        // observers — has to go stale right here. without it the finish of a
+        // track nobody heard reports a play against the wrong id
+        startGeneration += 1
+        prefetchRetried = false
+        failedNextEntryID = nil
+        // something is playing again, so whatever was skipped to get here
+        // doesn't count toward giving up on the queue
+        consecutiveFailures = 0
+        if reason == .trackEnded {
+            onTrackPlayed?(finished.id)
+        }
+        queue.advance(wrapping: repeatMode == .all)
+        guard let song else { return true }
+
+        if !next.streaming {
+            fileCache?.recordUse(.music, song.musicFilename)
+        }
+        isStreamingCurrentTrack = next.streaming
+        advancedOntoEnqueuedItem = true
+        observeEnd(of: next.item)
+        observeStatus(of: next.item)
+        window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
+        currentTime = window.start
+        ignoresFinish = false
+        isPlaying = true
+        // an item that has been enqueued for a while may already be holding, in
+        // which case the status observer clears this on its first callback
+        status = next.streaming ? .fetching : .ready
+        setNowPlayingInfo(for: song)
+        applyStopTime()
+        if window.start > 0 {
+            seekPlayer(to: window.start)
+        }
+        updateNowPlayingPlaybackState()
+        refreshInUse()
+        prefetchNext()
+        reconcileNextItem()
+        if reason == .skipped {
+            reactivateSessionForSkip()
+        }
+        return true
+    }
+
+    /// stepping onto an enqueued item skips the activation a track start does,
+    /// & on the watch the session may have gone since — losing a bluetooth
+    /// output is exactly the thing a user skips a track around. an advance at
+    /// the end of a track needs none of this: audio was rendering a moment ago
+    private func reactivateSessionForSkip() {
+        let generation = startGeneration
+        Task { @MainActor in
+            guard await activateSession() else {
+                if generation == startGeneration {
+                    markNotLoaded(.needsOutput)
+                }
+                return
+            }
+            guard generation == startGeneration, isPlaying else { return }
+            player.play()
+        }
+    }
+
+    /// the media daemon steps onto the enqueued item by itself at the end of a
+    /// track, without this app being scheduled at all. this is the only place
+    /// that finds out, so it is what keeps the play queue in step
+    private func observeCurrentItem() {
+        currentItemObserver = player.observe(\.currentItem, options: [.old, .new]) { [weak self] _, change in
+            // neither item can cross into the actor, so both are reduced here:
+            // the identity of what is playing now, and whether what the player
+            // stepped off failed rather than finished
+            guard let item = change.newValue ?? nil else { return }
+            let identity = ObjectIdentifier(item)
+            let previousFailed = (change.oldValue ?? nil)?.status == .failed
+            Task { @MainActor [weak self] in
+                guard let self, let next = self.nextItem,
+                      identity == ObjectIdentifier(next.item) else { return }
+                // the player steps off an item that failed as readily as one
+                // that ended. handleItemFailure owns that case — it drops a bad
+                // file, counts the failure against the give-up budget & skips —
+                // & following the move here would bump the generation out from
+                // under it, so none of that would run
+                guard !previousFailed else { return }
+                // nothing here moves the player onto the enqueued item without
+                // emptying the slot first, so this is the daemon's own advance
+                self.advanceOntoNextItem(.daemonAdvanced)
+            }
+        }
+    }
+
+    /// keeps one item enqueued behind the one playing, pointed at whatever the
+    /// play queue says comes next. this is the only kind of pulling ahead that
+    /// works mid-workout: the loading is the daemon's, not ours
+    private func reconcileNextItem() {
+        let target = nextEnqueueEntry
+        if let nextItem, nextItem.entryID != target?.id {
+            removeNextItem()
+        }
+        guard nextItem == nil, let target, target.id != failedNextEntryID,
+              let (item, streaming) = nextPlayerItem(for: target.song),
+              player.currentItem != nil, player.canInsert(item, after: nil)
+        else { return }
+        // armed now rather than when the item becomes current: the daemon
+        // advances at the stop time, so it has to be set before it is reached
+        item.forwardPlaybackEndTime = Self.stopTime(for: target.song)
+        player.insert(item, after: nil)
+        nextItem = NextItem(
+            entryID: target.id, songID: target.song.id, filename: target.song.musicFilename,
+            item: item, streaming: streaming)
+        observeNextItemStatus(of: item)
+        // an enqueued file is a file that is queued to play
+        refreshInUse()
+    }
+
+    /// the queue row the slot behind the current track should be holding, or
+    /// nil when there's nothing worth lining up
+    private var nextEnqueueEntry: QueueEntry? {
+        // repeat one plays the same file again & the same item can't sit in the
+        // player's queue twice; the end of the track builds a fresh one instead
+        guard repeatMode != .one, player.currentItem != nil else { return nil }
+        return queue.next(wrapping: repeatMode == .all)
+    }
+
+    /// an item for a track that isn't the one playing: off disk when the file
+    /// is there, off the server when this player streams, and nothing at all
+    /// otherwise — a track with no item is just fetched when it's reached
+    private func nextPlayerItem(for song: Song) -> (item: AVPlayerItem, streaming: Bool)? {
+        if fileStore.exists(.music, song.musicFilename) {
+            return (AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename)), false)
+        }
+        guard streams, let token, let baseURL,
+              let asset = StreamingAsset.make(
+                .music, filename: song.musicFilename, token: token, baseURL: baseURL)
+        else { return nil }
+        return (AVPlayerItem(asset: asset), true)
+    }
+
+    /// where a track stops as the player wants it, or invalid when it plays
+    /// through to the end of its file
+    private static func stopTime(for song: Song) -> CMTime {
+        let window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
+        guard window.stopsEarly else { return .invalid }
+        return CMTime(seconds: window.end, preferredTimescale: 600)
+    }
+
+    /// empties the slot behind the current track. only ever that slot:
+    /// removing the item that is playing has the same effect as advancing, so
+    /// a re-point done wrong skips a track instead of changing what's next
+    private func removeNextItem() {
+        nextItemStatusObserver?.invalidate()
+        nextItemStatusObserver = nil
+        guard let next = nextItem else { return }
+        nextItem = nil
+        guard next.item !== player.currentItem else { return }
+        player.remove(next.item)
+    }
+
+    /// an enqueued item can fail on its own — a dead link, or a file that
+    /// turns out not to be playable. it isn't the track making sound, so
+    /// nothing about playback changes: the slot is emptied and the track goes
+    /// back to being fetched the ordinary way when the queue reaches it
+    private func observeNextItemStatus(of item: AVPlayerItem) {
+        nextItemStatusObserver?.invalidate()
+        nextItemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            // neither the item nor its error can cross into the actor
+            let identity = ObjectIdentifier(item)
+            let reason = item.error?.localizedDescription ?? "unknown"
+            Task { @MainActor [weak self] in
+                guard let self, let next = self.nextItem,
+                      identity == ObjectIdentifier(next.item) else { return }
+                log.error(
+                    "enqueued item failed for \(next.filename, privacy: .public): \(reason, privacy: .public)")
+                self.failedNextEntryID = next.entryID
+                self.removeNextItem()
+            }
+        }
+    }
+
     /// a track played through to its finish: count a play, then repeat it,
     /// move on, or stop depending on the repeat mode & queue position
     func handleTrackEnd() {
+        // with the next track enqueued the player has already stepped onto it,
+        // or is a moment from doing so; either way the queue follows it rather
+        // than building a second item for a track that is already playing
+        if advanceOntoNextItem(.trackEnded) { return }
         if let song {
             onTrackPlayed?(song.id)
         }
