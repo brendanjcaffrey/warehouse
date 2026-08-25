@@ -8,6 +8,7 @@ struct WarehouseWatchApp: App {
     @State private var songs: SongsStore
     @State private var playlists: PlaylistsStore
     @State private var player: PlayerStore
+    @State private var remote: WatchRemoteStore
 
     private let phone: WatchPhoneSession
     private let plays: PlayReportQueue
@@ -50,6 +51,11 @@ struct WarehouseWatchApp: App {
             outstandingIds: { phone.outstandingPlayIds },
             send: { phone.send($0) })
         phone.onActivated = { plays.drain() }
+        // what the phone is playing, when it is: the app is a remote for it
+        // rather than a second player fighting it for the headphones
+        let remote = WatchRemoteStore(send: { phone.send($0) })
+        phone.remote = remote
+        _remote = State(initialValue: remote)
         _player = State(initialValue: PlayerStore(
             fileStore: fileStore,
             fileCache: fileCache,
@@ -85,6 +91,7 @@ struct WarehouseWatchApp: App {
                 .environment(songs)
                 .environment(playlists)
                 .environment(player)
+                .environment(remote)
                 .environment(\.artworkFetcher, artwork)
                 .onChange(of: settings.deepPrefetchDepth, initial: true) {
                     // how far the prefetch reaches is the phone's call: it is
@@ -99,6 +106,11 @@ struct WarehouseWatchApp: App {
                     // making sound; coming back is the chance to fill the
                     // cache & cover the next dead zone
                     player.setForeground(scenePhase == .active)
+                    // pushes only reach a watch that was listening at the
+                    // time, so coming to the front is when to ask
+                    if scenePhase == .active {
+                        remote.requestState()
+                    }
                 }
         }
     }

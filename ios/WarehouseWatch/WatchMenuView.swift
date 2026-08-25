@@ -7,9 +7,12 @@ struct WatchMenuView: View {
     @Environment(SongsStore.self) private var songs
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(PlayerStore.self) private var player
+    @Environment(WatchRemoteStore.self) private var remote
 
     @State private var isSyncing = false
     @State private var syncOutcome: SyncOutcome?
+    @State private var showingRemote = false
+    @State private var autoOpen = RemoteAutoOpen()
 
     private enum SyncOutcome: Equatable {
         case upToDate
@@ -19,6 +22,14 @@ struct WatchMenuView: View {
     var body: some View {
         NavigationStack {
             List {
+                if remote.isAvailable {
+                    Button {
+                        autoOpen.noteOpened()
+                        showingRemote = true
+                    } label: {
+                        Label("Playing on iPhone", systemImage: "iphone")
+                    }
+                }
                 if player.song != nil {
                     NavigationLink {
                         WatchNowPlayingView()
@@ -48,6 +59,18 @@ struct WatchMenuView: View {
                 .disabled(isSyncing)
             }
             .navigationTitle("Warehouse")
+            .navigationDestination(isPresented: $showingRemote) {
+                WatchRemoteNowPlayingView()
+            }
+            .onChange(of: remote.isAvailable, initial: true) {
+                // opening the app while the phone is playing means the remote
+                // is what was wanted; browsing our own library is a step back
+                // away. only the once, though — backing out has to hold
+                guard autoOpen.shouldOpen(
+                    isRemoteAvailable: remote.isAvailable, isPlayingLocally: player.isPlaying)
+                else { return }
+                showingRemote = true
+            }
         }
     }
 

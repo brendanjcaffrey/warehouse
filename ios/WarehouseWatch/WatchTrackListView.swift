@@ -4,6 +4,7 @@ struct WatchTrackListView: View {
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SongsStore.self) private var store
     @Environment(PlayerStore.self) private var player
+    @Environment(WatchRemoteStore.self) private var remote
 
     let title: String
     let songs: [Song]
@@ -93,6 +94,9 @@ struct WatchTrackListView: View {
     }
 
     private func startedPlaying() {
+        // the watch is making the sound now, so stop the phone rather than
+        // leaving two players running into the same headphones
+        remote.pausePhone()
         search = ""
         showingNowPlaying = true
     }

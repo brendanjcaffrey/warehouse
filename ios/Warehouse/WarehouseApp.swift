@@ -54,7 +54,11 @@ struct WarehouseApp: App {
             },
             onPlay: { trackId in
                 Task { await updatesStore.addPlay(trackId: trackId) }
-            })
+            },
+            // the watch app opened while the phone is playing acts as a
+            // remote for it rather than starting a second stream
+            nowPlaying: { RemotePlaybackPayload(player: playerStore) },
+            onCommand: { playerStore.apply($0) })
         watchSettings.onChange = { watchSession.push() }
         _watchSettings = State(initialValue: watchSettings)
         self.watchSession = watchSession
@@ -98,6 +102,18 @@ struct WarehouseApp: App {
                 .onChange(of: auth.token) {
                     // keep the watch's credentials current across log in/out
                     watchSession.push()
+                }
+                .onChange(of: player.song?.id) {
+                    watchSession.pushNowPlaying()
+                }
+                .onChange(of: player.isPlaying) {
+                    watchSession.pushNowPlaying()
+                }
+                .onChange(of: player.queue.isShuffled) {
+                    watchSession.pushNowPlaying()
+                }
+                .onChange(of: player.repeatMode) {
+                    watchSession.pushNowPlaying()
                 }
                 .onChange(of: scenePhase) {
                     // push any stuck updates when coming back to the foreground

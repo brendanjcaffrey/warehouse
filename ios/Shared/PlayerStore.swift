@@ -9,7 +9,7 @@ private let log = Logger(subsystem: "com.jcaffrey.warehouse", category: "player"
 
 /// what happens when a track finishes: stop at the end of the queue,
 /// repeat the whole queue, or repeat the current track
-enum RepeatMode: Sendable {
+enum RepeatMode: String, Sendable {
     case off
     case all
     case one
