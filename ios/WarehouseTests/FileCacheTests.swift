@@ -331,4 +331,42 @@ struct FileCacheTests {
 
         #expect(changes == 2)
     }
+
+    @Test("the room left is the budget less everything the music half holds")
+    func roomCountsEveryMusicFile() throws {
+        let store = Self.makeStore()
+        let cache = Self.makeCache(store, music: 250)
+        try Self.write(store, .music, "a.mp3", bytes: 100)
+        try Self.write(store, .music, "b.mp3", bytes: 100)
+        // b is evictable, but a fill that keeps going until it is full would
+        // only be evicting what it fetched a minute ago: what is on disk is
+        // the answer, not what is spoken for
+        cache.setInUse(.music, ["a.mp3"])
+
+        #expect(cache.musicRoom() == 50)
+    }
+
+    @Test("the room left goes to nothing once the music on disk is at budget")
+    func roomRunsOutWhenTheMusicHalfIsFull() throws {
+        let store = Self.makeStore()
+        let cache = Self.makeCache(store, music: 250)
+        try Self.write(store, .music, "a.mp3", bytes: 200)
+        try Self.write(store, .music, "b.mp3", bytes: 200)
+
+        // negative rather than clamped: the track about to play is fetched
+        // whatever this says & eviction makes the room back afterwards
+        #expect(cache.musicRoom() == -150)
+    }
+
+    @Test("artwork doesn't come out of the music half's room")
+    func roomIgnoresArtwork() throws {
+        let store = Self.makeStore()
+        let cache = Self.makeCache(store, music: 250)
+        try Self.write(store, .music, "a.mp3", bytes: 100)
+        try Self.write(store, .artwork, "a.jpg", bytes: 100)
+
+        // the two halves have budgets of their own; only what the budget is
+        // sized against counts both
+        #expect(cache.musicRoom() == 150)
+    }
 }

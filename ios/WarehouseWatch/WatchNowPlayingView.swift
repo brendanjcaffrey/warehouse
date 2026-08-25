@@ -5,6 +5,7 @@ import SwiftUI
 /// toggle along the bottom
 struct WatchNowPlayingView: View {
     @Environment(PlayerStore.self) private var player
+    @Environment(SongsStore.self) private var songs
 
     var body: some View {
         Group {
@@ -43,6 +44,14 @@ struct WatchNowPlayingView: View {
                     }
                 }
                 Spacer(minLength: 0)
+                // the cache fills & evicts as tracks play, so mark the track
+                // here the same way the lists do
+                if songs.isDownloaded(song) {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Downloaded")
+                }
             }
             Spacer(minLength: 8)
             transport

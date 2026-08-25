@@ -49,7 +49,8 @@ struct WarehouseApp: App {
                 WatchPayload(
                     serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
                     token: authStore.token ?? "",
-                    playlistIds: watchSettings.playlistIds)
+                    playlistIds: watchSettings.playlistIds,
+                    deepPrefetchDepth: watchSettings.deepPrefetchDepth)
             },
             onPlay: { trackId in
                 Task { await updatesStore.addPlay(trackId: trackId) }

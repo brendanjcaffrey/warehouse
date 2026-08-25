@@ -26,12 +26,14 @@ struct WatchSettingsStoreTests {
         let (store, _, tokens) = Self.makeStore("apply")
         #expect(!store.isConfigured)
 
-        store.apply(WatchPayload(serverURL: "example.com", token: "tok", playlistIds: ["p1"]))
+        store.apply(WatchPayload(
+            serverURL: "example.com", token: "tok", playlistIds: ["p1"], deepPrefetchDepth: 30))
 
         #expect(store.isConfigured)
         #expect(store.serverURL == "example.com")
         #expect(store.token == "tok")
         #expect(store.playlistIds == ["p1"])
+        #expect(store.deepPrefetchDepth == 30)
         #expect(tokens.token == "tok")
         #expect(store.baseURL() == URL(string: "https://example.com"))
     }
@@ -39,7 +41,9 @@ struct WatchSettingsStoreTests {
     @Test("settings persist across instances")
     func settingsPersist() {
         let (store, defaults, tokens) = Self.makeStore("persist")
-        store.apply(WatchPayload(serverURL: "example.com", token: "tok", playlistIds: ["p1", "p2"]))
+        store.apply(WatchPayload(
+            serverURL: "example.com", token: "tok", playlistIds: ["p1", "p2"],
+            deepPrefetchDepth: 20))
 
         let reloaded = WatchSettingsStore(
             defaults: defaults,
@@ -49,6 +53,7 @@ struct WatchSettingsStoreTests {
         #expect(reloaded.serverURL == "example.com")
         #expect(reloaded.token == "tok")
         #expect(reloaded.playlistIds == ["p1", "p2"])
+        #expect(reloaded.deepPrefetchDepth == 20)
     }
 
     @Test("a selection change resets the sync watermark and bumps the counter")

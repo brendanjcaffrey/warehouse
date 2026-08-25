@@ -86,6 +86,12 @@ struct WarehouseWatchApp: App {
                 .environment(playlists)
                 .environment(player)
                 .environment(\.artworkFetcher, artwork)
+                .onChange(of: settings.deepPrefetchDepth, initial: true) {
+                    // how far the prefetch reaches is the phone's call: it is
+                    // this watch's disk & this watch's battery being spent
+                    player.deepPrefetchDepth = settings.deepPrefetchDepth
+                    player.prefetchNext()
+                }
                 .onChange(of: scenePhase, initial: true) {
                     // prefetch only runs frontmost. out of sight the app is
                     // most likely on a wrist mid-workout, where a download

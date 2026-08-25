@@ -146,8 +146,8 @@ struct PlayerStoreTests {
     /// spins until the condition holds or the attempts run out, so tests wait
     /// on the download actually landing rather than on a fixed sleep
     @MainActor
-    static func waitFor(_ condition: () -> Bool) async throws {
-        for _ in 0..<200 where !condition() {
+    static func waitFor(attempts: Int = 200, _ condition: () -> Bool) async throws {
+        for _ in 0..<attempts where !condition() {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
     }
@@ -164,20 +164,29 @@ struct PlayerStoreTests {
     /// host it is given, which is what the unreachable-host tests below rely on
     @MainActor
     static func makeStreamingPlayer(
-        host: String, baseURL: URL? = nil, onTrackPlayed: (@MainActor (String) -> Void)? = nil
+        host: String, baseURL: URL? = nil, budget: FileCacheBudget? = nil,
+        deepPrefetchDepth: Int = 0,
+        onTrackPlayed: (@MainActor (String) -> Void)? = nil,
+        handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil
     ) -> (PlayerStore, FileStore, URL) {
         let serverURL = baseURL ?? URL(string: "https://\(host)")!
-        MockURLProtocol.setHandler(forHost: host) { request in
+        // the default answers every download at once; a test that needs to see
+        // the slot before the prefetch lands passes one that holds it open
+        MockURLProtocol.setHandler(forHost: host, handler ?? { request in
             (Self.okResponse(request.url!), Self.musicBytes)
-        }
+        })
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
+        // the prefetch only reaches past the next track where there is a
+        // cache to reach into, so a test about its depth has to pass one
+        let cache = budget.map { budget in FileCache(fileStore: fileStore, budget: { _ in budget }) }
         let player = PlayerStore(
-            fileStore: fileStore, client: client, onTrackPlayed: onTrackPlayed,
+            fileStore: fileStore, client: client, fileCache: cache, onTrackPlayed: onTrackPlayed,
             streams: true, retryDelay: 0.01)
+        player.deepPrefetchDepth = deepPrefetchDepth
         return (player, fileStore, serverURL)
     }
 
@@ -190,12 +199,22 @@ struct PlayerStoreTests {
     /// a host to scope the cookie to. no host on the network answers in these
     /// tests, so this is the only way to get a streaming item as far as
     /// .readyToPlay — which is where the buffer target is asked for
-    static func localStreamBaseURL(containing filename: String) throws -> URL {
+    static func localStreamBaseURL(containing filenames: String...) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appending(path: "player-tests-stream-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: root.appending(path: "music"), withIntermediateDirectories: true)
-        try musicBytes.write(to: root.appending(path: "music/\(filename)"))
+        for filename in filenames {
+            try musicBytes.write(to: root.appending(path: "music/\(filename)"))
+        }
+        // downloads from this base url go through urlsession & so through the
+        // mock, which fails anything it has no handler for. the host is
+        // "localhost" for every test that uses one of these, but the handler
+        // is stateless & the assertions read each test's own file store, so
+        // sharing the key across them costs nothing
+        MockURLProtocol.setHandler(forHost: "localhost") { request in
+            (Self.okResponse(request.url!), Self.musicBytes)
+        }
         return URL(string: "file://localhost\(root.path())")!
     }
 
@@ -566,230 +585,6 @@ struct PlayerStoreTests {
         #expect(player.queue.upcoming.first?.song.name == "Renamed")
     }
 
-    @Test("starting a track prefetches the next queue entry")
-    @MainActor
-    func prefetchesTheNextTrack() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
-
-        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
-
-        // the second track is on disk before it's ever reached
-        #expect(fileStore.exists(.music, "2.wav"))
-        #expect(player.song?.id == "1")
-        #expect(player.status == .ready)
-    }
-
-    @Test("the last track of a queue has nothing to prefetch")
-    @MainActor
-    func doesNotPrefetchPastTheEnd() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
-
-        player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "1.wav") }
-        try await Self.settle()
-
-        // repeat is off, so there is no next entry to fetch
-        #expect(MockURLProtocol.requests(forHost: host).count == 1)
-    }
-
-    @Test("skipping to a new queue cancels the outstanding prefetch")
-    @MainActor
-    func skipCancelsThePrefetch() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        // hold the prefetch open so it is still in flight when the queue changes
-        let gate = DispatchSemaphore(value: 0)
-        let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.wav" {
-                gate.wait()
-            }
-            return (Self.okResponse(request.url!), Self.musicBytes)
-        }
-
-        player.play(Self.songs(3), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.wav") }
-        #expect(Self.requested(host, "2.wav"))
-
-        player.play([Self.song(id: "9")], token: "tok", baseURL: baseURL)
-        gate.signal()
-        try await Self.waitFor { fileStore.exists(.music, "9.wav") }
-        try await Self.settle()
-
-        // the superseded prefetch neither lands nor takes over playback
-        #expect(player.song?.id == "9")
-        #expect(!fileStore.exists(.music, "2.wav"))
-    }
-
-    @Test("a failed prefetch leaves the playing track alone")
-    @MainActor
-    func prefetchFailureIsSilent() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.wav" {
-                throw URLError(.notConnectedToInternet)
-            }
-            return (Self.okResponse(request.url!), Self.musicBytes)
-        }
-
-        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.wav") }
-        try await Self.settle()
-
-        #expect(!fileStore.exists(.music, "2.wav"))
-        #expect(player.song?.id == "1")
-        #expect(player.isPlaying)
-        #expect(player.status == .ready)
-    }
-
-    @Test("a prefetch that misses is tried again while the track is still playing")
-    @MainActor
-    func prefetchIsRetriedMidTrack() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let failOnce = Self.FailOnce()
-        let (player, fileStore, baseURL) = Self.makePlayer(
-            host: host, prefetchRetryDelay: 0.05
-        ) { request in
-            if request.url?.lastPathComponent == "2.wav", failOnce.shouldFail() {
-                throw URLError(.timedOut)
-            }
-            return (Self.okResponse(request.url!), Self.musicBytes)
-        }
-
-        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        // the first attempt missed, so the file is only here because a second
-        // one went out for it part way through the current track
-        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
-        #expect(fileStore.exists(.music, "2.wav"))
-
-        // & the track playing is untouched by the miss
-        #expect(player.song?.id == "1")
-        #expect(player.isPlaying)
-        #expect(player.status == .ready)
-    }
-
-    @Test("leaving repeat one starts a prefetch for the next track")
-    @MainActor
-    func leavingRepeatOnePrefetches() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        // the prefetch armed as the queue starts misses, so the only way the
-        // file can land is a later re-arm
-        let failOnce = Self.FailOnce()
-        let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.wav", failOnce.shouldFail() {
-                throw URLError(.notConnectedToInternet)
-            }
-            return (Self.okResponse(request.url!), Self.musicBytes)
-        }
-
-        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.wav") }
-
-        player.setRepeatMode(.one)
-        try await Self.settle()
-        // repeat one plays the same file again, so there is nothing to pull
-        #expect(!fileStore.exists(.music, "2.wav"))
-
-        player.setRepeatMode(.off)
-        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
-        #expect(fileStore.exists(.music, "2.wav"))
-        #expect(player.song?.id == "1")
-    }
-
-    @Test("playing a track next re-points the prefetch at it")
-    @MainActor
-    func playNextRepointsThePrefetch() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        // hold the prefetch of the old next track open so it is still in
-        // flight when the new one is inserted ahead of it
-        let gate = DispatchSemaphore(value: 0)
-        let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.wav" {
-                gate.wait()
-            }
-            return (Self.okResponse(request.url!), Self.musicBytes)
-        }
-
-        player.play(Self.songs(3), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.wav") }
-
-        player.playNext(Self.song(id: "9"), token: "tok", baseURL: baseURL)
-        gate.signal()
-        try await Self.waitFor { fileStore.exists(.music, "9.wav") }
-        try await Self.settle()
-
-        #expect(player.queue.upcoming.first?.song.id == "9")
-        #expect(fileStore.exists(.music, "9.wav"))
-        // the prefetch of the track that used to be next was cancelled
-        #expect(!fileStore.exists(.music, "2.wav"))
-        #expect(player.song?.id == "1")
-    }
-
-    @Test("reordering the upcoming tracks re-points the prefetch")
-    @MainActor
-    func moveUpcomingRepointsThePrefetch() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
-
-        player.play(Self.songs(3), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
-
-        player.moveUpcoming(fromOffsets: IndexSet(integer: 1), toOffset: 0)
-        try await Self.waitFor { fileStore.exists(.music, "3.wav") }
-        #expect(player.queue.upcoming.first?.song.id == "3")
-        #expect(fileStore.exists(.music, "3.wav"))
-    }
-
-    @Test("re-arming the prefetch with the next track on disk asks for nothing")
-    @MainActor
-    func reArmingWithTheNextTrackCachedIsFree() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Self.makePlayerWithServer(host: host)
-
-        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
-        let requests = MockURLProtocol.requests(forHost: host).count
-
-        player.prefetchNext()
-        player.prefetchNext()
-        try await Self.settle()
-
-        // the current track & the next one, and nothing from the re-arms
-        #expect(requests == 2)
-        #expect(MockURLProtocol.requests(forHost: host).count == requests)
-    }
-
-    @Test("re-arming the prefetch doesn't restart one already in flight")
-    @MainActor
-    func reArmingLeavesAnInFlightPrefetchAlone() async throws {
-        let host = "player-\(UUID().uuidString).example.com"
-        let gate = DispatchSemaphore(value: 0)
-        let (player, fileStore, baseURL) = Self.makePlayer(host: host) { request in
-            if request.url?.lastPathComponent == "2.wav" {
-                gate.wait()
-            }
-            return (Self.okResponse(request.url!), Self.musicBytes)
-        }
-
-        player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        try await Self.waitFor { Self.requested(host, "2.wav") }
-
-        player.prefetchNext()
-        player.prefetchNext()
-        try await Self.settle()
-        gate.signal()
-        try await Self.waitFor { fileStore.exists(.music, "2.wav") }
-        try await Self.settle()
-
-        // the transfer that was already running finished, rather than being
-        // cancelled & started over from nothing
-        #expect(fileStore.exists(.music, "2.wav"))
-        let requests = MockURLProtocol.requests(forHost: host)
-            .filter { $0.url?.lastPathComponent == "2.wav" }
-        #expect(requests.count == 1)
-    }
-
     @Test("an uncached track with no credentials is unavailable, not stuck")
     @MainActor
     func uncachedWithoutCredentialsIsUnavailable() {
@@ -1115,18 +910,28 @@ struct PlayerStoreTests {
     /// a player wired to a mock server & a real bounded cache, so a test can
     /// see what a start protected rather than what it asked the cache to do
     @MainActor
-    static func makePlayer(host: String, budget: FileCacheBudget) -> (PlayerStore, FileCache, URL) {
+    static func makePlayer(
+        host: String,
+        budget: FileCacheBudget,
+        deepPrefetchDepth: Int = 0,
+        prefetchRetryDelay: TimeInterval = 30,
+        handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil
+    ) -> (PlayerStore, FileCache, URL) {
         let baseURL = URL(string: "https://\(host)")!
-        MockURLProtocol.setHandler(forHost: host) { request in
+        MockURLProtocol.setHandler(forHost: host, handler ?? { request in
             (Self.okResponse(request.url!), Self.musicBytes)
-        }
+        })
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
         let cache = FileCache(fileStore: fileStore, budget: { _ in budget })
-        let player = PlayerStore(fileStore: fileStore, client: client, fileCache: cache)
+        let player = PlayerStore(
+            fileStore: fileStore, client: client, fileCache: cache,
+            retryDelay: 0.01, prefetchRetryDelay: prefetchRetryDelay)
+        // off by default, as it is on a watch nobody has turned it on for
+        player.deepPrefetchDepth = deepPrefetchDepth
         return (player, cache, baseURL)
     }
 
@@ -1252,10 +1057,13 @@ struct PlayerStoreTests {
         }
 
         player.play(Self.songs(2), token: "tok", baseURL: baseURL)
-        // status is .ready synchronously for a file already on disk, & the
-        // player drops an item that failed, so between the two there is a
-        // moment holding nothing that looks exactly like a started track
-        try await Self.waitFor { player.song?.id == "2" && player.hasLoadedTrack }
+        // the file behind the item rather than the item itself: the failed one
+        // is still in the player while the queue moves on & the next track
+        // downloads, so "an item is loaded" is true a moment before the track
+        // this is waiting for has anything on disk
+        try await Self.waitFor {
+            player.song?.id == "2" && player.currentItemURL?.lastPathComponent == "2.wav"
+        }
 
         #expect(player.song?.id == "2")
         #expect(player.isPlaying)

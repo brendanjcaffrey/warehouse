@@ -2,16 +2,20 @@ import Foundation
 import Observation
 
 /// watch-side copy of the settings pushed from the phone: the server,
-/// credentials & which playlists to sync
+/// credentials, which playlists to sync & how far ahead to fill the cache
 @MainActor
 @Observable
 final class WatchSettingsStore {
     private static let serverURLKey = "serverURL"
     private static let playlistIdsKey = "watchPlaylistIds"
+    private static let deepPrefetchDepthKey = "deepPrefetchDepth"
 
     private(set) var serverURL: String
     private(set) var token: String?
     private(set) var playlistIds: [String]
+    /// how many tracks past the one about to play the player pulls down while
+    /// the app is frontmost; 0 is off
+    private(set) var deepPrefetchDepth: Int
     /// bumped whenever the phone changes the playlist selection, so the ui
     /// can kick off a new sync
     private(set) var selectionChanges = 0
@@ -32,6 +36,7 @@ final class WatchSettingsStore {
         serverURL = defaults.string(forKey: Self.serverURLKey) ?? ""
         token = readToken()
         playlistIds = defaults.stringArray(forKey: Self.playlistIdsKey) ?? []
+        deepPrefetchDepth = defaults.integer(forKey: Self.deepPrefetchDepthKey)
     }
 
     var isConfigured: Bool {
@@ -51,6 +56,8 @@ final class WatchSettingsStore {
         defaults.set(payload.playlistIds, forKey: Self.playlistIdsKey)
         token = payload.token.isEmpty ? nil : payload.token
         writeToken(token)
+        deepPrefetchDepth = payload.deepPrefetchDepth
+        defaults.set(payload.deepPrefetchDepth, forKey: Self.deepPrefetchDepthKey)
     }
 
     // the same normalization as the phone's AuthStore

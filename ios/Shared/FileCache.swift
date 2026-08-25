@@ -89,6 +89,28 @@ final class FileCache {
         inUse[type.directory] = filenames
     }
 
+    /// how much more music the cache could take before what it already holds
+    /// fills the music budget. this is the question a fill that runs deep into
+    /// a queue has to ask: the files it pulls are evictable as soon as the
+    /// protection window slides past them, so measuring against the in-use set
+    /// instead would say there was room right up until the disk was full, and
+    /// every track pulled after that would evict one pulled a minute earlier.
+    /// goes negative once the music on disk is over budget, which the fetch of
+    /// a track about to play is allowed to do — that one ignores the answer
+    /// and eviction makes the room back
+    func musicRoom() -> Int64 {
+        var held: Int64 = 0
+        var musicBytes: Int64 = 0
+        for type in LibraryFileType.allCases {
+            let bytes = fileStore.entries(type).reduce(0) { $0 + $1.sizeBytes }
+            if type == .music {
+                musicBytes = bytes
+            }
+            held += bytes
+        }
+        return budget(held).music - musicBytes
+    }
+
     /// drops least recently used files until each type is back under budget,
     /// returning what it removed. runs after a fetch, never on a timer
     @discardableResult

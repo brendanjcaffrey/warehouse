@@ -41,6 +41,10 @@ struct PlayerQueueTests {
         let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(host: host)
         try Self.cacheSongs(fileStore, ["1"])
 
+        // backgrounded, which is where a queue of streams is the whole story:
+        // the prefetch is off, so nothing lands track 2 on disk & re-points
+        // the slot out from under the assertion below
+        player.setForeground(false)
         player.play(Helpers.songs(2), token: "tok", baseURL: baseURL)
         try await Helpers.waitFor { player.nextItemURL != nil }
 
@@ -48,6 +52,36 @@ struct PlayerQueueTests {
         // so the daemon pulls it ahead whether or not this app is scheduled
         #expect(player.currentItemURL == fileStore.fileURL(.music, "1.wav"))
         #expect(player.nextItemURL == baseURL.appending(path: "music/2.wav"))
+    }
+
+    @Test("the prefetch landing re-points the enqueued stream at the file")
+    @MainActor
+    func aLandedPrefetchRepointsTheEnqueuedStream() async throws {
+        let host = "player-\(UUID().uuidString).example.com"
+        let gate = DispatchSemaphore(value: 0)
+        let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(host: host) { request in
+            if request.url?.lastPathComponent == "2.wav" {
+                gate.wait()
+            }
+            return (Helpers.okResponse(request.url!), Helpers.musicBytes)
+        }
+        try Self.cacheSongs(fileStore, ["1"])
+
+        // track 2 isn't on disk when the slot is filled, so it goes in as a
+        // stream while the prefetch for it is still held open
+        player.play(Helpers.songs(2), token: "tok", baseURL: baseURL)
+        try await Helpers.waitFor { player.nextItemURL != nil }
+        #expect(player.nextItemURL == baseURL.appending(path: "music/2.wav"))
+
+        gate.signal()
+        try await Helpers.waitFor { fileStore.exists(.music, "2.wav") }
+        try await Helpers.settle()
+
+        // the file is here now, so the daemon plays it off disk rather than
+        // pulling the whole of a downloaded track back off the server
+        #expect(player.nextItemURL == fileStore.fileURL(.music, "2.wav"))
+        #expect(player.currentItemURL == fileStore.fileURL(.music, "1.wav"))
+        #expect(player.song?.id == "1")
     }
 
     @Test("playing a track next re-points the enqueued item at it")

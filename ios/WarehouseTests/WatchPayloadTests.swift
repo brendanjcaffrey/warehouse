@@ -6,7 +6,9 @@ import Testing
 struct WatchPayloadTests {
     @Test("round trips through a dictionary")
     func roundTrip() {
-        let payload = WatchPayload(serverURL: "https://example.com", token: "tok", playlistIds: ["p1", "p2"])
+        let payload = WatchPayload(
+            serverURL: "https://example.com", token: "tok", playlistIds: ["p1", "p2"],
+            deepPrefetchDepth: 30)
         #expect(WatchPayload(dictionary: payload.encode()) == payload)
     }
 
@@ -32,5 +34,13 @@ struct WatchPayloadTests {
         #expect(!WatchPayload(serverURL: "", token: "t", playlistIds: ["p"]).isConfigured)
         #expect(!WatchPayload(serverURL: "s", token: "", playlistIds: ["p"]).isConfigured)
         #expect(!WatchPayload(serverURL: "s", token: "t", playlistIds: []).isConfigured)
+    }
+
+    @Test("a context from a phone without the setting reads as off")
+    func missingDepthDecodesAsOff() {
+        let decoded = WatchPayload(
+            dictionary: ["serverURL": "s", "token": "t", "playlistIds": ["p"]])
+
+        #expect(decoded?.deepPrefetchDepth == 0)
     }
 }

@@ -83,6 +83,10 @@ final class PlayerStore {
     /// what the item queued behind the current track is reading, nil when the
     /// slot is empty. exposed for the tests, which have no other view of it
     var nextItemURL: URL? { (nextItem?.item.asset as? AVURLAsset)?.url }
+    /// the file the prefetch is pulling right now, nil when the slot is free.
+    /// exposed for the tests, which otherwise have only the requests that went
+    /// out to say what the window is doing
+    var prefetchingFilename: String? { prefetch?.filename }
     /// whether the track playing is the item that was already enqueued behind
     /// the last one, rather than one built from scratch. exposed for the
     /// tests: the two read the same url off the same file, so there is nothing
@@ -136,10 +140,18 @@ final class PlayerStore {
     /// bumped every time a new track starts, so a download that finishes after
     /// the user has moved on doesn't hijack playback
     private var startGeneration = 0
-    /// the fetch running ahead of the current track, kept by name so starting
-    /// that very track can join it instead of racing a second download of the
-    /// same file
+    /// the one fetch running ahead of the current track, kept by name so
+    /// starting that very track can join it instead of racing a second
+    /// download of the same file. the window decides what goes in here next;
+    /// the slot itself stays single, since transfers running alongside each
+    /// other over one slow link finish later than the same transfers in a row
     private var prefetch: (filename: String, task: Task<Bool, Never>)?
+    /// how much of what the prefetch is working through eviction may not
+    /// touch. this is the protection set rather than the reach, & it has to
+    /// stay small: every name in it is a track eviction can't reclaim, and on
+    /// the 256 mb floor budget ten tracks is already about a fifth of the
+    /// cache. how far the chain actually pulls is `deepPrefetchDepth`
+    private static let protectionDepth = 10
     /// the one item enqueued behind the current track. the play queue stays
     /// the source of truth for order, history, shuffle & repeat; this is a
     /// derived cache of the single slot after it
@@ -191,6 +203,15 @@ final class PlayerStore {
     /// no file of ours behind it, so the things that clean up after a bad
     /// download have nothing to clean up
     private(set) var isStreamingCurrentTrack = false
+    /// how far past the track about to play the prefetch keeps pulling while
+    /// the app is frontmost, which is the only transfer time the watch gets
+    /// that isn't background-budgeted or throttled. 0 is off: the first slot
+    /// is the whole of it — a gap-free boundary, & all a streaming track can
+    /// afford. deeper is for putting a playlist on & walking out of signal
+    /// with the whole of it on disk, which is a lot of link time to spend and
+    /// is nobody's default; the watch takes it from a setting on the phone,
+    /// and the phone leaves it off — it mirrors the library already
+    var deepPrefetchDepth = 0
     /// whether the app is frontmost. prefetch is a cache fill, not the path
     /// that makes sound, and it shares one slow link with whatever is
     /// streaming right now — so it only runs where the user can see it. during
@@ -282,8 +303,11 @@ final class PlayerStore {
 
         let isDownloaded = fileStore.exists(.music, song.musicFilename)
         // a prefetch already running for this very track is the fetch we're
-        // about to need, so let it finish; anything else has been superseded
-        if prefetch?.filename != song.musicFilename {
+        // about to need, so let it finish; so is one for a track still ahead
+        // of us in the chain, which is progress on the same slow link.
+        // anything else has been superseded
+        if let running = prefetch?.filename,
+           running != song.musicFilename, !prefetchReach.contains(running) {
             cancelPrefetch()
         }
         // hold the file against eviction before anything else touches disk,
@@ -463,21 +487,33 @@ final class PlayerStore {
         return await downloader.download(.music, filename: filename, token: token, baseURL: baseURL)
     }
 
-    /// fetches the track after this one while the current one is playing.
-    /// failures are silent: the track falls back to being fetched when it's
-    /// actually reached & nothing about the playing track changes.
+    /// works through the queue ahead of the playhead, one transfer at a time,
+    /// while the current track plays. failures are silent: the track falls
+    /// back to being fetched when it's actually reached & nothing about the
+    /// playing track changes.
     ///
     /// safe to call at any point — the queue is re-read every time — so the
     /// watch re-arms it when it comes back to the foreground, where transfers
     /// aren't throttled, rather than living with the one shot it gets as a
     /// track starts
     func prefetchNext() {
-        let filename = nextPrefetchFilename
-        // whatever is outstanding is for a track that isn't next any more
-        if let prefetch, prefetch.filename != filename {
-            cancelPrefetch()
+        let reach = prefetchReach
+        if let running = prefetch?.filename {
+            if !reach.contains(running) {
+                // superseded: there is nothing left that wants this file
+                cancelPrefetch()
+            } else if let first = reach.first, running != first,
+                      !fileStore.exists(.music, first) {
+                // it is still in the window, but the track about to play is
+                // cold and something further out is holding the link. a
+                // gap-free boundary is what prefetch is for, so the deeper
+                // transfer gives way — its bytes are worth less than a silence
+                cancelPrefetch()
+            }
+            // anything else moved further out & is still wanted, and throwing
+            // away a transfer in flight is what the whole thing avoids
         }
-        guard let filename, let token, let baseURL else { return }
+        guard let token, let baseURL else { return }
         // backgrounded, this is a download competing with a stream over one
         // slow link, for a track that can stream itself when it's reached.
         // one already running is left to finish — it is a single track & has
@@ -489,10 +525,35 @@ final class PlayerStore {
         // stream still working on its first bytes is the worst time of all to
         // put a second transfer on the same link
         if isStreamingCurrentTrack, player.currentItem?.isPlaybackLikelyToKeepUp != true { return }
-        // already here, or already on its way: restarting a transfer in flight
-        // would throw away its progress on exactly the slow link that makes
-        // prefetching worth doing
-        guard !fileStore.exists(.music, filename), prefetch == nil else { return }
+        // one at a time: restarting a transfer in flight would throw away its
+        // progress on exactly the slow link that makes prefetching worth doing
+        guard prefetch == nil else { return }
+        // a streaming track is already spending the link to make sound, so
+        // there is no spare capacity to fill a cache with: the reach shrinks
+        // to the one track that has to be there for a gap-free boundary. one
+        // that is already in flight is left alone — the cancel above uses the
+        // full reach — since its progress outlives whatever is streaming now
+        let reachable = isStreamingCurrentTrack ? Array(reach.prefix(1)) : reach
+        // tracks already on disk aren't work, but they don't shorten the
+        // reach either — a queue of mostly-cached tracks still reaches past
+        // them to the ones that are missing
+        guard let filename = reachable.first(where: { !fileStore.exists(.music, $0) }) else { return }
+        if filename != reach.first {
+            // past the first slot this is cache filling rather than the track
+            // about to play, so it only runs while there is disk left to fill:
+            // once the music on disk is at its budget the chain stops for
+            // good, rather than evicting a track it pulled a minute ago to
+            // make room for the next one. what re-arms it is a track start, a
+            // queue mutation or a foreground return — the same shape a deep
+            // failure has — which bounds the churn to one refetch at a track
+            // boundary instead of a tight loop against eviction. the phone has
+            // no cache & no reach: it mirrors the library, and a second copy
+            // of its own sync is all this would be there
+            guard let fileCache, fileCache.musicRoom() > 0 else { return }
+        }
+        // the retry budget belongs to the track that is about to play, so a
+        // miss deeper in the queue must not spend it
+        let isNextTrack = filename == reach.first
 
         let generation = startGeneration
         prefetch = (filename, Task { @MainActor in
@@ -504,17 +565,37 @@ final class PlayerStore {
                 // retry and for the fetch when the track is reached
                 prefetch = nil
                 refreshInUse()
-                retryPrefetch(generation: generation)
+                // the chain stops here; the next track start & the next
+                // foreground return both re-arm it from the top
+                if isNextTrack {
+                    retryPrefetch(generation: generation)
+                }
                 return ok
             }
-            guard generation == startGeneration else { return ok }
+            // the slot is free for the next track along. what holds this file
+            // against eviction from here on is the protection window, which
+            // refreshInUse reads — so it has to run before evict does
+            prefetch = nil
+            refreshInUse()
             // deliberately no recordUse: it hasn't been played yet, and
             // ranking it above the track actually playing would be a lie
             fileCache?.noteMusicStored()
-            fileCache?.evict()
+            if isNextTrack {
+                // the track about to play is fetched whatever the budget says,
+                // so this is where the cache turns over: eviction makes the
+                // room it just took. a deep fetch deliberately doesn't evict —
+                // it stopped at the budget, and evicting here would hand the
+                // room straight back to the chain that is meant to have
+                // stopped, which is the ping-pong the cap exists to prevent
+                fileCache?.evict()
+            }
+            guard generation == startGeneration else { return ok }
             // the file is here now, so the slot behind the current track can
             // hold it rather than holding nothing at all
             reconcileNextItem()
+            // on to the rest of the queue; the guards above decide whether
+            // there is still room and a link to spare
+            prefetchNext()
             return ok
         })
         refreshInUse()
@@ -530,12 +611,40 @@ final class PlayerStore {
         }
     }
 
-    /// the file the prefetch should be pointed at, or nil when there's nothing
-    /// worth pulling ahead of the current track
-    private var nextPrefetchFilename: String? {
+    /// the tracks the prefetch works through, nearest first: the one that
+    /// plays next, then as far into the queue behind it as the deep depth
+    /// allows. empty when there is nothing worth pulling ahead of the current
+    /// track, one long when the deep fetch is off.
+    ///
+    /// the first slot is exactly what it has always been, wrapping at the end
+    /// of a repeating queue. the rest is the plain upcoming order, which does
+    /// not wrap — past the wrap are tracks the user has just heard, and they
+    /// are on disk far more often than not. the depth is a setting rather than
+    /// a constant, which is also what keeps the walk below finite: this runs
+    /// on every track start, every queue mutation and every completed transfer
+    private var prefetchReach: [String] {
+        prefetchNames(depth: deepPrefetchDepth)
+    }
+
+    /// the front of the reach: what eviction may not touch while the chain
+    /// works through it. deep enough that the front can't be taken while the
+    /// back is still coming down, & bounded so that a reach of a few thousand
+    /// tracks doesn't pin the cache shut behind it. taken at its own depth
+    /// rather than off the front of the reach, since refreshInUse asks for it
+    /// on every change to the fetch in flight & the reach can be long
+    private var prefetchWindow: [String] {
+        prefetchNames(depth: min(deepPrefetchDepth, Self.protectionDepth - 1))
+    }
+
+    private func prefetchNames(depth: Int) -> [String] {
         // repeat one plays the same file again, which is already on disk
-        guard repeatMode != .one else { return nil }
-        return queue.next(wrapping: repeatMode == .all)?.song.musicFilename
+        guard repeatMode != .one,
+              let next = queue.next(wrapping: repeatMode == .all) else { return [] }
+        // upcoming's head is that same entry whenever the queue hasn't wrapped
+        return [next.song.musicFilename] + queue.upcoming
+            .dropFirst()
+            .prefix(depth)
+            .map(\.song.musicFilename)
     }
 
     /// the prefetch missed & the track that needs it is still minutes out, so
@@ -580,6 +689,14 @@ final class PlayerStore {
             // back: nothing re-points the slot before the daemon reaches it
             held.insert(nextItem.filename)
         }
+        // the front of what the prefetch is working through, so eviction
+        // can't take the head of it while the back is still coming down. names
+        // with no file behind them cost nothing — eviction only ever looks at
+        // what is on disk — and the window bounds this to a handful of tracks.
+        // what the chain pulls past the window is deliberately left evictable:
+        // a fresh fetch has never been played, so it falls back to createdAt &
+        // sorts newest, which puts genuinely old tracks ahead of it anyway
+        held.formUnion(prefetchWindow)
         fileCache.setInUse(.music, held)
         // only the playing track's cover: nothing pulls artwork ahead, so a
         // prefetched track has no artwork file on disk to protect
@@ -722,8 +839,11 @@ final class PlayerStore {
     func setShuffled(_ shuffled: Bool) {
         queue.setShuffled(shuffled)
         updateRemoteCommandModes()
-        // a reshuffle puts a different track next, & unlike a prefetch that
-        // went to the wrong file an item left in the player would be played
+        // a reshuffle rewrites the whole window, not just what comes next, so
+        // the prefetch is pointed at tracks that may be nowhere near now
+        prefetchNext()
+        // & unlike a prefetch that went to the wrong file, an item left in the
+        // player would be played
         reconcileNextItem()
     }
 
@@ -1245,7 +1365,13 @@ final class PlayerStore {
     /// works mid-workout: the loading is the daemon's, not ours
     private func reconcileNextItem() {
         let target = nextEnqueueEntry
-        if let nextItem, nextItem.entryID != target?.id {
+        // a stream in the slot is only what there was to point it at when it
+        // was filled. the prefetch running behind it lands the file part way
+        // through the track in front, & leaving the item alone then plays the
+        // whole of a track that is already on disk off the server instead
+        if let nextItem,
+           nextItem.entryID != target?.id
+               || (nextItem.streaming && fileStore.exists(.music, nextItem.filename)) {
             removeNextItem()
         }
         guard nextItem == nil, let target, target.id != failedNextEntryID,
