@@ -15,8 +15,10 @@ struct WarehouseApp: App {
     @State private var router: NavigationRouter
     @State private var watchSettings: WatchSyncSettingsStore
     @State private var seeded = false
+    @State private var restoredPlayback = false
 
     private let database: LibraryDatabase
+    private let playbackState = PlaybackStateStore()
     private let intents: IntentPlaybackService
     private let watchSession: PhoneWatchSession
 
@@ -102,23 +104,34 @@ struct WarehouseApp: App {
                 .onChange(of: auth.token) {
                     // keep the watch's credentials current across log in/out
                     watchSession.push()
+                    // & the restored queue's, which was put back holding
+                    // whatever token was around before the refresh
+                    player.setCredentials(token: auth.token, baseURL: auth.baseURL())
                 }
                 .onChange(of: player.song?.id) {
                     watchSession.pushNowPlaying()
+                    savePlayback()
                 }
                 .onChange(of: player.isPlaying) {
                     watchSession.pushNowPlaying()
+                    savePlayback()
                 }
                 .onChange(of: player.queue.isShuffled) {
                     watchSession.pushNowPlaying()
+                    savePlayback()
                 }
                 .onChange(of: player.repeatMode) {
                     watchSession.pushNowPlaying()
+                    savePlayback()
                 }
                 .onChange(of: scenePhase) {
                     // push any stuck updates when coming back to the foreground
                     if scenePhase == .active {
                         Task { await updates.flush() }
+                    } else {
+                        // the last chance to write the playhead down: from here
+                        // the app is suspended & may never run again
+                        savePlayback()
                     }
                 }
                 .onChange(of: sync.completedSyncs) {
@@ -131,6 +144,9 @@ struct WarehouseApp: App {
                 .task {
                     WarehouseShortcuts.updateAppShortcutParameters()
                     await intents.refreshSpotlight()
+                }
+                .task {
+                    await restorePlayback()
                 }
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
                     // a library item tapped in spotlight
@@ -149,5 +165,27 @@ struct WarehouseApp: App {
                     }
                 }
         }
+    }
+
+    /// puts the last session's now playing queue back, once, at launch. the
+    /// os throws the app away as soon as it stops making sound, so this is
+    /// what the user sees after leaving it alone for a while
+    @MainActor
+    private func restorePlayback() async {
+        guard !restoredPlayback, !UITestSupport.enabled else { return }
+        restoredPlayback = true
+        guard let snapshot = playbackState.load(),
+              let songs = try? await database.songs(ids: snapshot.queue.songIDs)
+        else {
+            return
+        }
+        player.restore(
+            snapshot, songs: songs, token: auth.token, baseURL: auth.baseURL())
+    }
+
+    @MainActor
+    private func savePlayback() {
+        guard !UITestSupport.enabled else { return }
+        playbackState.save(player.snapshot)
     }
 }

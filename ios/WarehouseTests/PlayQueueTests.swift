@@ -341,4 +341,97 @@ struct PlayQueueTests {
         #expect(queue.next(wrapping: false) == nil)
         #expect(queue.next(wrapping: true) == nil)
     }
+
+    static func library(_ songs: [Song]) -> [String: Song] {
+        Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    @Test("a stored queue comes back with its position, history & shuffle")
+    func snapshotRoundTrip() {
+        var generator = SeededGenerator(seed: 3)
+        let songs = Self.songs(5)
+        var queue = PlayQueue(songs: songs)
+        queue.setShuffled(true, using: &generator)
+        queue.advance()
+        queue.advance()
+
+        let restored = PlayQueue(snapshot: queue.snapshot, songs: Self.library(songs))
+        #expect(restored?.current?.song.id == queue.current?.song.id)
+        #expect(restored?.upcoming.map(\.song.id) == queue.upcoming.map(\.song.id))
+        #expect(restored?.history.map(\.song.id) == queue.history.map(\.song.id))
+        #expect(restored?.isShuffled == true)
+    }
+
+    @Test("a restored queue unshuffles back into the original order")
+    func snapshotKeepsTheShuffleContext() {
+        var generator = SeededGenerator(seed: 11)
+        let songs = Self.songs(5)
+        var queue = PlayQueue(songs: songs)
+        queue.setShuffled(true, using: &generator)
+
+        var restored = PlayQueue(snapshot: queue.snapshot, songs: Self.library(songs))
+        restored?.setShuffled(false, using: &generator)
+        #expect(restored?.current?.song.id == queue.current?.song.id)
+        // the whole library is back in its own order around the current track
+        let ids = (restored?.history.map(\.song.id) ?? []) + [restored?.current?.song.id ?? ""]
+            + (restored?.upcoming.map(\.song.id) ?? [])
+        #expect(ids.sorted() == songs.map(\.id).sorted())
+        #expect(restored?.upcoming.map(\.song.id) == ["2", "3", "4", "5"])
+    }
+
+    @Test("the same track queued twice comes back as two rows")
+    func snapshotKeepsRepeatedTracks() {
+        let songs = Self.songs(2)
+        var queue = PlayQueue(songs: songs)
+        queue.playNext(songs[0])
+
+        let restored = PlayQueue(snapshot: queue.snapshot, songs: Self.library(songs))
+        #expect(restored?.count == 3)
+        #expect(restored?.upcoming.map(\.song.id) == ["1", "2"])
+        // the two rows for track 1 are still separate rows
+        #expect(restored?.current?.id != restored?.upcoming.first?.id)
+    }
+
+    @Test("tracks that have left the library are dropped from a restored queue")
+    func snapshotDropsMissingTracks() {
+        let songs = Self.songs(4)
+        let queue = PlayQueue(songs: songs, startingAt: 1)
+        let remaining = songs.filter { $0.id != "3" }
+
+        let restored = PlayQueue(snapshot: queue.snapshot, songs: Self.library(remaining))
+        #expect(restored?.current?.song.id == "2")
+        #expect(restored?.upcoming.map(\.song.id) == ["4"])
+    }
+
+    @Test("a queue whose current track is gone isn't restored at all")
+    func snapshotWithoutItsCurrentTrack() {
+        let songs = Self.songs(3)
+        let queue = PlayQueue(songs: songs, startingAt: 2)
+
+        #expect(PlayQueue(snapshot: queue.snapshot, songs: Self.library([songs[0]])) == nil)
+        #expect(PlayQueue(snapshot: queue.snapshot, songs: [:]) == nil)
+    }
+
+    @Test("an empty or out of range stored queue isn't restored")
+    func snapshotOutOfRange() {
+        let empty = PlayQueue(songs: [])
+        #expect(PlayQueue(snapshot: empty.snapshot, songs: [:]) == nil)
+
+        let stored = PlayQueue(songs: Self.songs(2)).snapshot
+        let broken = PlayQueueSnapshot(
+            entries: stored.entries, index: 7, contextIDs: stored.contextIDs,
+            history: stored.history, isShuffled: false)
+        #expect(PlayQueue(snapshot: broken, songs: Self.library(Self.songs(2))) == nil)
+    }
+
+    @Test("a stored queue survives json")
+    func snapshotEncodes() throws {
+        var queue = PlayQueue(songs: Self.songs(3))
+        queue.advance()
+
+        let data = try JSONEncoder().encode(queue.snapshot)
+        let decoded = try JSONDecoder().decode(PlayQueueSnapshot.self, from: data)
+        #expect(decoded == queue.snapshot)
+        #expect(Set(decoded.songIDs) == ["1", "2", "3"])
+    }
 }

@@ -152,32 +152,45 @@ final class LibraryDatabase {
     func allSongs() async throws -> [Song] {
         try await container.performBackgroundTask { context in
             let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
-            let tracks = try context.fetch(request)
-            return tracks.map {
-                Song(
-                    id: $0.id,
-                    name: $0.name,
-                    sortName: $0.sortName,
-                    artistName: $0.artistName,
-                    artistSortName: $0.artistSortName,
-                    albumArtistName: $0.albumArtistName,
-                    albumArtistSortName: $0.albumArtistSortName,
-                    albumName: $0.albumName,
-                    albumSortName: $0.albumSortName,
-                    genre: $0.genre,
-                    year: Int($0.year),
-                    duration: $0.duration,
-                    start: $0.start,
-                    finish: $0.finish,
-                    discNumber: Int($0.discNumber),
-                    trackNumber: Int($0.trackNumber),
-                    playCount: Int($0.playCount),
-                    rating: Int($0.rating),
-                    musicFilename: $0.musicFilename,
-                    artworkFilename: $0.artworkFilename,
-                    addedDate: $0.addedDate)
-            }
+            return try context.fetch(request).map(Self.song)
         }
+    }
+
+    /// the named tracks keyed by id, for putting a stored play queue back
+    /// together; ids that have left the library are simply absent
+    func songs(ids: [String]) async throws -> [String: Song] {
+        guard !ids.isEmpty else { return [:] }
+        return try await container.performBackgroundTask { context in
+            let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
+            request.predicate = NSPredicate(format: "id IN %@", ids)
+            let songs = try context.fetch(request).map { ($0.id, Self.song($0)) }
+            return Dictionary(songs, uniquingKeysWith: { first, _ in first })
+        }
+    }
+
+    private static func song(_ track: TrackEntity) -> Song {
+        Song(
+            id: track.id,
+            name: track.name,
+            sortName: track.sortName,
+            artistName: track.artistName,
+            artistSortName: track.artistSortName,
+            albumArtistName: track.albumArtistName,
+            albumArtistSortName: track.albumArtistSortName,
+            albumName: track.albumName,
+            albumSortName: track.albumSortName,
+            genre: track.genre,
+            year: Int(track.year),
+            duration: track.duration,
+            start: track.start,
+            finish: track.finish,
+            discNumber: Int(track.discNumber),
+            trackNumber: Int(track.trackNumber),
+            playCount: Int(track.playCount),
+            rating: Int(track.rating),
+            musicFilename: track.musicFilename,
+            artworkFilename: track.artworkFilename,
+            addedDate: track.addedDate)
     }
 
     /// lightweight copies of every playlist for the playlists list

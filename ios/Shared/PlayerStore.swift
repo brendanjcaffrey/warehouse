@@ -9,7 +9,7 @@ private let log = Logger(subsystem: "com.jcaffrey.warehouse", category: "player"
 
 /// what happens when a track finishes: stop at the end of the queue,
 /// repeat the whole queue, or repeat the current track
-enum RepeatMode: String, Sendable {
+enum RepeatMode: String, Codable, Sendable {
     case off
     case all
     case one
@@ -137,6 +137,15 @@ final class PlayerStore {
     /// seeks the player hasn't finished yet; the time observer stays quiet
     /// until they land so the playhead doesn't flick back to the old position
     private var pendingSeeks = 0
+    /// where the track being loaded right now will start, nil once it has
+    /// started. the track before it may still be playing on underneath while
+    /// its file downloads, dragging the clock with it, so the position can't
+    /// just be read back off currentTime when the item finally lands
+    private var pendingStartTime: TimeInterval?
+    /// a playhead a restored queue hasn't started at yet. consumed by the
+    /// start that picks the track up, so a position saved before the app died
+    /// can't follow the queue on to some later track
+    private var resumeTime: TimeInterval?
     /// bumped every time a new track starts, so a download that finishes after
     /// the user has moved on doesn't hijack playback
     private var startGeneration = 0
@@ -259,6 +268,44 @@ final class PlayerStore {
         observeCurrentItem()
     }
 
+    /// the state worth keeping when the app goes away, nil when there is
+    /// nothing playing to come back to
+    var snapshot: PlaybackSnapshot? {
+        guard queue.current != nil else { return nil }
+        return PlaybackSnapshot(
+            queue: queue.snapshot, repeatMode: repeatMode, currentTime: currentTime)
+    }
+
+    /// puts a stored queue back the way it was left: the track is current & the
+    /// playhead is where it stopped, but nothing is loaded & nothing is fetched
+    /// until the user asks for it, so opening the app makes no sound of its own.
+    /// ignored once anything is playing — a queue the user just started is the
+    /// one they want, not the one from last time
+    func restore(_ snapshot: PlaybackSnapshot, songs: [String: Song], token: String?, baseURL: URL?) {
+        guard queue.current == nil,
+              let restored = PlayQueue(snapshot: snapshot.queue, songs: songs),
+              let song = restored.current?.song else { return }
+        queue = restored
+        repeatMode = snapshot.repeatMode
+        self.token = token
+        self.baseURL = baseURL
+        window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
+        currentTime = min(max(snapshot.currentTime, window.start), window.duration)
+        resumeTime = currentTime
+        status = .ready
+        isPlaying = false
+        // the lock screen & the remote commands are left alone: they belong to
+        // whatever is making sound, & this is a queue nobody has played yet
+    }
+
+    /// keeps the credentials a restored queue will fetch with current; a token
+    /// stored with the queue would be the one that expired while the app was gone
+    func setCredentials(token: String?, baseURL: URL?) {
+        guard queue.current != nil else { return }
+        self.token = token
+        self.baseURL = baseURL
+    }
+
     /// starts playing songs in order, positioned at the tapped one so previous
     /// walks back through the earlier tracks; replaces the current queue and
     /// turns repeat off
@@ -278,6 +325,8 @@ final class PlayerStore {
         // last one couldn't fetch or load shouldn't count against it
         consecutiveFailures = 0
         consecutiveItemFailures = 0
+        // & neither should it start at the playhead a restored queue was left at
+        resumeTime = nil
         repeatMode = mode
         self.token = token
         self.baseURL = baseURL
@@ -323,7 +372,12 @@ final class PlayerStore {
         configureRemoteCommandsIfNeeded()
 
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
-        currentTime = window.start
+        // a restored track resumes at the playhead it was saved at, unless it
+        // sits outside the window, in which case it starts over
+        let resume = resumeTime.flatMap { $0 > window.start && $0 < window.end ? $0 : nil }
+        resumeTime = nil
+        pendingStartTime = resume ?? window.start
+        currentTime = resume ?? window.start
         ignoresFinish = false
         isPlaying = true
         // isPlaying goes up optimistically, so an uncached track on a slow
@@ -447,8 +501,13 @@ final class PlayerStore {
         player.removeAllItems()
         player.insert(item, after: nil)
         applyStopTime()
-        if window.start > 0 {
-            seekPlayer(to: window.start)
+        let start = pendingStartTime ?? window.start
+        pendingStartTime = nil
+        // the last track's item may have been playing on underneath this one
+        // while it was fetched, dragging the clock along with it
+        currentTime = start
+        if start > 0 {
+            seekPlayer(to: start)
         }
         if isPlaying {
             player.play()
@@ -873,6 +932,14 @@ final class PlayerStore {
         guard song != nil else { return }
         currentTime = min(max(0, time), window.duration)
         ignoresFinish = window.stopsEarly && currentTime >= window.end
+        // scrubbing a track that hasn't started yet — a restored queue, or one
+        // still being fetched — moves where it will start instead
+        if resumeTime != nil {
+            resumeTime = currentTime
+        }
+        if pendingStartTime != nil {
+            pendingStartTime = currentTime
+        }
         seekPlayer(to: currentTime)
         updateNowPlayingPlaybackState()
     }

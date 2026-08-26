@@ -260,6 +260,19 @@ struct LibraryDatabaseTests {
             artworkFilename: artworkFilename)
     }
 
+    @Test("songs(ids:) fetches just the named tracks & skips ones that are gone")
+    func songsByIds() async throws {
+        let database = LibraryDatabase(inMemory: true)
+        try await database.replaceLibrary(with: Self.makeLibrary())
+
+        let songs = try await database.songs(ids: ["t2", "gone"])
+        #expect(Set(songs.keys) == ["t2"])
+        #expect(songs["t2"]?.name == "Believe")
+        #expect(songs["t2"]?.artistName == "Cher")
+
+        #expect(try await database.songs(ids: []).isEmpty)
+    }
+
     @Test("updateTrack rewrites the edited fields & leaves sort names alone")
     func updateTrack() async throws {
         let database = LibraryDatabase(inMemory: true)

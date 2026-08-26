@@ -13,7 +13,7 @@ struct QueueEntry: Identifiable, Hashable, Sendable {
         self.song = song
     }
 
-    private init(id: UUID, song: Song) {
+    fileprivate init(id: UUID, song: Song) {
         self.id = id
         self.song = song
     }
@@ -189,5 +189,58 @@ struct PlayQueue: Sendable {
     /// a track can be played twice, so history rows get a fresh identity
     private mutating func recordPlayed(_ entry: QueueEntry) {
         history.append(QueueEntry(entry.song))
+    }
+
+    var snapshot: PlayQueueSnapshot {
+        PlayQueueSnapshot(
+            entries: entries.map { PlayQueueSnapshot.Row(id: $0.id, songID: $0.song.id) },
+            index: index,
+            contextIDs: context.map(\.id),
+            history: history.map { PlayQueueSnapshot.Row(id: $0.id, songID: $0.song.id) },
+            isShuffled: isShuffled)
+    }
+
+    /// rebuilds a stored queue against the library as it stands now. tracks
+    /// that have since left it are dropped, & a queue whose current track is
+    /// one of them isn't worth putting back at all
+    init?(snapshot: PlayQueueSnapshot, songs: [String: Song]) {
+        func rebuild(_ rows: [PlayQueueSnapshot.Row]) -> [QueueEntry] {
+            rows.compactMap { row in songs[row.songID].map { QueueEntry(id: row.id, song: $0) } }
+        }
+        guard snapshot.entries.indices.contains(snapshot.index) else { return nil }
+        let currentID = snapshot.entries[snapshot.index].id
+        let rebuilt = rebuild(snapshot.entries)
+        guard let position = rebuilt.firstIndex(where: { $0.id == currentID }) else { return nil }
+        entries = rebuilt
+        index = position
+        // a file written by a past version, or a half-written one, can say
+        // anything; the rows themselves are the only thing trusted here
+        let byID = Dictionary(rebuilt.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let storedContext = snapshot.contextIDs.compactMap { byID[$0] }
+        // without a context there is nothing for shuffle to turn back into
+        context = storedContext.isEmpty ? rebuilt : storedContext
+        history = rebuild(snapshot.history)
+        isShuffled = snapshot.isShuffled
+    }
+}
+
+/// a play queue flattened for storage. rows keep their identity so a track
+/// queued twice comes back as two rows rather than one, & so the shuffle
+/// context & the queue can go on pointing at the same rows
+struct PlayQueueSnapshot: Codable, Equatable, Sendable {
+    struct Row: Codable, Equatable, Sendable {
+        let id: UUID
+        let songID: String
+    }
+
+    let entries: [Row]
+    let index: Int
+    let contextIDs: [UUID]
+    let history: [Row]
+    let isShuffled: Bool
+
+    /// every track the queue refers to, for looking them up in the library
+    var songIDs: [String] {
+        Array(Set(entries.map(\.songID)).union(history.map(\.songID)))
     }
 }
