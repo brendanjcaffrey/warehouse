@@ -142,6 +142,15 @@ enum SongListBuilder {
         return nil
     }
 
+    /// every track whose music file is already on disk, in title order, for
+    /// the watch's downloaded playlist
+    static func downloadedSongs(_ songs: [Song], downloadedMusic: Set<String>) -> [Song] {
+        orderedSongs(
+            songs.filter { downloadedMusic.contains($0.musicFilename) },
+            trackIds: nil,
+            sortedBy: .title)
+    }
+
     /// the playlist's songs in playlist order, skipping unknown track ids;
     /// a track can only appear once because duplicate ids would break list identity
     static func playlistSongs(_ songs: [Song], trackIds: [String]) -> [Song] {

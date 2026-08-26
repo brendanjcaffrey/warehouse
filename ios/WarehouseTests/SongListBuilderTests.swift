@@ -244,4 +244,24 @@ struct SongListBuilderTests {
         #expect(position?.row == 1)
         #expect(SongListBuilder.position(of: Self.song(id: "9", name: "Missing"), in: sections) == nil)
     }
+
+    @Test("downloaded songs are the on-disk tracks in title order")
+    func downloadedSongs() {
+        let songs = [
+            Self.song(id: "1", name: "Zebra"),
+            Self.song(id: "2", name: "Apple"),
+            Self.song(id: "3", name: "Mango")
+        ]
+
+        let downloaded = SongListBuilder.downloadedSongs(
+            songs, downloadedMusic: ["3.mp3", "1.mp3"])
+        #expect(downloaded.map(\.id) == ["3", "1"])
+    }
+
+    @Test("downloaded songs are empty when nothing is on disk")
+    func downloadedSongsWithEmptyCache() {
+        let songs = [Self.song(id: "1", name: "Zebra")]
+
+        #expect(SongListBuilder.downloadedSongs(songs, downloadedMusic: []).isEmpty)
+    }
 }
