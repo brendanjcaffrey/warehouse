@@ -1,4 +1,5 @@
-import { KeyboardEvent, useCallback, useRef } from "react";
+import { KeyboardEvent, useCallback, useEffect, useRef } from "react";
+import { store, typeToShowInProgressAtom } from "./State";
 
 // the accumulated query resets after this long without a keystroke
 const RESET_MS = 700;
@@ -44,13 +45,27 @@ export function isQueryKey(
 
 // type-to-search for a focused list: printable keys accumulate into a query
 // (cleared after a pause) and each keystroke reports the nearest match, so
-// typing "led" scrolls to "led zeppelin". returns true when it handled the key
+// typing "led" scrolls to "led zeppelin". returns true when it handled the key.
+// while a query is under way it flags typeToShowInProgressAtom so the player's
+// global space shortcut steps aside and the space lands in the query instead
 export function useTypeToSearch(
   items: string[],
   onMatch: (index: number) => void
 ) {
   const bufferRef = useRef("");
   const timerRef = useRef<number | null>(null);
+
+  const clear = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    bufferRef.current = "";
+    store.set(typeToShowInProgressAtom, false);
+  }, []);
+
+  // a query left in progress when the list unmounts would keep space captured
+  useEffect(() => clear, [clear]);
 
   return useCallback(
     (event: KeyboardEvent): boolean => {
@@ -59,13 +74,11 @@ export function useTypeToSearch(
         return false;
       }
       bufferRef.current += key.toLowerCase();
+      store.set(typeToShowInProgressAtom, true);
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
       }
-      timerRef.current = window.setTimeout(() => {
-        bufferRef.current = "";
-        timerRef.current = null;
-      }, RESET_MS);
+      timerRef.current = window.setTimeout(clear, RESET_MS);
 
       const index = nearestMatch(items, bufferRef.current);
       if (index >= 0) {
@@ -73,6 +86,6 @@ export function useTypeToSearch(
       }
       return true;
     },
-    [items, onMatch]
+    [items, onMatch, clear]
   );
 }
