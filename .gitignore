@@ -16,3 +16,5 @@
 /changes/tracks/*.json
 /changes/playlists/*.json
 /changes/updated_track_ids.json
+/logo-notion.svg
+/logo-notion.png

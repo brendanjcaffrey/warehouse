@@ -220,6 +220,63 @@ task :proto do
   command.run('protoc --swift_out=./ios/Shared messages.proto')
 end
 
+namespace :logo do
+  desc 'regenerate the notion page icon from logo.svg (needs librsvg)'
+  task :notion do
+    source = "#{ROOT}/logo.svg"
+    abort "missing #{source}" unless File.exist?(source)
+
+    # notion draws a page icon over four surfaces -- #ffffff and #f7f7f5 in light
+    # mode, #191919 and #202020 in dark -- and gives no way to vary the icon per
+    # theme: the prefers-color-scheme trick web:favicon relies on is ignored here,
+    # so the near-black source glyph vanishes in dark mode. one flat mid-tone has
+    # to clear all four instead, which rules out both ends of the ramp. #808080 is
+    # the balanced point at ~3.95:1 on white and ~4.45:1 on #191919; going darker
+    # buys light mode contrast at dark mode's expense, and lighter does the
+    # reverse. override with COLOR=... to retune.
+    color = ENV.fetch('COLOR', '#808080')
+
+    # the glyph's fill bounding box in logo.svg's user space, i.e. after the
+    # inkscape matrix below is applied. derived from the bezier extrema rather
+    # than the control points so it's the true inked extent, and constant unless
+    # the path in logo.svg itself changes.
+    x0 = 786.699437
+    y0 = 497.77921
+    x1 = 8357.696387
+    y1 = 9222.378583
+    matrix = 'matrix(4.588483,0,0,4.575039,-4898.431,-28736.72)'
+
+    # logo.svg's own viewbox sits the glyph off-centre behind loose padding, which
+    # wastes most of notion's 20px sidebar icon. recentre on a square canvas and
+    # let the glyph fill 88% of the height so it still reads at that size.
+    size  = 1024
+    scale = (size * 0.88) / (y1 - y0)
+    tx    = ((size - ((x1 - x0) * scale)) / 2) - (x0 * scale)
+    ty    = ((size - ((y1 - y0) * scale)) / 2) - (y0 * scale)
+
+    path = File.read(source)[/class="fil1 str1"\s+d="([^"]+)"/m, 1]
+    abort "couldn't find the glyph path in #{source}" if path.nil?
+
+    svg = <<~SVG
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 #{size} #{size}" width="#{size}" height="#{size}" role="img" aria-label="Warehouse">
+        <title>Warehouse</title>
+        <g transform="translate(#{tx.round(3)},#{ty.round(3)}) scale(#{scale.round(6)}) #{matrix}">
+          <path d="#{path.gsub(/\s+/, ' ').strip}" fill="#{color}" stroke="#{color}" stroke-width="3"/>
+        </g>
+      </svg>
+    SVG
+    File.write("#{ROOT}/logo-notion.svg", svg)
+
+    # notion's icon picker takes the raster more reliably than the vector, and
+    # 280px is the size it asks for. rasterize with librsvg rather than
+    # imagemagick for the reason export:icons gives.
+    command.run('rsvg-convert', '-w', '280', '-h', '280', '--background-color=none',
+                "#{ROOT}/logo-notion.svg", '-o', "#{ROOT}/logo-notion.png")
+
+    puts "regenerated #{ROOT}/logo-notion.svg and logo-notion.png"
+  end
+end
+
 namespace :server do
   desc 'install the server dependencies'
   task :install do
