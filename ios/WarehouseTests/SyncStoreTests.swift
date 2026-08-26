@@ -162,7 +162,7 @@ struct SyncStoreTests {
         #expect(env.metadata.updateTimeNs == 44)
     }
 
-    @Test("sync uses the cached library when offline")
+    @Test("sync reports offline & keeps the cached library")
     func offlineUsesCache() async throws {
         let host = "sync-offline.test"
         let env = Self.makeEnv(host: host)
@@ -173,10 +173,57 @@ struct SyncStoreTests {
 
         await env.store.sync(token: "tok", baseURL: env.baseURL)
 
-        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(env.store.state == .offline)
         // only the version check was attempted, no downloads
         #expect(Self.requestPaths(host: host) == ["/api/version"])
         #expect(env.fileStore.list(.music).isEmpty)
+        // the cached library is untouched, so it stays playable
+        #expect(env.metadata.updateTimeNs == 43)
+    }
+
+    @Test("a first sync with nothing cached reports offline, not an empty library")
+    func offlineFirstSyncReportsOffline() async throws {
+        let host = "sync-offline-first.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host, error: URLError(.notConnectedToInternet))
+
+        // nothing synced yet, so the version check is skipped & the library
+        // fetch is what fails
+        #expect(env.metadata.updateTimeNs == 0)
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .offline)
+        #expect(Self.requestPaths(host: host) == ["/api/library"])
+        #expect(env.store.completedSyncs == 1)
+    }
+
+    @Test("an unreachable server counts as offline, not an error")
+    func unreachableServerIsOffline() async throws {
+        let host = "sync-unreachable.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host, error: URLError(.cannotConnectToHost))
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .offline)
+    }
+
+    @Test("a server error is still an error, not offline")
+    func serverErrorIsNotOffline() async throws {
+        let host = "sync-server-error.test"
+        let env = Self.makeEnv(host: host)
+        let libraryError = try LibraryResponse.with { $0.error = "nope" }.serializedData()
+        MockURLProtocol.setHandler(forHost: host) { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "application/octet-stream"])!
+            return (response, libraryError)
+        }
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .error("nope"))
     }
 
     @Test("a no-op sync never reports transferring, so the menu stays put")
@@ -343,8 +390,8 @@ struct SyncStoreTests {
         #expect(env.store.state == .upToDate(failedDownloads: 0))
     }
 
-    @Test("check treats being offline as up to date")
-    func checkOfflineReportsUpToDate() async throws {
+    @Test("check reports offline rather than up to date")
+    func checkOfflineReportsOffline() async throws {
         let host = "check-offline.test"
         let env = Self.makeEnv(host: host)
         try Self.installHandler(host: host, error: URLError(.notConnectedToInternet))
@@ -353,7 +400,20 @@ struct SyncStoreTests {
 
         await env.store.checkForUpdates(token: "tok", baseURL: env.baseURL)
 
-        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(env.store.state == .offline)
+    }
+
+    @Test("offline is neither busy nor transferring, so the ui settles")
+    func offlineIsNotBusy() async throws {
+        let host = "offline-not-busy.test"
+        let env = Self.makeEnv(host: host)
+        try Self.installHandler(host: host, error: URLError(.notConnectedToInternet))
+
+        await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+        #expect(env.store.state == .offline)
+        #expect(!env.store.isBusy)
+        #expect(!env.store.isTransferringLibrary)
     }
 
     @Test("completedSyncs increments when a sync finishes, not on checks")

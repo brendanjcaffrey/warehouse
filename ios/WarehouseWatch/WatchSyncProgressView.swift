@@ -36,6 +36,17 @@ struct WatchSyncProgressView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             retryButton("Check Again")
+        case .offline:
+            // nothing on disk to fall back on, so say why rather than
+            // blaming the playlist selection
+            Image(systemName: "wifi.slash")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text("Can't reach the server. Check your connection.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            retryButton("Try Again")
         case .error(let message):
             Text(message)
                 .font(.footnote)

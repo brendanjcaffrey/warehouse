@@ -16,6 +16,7 @@ struct WatchMenuView: View {
 
     private enum SyncOutcome: Equatable {
         case upToDate
+        case offline
         case failed(String)
     }
 
@@ -87,6 +88,9 @@ struct WatchMenuView: View {
             case .upToDate:
                 Label("Up to date", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+            case .offline:
+                Label("Offline", systemImage: "wifi.slash")
+                    .foregroundStyle(.orange)
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -118,6 +122,9 @@ struct WatchMenuView: View {
         switch state {
         case .error:
             return .failed("Check failed")
+        case .offline:
+            // nothing was checked, so don't claim the library is current
+            return .offline
         default:
             return .upToDate
         }

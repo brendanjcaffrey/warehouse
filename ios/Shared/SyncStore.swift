@@ -12,6 +12,8 @@ final class SyncStore {
         case savingLibrary
         case downloadingFiles(DownloadProgress)
         case upToDate(failedDownloads: Int)
+        /// couldn't reach the server; whatever is already on disk is all there is
+        case offline
         case storageFull
         case error(String)
     }
@@ -86,7 +88,7 @@ final class SyncStore {
         switch state {
         case .checkingForUpdates, .fetchingLibrary, .savingLibrary, .downloadingFiles:
             return true
-        case .idle, .updateAvailable, .upToDate, .storageFull, .error:
+        case .idle, .updateAvailable, .upToDate, .offline, .storageFull, .error:
             return false
         }
     }
@@ -97,7 +99,7 @@ final class SyncStore {
         switch state {
         case .fetchingLibrary, .savingLibrary, .downloadingFiles:
             return true
-        case .idle, .checkingForUpdates, .updateAvailable, .upToDate, .storageFull, .error:
+        case .idle, .checkingForUpdates, .updateAvailable, .upToDate, .offline, .storageFull, .error:
             return false
         }
     }
@@ -117,7 +119,7 @@ final class SyncStore {
         do {
             switch try await fetchLibraryStatus(token: token, baseURL: baseURL) {
             case .offline:
-                state = .upToDate(failedDownloads: 0)
+                state = .offline
             case .needsUpdate:
                 state = .updateAvailable(newLibraryData: true, missingFiles: 0)
             case .haveLatestVersion:
@@ -127,7 +129,7 @@ final class SyncStore {
                     : .updateAvailable(newLibraryData: false, missingFiles: missing.count)
             }
         } catch let error as URLError where error.isOfflineError {
-            state = .upToDate(failedDownloads: 0)
+            state = .offline
         } catch {
             state = .error(error.localizedDescription)
         }
@@ -152,7 +154,7 @@ final class SyncStore {
             switch try await fetchLibraryStatus(token: token, baseURL: baseURL) {
             case .offline:
                 // if we're offline, use whatever we already have
-                state = .upToDate(failedDownloads: 0)
+                state = .offline
                 return
             case .haveLatestVersion:
                 break
@@ -176,7 +178,7 @@ final class SyncStore {
                 ? .storageFull
                 : .upToDate(failedDownloads: progress.failed)
         } catch let error as URLError where error.isOfflineError {
-            state = .upToDate(failedDownloads: 0)
+            state = .offline
         } catch {
             state = .error(error.localizedDescription)
         }

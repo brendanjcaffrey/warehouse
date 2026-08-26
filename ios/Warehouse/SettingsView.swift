@@ -127,6 +127,13 @@ struct SettingsView: View {
                     checkButton
                 }
             }
+        case .offline:
+            HStack {
+                Label("Offline", systemImage: "wifi.slash")
+                    .foregroundStyle(.orange)
+                Spacer()
+                checkButton
+            }
         case .storageFull:
             Label("Not enough storage to finish downloading", systemImage: "externaldrive.fill.trianglebadge.exclamationmark")
                 .foregroundStyle(.red)

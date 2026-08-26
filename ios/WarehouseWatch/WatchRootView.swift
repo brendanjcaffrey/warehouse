@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WatchRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SyncStore.self) private var sync
     @Environment(SongsStore.self) private var songs
@@ -37,6 +38,15 @@ struct WatchRootView: View {
         .task(id: sync.completedSyncs) {
             await songs.load()
             await playlists.load()
+        }
+        .onChange(of: scenePhase) {
+            // a sync that died offline is otherwise only retried when asked.
+            // coming back to the front is the moment the wrist is likely in
+            // range again, & it's the only signal the watch gets
+            guard scenePhase == .active, sync.state == .offline else { return }
+            Task {
+                await sync.sync(token: settings.token, baseURL: settings.baseURL())
+            }
         }
     }
 }
