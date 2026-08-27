@@ -27,6 +27,13 @@ AUDIO_MIME_TYPES = {
   'wav' => 'audio/wav'
 }.freeze
 
+# every write route. reads stay open, rake update fetches /api/updates while frozen
+WRITE_ROUTES = [
+  %r{^/api/play/.+$},
+  %r{^/api/track/.+$},
+  %r{^/api/artwork$}
+].freeze
+
 DB_POOL = ConnectionPool.new(size: 5, timeout: 5) do
   PG.connect(
     dbname: Config.env.database_name,
@@ -114,6 +121,18 @@ class Server < Sinatra::Base
     def proto(msg)
       content_type 'application/octet-stream'
       msg.to_proto
+    end
+
+    # ahead of the routes, so an unauthed write reports the freeze too. clients
+    # queue & retry, so nothing is lost
+    before do
+      next unless request.post? && WRITE_ROUTES.any? { |route| route.match?(request.path_info) }
+      next unless library_frozen?
+
+      # the only signal of an unlifted freeze, the clients queue silently
+      warn "rejected #{request.path_info}: library is frozen"
+      halt 200, { 'Content-Type' => 'application/octet-stream' },
+           OperationResponse.new(success: false, error: LIBRARY_FROZEN_ERROR).to_proto
     end
 
     post '/auth' do

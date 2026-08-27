@@ -88,3 +88,6 @@ CREATE_ARTWORK_UPDATE_SQL = 'INSERT INTO artwork_updates (track_id, artwork_file
 UPDATE_ARTWORK_SQL = 'UPDATE tracks SET artwork_filename=$1 WHERE id=$2;'
 
 UPDATE_EXPORT_FINISHED_SQL = 'UPDATE export_finished SET finished_at=current_timestamp;'
+
+# ::int so the value doesn't depend on pg's boolean text rendering
+LIBRARY_FROZEN_SQL = 'SELECT frozen::int AS frozen FROM library_state LIMIT 1;'

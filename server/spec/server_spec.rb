@@ -107,6 +107,14 @@ describe 'Warehouse Server' do
     { 'HTTP_AUTHORIZATION' => 'Bearer blah' }
   end
 
+  def freeze_library
+    DB_POOL.with { |conn| conn.exec('UPDATE library_state SET frozen=true') }
+  end
+
+  def clear_library_state
+    DB_POOL.with { |conn| conn.exec('DELETE FROM library_state') }
+  end
+
   def insert_old_export_finished_at
     DB_POOL.with do |conn|
       conn.exec('INSERT INTO export_finished (finished_at) VALUES (\'2020-01-01 00:00:00.000000\')')
@@ -1236,6 +1244,99 @@ describe 'Warehouse Server' do
       resp = OperationResponse.decode(last_response.body)
       expect(resp.success).to be true
       expect(File.read("#{__dir__}/#{artwork_filename2}")).to eq("fake png contents\n")
+    end
+  end
+
+  describe 'a frozen library' do
+    let(:frozen_artwork_filename) { '27a8d4658b73d9533c1db34ee2350da0.jpg' }
+
+    before do
+      DB_POOL.with do |conn|
+        conn.exec_params('INSERT INTO library_metadata (total_file_size) VALUES ($1)', [1001])
+        conn.exec(INSERT_EXPORT_FINISHED_SQL)
+      end
+      freeze_library
+    end
+
+    after do
+      FileUtils.rm_f("#{__dir__}/#{frozen_artwork_filename}")
+    end
+
+    def post_artwork(headers = get_auth_header)
+      post '/api/artwork', { 'file' => Rack::Test::UploadedFile.new("#{__dir__}/__artwork.jpg", 'image/jpeg') }, headers
+    end
+
+    it 'rejects a play without recording it' do
+      post "/api/play/#{track_id1}", {}, get_auth_header
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(LIBRARY_FROZEN_ERROR)
+      expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('0')
+      expect(get_first_value("SELECT play_count FROM tracks WHERE id='#{track_id1}'")).to eq('5')
+    end
+
+    it 'rejects a track update without recording it' do
+      update = TrackUpdate.new(name: 'a new name')
+      post "/api/track/#{track_id1}", update.to_proto, get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(LIBRARY_FROZEN_ERROR)
+      expect(get_first_value('SELECT COUNT(*) FROM name_updates')).to eq('0')
+      expect(get_first_value("SELECT name FROM tracks WHERE id='#{track_id1}'")).to eq('test_title')
+    end
+
+    it 'rejects an artwork upload without writing the file' do
+      post_artwork
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(LIBRARY_FROZEN_ERROR)
+      expect(File.exist?("#{__dir__}/#{frozen_artwork_filename}")).to be false
+    end
+
+    # the filter runs ahead of the routes
+    it 'reports the freeze rather than the missing jwt on an unauthed write' do
+      post "/api/play/#{track_id1}"
+      resp = OperationResponse.decode(last_response.body)
+      expect(resp.success).to be false
+      expect(resp.error).to eq(LIBRARY_FROZEN_ERROR)
+    end
+
+    # rake update fetches /api/updates from the server it just froze
+    it 'still serves the updates the update task fetches' do
+      DB_POOL.with do |conn|
+        conn.exec_params('INSERT INTO plays (track_id) VALUES ($1);', [track_id1])
+      end
+
+      get '/api/updates', {}, get_auth_header
+      resp = UpdatesResponse.decode(last_response.body)
+      expect(resp.response).to eq(:updates)
+      expect(resp.updates.plays.map(&:trackId)).to eq([track_id1])
+    end
+
+    it 'still serves the library' do
+      get '/api/library', {}, get_auth_header
+      expect(LibraryResponse.decode(last_response.body).response).to eq(:library)
+
+      post '/api/library', LibraryRequest.new(playlistIds: []).to_proto,
+           get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+      expect(LibraryResponse.decode(last_response.body).response).to eq(:library)
+    end
+
+    it 'still serves media' do
+      get "/music/#{music_filename}", {}, get_auth_header
+      expect(last_response.body).to eq("fake mp3 contents\n")
+
+      get "/artwork/#{artwork_filename}", {}, get_auth_header
+      expect(last_response.body).to eq("fake jpg contents\n")
+    end
+
+    # a pre-library_state database has no row
+    it 'accepts writes when the library_state row is missing' do
+      clear_library_state
+
+      post "/api/play/#{track_id1}", {}, get_auth_header
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('1')
     end
   end
 end

@@ -59,6 +59,14 @@ module Helpers
     count.positive?
   end
 
+  # no row means not frozen, so a pre-library_state database still accepts writes
+  def library_frozen?
+    rows = query(LIBRARY_FROZEN_SQL)
+    return false if rows.empty?
+
+    rows[0]['frozen'].to_i == 1
+  end
+
   def timestamp_to_ns(time_str)
     time = Time.strptime("#{time_str} UTC", '%Y-%m-%d %H:%M:%S.%N %Z')
     (time.to_i * 1_000_000_000) + time.nsec

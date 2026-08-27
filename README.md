@@ -142,7 +142,16 @@ it to a [remote](#remote) server. Run it from the repo root. `<server>` is the
 ssh host of your remote box, and you start/stop the server however you manage it
 (a process manager, systemd, etc.).
 
-First, refresh locally:
+Freeze both libraries first, or anything an app writes between `rake update`
+fetching the remote's changes and the database being replaced is dropped. Frozen
+refuses writes and the apps will retry later.
+
+```bash
+rake freeze:local
+ssh <server> "cd warehouse/server && rake freeze:remote"
+```
+
+Then refresh locally:
 
 ```bash
 rake update          # push app-side plays/ratings/edits back into Music FIRST,
@@ -152,6 +161,8 @@ rake export:run      # rebuild the database + music/artwork from the library
 rake web:build       # rebuild the web app into public/
 # start the local server
 ```
+
+`rake export:run` recreates every table, so the local library comes back unfrozen.
 
 For a local production instance that's everything. To deploy to a remote
 server, push the database, code, and media to it:
@@ -183,6 +194,9 @@ rsync --archive --compress --itemize-changes --delete-during \
 rsync --archive --compress --itemize-changes --delete-during --copy-links \
   ./music/ <server>:~/warehouse/music/
 ```
+
+The remote unfreezes itself: the dump replaces its `library_state` row with the
+local one, and it happens while the remote server is stopped.
 
 ## The Apple Watch and Tailscale Funnel
 

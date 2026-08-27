@@ -92,6 +92,11 @@ CREATE TABLE export_finished (
     finished_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE library_state (
+    frozen BOOLEAN NOT NULL
+);
+INSERT INTO library_state (frozen) VALUES (false);
+
 CREATE INDEX idx_tracks_music_filename ON tracks (music_filename);
 CREATE INDEX idx_tracks_artwork_filename ON tracks (artwork_filename);
 

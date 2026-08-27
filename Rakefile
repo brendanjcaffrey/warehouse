@@ -532,6 +532,55 @@ namespace :ios do
   end
 end
 
+# stops app writes landing while rake update pushes queued changes into music.
+# run the :remote tasks on the remote box: remote config has no database_host
+def set_frozen(env, frozen)
+  require 'pg'
+  Config.set_env(env)
+
+  db = PG.connect(user: Config.env.database_username, password: Config.env.database_password,
+                  dbname: Config.env.database_name)
+  begin
+    db.exec_params('UPDATE library_state SET frozen=$1;', [frozen])
+    rows = db.exec('SELECT frozen FROM library_state;').to_a
+  rescue PG::UndefinedTable
+    warn "#{Config.env.database_name} has no library_state table, it predates the freeze. run rake export:run"
+    exit(1)
+  end
+
+  if rows.empty?
+    warn "no library_state row in #{Config.env.database_name}, run rake export:run"
+    exit(1)
+  end
+
+  state = rows[0]['frozen'] == 't' ? 'frozen' : 'not frozen'
+  puts "#{Config.env.database_name} (#{env}) is #{state}"
+end
+
+namespace :freeze do
+  desc 'stop the local server accepting library changes'
+  task :local do
+    set_frozen('local', true)
+  end
+
+  desc 'stop the remote server accepting library changes (run this on the remote box)'
+  task :remote do
+    set_frozen('remote', true)
+  end
+end
+
+namespace :unfreeze do
+  desc 'let the local server accept library changes again'
+  task :local do
+    set_frozen('local', false)
+  end
+
+  desc 'let the remote server accept library changes again (run this on the remote box)'
+  task :remote do
+    set_frozen('remote', false)
+  end
+end
+
 namespace :db do
   desc 'trim the local database down to 100 tracks for development (leaves music/artwork files alone)'
   task :trim do
