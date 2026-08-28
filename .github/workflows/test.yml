@@ -53,13 +53,16 @@ jobs:
     - name: checks
       run: bundle exec rake checks
 
-    - name: pushover-actions
+    - name: pushover notification
       if: failure()
-      uses: umahmood/pushover-actions@0582cb24dccd1fe77aeb35e6fb8027ddbca8af35
       env:
         PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
         PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
-      with:
-        status: ${{ job.status }}
-        title: "${{ github.repository }} CI failed (${{ github.workflow }})"
-        url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      run: |
+        curl -sS --fail-with-body \
+          --form-string "token=$PUSHOVER_TOKEN" \
+          --form-string "user=$PUSHOVER_USER" \
+          --form-string "title=${{ github.repository }} CI failed (${{ github.workflow }})" \
+          --form-string "message=job status: ${{ job.status }}" \
+          --form-string "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          https://api.pushover.net/1/messages.json
