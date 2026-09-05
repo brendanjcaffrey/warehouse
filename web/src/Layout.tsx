@@ -7,8 +7,11 @@ import SongsView from "./SongsView";
 import ArtistsView from "./ArtistsView";
 import AlbumsView from "./AlbumsView";
 import PlaylistView from "./PlaylistView";
+import { isDevMode, topBarClassName } from "./DevMode";
 
 function Layout() {
+  const dev = isDevMode();
+
   const topBarStyle = {
     height: "52px",
     flex: "1 1 0",
@@ -17,7 +20,7 @@ function Layout() {
 
   return (
     <div className="d-flex flex-column vh-100">
-      <div className="d-flex flex-shrink-0 border-bottom">
+      <div className={topBarClassName(dev)}>
         <div className="d-flex align-items-center" style={topBarStyle}>
           <Controls />
         </div>
