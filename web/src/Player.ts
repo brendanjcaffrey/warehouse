@@ -29,7 +29,13 @@ import { files } from "./Files";
 import { TrackFileSet } from "./TrackFileSet";
 import { PlayingTrack, PlaylistTrack } from "./Types";
 import { PlayQueue } from "./PlayQueue";
-import { trackFinish, shouldSkipAtFinish } from "./PlaybackFinish";
+import {
+  trackFinish,
+  shouldSkipAtFinish,
+  shouldFinishAtEnded,
+  audioSettledOnTrack,
+  AudioFinishState,
+} from "./PlaybackFinish";
 import { downloadFilename } from "./TrackMenu";
 import { IMAGE_EXTENSION_TO_MIME } from "./MimeTypes";
 
@@ -128,6 +134,13 @@ class Player {
 
     this.audioRef = audioRef;
     this.audioRef.onended = () => {
+      if (!this.playingTrack) {
+        return;
+      }
+      const audio = this.audioState();
+      if (!audio || !shouldFinishAtEnded(audio, this.playingTrack.track.id)) {
+        return;
+      }
       this.trackFinished();
     };
     this.audioRef.ontimeupdate = () => {
@@ -151,17 +164,26 @@ class Player {
     };
   }
 
-  // true only once the audio element has settled on the currently playing
-  // track's source - src matches, not mid-seek, and has data at the current
-  // position. guards finish-detection against stale readings while a new track
-  // is still loading/seeking.
+  private audioState(): AudioFinishState | undefined {
+    if (!this.audioRef) {
+      return undefined;
+    }
+    return {
+      srcTrackId: this.lastSetAudioSrcTrackId,
+      seeking: this.audioRef.seeking,
+      readyState: this.audioRef.readyState,
+      ended: this.audioRef.ended,
+    };
+  }
+
+  // whether the audio element has settled on the currently playing track, so
+  // finish detection isn't acting on a stale reading from the previous track
   private audioSettledOnPlayingTrack(): boolean {
+    const audio = this.audioState();
     return (
-      this.audioRef !== undefined &&
+      audio !== undefined &&
       this.playingTrack !== undefined &&
-      this.lastSetAudioSrcTrackId === this.playingTrack.track.id &&
-      !this.audioRef.seeking &&
-      this.audioRef.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+      audioSettledOnTrack(audio, this.playingTrack.track.id)
     );
   }
 

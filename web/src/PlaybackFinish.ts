@@ -20,3 +20,37 @@ export function shouldSkipAtFinish(
 ): boolean {
   return !playedPastFinish && currentTime > start && currentTime >= finish;
 }
+
+export interface AudioFinishState {
+  // the track the audio element's src was last set to
+  srcTrackId: string | undefined;
+  seeking: boolean;
+  readyState: number;
+  ended: boolean;
+}
+
+// true only once the audio element has settled on the given track's source.
+// guards finish detection against stale readings while a new track is still
+// loading/seeking
+export function audioSettledOnTrack(
+  audio: AudioFinishState,
+  trackId: string
+): boolean {
+  return (
+    audio.srcTrackId === trackId &&
+    !audio.seeking &&
+    audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+  );
+}
+
+// whether an ended event should finish the track. the media pipeline queues
+// ended from its own thread, so one fired at the real end of a track can land
+// after the finish check has already advanced to the next track. by then the
+// audio element is loading a new source and is no longer ended, and acting on
+// it would skip that track and record it as a play
+export function shouldFinishAtEnded(
+  audio: AudioFinishState,
+  trackId: string
+): boolean {
+  return audioSettledOnTrack(audio, trackId) && audio.ended;
+}
