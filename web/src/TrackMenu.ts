@@ -89,3 +89,60 @@ export function trackPlaylistOptions(
   options.sort((a, b) => a.name.localeCompare(b.name));
   return options;
 }
+
+export interface MenuRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+// where a context menu opened at a click point should sit so it stays on
+// screen. prefer down and to the right but check if that would be of screen.
+export function menuPosition(
+  click: { x: number; y: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  margin = 8
+): { x: number; y: number; maxHeight?: number } {
+  const available = Math.max(0, viewport.height - margin * 2);
+  return {
+    x: menuAxis(click.x, size.width, viewport.width, margin),
+    y: menuAxis(click.y, size.height, viewport.height, margin),
+    maxHeight: size.height > available ? available : undefined,
+  };
+}
+
+// one axis of menuPosition: after the point, before it, or clamped to fit
+function menuAxis(
+  at: number,
+  size: number,
+  viewport: number,
+  margin: number
+): number {
+  if (at + size <= viewport - margin) {
+    return at;
+  }
+  if (at - size >= margin) {
+    return at - size;
+  }
+  return Math.max(margin, viewport - margin - size);
+}
+
+// where a submenu opened at a row should sit so it stays on screen. prefer down and to
+// the right but check if that would be of screen.
+export function submenuPlacement(
+  anchor: MenuRect,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  margin = 8
+): { left: boolean; up: boolean } {
+  const overflowsRight = anchor.right + size.width > viewport.width - margin;
+  const fitsLeft = anchor.left - size.width >= margin;
+  const overflowsBottom = anchor.top + size.height > viewport.height - margin;
+  const fitsUp = anchor.bottom - size.height >= margin;
+  return {
+    left: overflowsRight && fitsLeft,
+    up: overflowsBottom && fitsUp,
+  };
+}

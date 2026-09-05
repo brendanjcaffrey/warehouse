@@ -1,4 +1,11 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useLocation } from "react-router-dom";
 import {
   ArrowReturnLeft,
@@ -18,6 +25,8 @@ import EditTrackForm from "./EditTrackForm";
 import { usePlaylists } from "./usePlaylists";
 import {
   GotoTarget,
+  menuPosition,
+  submenuPlacement,
   trackGotoTargets,
   trackPlaylistOptions,
 } from "./TrackMenu";
@@ -89,7 +98,15 @@ function TrackContextMenu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const submenuAnchorRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const [submenuOpen, setSubmenuOpen] = useState(false);
+  const [placement, setPlacement] = useState<{
+    x: number;
+    y: number;
+    maxHeight?: number;
+  }>({ x: position.x, y: position.y });
+  const [submenuSide, setSubmenuSide] = useState({ left: false, up: false });
   const { pathname } = useLocation();
   const revealTo = useReveal();
 
@@ -101,6 +118,39 @@ function TrackContextMenu({
     },
     [revealTo, track.id, onClose]
   );
+
+  // measure the rendered menu and nudge it back on screen before it paints, so
+  // a right-click near the bottom or right edge doesn't open off screen
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    if (!menu) {
+      return;
+    }
+    setPlacement(
+      menuPosition(
+        position,
+        { width: menu.offsetWidth, height: menu.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight }
+      )
+    );
+  }, [position]);
+
+  // the same for the "show in playlist" flyout, which flips to the left or
+  // upwards when it would leave the viewport
+  useLayoutEffect(() => {
+    const anchor = submenuAnchorRef.current;
+    const submenu = submenuRef.current;
+    if (!submenuOpen || !anchor || !submenu) {
+      return;
+    }
+    setSubmenuSide(
+      submenuPlacement(
+        anchor.getBoundingClientRect(),
+        { width: submenu.offsetWidth, height: submenu.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight }
+      )
+    );
+  }, [submenuOpen, placement]);
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
@@ -132,10 +182,12 @@ function TrackContextMenu({
       className="dropdown-menu show shadow-sm"
       style={{
         position: "fixed",
-        top: position.y,
-        left: position.x,
+        top: placement.y,
+        left: placement.x,
         zIndex: 1080,
         minWidth: 200,
+        maxHeight: placement.maxHeight,
+        overflowY: placement.maxHeight ? "auto" : undefined,
       }}
     >
       {returnToSource && (
@@ -215,6 +267,7 @@ function TrackContextMenu({
         );
       })}
       <div
+        ref={submenuAnchorRef}
         className="position-relative"
         onMouseEnter={() => setSubmenuOpen(true)}
         onMouseLeave={() => setSubmenuOpen(false)}
@@ -234,12 +287,15 @@ function TrackContextMenu({
         </button>
         {submenuOpen && (
           <div
+            ref={submenuRef}
             role="menu"
             className="dropdown-menu show shadow-sm"
             style={{
               position: "absolute",
-              top: 0,
-              left: "100%",
+              top: submenuSide.up ? "auto" : 0,
+              bottom: submenuSide.up ? 0 : "auto",
+              left: submenuSide.left ? "auto" : "100%",
+              right: submenuSide.left ? "100%" : "auto",
               zIndex: 1081,
               minWidth: 180,
               maxHeight: 320,
