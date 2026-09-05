@@ -359,7 +359,15 @@ class Player {
   }
 
   private async startQueue() {
+    // playing the track that is already playing restarts it from the top: the
+    // audio src is unchanged so nothing else would move it back
+    const restarting =
+      this.playingTrack !== undefined &&
+      this.queue.current?.trackId === this.playingTrack.track.id;
     await this.updatePlayingTrack();
+    if (restarting && this.playingTrack) {
+      this.setCurrentTime(this.playingTrack.track.start);
+    }
     this.play();
   }
 
