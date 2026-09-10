@@ -287,6 +287,46 @@ struct AuthTests {
             #expect(Keychain.readToken() == nil)
         }
 
+        static func privateDefaults(_ name: String) -> UserDefaults {
+            let suiteName = "AuthStoreTests-\(name)"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.removePersistentDomain(forName: suiteName)
+            return defaults
+        }
+
+        @Test("a store given its own storage opens from the token it holds")
+        func injectedStorageIsReadOnLaunch() async {
+            let defaults = Self.privateDefaults("read")
+            defaults.set("https://warehouse.example.com", forKey: "serverURL")
+            let token = AuthTests.validToken()
+            MockURLProtocol.reset()
+
+            let store = AuthStore(
+                session: MockURLProtocol.makeSession(), defaults: defaults,
+                readToken: { token }, writeToken: { _ in })
+
+            #expect(store.phase == .authenticated)
+            #expect(store.serverURL == "https://warehouse.example.com")
+        }
+
+        @Test("a store given its own storage logs in & out through it")
+        func injectedStorageIsWritten() async throws {
+            let defaults = Self.privateDefaults("write")
+            var written: [String?] = []
+            MockURLProtocol.reset()
+            let store = AuthStore(
+                session: MockURLProtocol.makeSession(), defaults: defaults,
+                readToken: { nil }, writeToken: { written.append($0) })
+            MockURLProtocol.requestHandler = AuthTests.handler(returning: try AuthTests.tokenData("tok"))
+
+            _ = await store.logIn(username: "u", password: "p", serverURL: "https://warehouse.example.com")
+            store.logOut()
+
+            // the other suites that sign in lean on this to stay off the real keychain
+            #expect(written == ["tok", nil])
+            #expect(defaults.string(forKey: "serverURL") == "https://warehouse.example.com")
+        }
+
         @Test("refresh replaces the token with the refreshed one")
         func refreshReplacesToken() async throws {
             let store = try await Self.makeSignedInStore()

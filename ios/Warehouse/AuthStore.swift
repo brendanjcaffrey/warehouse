@@ -13,27 +13,37 @@ final class AuthStore {
     var serverURL: String
 
     private let client: AuthClient
+    private let defaults: UserDefaults
+    private let writeToken: (String?) -> Void
 
     private static let serverURLKey = "serverURL"
 
-    // the parameter is here for tests
-    init(session: URLSession = .shared) {
+    // the parameters are here for tests: the keychain & user defaults are shared
+    // by every test in the process, so only the auth tests themselves use them
+    init(
+        session: URLSession = .shared,
+        defaults: UserDefaults = .standard,
+        readToken: () -> String? = Keychain.readToken,
+        writeToken: @escaping (String?) -> Void = Keychain.setToken
+    ) {
         client = AuthClient(session: session)
+        self.defaults = defaults
+        self.writeToken = writeToken
         if UITestSupport.enabled {
             // ui tests skip the login flow & run offline against fixtures
             token = "ui-tests"
             serverURL = ""
             return
         }
-        serverURL = UserDefaults.standard.string(forKey: Self.serverURLKey) ?? ""
+        serverURL = defaults.string(forKey: Self.serverURLKey) ?? ""
 
         // a stored token is trusted on sight so the app opens without waiting on the
         // network. a token we can't use is dropped here, still without a request: it's
         // expired, or it outlived the server url (the keychain survives a reinstall,
         // user defaults doesn't) & only the login form can set that back
-        if let stored = Keychain.readToken() {
+        if let stored = readToken() {
             if JWT.isExpired(stored) || baseURL() == nil {
-                Keychain.setToken(nil)
+                writeToken(nil)
             } else {
                 token = stored
             }
@@ -92,12 +102,12 @@ final class AuthStore {
 
     private func setToken(_ token: String?) {
         self.token = token
-        Keychain.setToken(token)
+        writeToken(token)
     }
 
     private func setServerURL(_ url: String) {
         serverURL = url
-        UserDefaults.standard.set(url, forKey: Self.serverURLKey)
+        defaults.set(url, forKey: Self.serverURLKey)
     }
 
     func baseURL() -> URL? {

@@ -38,7 +38,8 @@ struct PlayerQueueTests {
     @MainActor
     func enqueuesTheNextTrack() async throws {
         let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(host: host)
+        let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(
+            host: host, baseURL: Helpers.silentBaseURL())
         try Self.cacheSongs(fileStore, ["1"])
 
         // backgrounded, which is where a queue of streams is the whole story:
@@ -59,7 +60,8 @@ struct PlayerQueueTests {
     func aLandedPrefetchRepointsTheEnqueuedStream() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let gate = DispatchSemaphore(value: 0)
-        let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(host: host) { request in
+        let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(
+            host: host, baseURL: Helpers.silentBaseURL()) { request in
             if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()
             }
