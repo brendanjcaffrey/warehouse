@@ -19,8 +19,15 @@ struct IntentPlaybackServiceTests {
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "intent-service-tests-\(UUID().uuidString)"))
-        let auth = AuthStore(session: MockURLProtocol.makeSession())
-        auth.logOut()
+        // its own defaults & token storage: the auth tests run alongside this
+        // suite & read the real keychain & server url back, so a log out or log
+        // in here could land between them storing a token & reading it
+        let suiteName = "IntentPlaybackServiceTests-\(host)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let auth = AuthStore(
+            session: MockURLProtocol.makeSession(), defaults: defaults,
+            readToken: { nil }, writeToken: { _ in })
         let songs = SongsStore(database: database, fileStore: fileStore)
         let playlists = PlaylistsStore(database: database)
         var client = LibraryClient()

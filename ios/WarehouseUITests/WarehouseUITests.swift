@@ -251,14 +251,14 @@ final class WarehouseUITests: XCTestCase {
         let app = playFixtureSongs()
 
         // the fixtures have no audio to stream, so playback sits paused & the
-        // bar's play button reflects that; tapping it toggles the state
+        // bar's play button reflects that; tapping it retries the track, which
+        // can't load offline either, so the button stays on play
         let playPause = app.buttons["barPlayPause"]
         XCTAssertTrue(playPause.waitForExistence(timeout: 5))
         XCTAssertEqual(playPause.label, "Play")
         playPause.tap()
-        XCTAssertTrue(waitFor(playPause, label: "Pause"))
-        playPause.tap()
-        XCTAssertTrue(waitFor(playPause, label: "Play"))
+        XCTAssertFalse(waitFor(playPause, label: "Pause", timeout: 2))
+        XCTAssertEqual(playPause.label, "Play")
 
         // the forward button advances to beta, the next track in the list
         let bar = app.buttons["nowPlayingBar"]
@@ -282,13 +282,13 @@ final class WarehouseUITests: XCTestCase {
         app.buttons["skipPrevious"].tap()
         XCTAssertTrue(waitFor(title, label: "Alpha Song"))
 
-        // play/pause reflects & toggles the paused fixture playback
+        // play/pause reflects the paused fixture playback; tapping it retries
+        // the track, which can't load offline, so it stays on play
         let playPause = app.buttons["playPause"]
         XCTAssertEqual(playPause.label, "Play")
         playPause.tap()
-        XCTAssertTrue(waitFor(playPause, label: "Pause"))
-        playPause.tap()
-        XCTAssertTrue(waitFor(playPause, label: "Play"))
+        XCTAssertFalse(waitFor(playPause, label: "Pause", timeout: 2))
+        XCTAssertEqual(playPause.label, "Play")
     }
 
     @MainActor

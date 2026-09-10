@@ -38,6 +38,14 @@ final class MockURLProtocol: URLProtocol {
         hostRequests[host] = []
     }
 
+    /// the key a handler for this url is filed under: its host, narrowed by the
+    /// port where there is one, so local servers that differ only by port can
+    /// each have their own
+    static func key(for url: URL) -> String? {
+        guard let host = url.host else { return nil }
+        return url.port.map { "\(host):\($0)" } ?? host
+    }
+
     static func requests(forHost host: String) -> [URLRequest] {
         lock.lock()
         defer { lock.unlock() }
@@ -69,15 +77,26 @@ final class MockURLProtocol: URLProtocol {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        let seen = Self.normalized(request)
+        let host = request.url?.host
+        let key = request.url.flatMap(Self.key(for:))
+        // recorded against its host even when it has no handler, so a test can
+        // see nothing asked a server it expected no downloads from
+        if let host {
+            Self.record(seen, forHost: host)
+        }
+        if let key, key != host {
+            Self.record(seen, forHost: key)
+        }
         let handler: (URLRequest) throws -> (HTTPURLResponse, Data)
-        if let host = request.url?.host, let hostHandler = Self.handler(forHost: host) {
-            Self.record(Self.normalized(request), forHost: host)
+        // a handler for the port wins over one for the whole host
+        if let hostHandler = Self.handler(forHost: key) ?? Self.handler(forHost: host) {
             handler = hostHandler
         } else if let globalHandler = MockURLProtocol.requestHandler {
-            MockURLProtocol.requests.append(Self.normalized(request))
+            MockURLProtocol.requests.append(seen)
             handler = globalHandler
         } else {
-            MockURLProtocol.requests.append(Self.normalized(request))
+            MockURLProtocol.requests.append(seen)
             client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
             return
         }

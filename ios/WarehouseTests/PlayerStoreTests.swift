@@ -171,8 +171,10 @@ struct PlayerStoreTests {
     ) -> (PlayerStore, FileStore, URL) {
         let serverURL = baseURL ?? URL(string: "https://\(host)")!
         // the default answers every download at once; a test that needs to see
-        // the slot before the prefetch lands passes one that holds it open
-        MockURLProtocol.setHandler(forHost: host, handler ?? { request in
+        // the slot before the prefetch lands passes one that holds it open.
+        // filed under the url the player is given, so a local server that
+        // differs from the others only by port still gets its downloads
+        MockURLProtocol.setHandler(forHost: MockURLProtocol.key(for: serverURL)!, handler ?? { request in
             (Self.okResponse(request.url!), Self.musicBytes)
         })
         let fileStore = FileStore(
@@ -193,6 +195,39 @@ struct PlayerStoreTests {
     /// a base url nothing is listening on, so a stream fails immediately
     /// rather than sitting in a connect timeout for the length of the test
     static let deadBaseURL = URL(string: "http://127.0.0.1:1")!
+
+    /// a base url that takes the connection & never answers. the socket
+    /// listens but nothing accepts, so the kernel completes the handshake & a
+    /// stream sent here sits in its first fill for as long as a test runs. a
+    /// host that doesn't resolve can't stand in for this: the stream fails
+    /// once the lookup gives up, which on a loaded ci runner can be before the
+    /// test gets to look. each call gets its own port, left open for the life
+    /// of the test process
+    static func silentBaseURL() -> URL {
+        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        precondition(descriptor >= 0, "silent server socket failed")
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let listening = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(descriptor, $0, length) == 0 && listen(descriptor, 16) == 0
+                    && getsockname(descriptor, $0, &length) == 0
+            }
+        }
+        precondition(listening, "silent server listen failed")
+        return URL(string: "http://127.0.0.1:\(UInt16(bigEndian: address.sin_port))")!
+    }
+
+    /// whether the download side asked for the file under this base url. the
+    /// port is part of the match since every local server here is 127.0.0.1
+    static func requested(_ baseURL: URL, _ filename: String) -> Bool {
+        MockURLProtocol.requests(forHost: baseURL.host()!).contains {
+            $0.url == baseURL.appending(path: "music/\(filename)")
+        }
+    }
 
     /// a base url a stream really does load from: a directory laid out like
     /// the server's music route, addressed as file://localhost so it still has
@@ -1097,7 +1132,8 @@ struct PlayerStoreTests {
     @MainActor
     func uncachedTrackStreams() async throws {
         let host = "player-\(UUID().uuidString).example.com"
-        let (player, fileStore, baseURL) = Self.makeStreamingPlayer(host: host)
+        let (player, fileStore, baseURL) = Self.makeStreamingPlayer(
+            host: host, baseURL: Self.silentBaseURL())
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
         try await Self.waitFor { player.hasLoadedTrack }
@@ -1107,7 +1143,7 @@ struct PlayerStoreTests {
         #expect(player.isStreamingCurrentTrack)
         #expect(player.currentItemURL == baseURL.appending(path: "music/1.wav"))
         #expect(!fileStore.exists(.music, "1.wav"))
-        #expect(!Self.requested(host, "1.wav"))
+        #expect(!Self.requested(baseURL, "1.wav"))
     }
 
     @Test("a cached track still plays off disk rather than streaming")
@@ -1250,7 +1286,8 @@ struct PlayerStoreTests {
     @MainActor
     func fillingStreamDoesNotBufferAhead() async throws {
         let host = "player-\(UUID().uuidString).example.com"
-        let (player, _, baseURL) = Self.makeStreamingPlayer(host: host)
+        let (player, _, baseURL) = Self.makeStreamingPlayer(
+            host: host, baseURL: Self.silentBaseURL())
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
         try await Self.waitFor { player.hasLoadedTrack }
