@@ -51,13 +51,19 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           build
 
+    # signed ad hoc rather than not at all: an unsigned test host has no
+    # entitlements, so the simulator keychain refuses every write & the auth
+    # tests that read a token back see nothing. ad hoc needs no team/profile
     - name: unit tests
       run: |
         xcodebuild test -project "$PROJECT" \
           -scheme "$SCHEME" \
           -destination "platform=iOS Simulator,name=$SIMULATOR" \
           -only-testing:WarehouseTests \
-          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGN_IDENTITY=- \
+          CODE_SIGN_STYLE=Manual \
+          DEVELOPMENT_TEAM= \
+          PROVISIONING_PROFILE_SPECIFIER=
 
     - name: ui tests
       run: |

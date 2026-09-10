@@ -13,6 +13,16 @@ struct PlaybackRestoreTests {
         Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// how far a track started at `since` can have played by now. the track
+    /// really plays while a test waits on it, & a loaded ci runner can leave
+    /// the test unscheduled for seconds, so a fixed bound on the playhead
+    /// flakes. it can't outrun the clock though, so start plus this still
+    /// tells the right start apart from a wrong one. the extra second covers
+    /// the time observer's tick
+    static func playable(since start: Date) -> TimeInterval {
+        Date().timeIntervalSince(start) + 1
+    }
+
     /// a player holding a queue, as one looks when the app is put away: the
     /// tracks aren't on disk & there's no server, so nothing plays
     static func makeQueued(_ songs: [Song], startingAt index: Int = 0) -> PlayerStore {
@@ -123,10 +133,11 @@ struct PlaybackRestoreTests {
         player.restore(restored, songs: Self.library(songs), token: "t", baseURL: baseURL)
 
         player.seek(to: 5)
+        let resumed = Date()
         player.resume()
         try await PlayerStoreTests.waitFor { player.hasLoadedTrack && player.currentTime > 4 }
         #expect(player.currentTime >= 5)
-        #expect(player.currentTime < 10)
+        #expect(player.currentTime < 5 + Self.playable(since: resumed))
     }
 
     @Test("a saved position past the end of the track starts it over")
@@ -142,8 +153,9 @@ struct PlaybackRestoreTests {
         try fileStore.write(.music, "1.wav", data: PlayerStoreTests.musicBytes)
         player.restore(restored, songs: Self.library(songs), token: "t", baseURL: baseURL)
 
+        let resumed = Date()
         player.resume()
         try await PlayerStoreTests.waitFor { player.status == .ready && player.hasLoadedTrack }
-        #expect(player.currentTime < 5)
+        #expect(player.currentTime < Self.playable(since: resumed))
     }
 }
