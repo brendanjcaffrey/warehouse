@@ -31,6 +31,21 @@ enum PlaybackTimeMillis {
     }
 }
 
+/// the edit sheet's added date, mirroring the web app's edit track panel:
+/// locale medium date plus hh:mm a ("Jul 3, 2026 03:14 PM"); blank when the
+/// track has none
+enum AddedDateFormat {
+    static func format(_ date: Date?, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        guard let date else { return "" }
+        let day = date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, timeZone: timeZone))
+        let timeFormatter = DateFormatter()
+        timeFormatter.locale = Locale(identifier: "en_US_POSIX")
+        timeFormatter.timeZone = timeZone
+        timeFormatter.dateFormat = "hh:mm a"
+        return "\(day) \(timeFormatter.string(from: date))"
+    }
+}
+
 /// the edit sheet's working copy of a track's editable fields, kept as the
 /// strings being typed; mirrors the web app's edit track panel semantics:
 /// only changed fields are submitted & sort names go stale until the next sync

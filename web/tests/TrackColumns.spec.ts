@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { TRACK_COLUMNS, formatDateAdded } from "../src/TrackColumns";
+import {
+  TRACK_COLUMNS,
+  formatDateAdded,
+  formatDateAddedShort,
+} from "../src/TrackColumns";
 import { Track } from "../src/Library";
 
 function makeTrack(overrides: Partial<Track>): Track {
@@ -91,18 +95,51 @@ test("the added column sorts on its raw epoch seconds", () => {
   expect(column("added").filterable).toBe(false);
 });
 
-test("added renders as a medium date and blank when missing", () => {
-  const epoch = 1783082096;
-  const expected = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-  }).format(new Date(epoch * 1000));
+// built from local-time components so the expectation holds in any timezone
+function localEpoch(
+  year: number,
+  monthIndex: number,
+  day: number,
+  hours = 12,
+  minutes = 0
+): number {
+  return new Date(year, monthIndex, day, hours, minutes).getTime() / 1000;
+}
+
+function mediumDate(epoch: number): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(epoch * 1000)
+  );
+}
+
+test("added renders as m/d/yyyy and blank when missing", () => {
+  const epoch = localEpoch(2026, 8, 10);
   expect(column("added").render(makeTrack({ addedDate: epoch }))).toBe(
-    expected
+    "9/10/2026"
   );
   expect(column("added").render(makeTrack({ addedDate: 0 }))).toBe("");
 });
 
+test("formatDateAddedShort uses m/d/yyyy without zero padding", () => {
+  expect(formatDateAddedShort(localEpoch(2026, 6, 3))).toBe("7/3/2026");
+  expect(formatDateAddedShort(localEpoch(2025, 11, 25))).toBe("12/25/2025");
+  expect(formatDateAddedShort(0)).toBe("");
+});
+
+test("formatDateAdded renders a medium date with hh:mm a", () => {
+  const afternoon = localEpoch(2026, 6, 3, 15, 4);
+  expect(formatDateAdded(afternoon)).toBe(`${mediumDate(afternoon)} 03:04 PM`);
+  const morning = localEpoch(2026, 6, 3, 9, 30);
+  expect(formatDateAdded(morning)).toBe(`${mediumDate(morning)} 09:30 AM`);
+});
+
+test("formatDateAdded maps midnight and noon to 12", () => {
+  const midnight = localEpoch(2026, 6, 3, 0, 0);
+  expect(formatDateAdded(midnight)).toBe(`${mediumDate(midnight)} 12:00 AM`);
+  const noon = localEpoch(2026, 6, 3, 12, 0);
+  expect(formatDateAdded(noon)).toBe(`${mediumDate(noon)} 12:00 PM`);
+});
+
 test("formatDateAdded blanks the epoch-0 sentinel", () => {
   expect(formatDateAdded(0)).toBe("");
-  expect(formatDateAdded(1783082096)).not.toBe("");
 });

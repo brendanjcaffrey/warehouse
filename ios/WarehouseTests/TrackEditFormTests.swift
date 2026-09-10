@@ -247,4 +247,36 @@ struct TrackEditFormTests {
         form.artworkCleared = true
         #expect(form.updatedSong(from: song).artworkFilename == nil)
     }
+
+    static let enUS = Locale(identifier: "en_US")
+    static let utc = TimeZone(identifier: "UTC")!
+
+    static func addedDate(_ epoch: TimeInterval) -> String {
+        AddedDateFormat.format(Date(timeIntervalSince1970: epoch), locale: enUS, timeZone: utc)
+    }
+
+    @Test("added date renders a medium date with hh:mm a")
+    func addedDateFormat() {
+        #expect(Self.addedDate(1_783_071_000) == "Jul 3, 2026 09:30 AM")
+        #expect(Self.addedDate(1_783_091_040) == "Jul 3, 2026 03:04 PM")
+    }
+
+    @Test("added date maps midnight & noon to 12")
+    func addedDateMidnightNoon() {
+        #expect(Self.addedDate(1_783_036_800) == "Jul 3, 2026 12:00 AM")
+        #expect(Self.addedDate(1_783_080_000) == "Jul 3, 2026 12:00 PM")
+    }
+
+    @Test("added date uses the given time zone")
+    func addedDateTimeZone() {
+        let pacific = TimeZone(identifier: "America/Los_Angeles")!
+        let formatted = AddedDateFormat.format(
+            Date(timeIntervalSince1970: 1_783_036_800), locale: Self.enUS, timeZone: pacific)
+        #expect(formatted == "Jul 2, 2026 05:00 PM")
+    }
+
+    @Test("added date is blank when missing")
+    func addedDateMissing() {
+        #expect(AddedDateFormat.format(nil).isEmpty)
+    }
 }

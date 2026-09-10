@@ -33,15 +33,27 @@ function numberOrBlank(value: number): string {
   return value > 0 ? String(value) : "";
 }
 
-// absolute date-only, locale medium ("Jul 3, 2026"); blank for the epoch-0
-// sentinel a track with no added date carries
+// locale medium date plus hh:mm a in local time ("Jul 3, 2026 03:14 PM") for
+// the edit form; blank for the epoch-0 sentinel a track with no added date
+// carries
 const dateAddedFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 export function formatDateAdded(epochSeconds: number): string {
-  return epochSeconds > 0
-    ? dateAddedFormat.format(new Date(epochSeconds * 1000))
-    : "";
+  if (epochSeconds <= 0) return "";
+  const date = new Date(epochSeconds * 1000);
+  const hours = String(date.getHours() % 12 || 12).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const meridiem = date.getHours() < 12 ? "AM" : "PM";
+  return `${dateAddedFormat.format(date)} ${hours}:${minutes} ${meridiem}`;
+}
+
+// compact m/d/yyyy in local time ("7/3/2026") for the table column; blank for
+// the epoch-0 sentinel
+export function formatDateAddedShort(epochSeconds: number): string {
+  if (epochSeconds <= 0) return "";
+  const date = new Date(epochSeconds * 1000);
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
 }
 
 // the itunes-standard column set; adjust freely, everything downstream keys off
@@ -134,6 +146,6 @@ export const TRACK_COLUMNS: TrackColumn[] = [
     defaultDirection: "desc",
     filterable: false,
     value: (track) => track.addedDate,
-    render: (track) => formatDateAdded(track.addedDate),
+    render: (track) => formatDateAddedShort(track.addedDate),
   },
 ];
