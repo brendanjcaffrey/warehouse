@@ -264,6 +264,10 @@ final class PlayerStore {
         // the point of the queue: at the end of a track the daemon plays
         // straight on into the item behind it instead of waiting for us
         player.actionAtItemEnd = .advance
+        // the category only declares intent, nothing is activated & no other
+        // app's audio stops, but it has to be set before the route picker can
+        // report the real output for a restored queue that hasn't played yet
+        configureAudioSessionIfNeeded()
         observeAudioSession()
         observeCurrentItem()
     }
@@ -1001,13 +1005,12 @@ final class PlayerStore {
         guard !audioSessionConfigured else { return }
         audioSessionConfigured = true
         let session = AVAudioSession.sharedInstance()
-        #if os(watchOS)
-        // long form audio is how watchos routes music to bluetooth headphones
+        // long form audio is how watchos routes music to bluetooth headphones,
+        // and on ios it puts us in the same route group as the music app: with
+        // the default policy an airplay output picked outside the app still
+        // gets our audio, but our session keeps reporting the built in speaker,
+        // so the route picker in now playing shows the wrong output
         try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
-        #else
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
-        #endif
     }
 
     /// makes the audio session ready for playback; on watchos activation is

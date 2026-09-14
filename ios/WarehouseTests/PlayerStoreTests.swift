@@ -375,6 +375,19 @@ struct PlayerStoreTests {
         #expect(player.isPlaying)
     }
 
+    @Test("the audio session joins the system long form audio route")
+    @MainActor
+    func audioSessionUsesLongFormAudioPolicy() {
+        let host = "player-\(UUID().uuidString).example.com"
+        _ = Self.makePlayerWithServer(host: host)
+
+        // without this the route picker shows the built in speaker while
+        // airplay is actually playing
+        let session = AVAudioSession.sharedInstance()
+        #expect(session.category == .playback)
+        #expect(session.routeSharingPolicy == .longFormAudio)
+    }
+
     @Test("unplugging headphones pauses, other route changes don't")
     @MainActor
     func routeChangePausesOnUnplug() {
