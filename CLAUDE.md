@@ -3,7 +3,7 @@ this is a music player with several components:
 export - a swift app that takes the user's itunes library and puts it in a database, along with symlinking music files into music/ and copying artwork into artwork/
 changes - takes the database and puts it into a day-stamped json file so you can diff between days
 web - web app for playing music library
-ios - ios app similar to web, in progress
+ios - ios app similar to web
 server - sinatra based api server that backs the web & ios apps
 update - applescript via ruby that takes changes (plays, metadata edits, artwork changes) from the local & remote databases and pushes them back into the itunes library
 
@@ -20,22 +20,8 @@ rake ios:test (run tests)
 rake ios:uitest (run ui tests)
 rake checks (linting & formatting checks)
 
-## Agent skills
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:46cd31e7 -->
 
-### Issue tracker
-
-Issues and specs live as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default five canonical labels (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
-
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -73,18 +59,22 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
 4. **Handle git/sync by active profile**:
+
    ```bash
    # Conservative/minimal/default: report status and proposed commands; wait for approval.
    git status
 
    # Team-maintainer opt-in only, unless current instructions forbid it:
    git pull --rebase
+   bd dolt push
    git push
    git status
    ```
+
 5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
 
 **Critical rules:**
+
 - Explicit user or orchestrator instructions override this Beads block.
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
