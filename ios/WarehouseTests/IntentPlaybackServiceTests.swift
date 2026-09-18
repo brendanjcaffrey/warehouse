@@ -13,9 +13,11 @@ struct IntentPlaybackServiceTests {
 
     /// a service backed by an in-memory database seeded with the shared
     /// library fixture & an auth store starting from a clean logged out state
-    static func makeHarness(host: String) async throws -> Harness {
+    static func makeHarness(host: String, playlistTrackIds: [String] = ["t1"]) async throws -> Harness {
         let database = LibraryDatabase(inMemory: true)
-        try await database.replaceLibrary(with: LibraryDatabaseTests.makeLibrary())
+        var library = LibraryDatabaseTests.makeLibrary()
+        library.playlists[3].trackIds = playlistTrackIds
+        try await database.replaceLibrary(with: library)
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "intent-service-tests-\(UUID().uuidString)"))
@@ -97,6 +99,64 @@ struct IntentPlaybackServiceTests {
 
         #expect(harness.player.queue.count == 2)
         #expect(harness.player.repeatMode == .all)
+    }
+
+    @Test("playlist playback loads the library & respects shuffle", arguments: [false, true])
+    func playPlaylist(shuffled: Bool) async throws {
+        let host = "playlist-\(shuffled).test"
+        let harness = try await Self.makeHarness(host: host, playlistTrackIds: ["t2", "missing", "t1"])
+        try await Self.logIn(harness, host: host)
+
+        let playlist = try await harness.service.playPlaylist(id: "g1", shuffled: shuffled)
+
+        #expect(playlist.name == "Grandchild")
+        #expect(harness.player.queue.count == 2)
+        let current = try #require(harness.player.queue.current)
+        let queuedIds = ([current] + harness.player.queue.upcoming).map(\.song.id)
+        #expect(Set(queuedIds) == ["t1", "t2"])
+        #expect(harness.player.queue.isShuffled == shuffled)
+        #expect(harness.player.repeatMode == (shuffled ? .all : .off))
+        if !shuffled {
+            #expect(queuedIds == ["t2", "t1"])
+            #expect(harness.player.song?.id == "t2")
+        }
+    }
+
+    @Test("playlist playback rejects stale ids, folders & the library", arguments: ["missing", "f1", "lib"])
+    func playPlaylistNotFound(id: String) async throws {
+        let host = "playlist-\(id).test"
+        let harness = try await Self.makeHarness(host: host)
+        try await Self.logIn(harness, host: host)
+
+        await #expect(throws: IntentError.notFound) {
+            try await harness.service.playPlaylist(id: id, shuffled: true)
+        }
+        #expect(harness.player.queue.current == nil)
+        #expect(harness.player.queue.upcoming.isEmpty)
+    }
+
+    @Test("playlist playback rejects playlists with no available songs", arguments: [[], ["missing"]])
+    func playPlaylistEmpty(trackIds: [String]) async throws {
+        let host = "playlist-empty.test"
+        let harness = try await Self.makeHarness(host: host, playlistTrackIds: trackIds)
+        try await Self.logIn(harness, host: host)
+
+        await #expect(throws: IntentError.emptyPlaylist) {
+            try await harness.service.playPlaylist(id: "g1", shuffled: true)
+        }
+        #expect(harness.player.queue.current == nil)
+        #expect(harness.player.queue.upcoming.isEmpty)
+    }
+
+    @Test("playlist playback requires login")
+    func playPlaylistLoggedOut() async throws {
+        let harness = try await Self.makeHarness(host: "playlist-logged-out.test")
+
+        await #expect(throws: IntentError.loggedOut) {
+            try await harness.service.playPlaylist(id: "g1", shuffled: true)
+        }
+        #expect(harness.player.queue.current == nil)
+        #expect(harness.player.queue.upcoming.isEmpty)
     }
 
     @Test("currentSong mirrors the player")

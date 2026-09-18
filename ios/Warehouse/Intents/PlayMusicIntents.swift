@@ -96,16 +96,27 @@ struct PlayPlaylistIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetIntent {
-        try await service.prepare()
-        guard let match = EntityMatcher.playlists(in: service.allPlaylists, ids: [playlist.id]).first else {
-            throw IntentError.notFound
-        }
-        let songs = EntityMatcher.songs(for: match, in: service.allSongs)
-        guard !songs.isEmpty else {
-            throw IntentError.emptyPlaylist
-        }
-        service.play(songs, shuffled: shuffled)
+        let match = try await service.playPlaylist(id: playlist.id, shuffled: shuffled)
         return .result(dialog: "Playing \(match.name).", snippetIntent: NowPlayingSnippetIntent())
+    }
+}
+
+struct ShufflePlaylistIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Shuffle Playlist"
+    static let description = IntentDescription("Plays a playlist from your library in shuffled order.")
+
+    @Parameter(title: "Playlist") var playlist: PlaylistAppEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Shuffle \(\.$playlist)")
+    }
+
+    @Dependency private var service: IntentPlaybackService
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetIntent {
+        let match = try await service.playPlaylist(id: playlist.id, shuffled: true)
+        return .result(dialog: "Shuffling \(match.name).", snippetIntent: NowPlayingSnippetIntent())
     }
 }
 

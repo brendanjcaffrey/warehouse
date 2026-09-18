@@ -69,6 +69,14 @@ struct WarehouseShortcuts: AppShortcutsProvider {
             shortTitle: "Play Playlist",
             systemImageName: "music.note.list")
         AppShortcut(
+            intent: ShufflePlaylistIntent(),
+            phrases: [
+                "Shuffle the playlist \(\.$playlist) in \(.applicationName)",
+                "Shuffle \(\.$playlist) in \(.applicationName)"
+            ],
+            shortTitle: "Shuffle Playlist",
+            systemImageName: "shuffle")
+        AppShortcut(
             intent: PlayLibraryShuffledIntent(),
             phrases: [
                 "Shuffle my library in \(.applicationName)",

@@ -75,6 +75,19 @@ final class IntentPlaybackService {
         }
     }
 
+    func playPlaylist(id: String, shuffled: Bool) async throws -> PlaylistItem {
+        try await prepare()
+        guard let match = EntityMatcher.playlists(in: allPlaylists, ids: [id]).first else {
+            throw IntentError.notFound
+        }
+        let playlistSongs = EntityMatcher.songs(for: match, in: allSongs)
+        guard !playlistSongs.isEmpty else {
+            throw IntentError.emptyPlaylist
+        }
+        play(playlistSongs, shuffled: shuffled)
+        return match
+    }
+
     /// rebuilds the spotlight index from the current library; quietly does
     /// nothing when logged out
     func refreshSpotlight() async {
