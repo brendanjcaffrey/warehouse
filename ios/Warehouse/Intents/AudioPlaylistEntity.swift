@@ -80,7 +80,7 @@ enum WarehouseAudioEntity {
             try await service.prepare()
             switch input.criteria {
             case .searchQuery(let query):
-                return EntityMatcher.playlists(in: service.allPlaylists, matching: query)
+                return EntityMatcher.playlists(in: service.allPlaylists, matchingAudioSearch: query)
                     .map(AudioPlaylistEntity.init)
                     .map(WarehouseAudioEntity.playlist)
             case .unspecified, .url:

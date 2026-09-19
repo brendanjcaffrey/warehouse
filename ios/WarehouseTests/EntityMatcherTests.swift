@@ -73,14 +73,22 @@ struct EntityMatcherTests {
     }
 
     @available(iOS 27.0, *)
-    @Test("audio searches resolve playlist names")
+    @Test("audio searches resolve playlist names and siri media-type prefixes")
     func playlistAudioSearch() {
-        let search = AudioSearch(criteria: .searchQuery("road trip"))
+        let playlists = Self.playlists + [
+            Self.playlist(id: "p3", name: "Top Played"),
+            Self.playlist(id: "p4", name: "Playlist Favorites")
+        ]
+        let search = AudioSearch(criteria: .searchQuery("playlist top played"))
         guard case .searchQuery(let query) = search.criteria else {
             Issue.record("expected a search query")
             return
         }
-        #expect(EntityMatcher.playlists(in: Self.playlists, matching: query).map(\.id) == ["p1"])
+        #expect(EntityMatcher.playlists(in: playlists, matchingAudioSearch: query).map(\.id) == ["p3"])
+        #expect(EntityMatcher.playlists(in: playlists, matchingAudioSearch: "road trip").map(\.id) == ["p1"])
+        #expect(
+            EntityMatcher.playlists(in: playlists, matchingAudioSearch: "playlist favorites").map(\.id)
+                == ["p4"])
     }
 
     @Test("playlist songs come back in playlist order, skipping unknown ids")

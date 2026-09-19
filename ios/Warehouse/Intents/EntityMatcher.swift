@@ -44,6 +44,17 @@ enum EntityMatcher {
         return self.playlists(in: playlists).filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    static func playlists(in playlists: [PlaylistItem], matchingAudioSearch query: String) -> [PlaylistItem] {
+        let directMatches = self.playlists(in: playlists, matching: query)
+        guard directMatches.isEmpty else { return directMatches }
+
+        let components = query.split(maxSplits: 1, whereSeparator: \Character.isWhitespace)
+        guard components.count == 2,
+              components[0].localizedCaseInsensitiveCompare("playlist") == .orderedSame
+        else { return [] }
+        return self.playlists(in: playlists, matching: String(components[1]))
+    }
+
     static func playlists(in playlists: [PlaylistItem], ids: [String]) -> [PlaylistItem] {
         let wanted = Set(ids)
         return self.playlists(in: playlists).filter { wanted.contains($0.id) }
