@@ -42,7 +42,9 @@ struct PlayerStoreTests {
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
-        return PlayerStore(fileStore: fileStore, onTrackPlayed: onTrackPlayed)
+        return PlayerStore(
+            fileStore: fileStore, onTrackPlayed: onTrackPlayed,
+            activateSessionForTests: { true })
     }
 
     /// a player wired to a mock server that answers every file request with a
@@ -58,7 +60,9 @@ struct PlayerStoreTests {
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
-        let player = PlayerStore(fileStore: fileStore, client: client)
+        let player = PlayerStore(
+            fileStore: fileStore, client: client,
+            activateSessionForTests: { true })
         return (player, fileStore, baseURL)
     }
 
@@ -83,7 +87,8 @@ struct PlayerStoreTests {
         client.session = MockURLProtocol.makeSession()
         let player = PlayerStore(
             fileStore: fileStore, client: client, onTrackPlayed: onTrackPlayed,
-            retryDelay: retryDelay, prefetchRetryDelay: prefetchRetryDelay)
+            retryDelay: retryDelay, prefetchRetryDelay: prefetchRetryDelay,
+            activateSessionForTests: { true })
         return (player, fileStore, baseURL)
     }
 
@@ -187,7 +192,7 @@ struct PlayerStoreTests {
         let cache = budget.map { budget in FileCache(fileStore: fileStore, budget: { _ in budget }) }
         let player = PlayerStore(
             fileStore: fileStore, client: client, fileCache: cache, onTrackPlayed: onTrackPlayed,
-            streams: true, retryDelay: 0.01)
+            streams: true, retryDelay: 0.01, activateSessionForTests: { true })
         player.deepPrefetchDepth = deepPrefetchDepth
         return (player, fileStore, serverURL)
     }
@@ -911,7 +916,7 @@ struct PlayerStoreTests {
             fetchArtwork: { filename in
                 fetches.names.append(filename)
                 return false
-            })
+            }, activateSessionForTests: { true })
         return (player, fileStore, baseURL)
     }
 
@@ -977,7 +982,8 @@ struct PlayerStoreTests {
         let cache = FileCache(fileStore: fileStore, budget: { _ in budget })
         let player = PlayerStore(
             fileStore: fileStore, client: client, fileCache: cache,
-            retryDelay: 0.01, prefetchRetryDelay: prefetchRetryDelay)
+            retryDelay: 0.01, prefetchRetryDelay: prefetchRetryDelay,
+            activateSessionForTests: { true })
         // off by default, as it is on a watch nobody has turned it on for
         player.deepPrefetchDepth = deepPrefetchDepth
         return (player, cache, baseURL)

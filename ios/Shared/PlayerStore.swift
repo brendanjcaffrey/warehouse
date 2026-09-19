@@ -126,7 +126,8 @@ final class PlayerStore {
     private var currentItemObserver: NSKeyValueObservation?
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
-    private var audioSessionConfigured = false
+    /// the audio session belongs to the process, not a player instance
+    private static var audioSessionConfigured = false
     private var remoteCommandsConfigured = false
     /// on watchos the session activates asynchronously (it can prompt for a
     /// bluetooth output) & needs re-activating after the route goes away
@@ -1002,8 +1003,8 @@ final class PlayerStore {
     }
 
     private func configureAudioSessionIfNeeded() {
-        guard !audioSessionConfigured else { return }
-        audioSessionConfigured = true
+        guard !Self.audioSessionConfigured else { return }
+        Self.audioSessionConfigured = true
         let session = AVAudioSession.sharedInstance()
         // long form audio is how watchos routes music to bluetooth headphones,
         // and on ios it puts us in the same route group as the music app: with

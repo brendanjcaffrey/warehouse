@@ -34,7 +34,9 @@ struct IntentPlaybackServiceTests {
         let playlists = PlaylistsStore(database: database)
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
-        let player = PlayerStore(fileStore: fileStore, client: client)
+        let player = PlayerStore(
+            fileStore: fileStore, client: client,
+            activateSessionForTests: { true })
         let service = IntentPlaybackService(auth: auth, songs: songs, playlists: playlists, player: player)
         return Harness(service: service, auth: auth, player: player)
     }
