@@ -20,22 +20,15 @@ env:
   SCHEME: Warehouse
   # concrete, bootable simulator (xcodebuild test can't use a generic
   # destination). override here if the runner image drops this device.
-  SIMULATOR: iPhone 17 Pro
+  SIMULATOR: iPhone 18 Pro
 
 jobs:
   ios:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
-
-    # the app targets iOS 26.2, so pick the newest installed Xcode 26.x rather
-    # than whatever the image defaults to.
-    - name: select xcode
-      run: |
-        sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)/Contents/Developer"
-        xcodebuild -version
 
     - name: swiftlint
       run: |
