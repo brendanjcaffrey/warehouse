@@ -122,6 +122,17 @@ struct IntentPlaybackServiceTests {
         }
     }
 
+    @Test("playlist playback applies repeat requests")
+    func playPlaylistRepeating() async throws {
+        let host = "playlist-repeating.test"
+        let harness = try await Self.makeHarness(host: host)
+        try await Self.logIn(harness, host: host)
+
+        _ = try await harness.service.playPlaylist(id: "g1", shuffled: false, repeating: true)
+
+        #expect(harness.player.repeatMode == .all)
+    }
+
     @Test("playlist playback rejects stale ids, folders & the library", arguments: ["missing", "f1", "lib"])
     func playPlaylistNotFound(id: String) async throws {
         let host = "playlist-\(id).test"

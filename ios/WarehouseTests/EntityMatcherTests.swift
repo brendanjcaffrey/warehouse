@@ -1,4 +1,5 @@
 import Foundation
+import MediaIntents
 import Testing
 @testable import Warehouse
 
@@ -69,6 +70,17 @@ struct EntityMatcherTests {
         #expect(EntityMatcher.playlists(in: Self.playlists, matching: "road").map(\.id) == ["p1"])
         #expect(EntityMatcher.playlists(in: Self.playlists, matching: "library").isEmpty)
         #expect(EntityMatcher.playlists(in: Self.playlists, ids: ["p1", "f1", "lib"]).map(\.id) == ["p1"])
+    }
+
+    @available(iOS 27.0, *)
+    @Test("audio searches resolve playlist names")
+    func playlistAudioSearch() {
+        let search = AudioSearch(criteria: .searchQuery("road trip"))
+        guard case .searchQuery(let query) = search.criteria else {
+            Issue.record("expected a search query")
+            return
+        }
+        #expect(EntityMatcher.playlists(in: Self.playlists, matching: query).map(\.id) == ["p1"])
     }
 
     @Test("playlist songs come back in playlist order, skipping unknown ids")

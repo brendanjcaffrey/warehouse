@@ -101,6 +101,34 @@ struct PlayPlaylistIntent: AudioPlaybackIntent {
     }
 }
 
+@available(iOS 27.0, *)
+@AppIntent(schema: .audio.playAudio)
+struct PlayAudioIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Play Audio"
+    static let description = IntentDescription("Plays a playlist from your library.")
+
+    var audioEntity: WarehouseAudioEntity
+    @Parameter(default: []) var playbackAttributes: Set<WarehousePlaybackAttribute>
+    var queueLocation: WarehouseQueueInsertionLocation?
+    var warmupAudioQueueResult: WarehouseWarmupAudioQueueResult?
+
+    @Dependency private var service: IntentPlaybackService
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetIntent {
+        let entity: AudioPlaylistEntity
+        switch audioEntity {
+        case .playlist(let playlist):
+            entity = playlist
+        }
+        let playlist = try await service.playPlaylist(
+            id: entity.id,
+            shuffled: playbackAttributes.contains(.shuffle),
+            repeating: playbackAttributes.contains(.repeat))
+        return .result(dialog: "Playing \(playlist.name).", snippetIntent: NowPlayingSnippetIntent())
+    }
+}
+
 struct ShufflePlaylistIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Shuffle Playlist"
     static let description = IntentDescription("Plays a playlist from your library in shuffled order.")

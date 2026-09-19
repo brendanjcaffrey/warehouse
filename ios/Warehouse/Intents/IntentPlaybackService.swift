@@ -75,7 +75,7 @@ final class IntentPlaybackService {
         }
     }
 
-    func playPlaylist(id: String, shuffled: Bool) async throws -> PlaylistItem {
+    func playPlaylist(id: String, shuffled: Bool, repeating: Bool = false) async throws -> PlaylistItem {
         try await prepare()
         guard let match = EntityMatcher.playlists(in: allPlaylists, ids: [id]).first else {
             throw IntentError.notFound
@@ -85,6 +85,9 @@ final class IntentPlaybackService {
             throw IntentError.emptyPlaylist
         }
         play(playlistSongs, shuffled: shuffled)
+        if repeating {
+            player.setRepeatMode(.all)
+        }
         return match
     }
 
