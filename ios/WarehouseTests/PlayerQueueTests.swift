@@ -61,6 +61,7 @@ struct PlayerQueueTests {
     func aLandedPrefetchRepointsTheEnqueuedStream() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(
             host: host, baseURL: Helpers.silentBaseURL()) { request in
             if request.url?.lastPathComponent == "2.wav" {
@@ -268,8 +269,8 @@ struct PlayerQueueTests {
             host: host, onTrackPlayed: { played.ids.append($0) })
         try Self.cacheSongs(fileStore, ["1", "2", "3"])
 
-        // 1 & 2 stop half a second in; the files behind them are thirty
-        // seconds long, so playing their tails would be unmistakable
+        // 1 & 2 stop half a second in; the files behind them are four
+        // minutes long, so playing their tails would be unmistakable
         player.play(
             [Helpers.edited(id: "1", finish: 0.5), Helpers.edited(id: "2", finish: 0.5), Helpers.song(id: "3")],
             token: "tok", baseURL: baseURL)

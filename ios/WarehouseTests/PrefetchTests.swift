@@ -60,7 +60,7 @@ struct PrefetchTests {
         player.play(PlayerStoreTests.songs(20), token: "tok", baseURL: baseURL)
         // a deep fill is a lot of transfers for the mock to answer while the
         // rest of the suite is running beside it
-        try await PlayerStoreTests.waitFor(attempts: 900) { store.exists(.music, "14.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "14.wav") }
         try await PlayerStoreTests.settle()
 
         // the foreground is the only unthrottled transfer time the watch gets,
@@ -111,7 +111,7 @@ struct PrefetchTests {
         let store = cache.fileStore
 
         player.play(PlayerStoreTests.songs(4), token: "tok", baseURL: baseURL)
-        try await PlayerStoreTests.waitFor(attempts: 600) { store.exists(.music, "4.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "4.wav") }
 
         // transfers running alongside each other over one slow link finish
         // later than the same transfers in a row, & starve whatever is
@@ -132,7 +132,7 @@ struct PrefetchTests {
         // a stream sits at .fetching until the item is playable, & the
         // prefetch stands down until then
         try await PlayerStoreTests.waitFor { player.status == .ready }
-        try await PlayerStoreTests.waitFor(attempts: 600) { fileStore.exists(.music, "2.wav") }
+        try await PlayerStoreTests.waitFor { fileStore.exists(.music, "2.wav") }
         try await PlayerStoreTests.settle()
 
         // the link is already being spent on the sound the user is listening
@@ -155,7 +155,7 @@ struct PrefetchTests {
         try PlayerStoreTests.musicBytes.write(to: store.fileURL(.music, "3.wav"))
 
         player.play(PlayerStoreTests.songs(5), token: "tok", baseURL: baseURL)
-        try await PlayerStoreTests.waitFor(attempts: 600) { store.exists(.music, "5.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "5.wav") }
         try await PlayerStoreTests.settle()
 
         // a cached track isn't work, but the window carries on past it to the
@@ -180,7 +180,7 @@ struct PrefetchTests {
         try PlayerStoreTests.musicBytes.write(to: store.fileURL(.music, "2.wav"))
 
         player.play(PlayerStoreTests.songs(5), token: "tok", baseURL: baseURL)
-        try await PlayerStoreTests.waitFor(attempts: 600) { store.exists(.music, "1.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "1.wav") }
         try await PlayerStoreTests.settle()
 
         // eviction reached for the one file nothing was holding, rather than
@@ -230,7 +230,7 @@ struct PrefetchTests {
         let store = cache.fileStore
 
         player.play(PlayerStoreTests.songs(5), token: "tok", baseURL: baseURL)
-        try await PlayerStoreTests.waitFor(attempts: 600) { store.exists(.music, "2.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "2.wav") }
         try await PlayerStoreTests.settle()
 
         // the track playing & the one behind it fill the budget between them,
@@ -250,7 +250,7 @@ struct PrefetchTests {
         let store = cache.fileStore
 
         player.play(PlayerStoreTests.songs(20), token: "tok", baseURL: baseURL)
-        try await PlayerStoreTests.waitFor(attempts: 600) { store.exists(.music, "5.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "5.wav") }
         try await PlayerStoreTests.settle()
         let requests = MockURLProtocol.requests(forHost: host).count
 
@@ -283,7 +283,7 @@ struct PrefetchTests {
         let store = cache.fileStore
 
         player.play(PlayerStoreTests.songs(5), token: "tok", baseURL: baseURL)
-        try await PlayerStoreTests.waitFor(attempts: 600) { PlayerStoreTests.requested(host, "3.wav") }
+        try await PlayerStoreTests.waitFor { PlayerStoreTests.requested(host, "3.wav") }
         // long enough that the mid-track retry would have come round by now
         try await PlayerStoreTests.settle()
 
@@ -302,6 +302,7 @@ struct PrefetchTests {
     func aDeeperReorderLeavesTheTransferRunning() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let (player, cache, baseURL) = PlayerStoreTests.makePlayer(
             host: host, budget: FileCacheBudget(music: .max, artwork: .max),
             deepPrefetchDepth: 10
@@ -323,7 +324,7 @@ struct PrefetchTests {
         // 2, 3, 4 becomes 2, 4, 3: still wanted, just further out
         player.moveUpcoming(fromOffsets: IndexSet(integer: 1), toOffset: 3)
         gate.signal()
-        try await PlayerStoreTests.waitFor(attempts: 600) { store.exists(.music, "3.wav") }
+        try await PlayerStoreTests.waitFor { store.exists(.music, "3.wav") }
 
         // its progress is on exactly the slow link that makes the window worth
         // having, so it finished rather than starting over from nothing
@@ -367,6 +368,7 @@ struct PrefetchTests {
         let host = "player-\(UUID().uuidString).example.com"
         // hold the prefetch open so it is still in flight when the queue changes
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let (player, fileStore, baseURL) = PlayerStoreTests.makePlayer(host: host) { request in
             if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()
@@ -470,6 +472,7 @@ struct PrefetchTests {
         // hold the prefetch of the old next track open so it is still in
         // flight when the new one is inserted ahead of it
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let (player, fileStore, baseURL) = PlayerStoreTests.makePlayer(host: host) { request in
             if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()
@@ -531,6 +534,7 @@ struct PrefetchTests {
     func reArmingLeavesAnInFlightPrefetchAlone() async throws {
         let host = "player-\(UUID().uuidString).example.com"
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let (player, fileStore, baseURL) = PlayerStoreTests.makePlayer(host: host) { request in
             if request.url?.lastPathComponent == "2.wav" {
                 gate.wait()

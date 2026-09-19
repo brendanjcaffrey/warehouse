@@ -57,6 +57,7 @@ final class SyncStore {
     private let fileStore: FileStore
     private let metadata: LibraryMetadata
     private let downloadRefreshInterval: TimeInterval
+    private let now: () -> Date
     /// how missing files are fetched
     private let fileDownloader: BulkFileDownloading
     /// the phone mirrors the whole library onto disk; the watch fetches tracks
@@ -65,7 +66,7 @@ final class SyncStore {
     private var lastDownloadRefresh = Date.distantPast
     private var syncInProgress = false
 
-    // the session, defaults, interval & downloader parameters are here for tests
+    // the session, defaults, interval, downloader & clock parameters are here for tests
     init(
         database: LibraryDatabase,
         fileStore: FileStore,
@@ -73,7 +74,8 @@ final class SyncStore {
         defaults: UserDefaults = .standard,
         downloadRefreshInterval: TimeInterval = 5,
         fileDownloader: BulkFileDownloading? = nil,
-        transfersFiles: Bool = true
+        transfersFiles: Bool = true,
+        now: @escaping () -> Date = { Date() }
     ) {
         client = LibraryClient(session: session)
         self.database = database
@@ -82,6 +84,7 @@ final class SyncStore {
         self.downloadRefreshInterval = downloadRefreshInterval
         self.fileDownloader = fileDownloader ?? FileDownloader(client: client, fileStore: fileStore)
         self.transfersFiles = transfersFiles
+        self.now = now
     }
 
     var isBusy: Bool {
@@ -239,7 +242,7 @@ final class SyncStore {
         guard !missing.isEmpty else { return DownloadProgress() }
 
         state = .downloadingFiles(DownloadProgress(files: missing))
-        lastDownloadRefresh = Date()
+        lastDownloadRefresh = now()
         return await fileDownloader.downloadAll(missing, token: token, baseURL: baseURL) { [weak self] progress in
             self?.state = .downloadingFiles(progress)
             self?.tickDownloadRefreshIfDue()
@@ -247,7 +250,7 @@ final class SyncStore {
     }
 
     private func tickDownloadRefreshIfDue() {
-        let now = Date()
+        let now = now()
         guard now.timeIntervalSince(lastDownloadRefresh) >= downloadRefreshInterval else { return }
         lastDownloadRefresh = now
         downloadRefreshTicks += 1

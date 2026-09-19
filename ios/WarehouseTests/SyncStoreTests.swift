@@ -19,7 +19,8 @@ struct SyncStoreTests {
         host: String,
         downloadRefreshInterval: TimeInterval = 5,
         fileDownloader: BulkFileDownloading? = nil,
-        transfersFiles: Bool = true
+        transfersFiles: Bool = true,
+        now: @escaping () -> Date = { Date() }
     ) -> Env {
         let suiteName = "SyncStoreTests-\(host)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -32,7 +33,7 @@ struct SyncStoreTests {
             database: database, fileStore: fileStore,
             session: MockURLProtocol.makeSession(), defaults: defaults,
             downloadRefreshInterval: downloadRefreshInterval,
-            fileDownloader: fileDownloader, transfersFiles: transfersFiles)
+            fileDownloader: fileDownloader, transfersFiles: transfersFiles, now: now)
         return Env(
             store: store, database: database, fileStore: fileStore,
             metadata: LibraryMetadata(defaults: defaults),
@@ -436,19 +437,27 @@ struct SyncStoreTests {
 
     @Test("download refresh ticks are throttled by the refresh interval")
     func downloadRefreshTicksAreThrottled() async throws {
-        // with a zero interval, every downloaded file bumps the counter
-        let eagerHost = "sync-ticks-eager.test"
-        let eager = Self.makeEnv(host: eagerHost, downloadRefreshInterval: 0)
-        try Self.installHandler(host: eagerHost)
-        await eager.store.sync(token: "tok", baseURL: eager.baseURL)
-        #expect(eager.store.downloadRefreshTicks == 3)
+        // drive elapsed time at each progress callback instead of assuming
+        // that the runner can download the fixture within five seconds.
+        let cases: [(interval: TimeInterval, delays: [TimeInterval], ticks: Int)] = [
+            (0, [0, 0, 0], 3),
+            (5, [1, 1, 2], 0),
+            (5, [4, 1, 4], 1),
+            (5, [5, 4, 1], 2)
+        ]
+        for testCase in cases {
+            let host = "sync-ticks-\(UUID().uuidString).test"
+            let downloader = TimedDownloader(delays: testCase.delays)
+            let env = Self.makeEnv(
+                host: host, downloadRefreshInterval: testCase.interval,
+                fileDownloader: downloader, now: { downloader.now })
+            try Self.installHandler(host: host)
 
-        // with the default interval, a fast sync never bumps it
-        let throttledHost = "sync-ticks-throttled.test"
-        let throttled = Self.makeEnv(host: throttledHost)
-        try Self.installHandler(host: throttledHost)
-        await throttled.store.sync(token: "tok", baseURL: throttled.baseURL)
-        #expect(throttled.store.downloadRefreshTicks == 0)
+            await env.store.sync(token: "tok", baseURL: env.baseURL)
+
+            #expect(env.store.state == .upToDate(failedDownloads: 0))
+            #expect(env.store.downloadRefreshTicks == testCase.ticks)
+        }
     }
 
     @Test("sync hands missing files to the injected downloader")
@@ -612,6 +621,34 @@ struct SyncStoreTests {
 
         #expect(!env.store.isTransferringLibrary)
         #expect(!env.store.isBusy)
+    }
+}
+
+/// advances a controlled clock as each file finishes, including the exact
+/// refresh boundary and the interval restarting after a previous refresh
+@MainActor
+private final class TimedDownloader: BulkFileDownloading {
+    private(set) var now = Date(timeIntervalSince1970: 1_000)
+    private let delays: [TimeInterval]
+
+    init(delays: [TimeInterval]) {
+        self.delays = delays
+    }
+
+    func downloadAll(
+        _ files: [FileToDownload], token: String, baseURL: URL,
+        onProgress: @escaping @MainActor @Sendable (DownloadProgress) -> Void
+    ) async -> DownloadProgress {
+        await MainActor.run {
+            #expect(files.count == delays.count)
+            var progress = DownloadProgress(files: files)
+            for (file, delay) in zip(files, delays) {
+                now = now.addingTimeInterval(delay)
+                progress[file.type].completed += 1
+                onProgress(progress)
+            }
+            return progress
+        }
     }
 }
 

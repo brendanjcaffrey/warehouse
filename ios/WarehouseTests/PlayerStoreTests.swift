@@ -119,8 +119,9 @@ struct PlayerStoreTests {
     /// a real, playable file for the mock server to hand back. the player now
     /// drops an item avfoundation won't load, so "music-bytes" would fail every
     /// track in here; this is silence, but it is silence in a format it takes.
-    /// long enough that no test reaches the end of it & plays on to the next
-    static let musicBytes: Data = wav(seconds: 30)
+    /// matches the song fixture's four minutes, so slow ci operations don't
+    /// outlast the audio and accidentally advance to the next track
+    static let musicBytes: Data = wav(seconds: 240)
 
     /// 8khz 16 bit mono pcm, built by hand so the tests carry no fixture file
     static func wav(seconds: Double) -> Data {
@@ -151,13 +152,19 @@ struct PlayerStoreTests {
         HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
     }
 
-    /// spins until the condition holds or the attempts run out, so tests wait
-    /// on the download actually landing rather than on a fixed sleep
+    /// waits for the actual state transition, allowing for slow simulator
+    /// media services, and fails at the caller if the deadline expires
     @MainActor
-    static func waitFor(attempts: Int = 200, _ condition: () -> Bool) async throws {
-        for _ in 0..<attempts where !condition() {
-            try await Task.sleep(nanoseconds: 10_000_000)
+    static func waitFor(
+        timeout: Duration = .seconds(30), sourceLocation: SourceLocation = #_sourceLocation,
+        _ condition: () -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition(), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
         }
+        try #require(condition(), "timed out waiting for player state", sourceLocation: sourceLocation)
     }
 
     /// gives an in-flight fetch a moment to land, for asserting it did not
@@ -292,14 +299,32 @@ struct PlayerStoreTests {
         player.play([song], token: "tok", baseURL: baseURL)
 
         // wait for the background download to land the file
-        for _ in 0..<200 where !fileStore.exists(.music, song.musicFilename) {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        try await Self.waitFor { fileStore.exists(.music, song.musicFilename) }
         #expect(fileStore.exists(.music, song.musicFilename))
 
         let requests = MockURLProtocol.requests(forHost: host)
         #expect(requests.first?.url?.path == "/music/\(song.musicFilename)")
         #expect(requests.first?.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+    }
+
+    @Test("playback can start after a slow audio session activation")
+    @MainActor
+    func slowAudioSessionActivation() async throws {
+        let fileStore = FileStore(rootURL: FileManager.default.temporaryDirectory
+            .appending(path: "slow-player-\(UUID().uuidString)"))
+        try fileStore.write(.music, "1.wav", data: Self.musicBytes)
+        let player = PlayerStore(fileStore: fileStore, activateSessionForTests: {
+            // real media operations can exceed the old two-second wait on ci
+            try? await Task.sleep(for: .seconds(3))
+            return true
+        })
+        defer { player.pause() }
+
+        player.play([Self.song(id: "1")], token: nil, baseURL: nil)
+        try await Self.waitFor { player.hasLoadedTrack }
+
+        #expect(player.hasLoadedTrack)
+        #expect(player.status == .ready)
     }
 
     @Test("an interruption pauses playback & resumes when told to")
