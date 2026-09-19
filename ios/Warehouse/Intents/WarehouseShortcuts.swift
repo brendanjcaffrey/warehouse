@@ -71,7 +71,10 @@ struct WarehouseShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: ShufflePlaylistIntent(),
             phrases: [
+                "Ask \(.applicationName) to shuffle \(\.$playlist)",
+                "Ask \(.applicationName) to shuffle playlist \(\.$playlist)",
                 "Shuffle the playlist \(\.$playlist) in \(.applicationName)",
+                "Shuffle playlist \(\.$playlist) in \(.applicationName)",
                 "Shuffle \(\.$playlist) in \(.applicationName)"
             ],
             shortTitle: "Shuffle Playlist",
