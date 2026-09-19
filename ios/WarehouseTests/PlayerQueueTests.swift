@@ -9,7 +9,8 @@ private typealias Helpers = PlayerStoreTests
 /// what the player keeps enqueued behind the track that is playing. the play
 /// queue stays the source of truth for order; this covers the one slot after
 /// it, and what happens when the media daemon steps onto that slot by itself
-@Suite("PlayerStore next item")
+/// cases are serialized to bound concurrent real players, as in the shared suite
+@Suite("PlayerStore next item", .serialized)
 struct PlayerQueueTests {
     /// records the tracks written back as plays, which is what reaches itunes
     @MainActor

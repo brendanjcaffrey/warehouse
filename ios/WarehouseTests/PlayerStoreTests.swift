@@ -4,7 +4,10 @@ import MediaPlayer
 import Testing
 @testable import Warehouse
 
-@Suite("PlayerStore")
+// these tests create real players. main-actor isolation still lets async tests
+// overlap and can overwhelm the simulator's media services until waits expire
+// and the audio fixtures finish. serialize cases to bound the number of players.
+@Suite("PlayerStore", .serialized)
 struct PlayerStoreTests {
     static func song(
         id: String = "t1", name: String = "Believe", artist: String = "", album: String = "",

@@ -7,7 +7,8 @@ import Testing
 /// it holds while it works. the deep reach is a setting & off by default, so
 /// a test about it says how far to go. the rest of the player's behaviour is
 /// in `PlayerStoreTests`, whose fixtures these share
-@Suite("PlayerStore prefetch")
+/// cases are serialized to bound concurrent real players, as in the shared suite
+@Suite("PlayerStore prefetch", .serialized)
 struct PrefetchTests {
     /// how many music files the given number of tracks takes up, for a cache
     /// budget that fits an exact number of them
