@@ -16,6 +16,7 @@ struct WatchArtworkThumbnail: View {
     let filename: String?
     var priority: WatchArtworkFetcher.Priority = .list
     var maxPixelSize = 56
+    var allowNetwork = true
 
     @State private var image: UIImage?
 
@@ -38,9 +39,9 @@ struct WatchArtworkThumbnail: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
         // cancelled when the row scrolls away, which is what keeps a long list
         // from queueing a fetch for every song in it
-        .task(id: filename) {
+        .task(id: "\(filename ?? "")-\(allowNetwork)") {
             image = nil
-            guard let url = await fetcher?.artworkURL(filename, priority: priority) else { return }
+            guard let url = await fetcher?.artworkURL(filename, priority: priority, allowNetwork: allowNetwork) else { return }
             image = await ArtworkLoader.thumbnail(for: url, maxPixelSize: maxPixelSize)
         }
     }

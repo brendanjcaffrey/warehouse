@@ -8,6 +8,9 @@ struct WatchTrackListView: View {
 
     let title: String
     let songs: [Song]
+    var playlist: PlaylistItem?
+
+    @State private var allowStreaming = false
 
     @State private var search = ""
     @State private var showingNowPlaying = false
@@ -55,6 +58,16 @@ struct WatchTrackListView: View {
                     .listRowBackground(Color.clear)
                     .id(Anchor.buttons)
                 }
+                Section {
+                    Toggle("Allow Streaming", isOn: $allowStreaming)
+                    if let playlist, !playlist.isFolder {
+                        NavigationLink("Prepare for Offline") {
+                            WatchOfflinePlaylistView(playlist: playlist)
+                        }
+                    }
+                } footer: {
+                    Text(allowStreaming ? "Missing tracks stream from the server." : "Only downloaded tracks will play.")
+                }
                 if filtered.isEmpty {
                     ContentUnavailableView.search(text: search)
                 } else {
@@ -63,8 +76,9 @@ struct WatchTrackListView: View {
                             // a tap always plays the whole list, dropping any filter
                             play(startingAt: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
                         } label: {
-                            WatchSongRow(song: song, downloaded: store.isDownloaded(song))
+                            WatchSongRow(song: song, downloaded: store.isDownloaded(song), allowNetwork: allowStreaming)
                         }
+                        .disabled(!allowStreaming && !store.isDownloaded(song))
                     }
                 }
             }
@@ -84,12 +98,12 @@ struct WatchTrackListView: View {
     }
 
     private func play(startingAt index: Int) {
-        player.play(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL())
+        player.play(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL(), downloadedOnly: !allowStreaming)
         startedPlaying()
     }
 
     private func playShuffled() {
-        player.playShuffled(songs, token: settings.token, baseURL: settings.baseURL())
+        player.playShuffled(songs, token: settings.token, baseURL: settings.baseURL(), downloadedOnly: !allowStreaming)
         startedPlaying()
     }
 
@@ -108,7 +122,7 @@ struct WatchTrackListView: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
-        .disabled(songs.isEmpty)
+        .disabled(!songs.contains { allowStreaming || store.isDownloaded($0) })
     }
 }
 
@@ -117,10 +131,11 @@ struct WatchSongRow: View {
     /// whether the track's file is in the watch's cache, so it plays without
     /// the network
     let downloaded: Bool
+    var allowNetwork = true
 
     var body: some View {
         HStack(spacing: 8) {
-            WatchArtworkThumbnail(filename: song.artworkFilename)
+            WatchArtworkThumbnail(filename: song.artworkFilename, allowNetwork: allowNetwork)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading) {
                 Text(song.name)

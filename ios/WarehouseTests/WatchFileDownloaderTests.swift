@@ -60,6 +60,22 @@ struct WatchFileDownloaderTests {
         #expect(env.fallback.calls.isEmpty)
     }
 
+    @Test("preparation reports the phone wait and the server fallback separately")
+    func preparationPhases() async throws {
+        let env = Fixture()
+        var phases: [FileDownloadPhase] = []
+        let task = Task {
+            await env.downloader.downloadResult(.music, filename: "song.m4a", token: "token",
+                                                baseURL: URL(string: "https://example.com")!) { phases.append($0) }
+        }
+        try await PlayerStoreTests.waitFor { !env.requests.isEmpty }
+        #expect(phases == [.waitingForPhone])
+        let request = try #require(env.requests.first)
+        env.replies[request.id]?(false)
+        #expect(await task.value == .downloaded)
+        #expect(phases == [.waitingForPhone, .downloading])
+    }
+
     @Test("the watch bounds outstanding requests")
     func bounded() async throws {
         let env = Fixture()

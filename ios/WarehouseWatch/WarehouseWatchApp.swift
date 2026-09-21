@@ -9,6 +9,7 @@ struct WarehouseWatchApp: App {
     @State private var playlists: PlaylistsStore
     @State private var library: WatchLibraryStore
     @State private var player: PlayerStore
+    @State private var offline: OfflineLibrary
     @State private var remote: WatchRemoteStore
 
     private let phone: WatchPhoneSession
@@ -26,10 +27,8 @@ struct WarehouseWatchApp: App {
             guard let token = settings.token, let baseURL = settings.baseURL() else { return nil }
             return (token: token, baseURL: baseURL)
         }
-        // what the watch keeps is a bounded cache, not a mirror: files arrive
-        // on demand & the least recently used are evicted once over budget.
-        // one instance shared by everything that touches those files, so the
-        // in-use set the player writes is honoured by every eviction pass
+        // selected offline music is retained; the rest is a bounded cache.
+        // every eviction sees both offline selections and the player's in-use files.
         let fileCache = FileCache(fileStore: fileStore)
         // music & artwork aren't synced, so the player & the rows pull them as
         // they need them
@@ -40,9 +39,8 @@ struct WarehouseWatchApp: App {
                 request: { phone.requestFile($0, token: $1, reply: $2) }, cancel: { phone.cancelFile($0) }))
         phone.files = files
         let artwork = WatchArtworkFetcher(fileCache: fileCache, downloader: files, credentials: credentials)
-        // tracks arrive & are evicted as the user plays, so the download marks
-        // on the rows follow the cache rather than the last sync
-        fileCache.onMusicChanged = { songs.refreshDownloads() }
+        let offline = OfflineLibrary(fileCache: fileCache, downloader: files)
+        _offline = State(initialValue: offline)
         // the library still syncs; the files it references do not
         let syncStore = SyncStore(
             database: database, fileStore: fileStore, transfersFiles: false)
@@ -65,7 +63,7 @@ struct WarehouseWatchApp: App {
         let remote = WatchRemoteStore(send: { phone.send($0) })
         phone.remote = remote
         _remote = State(initialValue: remote)
-        _player = State(initialValue: PlayerStore(
+        let player = PlayerStore(
             fileStore: fileStore,
             fileCache: fileCache,
             prefetchDownloader: files,
@@ -74,7 +72,14 @@ struct WarehouseWatchApp: App {
             // a track that isn't cached is played straight off the server.
             // the download it replaces ran in this process & died whenever
             // watchos stopped scheduling us, which is every wrist drop
-            streams: true))
+            streams: true)
+        player.onPrefetchDemand = { offline.setPlaybackDemand($0) }
+        fileCache.onMusicChanged = { [weak offline, weak player] in
+            songs.refreshDownloads()
+            offline?.refreshFiles()
+            player?.downloadsChanged()
+        }
+        _player = State(initialValue: player)
         self.phone = phone
         self.plays = plays
         self.artwork = artwork
@@ -84,12 +89,7 @@ struct WarehouseWatchApp: App {
         // in place before the scene builds
         phone.activate()
 
-        // one pass at launch, off the critical path: it is what collects the
-        // mirror sync's leftovers on an upgraded watch — the index has never
-        // seen those files, so they sort ahead of anything played — and it is
-        // the only pass a session that plays nothing but cached tracks and
-        // browses nothing new ever gets. nothing is playing yet, so the empty
-        // in-use set costs nothing here
+        // restore offline retention before collecting opportunistic cache leftovers.
         Task { @MainActor in fileCache.evict() }
     }
 
@@ -103,7 +103,14 @@ struct WarehouseWatchApp: App {
                 .environment(library)
                 .environment(player)
                 .environment(remote)
+                .environment(offline)
                 .environment(\.artworkFetcher, artwork)
+                .onChange(of: settings.token, initial: true) {
+                    offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
+                }
+                .onChange(of: settings.serverURL) {
+                    offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
+                }
                 .onChange(of: settings.isConfigured) {
                     if !settings.isConfigured {
                         player.pause()
@@ -123,6 +130,7 @@ struct WarehouseWatchApp: App {
                     // making sound; coming back is the chance to fill the
                     // cache & cover the next dead zone
                     player.setForeground(scenePhase == .active)
+                    offline.setForeground(scenePhase == .active)
                     // pushes only reach a watch that was listening at the
                     // time, so coming to the front is when to ask
                     if scenePhase == .active {

@@ -32,18 +32,18 @@ struct WatchSettingsView: View {
             } header: {
                 Text("Fill Ahead")
             } footer: {
-                Text("How far past the track playing the watch keeps downloading "
-                    + "while its app is on screen — the only time it isn't "
-                    + "throttled. Put a playlist on, leave the app up, and walk "
-                    + "out of signal with it on disk. It stops when the watch's "
-                    + "cache is full, and it costs battery and storage, so it's "
-                    + "off unless you ask for it.")
+                Text("Fills an opportunistic cache while the watch app is open. "
+                    + "For retained downloads, open Offline Playlists on the watch and choose Prepare for Offline. "
+                    + "Keep the watch app open until the playlist says Ready.")
             }
             let sections = PlaylistListBuilder.watchSections(in: playlists.playlists)
             if sections.isEmpty {
                 Text("No playlists to choose from yet. Sync your library first.")
                     .foregroundStyle(.secondary)
             }
+            Text("These selections control which playlists appear on the watch. Choose which to download in Offline Playlists on the watch.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             ForEach(sections) { section in
                 Section(section.title) {
                     ForEach(section.playlists) { playlist in

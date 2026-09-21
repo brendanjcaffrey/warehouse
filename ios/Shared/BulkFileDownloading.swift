@@ -17,6 +17,31 @@ protocol BulkFileDownloading: Sendable {
 /// of racing whatever the mock url protocol gets around to serving
 protocol SingleFileDownloading: Sendable {
     func download(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> Bool
+    func downloadResult(
+        _ type: LibraryFileType, filename: String, token: String, baseURL: URL,
+        onPhase: @escaping @MainActor @Sendable (FileDownloadPhase) -> Void
+    ) async -> FileDownloadResult
+}
+
+enum FileDownloadResult: Sendable {
+    case downloaded
+    case failed
+    case outOfSpace
+}
+
+enum FileDownloadPhase: Sendable {
+    case waitingForPhone
+    case downloading
+}
+
+extension SingleFileDownloading {
+    func downloadResult(
+        _ type: LibraryFileType, filename: String, token: String, baseURL: URL,
+        onPhase: @escaping @MainActor @Sendable (FileDownloadPhase) -> Void
+    ) async -> FileDownloadResult {
+        await onPhase(.downloading)
+        return await download(type, filename: filename, token: token, baseURL: baseURL) ? .downloaded : .failed
+    }
 }
 
 enum BackgroundDownload {

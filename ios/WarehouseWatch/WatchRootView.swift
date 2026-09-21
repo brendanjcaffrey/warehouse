@@ -5,6 +5,9 @@ struct WatchRootView: View {
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SyncStore.self) private var sync
     @Environment(WatchLibraryStore.self) private var library
+    @Environment(OfflineLibrary.self) private var offline
+    @Environment(SongsStore.self) private var songs
+    @Environment(PlaylistsStore.self) private var playlists
     @Environment(WatchRemoteStore.self) private var remote
 
     private var startup: WatchLibraryStore.State {
@@ -28,13 +31,13 @@ struct WatchRootView: View {
         }
         .task(id: settings.selectionChanges) {
             // make the saved library available before starting any network work
-            await library.load()
+            await loadLibrary()
             // first sync, plus a re-sync whenever the phone changes the selection
             guard settings.isConfigured else { return }
             await sync.sync(token: settings.token, baseURL: settings.baseURL())
         }
         .onChange(of: sync.completedSyncs) {
-            Task { await library.load() }
+            Task { await loadLibrary() }
         }
         .onChange(of: scenePhase) {
             // a sync that died offline is otherwise only retried when asked.
@@ -45,6 +48,12 @@ struct WatchRootView: View {
                 await sync.sync(token: settings.token, baseURL: settings.baseURL())
             }
         }
+    }
+
+    private func loadLibrary() async {
+        await library.load()
+        guard songs.errorMessage == nil, playlists.errorMessage == nil else { return }
+        offline.reconcile(playlists: playlists.playlists, songs: songs.songs)
     }
 
     @ViewBuilder
@@ -80,7 +89,7 @@ struct WatchRootView: View {
     private var refreshButton: some View {
         Button("Try Again") {
             Task {
-                await library.load()
+                await loadLibrary()
                 await sync.sync(token: settings.token, baseURL: settings.baseURL())
             }
         }

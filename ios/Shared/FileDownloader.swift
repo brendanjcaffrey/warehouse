@@ -60,12 +60,6 @@ struct FileDownloader: BulkFileDownloading, SingleFileDownloading, Sendable {
     let client: LibraryClient
     let fileStore: FileStore
 
-    private enum FetchOutcome {
-        case downloaded
-        case failed
-        case outOfSpace
-    }
-
     func downloadAll(
         _ files: [FileToDownload],
         token: String,
@@ -106,10 +100,22 @@ struct FileDownloader: BulkFileDownloading, SingleFileDownloading, Sendable {
         await fetch(type, filename: filename, token: token, baseURL: baseURL) == .downloaded
     }
 
-    private func fetch(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> FetchOutcome {
+    func downloadResult(
+        _ type: LibraryFileType, filename: String, token: String, baseURL: URL,
+        onPhase: @escaping @MainActor @Sendable (FileDownloadPhase) -> Void
+    ) async -> FileDownloadResult {
+        await onPhase(.downloading)
+        return await fetch(type, filename: filename, token: token, baseURL: baseURL)
+    }
+
+    private func fetch(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> FileDownloadResult {
         if fileStore.exists(type, filename) { return .downloaded }
         do {
             let temporaryURL = try await client.downloadFile(type, filename: filename, token: token, baseURL: baseURL)
+            guard !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                return .failed
+            }
             try fileStore.moveIn(type, filename, from: temporaryURL)
             return .downloaded
         } catch {

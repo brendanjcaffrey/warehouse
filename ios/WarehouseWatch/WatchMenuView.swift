@@ -59,11 +59,17 @@ struct WatchMenuView: View {
                         Label("Downloaded", systemImage: "arrow.down.circle")
                     }
                 }
+                NavigationLink {
+                    WatchOfflineView()
+                } label: {
+                    Label("Offline Playlists", systemImage: "arrow.down.circle")
+                }
                 ForEach(PlaylistListBuilder.children(of: "", in: playlists.playlists)) { playlist in
                     NavigationLink {
                         WatchTrackListView(
                             title: playlist.name,
-                            songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds))
+                            songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds),
+                            playlist: playlist)
                     } label: {
                         Label(playlist.name, systemImage: "music.note.list")
                     }

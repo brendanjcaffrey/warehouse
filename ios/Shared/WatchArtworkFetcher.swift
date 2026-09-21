@@ -78,12 +78,12 @@ final class WatchArtworkFetcher {
     /// disk. nil means there is nothing to show and the caller keeps its
     /// placeholder — a track with no artwork and one we couldn't fetch look
     /// the same on purpose
-    func artworkURL(_ filename: String?, priority: Priority = .list) async -> URL? {
+    func artworkURL(_ filename: String?, priority: Priority = .list, allowNetwork: Bool = true) async -> URL? {
         guard let filename else { return nil }
         if fileStore.exists(.artwork, filename) {
             return fileStore.fileURL(.artwork, filename)
         }
-        guard await fetch(filename, priority: priority) else { return nil }
+        guard allowNetwork, await fetch(filename, priority: priority) else { return nil }
         return fileStore.fileURL(.artwork, filename)
     }
 

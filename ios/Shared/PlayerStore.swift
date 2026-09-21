@@ -211,6 +211,8 @@ final class PlayerStore {
     /// happen mid-workout with the app backgrounded, where a download stalls
     /// and a stream doesn't. the phone mirrors the library & leaves it off
     private let streams: Bool
+    private(set) var downloadedOnly = false
+    var onPrefetchDemand: (@MainActor ([String]) -> Void)?
     /// how far ahead of the playhead a stream is asked to buffer. the default
     /// is 0, meaning the media daemon picks, and it picks for the general case
     /// rather than for a watch that is about to lose signal under a bridge; a
@@ -328,14 +330,24 @@ final class PlayerStore {
     /// starts playing songs in order, positioned at the tapped one so previous
     /// walks back through the earlier tracks; replaces the current queue and
     /// turns repeat off
-    func play(_ songs: [Song], startingAt index: Int = 0, token: String?, baseURL: URL?) {
-        start(PlayQueue(songs: songs, startingAt: index), repeating: .off, token: token, baseURL: baseURL)
+    func play(_ songs: [Song], startingAt index: Int = 0, token: String?, baseURL: URL?, downloadedOnly: Bool = false) {
+        let playable = downloadedOnly ? songs.filter { fileStore.exists(.music, $0.musicFilename) } : songs
+        guard !playable.isEmpty else { return }
+        let target = songs.dropFirst(max(0, index)).first { !downloadedOnly || fileStore.exists(.music, $0.musicFilename) }
+        let startIndex = downloadedOnly ? (target.flatMap { playable.firstIndex(of: $0) } ?? 0) : index
+        self.downloadedOnly = downloadedOnly
+        if downloadedOnly { cancelPrefetch() }
+        start(PlayQueue(songs: playable, startingAt: startIndex), repeating: .off, token: token, baseURL: baseURL)
     }
 
     /// starts playing songs in a random order; replaces the current queue and
     /// repeats it once it runs out
-    func playShuffled(_ songs: [Song], token: String?, baseURL: URL?) {
-        start(PlayQueue(shuffling: songs), repeating: .all, token: token, baseURL: baseURL)
+    func playShuffled(_ songs: [Song], token: String?, baseURL: URL?, downloadedOnly: Bool = false) {
+        let playable = downloadedOnly ? songs.filter { fileStore.exists(.music, $0.musicFilename) } : songs
+        guard !playable.isEmpty else { return }
+        self.downloadedOnly = downloadedOnly
+        if downloadedOnly { cancelPrefetch() }
+        start(PlayQueue(shuffling: playable), repeating: .all, token: token, baseURL: baseURL)
     }
 
     private func start(_ newQueue: PlayQueue, repeating mode: RepeatMode, token: String?, baseURL: URL?) {
@@ -385,7 +397,7 @@ final class PlayerStore {
         // and release the track we just moved off
         refreshInUse()
         // without the file or a way to fetch it there's nothing to play
-        guard isDownloaded || (token != nil && baseURL != nil) else {
+        guard isDownloaded || (!downloadedOnly && token != nil && baseURL != nil) else {
             markNotLoaded(.unavailable)
             return
         }
@@ -577,6 +589,12 @@ final class PlayerStore {
     /// aren't throttled, rather than living with the one shot it gets as a
     /// track starts
     func prefetchNext() {
+        if let onPrefetchDemand {
+            let allowed = !downloadedOnly && isPlaying && isForeground && (!isStreamingCurrentTrack || streamAllowsPrefetch)
+            onPrefetchDemand(allowed ? (isStreamingCurrentTrack ? Array(prefetchReach.prefix(1)) : prefetchReach) : [])
+            return
+        }
+        guard !downloadedOnly else { return }
         // current audio gets the link while buffering; paused intent must not
         // start cache work when a delayed observation or retry arrives.
         guard isPlaying else { return }
@@ -687,7 +705,7 @@ final class PlayerStore {
     /// so it re-arms on the way in
     func setForeground(_ foreground: Bool) {
         isForeground = foreground
-        if foreground, isPlaying {
+        if isPlaying {
             prefetchNext()
         }
     }
@@ -745,6 +763,7 @@ final class PlayerStore {
     }
 
     private func cancelPrefetch() {
+        onPrefetchDemand?([])
         prefetch?.task.cancel()
         prefetch = nil
         prefetchRetry?.cancel()
@@ -755,6 +774,10 @@ final class PlayerStore {
         guard isPlaying, let state = playbackObservationState else { return false }
         return state.itemStatus == .readyToPlay && state.likelyToKeepUp
             && state.timeControlStatus == .playing && state.hasBufferedAudio && state.hasPlaybackProgress
+    }
+
+    func downloadsChanged() {
+        reconcileNextItem()
     }
 
     /// the files eviction may not take: the track playing, the one being
@@ -876,6 +899,7 @@ final class PlayerStore {
     /// queues a song right after the current track, or just plays it when
     /// nothing is queued
     func playNext(_ song: Song, token: String?, baseURL: URL?) {
+        guard !downloadedOnly || fileStore.exists(.music, song.musicFilename) else { return }
         if queue.current == nil {
             play([song], token: token, baseURL: baseURL)
         } else {
@@ -896,6 +920,7 @@ final class PlayerStore {
     /// plays a track picked from the history: queues it right after the current
     /// track like play next, then jumps straight to it
     func playFromHistory(_ song: Song) {
+        guard !downloadedOnly || fileStore.exists(.music, song.musicFilename) else { return }
         guard queue.current != nil else { return }
         queue.playNext(song)
         queue.jump(toUpcomingIndex: 0)
@@ -1176,7 +1201,7 @@ final class PlayerStore {
         if let filename = song.artworkFilename {
             if fileStore.exists(.artwork, filename) {
                 info[MPMediaItemPropertyArtwork] = artwork(filename)
-            } else if let fetchArtwork {
+            } else if !downloadedOnly, let fetchArtwork {
                 fetchNowPlayingArtwork(filename, using: fetchArtwork)
             }
         }
@@ -1301,6 +1326,7 @@ final class PlayerStore {
         // in for, which deleting would throw away
         if !isStreamingCurrentTrack {
             try? fileStore.delete(.music, song.musicFilename)
+            fileCache?.noteMusicStored()
         }
         consecutiveItemFailures += 1
         // the file is re-fetchable, so without a budget of its own a queue of
@@ -1496,7 +1522,7 @@ final class PlayerStore {
         if fileStore.exists(.music, song.musicFilename) {
             return (AVPlayerItem(url: fileStore.fileURL(.music, song.musicFilename)), false)
         }
-        guard streams, let token, let baseURL,
+        guard !downloadedOnly, streams, let token, let baseURL,
               let asset = StreamingAsset.make(
                 .music, filename: song.musicFilename, token: token, baseURL: baseURL)
         else { return nil }

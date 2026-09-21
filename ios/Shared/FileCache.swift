@@ -54,6 +54,8 @@ final class FileCache {
     private let now: @Sendable () -> Date
     /// type directory -> filename -> seconds since the epoch
     private var recency: [String: [String: Double]]
+    /// offline selections are separate from the player's transient protection
+    private var retainedMusic: Set<String> = []
     /// files that must survive eviction: the track playing & anything
     /// prefetched behind it, keyed the same way
     private var inUse: [String: Set<String>] = [:]
@@ -89,6 +91,15 @@ final class FileCache {
         inUse[type.directory] = filenames
     }
 
+    /// explicit offline selections remain protected independently of the player
+    func retainMusic(_ filenames: Set<String>) {
+        retainedMusic = filenames
+    }
+
+    func isMusicInUse(_ filename: String) -> Bool {
+        inUse[LibraryFileType.music.directory]?.contains(filename) == true
+    }
+
     /// how much more music the cache could take before what it already holds
     /// fills the music budget. this is the question a fill that runs deep into
     /// a queue has to ask: the files it pulls are evictable as soon as the
@@ -109,6 +120,16 @@ final class FileCache {
             held += bytes
         }
         return budget(held).music - musicBytes
+    }
+
+    /// preparation may replace opportunistic files even when the cache is exactly full
+    func makeMusicRoom() -> Bool {
+        let music = fileStore.entries(.music)
+        let held = music.reduce(0) { $0 + $1.sizeBytes } + fileStore.totalSize(.artwork)
+        let removed = evict(.music, entries: music, budget: max(0, budget(held).music - 1), preservingNewest: false)
+        save()
+        if !removed.isEmpty { onMusicChanged?() }
+        return musicRoom() > 0
     }
 
     /// drops least recently used files until each type is back under budget,
@@ -135,18 +156,21 @@ final class FileCache {
         return removed
     }
 
-    private func evict(_ type: LibraryFileType, entries: [FileEntry], budget: Int64) -> [FileToDownload] {
+    private func evict(
+        _ type: LibraryFileType, entries: [FileEntry], budget: Int64, preservingNewest: Bool = true
+    ) -> [FileToDownload] {
         prune(type, entries: entries)
         var total = entries.reduce(0) { $0 + $1.sizeBytes }
         guard total > budget else { return [] }
 
-        let protected = inUse[type.directory] ?? []
+        let protected = (inUse[type.directory] ?? []).union(type == .music ? retainedMusic : [])
         let ordered = entries.sorted { lastUsed($0, type) < lastUsed($1, type) }
-        // the newest file is never a candidate: it is the one just fetched far
+        // ordinary eviction protects the newest file: it is the one just fetched far
         // more often than not, and skipping it also makes a store holding a
         // single file bigger than the whole budget a no-op instead of a
         // delete followed by an immediate refetch of the same track
-        let candidates = ordered.dropLast().filter { !protected.contains($0.filename) }
+        let eligible = preservingNewest ? Array(ordered.dropLast()) : ordered
+        let candidates = eligible.filter { !protected.contains($0.filename) }
 
         var removed: [FileToDownload] = []
         for entry in candidates {
