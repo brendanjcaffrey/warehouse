@@ -147,8 +147,7 @@ extension PlayerStoreTests {
         let (player, _, _) = Self.makeStreamingPlayer(host: host, baseURL: baseURL)
 
         player.play([Self.song(id: "1")], token: "tok", baseURL: baseURL)
-        // a stream sits at .fetching until the item is playable, so this is
-        // the item having reached .readyToPlay
+        // a stream is ready only when the transport actually starts playing
         try await Self.waitFor { player.status == .ready }
 
         #expect(player.isStreamingCurrentTrack)
@@ -170,7 +169,7 @@ extension PlayerStoreTests {
         // asking for a minute of slack during the first fill would be
         // competing with the sound the user is waiting on, so the daemon is
         // left to pick until the item can play
-        #expect(player.status == .fetching)
+        #expect(player.status == .buffering)
         #expect(player.forwardBufferDuration == 0)
     }
 

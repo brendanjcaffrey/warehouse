@@ -171,7 +171,7 @@ struct PrefetchTests {
             deepPrefetchDepth: 10)
 
         player.play(PlayerStoreTests.songs(5), token: "tok", baseURL: baseURL)
-        // a stream sits at .fetching until the item is playable, & the
+        // a stream sits at .buffering until the transport plays, & the
         // prefetch stands down until then
         try await PlayerStoreTests.waitFor { player.status == .ready }
         try await PlayerStoreTests.waitFor { fileStore.exists(.music, "2.wav") }

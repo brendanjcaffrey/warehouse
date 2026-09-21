@@ -67,7 +67,9 @@ struct WatchNowPlayingView: View {
         case .unavailable: "Unavailable Offline"
         // watchos won't play long form audio through the watch speaker
         case .needsOutput: "Connect Headphones"
-        case .ready, .fetching: nil
+        case .buffering: player.isPlaying ? "Buffering" : nil
+        case .fetching: "Downloading"
+        case .ready: nil
         }
     }
 
@@ -83,18 +85,11 @@ struct WatchNowPlayingView: View {
             Button {
                 player.togglePlayPause()
             } label: {
-                Group {
-                    if player.status == .fetching {
-                        ProgressView()
-                    } else {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 44)
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title)
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .disabled(player.status == .fetching)
-            .accessibilityLabel(playPauseLabel)
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             Button {
                 player.skipToNext()
             } label: {
@@ -104,13 +99,6 @@ struct WatchNowPlayingView: View {
             }
         }
         .buttonStyle(.plain)
-    }
-
-    private var playPauseLabel: String {
-        switch player.status {
-        case .fetching: "Downloading"
-        case .ready, .unavailable, .needsOutput: player.isPlaying ? "Pause" : "Play"
-        }
     }
 
     /// watchos' default accent barely separates from secondary on a small

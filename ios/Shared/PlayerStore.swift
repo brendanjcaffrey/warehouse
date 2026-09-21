@@ -49,6 +49,8 @@ enum PlaybackStatus: Equatable, Sendable {
     case ready
     /// the file isn't on disk yet & is being fetched before playback starts
     case fetching
+    /// the remote item is waiting for enough audio to play
+    case buffering
     /// not on disk & the server can't be reached, so there's nothing to play
     case unavailable
     /// watchos only: the audio session wouldn't activate. long form audio has
@@ -61,6 +63,7 @@ enum PlaybackStatus: Equatable, Sendable {
 @Observable
 final class PlayerStore {
     private(set) var queue = PlayQueue(songs: [])
+    /// requested play intent; buffering does not turn it into a pause.
     private(set) var isPlaying = false
     private(set) var repeatMode: RepeatMode = .off
     private(set) var status: PlaybackStatus = .ready
@@ -116,9 +119,15 @@ final class PlayerStore {
     private var baseURL: URL?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
-    /// watches whether the current item actually loaded, which avfoundation
-    /// reports nowhere else
-    private var itemStatusObserver: NSKeyValueObservation?
+    /// watches loading, buffer prediction and transport changes for the current item
+    private var cancelPlaybackObservation: (() -> Void)?
+    private let observePlayback: PlaybackObservation.Start
+    private var playbackObservationState: PlaybackObservationState?
+    var isActuallyPlaying: Bool {
+        isPlaying && playbackObservationState?.timeControlStatus == .playing
+            && playbackObservationState?.hasBufferedAudio == true
+            && playbackObservationState?.hasPlaybackProgress == true
+    }
     /// the same for the enqueued item, which can fail on its own without the
     /// track that is making sound being affected
     private var nextItemStatusObserver: NSKeyValueObservation?
@@ -253,7 +262,8 @@ final class PlayerStore {
         streams: Bool = false,
         retryDelay: TimeInterval = 1,
         prefetchRetryDelay: TimeInterval = 30,
-        activateSessionForTests: (@MainActor () async -> Bool)? = nil
+        activateSessionForTests: (@MainActor () async -> Bool)? = nil,
+        observePlayback: @escaping PlaybackObservation.Start = PlaybackObservation.start
     ) {
         self.fileStore = fileStore
         self.fileCache = fileCache
@@ -263,6 +273,7 @@ final class PlayerStore {
         self.retryDelay = retryDelay
         self.prefetchRetryDelay = prefetchRetryDelay
         self.activateSessionForTests = activateSessionForTests
+        self.observePlayback = observePlayback
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
         self.prefetchDownloader = prefetchDownloader ?? self.downloader
         // the point of the queue: at the end of a track the daemon plays
@@ -351,6 +362,9 @@ final class PlayerStore {
         guard let song else { return }
         startGeneration += 1
         let generation = startGeneration
+        cancelPlaybackObservation?()
+        cancelPlaybackObservation = nil
+        playbackObservationState = nil
         // the retry budget is per track start, not per session
         prefetchRetried = false
         // whatever was lined up behind the track we're leaving stands for a
@@ -388,9 +402,8 @@ final class PlayerStore {
         currentTime = resume ?? window.start
         ignoresFinish = false
         isPlaying = true
-        // isPlaying goes up optimistically, so an uncached track on a slow
-        // link needs this to tell the ui it's downloading, not stuck
-        status = isDownloaded ? .ready : .fetching
+        // play intent goes up before sound starts; distinguish the two kinds of waiting.
+        status = isDownloaded ? .ready : (streams ? .buffering : .fetching)
         setNowPlayingInfo(for: song)
         updateNowPlayingPlaybackState()
 
@@ -419,6 +432,7 @@ final class PlayerStore {
                     beginPlayback(of: song, streaming: asset)
                     return
                 }
+                status = .fetching
                 let ok = await fetchMusic(
                     song.musicFilename, token: token, baseURL: baseURL, generation: generation)
                 guard generation == startGeneration else { return }
@@ -467,10 +481,14 @@ final class PlayerStore {
     /// resume the wrong audio under this track's title, and its finish would
     /// report a play for a track that never started
     private func markNotLoaded(_ reason: PlaybackStatus) {
+        startGeneration += 1
+        pendingStartTime = nil
         player.pause()
         removeEndObserver()
-        itemStatusObserver?.invalidate()
-        itemStatusObserver = nil
+        cancelPlaybackObservation?()
+        cancelPlaybackObservation = nil
+        playbackObservationState = nil
+        cancelPrefetch()
         removeNextItem()
         player.removeAllItems()
         // the item it described is gone, & left set it would have prefetch
@@ -501,7 +519,6 @@ final class PlayerStore {
         isStreamingCurrentTrack = streaming
         advancedOntoEnqueuedItem = false
         observeEnd(of: item)
-        observeStatus(of: item)
         observeTimeIfNeeded()
 
         // the player's queue is rebuilt around this item; the slot behind it
@@ -520,12 +537,8 @@ final class PlayerStore {
         if isPlaying {
             player.play()
         }
-        // a file on disk is ready the moment it's handed over; a stream still
-        // has to fill a buffer, & saying ready here would show a play button
-        // over silence. observeStatus clears it once the item can play
-        if !streaming {
-            status = .ready
-        }
+        status = streaming ? .buffering : .ready
+        observeStatus(of: item)
         updateNowPlayingPlaybackState()
         // the gap between tracks is only hidden if the next one is already
         // here, so start it now rather than when the current track ends
@@ -564,6 +577,13 @@ final class PlayerStore {
     /// aren't throttled, rather than living with the one shot it gets as a
     /// track starts
     func prefetchNext() {
+        // current audio gets the link while buffering; paused intent must not
+        // start cache work when a delayed observation or retry arrives.
+        guard isPlaying else { return }
+        if isStreamingCurrentTrack, !streamAllowsPrefetch {
+            cancelPrefetch()
+            return
+        }
         let reach = prefetchReach
         if let running = prefetch?.filename {
             if !reach.contains(running) {
@@ -586,12 +606,6 @@ final class PlayerStore {
         // one already running is left to finish — it is a single track & has
         // progress worth keeping — but no new one starts out of sight
         guard isForeground else { return }
-        // the stream is what's making sound; pulling the next track down
-        // alongside it is how it stops. wait until it has filled its buffer
-        // and is holding — observeStatus re-arms this the moment it is, and a
-        // stream still working on its first bytes is the worst time of all to
-        // put a second transfer on the same link
-        if isStreamingCurrentTrack, player.currentItem?.isPlaybackLikelyToKeepUp != true { return }
         // one at a time: restarting a transfer in flight would throw away its
         // progress on exactly the slow link that makes prefetching worth doing
         guard prefetch == nil else { return }
@@ -737,6 +751,12 @@ final class PlayerStore {
         prefetchRetry = nil
     }
 
+    private var streamAllowsPrefetch: Bool {
+        guard isPlaying, let state = playbackObservationState else { return false }
+        return state.itemStatus == .readyToPlay && state.likelyToKeepUp
+            && state.timeControlStatus == .playing && state.hasBufferedAudio && state.hasPlaybackProgress
+    }
+
     /// the files eviction may not take: the track playing, the one being
     /// fetched behind it, and the cover on screen. the now playing artwork is
     /// read from disk lazily every time the system asks for it, so losing the
@@ -782,15 +802,16 @@ final class PlayerStore {
         guard song != nil, isPlaying else { return }
         player.pause()
         isPlaying = false
+        playbackObservationState?.timeControlStatus = .paused
+        cancelPrefetch()
         updateNowPlayingPlaybackState()
     }
 
     func resume() {
         guard song != nil, !isPlaying else { return }
-        // the fetch running for this track starts it itself when it lands, and
-        // the item still in the player belongs to the track before it, so all
-        // a play here can do is put the intent back for the fetch to find
-        if status == .fetching {
+        // activation or a file fetch still owns the pending start. a stream
+        // already handed to the player instead needs a real transport resume.
+        if pendingStartTime != nil {
             isPlaying = true
             updateNowPlayingPlaybackState()
             return
@@ -821,7 +842,9 @@ final class PlayerStore {
                 return
             }
             guard generation == startGeneration, isPlaying else { return }
+            status = isStreamingCurrentTrack ? .buffering : .ready
             player.play()
+            prefetchNext()
         }
     }
 
@@ -1063,6 +1086,7 @@ final class PlayerStore {
             // bluetooth output; taking the pending start down with it is what
             // left a finished download sitting at a play button
             guard status != .fetching else { break }
+            guard status != .buffering || pendingStartTime == nil else { break }
             pause()
         case .ended:
             let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
@@ -1188,7 +1212,7 @@ final class PlayerStore {
         let center = MPNowPlayingInfoCenter.default()
         guard var info = center.nowPlayingInfo else { return }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isActuallyPlaying ? 1.0 : 0.0
         center.nowPlayingInfo = info
     }
 
@@ -1231,42 +1255,34 @@ final class PlayerStore {
     /// take. nothing surfaces that on its own: the player just sits there
     /// reporting the track as playing, which is indistinguishable from silence
     private func observeStatus(of item: AVPlayerItem) {
-        itemStatusObserver?.invalidate()
+        cancelPlaybackObservation?()
+        playbackObservationState = nil
         let generation = startGeneration
-        itemStatusObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
-            let status = item.status
-            guard status != .unknown else { return }
-            // the error can't cross into the actor, so reduce it here
-            let reason = item.error?.localizedDescription ?? "unknown"
-            Task { @MainActor [weak self] in
-                guard let self, generation == self.startGeneration else { return }
-                if status == .failed {
-                    self.handleItemFailure(reason)
-                } else {
-                    // a track that loaded clears the run of ones that didn't
-                    self.consecutiveItemFailures = 0
-                    // the buffer filled, so a stream that started out
-                    // .fetching is actually playing now
-                    if self.status == .fetching {
-                        self.status = .ready
-                        self.updateNowPlayingPlaybackState()
-                    }
-                    // the prefetch armed as this track started stood down for
-                    // the stream; now that it is holding, there is room on the
-                    // link for the next track
-                    if self.isStreamingCurrentTrack {
-                        self.prefetchNext()
-                        // asked for here rather than when the item went into
-                        // the player: up front it competes with the first fill,
-                        // which is the moment the user is waiting on a sound,
-                        // and a target the buffer is nowhere near could hold
-                        // isPlaybackLikelyToKeepUp false — which is the very
-                        // thing the prefetch above stands down on, and nothing
-                        // re-arms it a second time. after it, both are safe
-                        self.player.currentItem?.preferredForwardBufferDuration =
-                            Self.streamForwardBufferDuration
-                    }
+        let identity = ObjectIdentifier(item)
+        cancelPlaybackObservation = observePlayback(player, item) { [weak self] state in
+            guard let self, generation == self.startGeneration else { return }
+            // the daemon may already have advanced off a failed current item.
+            // failure handling still owns that transition for this generation.
+            if state.itemStatus == .failed {
+                self.handleItemFailure(state.failureReason)
+                return
+            }
+            guard let current = self.player.currentItem, ObjectIdentifier(current) == identity else { return }
+            let couldPrefetch = self.streamAllowsPrefetch
+            self.playbackObservationState = state
+            if state.itemStatus == .readyToPlay {
+                self.consecutiveItemFailures = 0
+                if self.isStreamingCurrentTrack, current.preferredForwardBufferDuration != Self.streamForwardBufferDuration {
+                    current.preferredForwardBufferDuration = Self.streamForwardBufferDuration
                 }
+            }
+            if self.isStreamingCurrentTrack, self.status != .needsOutput {
+                self.status = state.itemStatus == .readyToPlay && self.isActuallyPlaying
+                    ? .ready : .buffering
+            }
+            self.updateNowPlayingPlaybackState()
+            if self.isStreamingCurrentTrack, self.streamAllowsPrefetch != couldPrefetch {
+                self.prefetchNext()
             }
         }
     }
@@ -1366,14 +1382,14 @@ final class PlayerStore {
         isStreamingCurrentTrack = next.streaming
         advancedOntoEnqueuedItem = true
         observeEnd(of: next.item)
-        observeStatus(of: next.item)
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
         currentTime = window.start
         ignoresFinish = false
         isPlaying = true
         // an item that has been enqueued for a while may already be holding, in
         // which case the status observer clears this on its first callback
-        status = next.streaming ? .fetching : .ready
+        status = next.streaming ? .buffering : .ready
+        observeStatus(of: next.item)
         setNowPlayingInfo(for: song)
         applyStopTime()
         if window.start > 0 {
@@ -1559,6 +1575,7 @@ final class PlayerStore {
     private func stop() {
         player.pause()
         isPlaying = false
+        cancelPrefetch()
         currentTime = effectiveEnd
         updateNowPlayingPlaybackState()
     }
