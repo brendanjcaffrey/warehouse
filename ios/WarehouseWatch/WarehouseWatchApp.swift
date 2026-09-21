@@ -7,6 +7,7 @@ struct WarehouseWatchApp: App {
     @State private var sync: SyncStore
     @State private var songs: SongsStore
     @State private var playlists: PlaylistsStore
+    @State private var library: WatchLibraryStore
     @State private var player: PlayerStore
     @State private var remote: WatchRemoteStore
 
@@ -19,6 +20,7 @@ struct WarehouseWatchApp: App {
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         let settings = WatchSettingsStore()
         let songs = SongsStore(database: database, fileStore: fileStore)
+        let playlists = PlaylistsStore(database: database)
         let phone = WatchPhoneSession(settings: settings)
         let credentials: @Sendable () -> (token: String, baseURL: URL)? = {
             guard let token = settings.token, let baseURL = settings.baseURL() else { return nil }
@@ -49,7 +51,8 @@ struct WarehouseWatchApp: App {
         _settings = State(initialValue: settings)
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: songs)
-        _playlists = State(initialValue: PlaylistsStore(database: database))
+        _playlists = State(initialValue: playlists)
+        _library = State(initialValue: WatchLibraryStore(songs: songs, playlists: playlists))
         // finished plays queue here & ride the connectivity session back to
         // the phone, which pushes them to the server
         let plays = PlayReportQueue(
@@ -97,9 +100,16 @@ struct WarehouseWatchApp: App {
                 .environment(sync)
                 .environment(songs)
                 .environment(playlists)
+                .environment(library)
                 .environment(player)
                 .environment(remote)
                 .environment(\.artworkFetcher, artwork)
+                .onChange(of: settings.isConfigured) {
+                    if !settings.isConfigured {
+                        player.pause()
+                        player.setCredentials(token: nil, baseURL: nil)
+                    }
+                }
                 .onChange(of: settings.deepPrefetchDepth, initial: true) {
                     // how far the prefetch reaches is the phone's call: it is
                     // this watch's disk & this watch's battery being spent

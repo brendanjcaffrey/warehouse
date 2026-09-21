@@ -43,21 +43,25 @@ final class PlaylistEntity: NSManagedObject {
 final class LibraryDatabase {
     let container: NSPersistentContainer
 
-    init(inMemory: Bool = false) {
+    private var loadError: Error?
+
+    init(inMemory: Bool = false, storeURL: URL? = nil) {
         container = NSPersistentContainer(name: "Library", managedObjectModel: Self.model)
+        if let storeURL {
+            container.persistentStoreDescriptions.first?.url = storeURL
+        }
         if inMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
         }
         container.loadPersistentStores { _, error in
-            if let error {
-                fatalError("failed to load library store: \(error)")
-            }
+            self.loadError = error
         }
         container.viewContext.automaticallyMergesChangesFromParent = true
     }
 
     /// wipes all existing data and imports the given library
     func replaceLibrary(with library: Library) async throws {
+        if let loadError { throw loadError }
         let viewContext = container.viewContext
         try await container.performBackgroundTask { context in
             try Self.deleteAll(entityName: "TrackEntity", context: context, mergeInto: viewContext)
@@ -119,7 +123,8 @@ final class LibraryDatabase {
     /// shows before the next sync; sort names are left stale until then,
     /// matching the web app
     func updateTrack(_ song: Song) async throws {
-        try await container.performBackgroundTask { context in
+        if let loadError { throw loadError }
+        return try await container.performBackgroundTask { context in
             let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
             request.predicate = NSPredicate(format: "id == %@", song.id)
             request.fetchLimit = 1
@@ -150,7 +155,8 @@ final class LibraryDatabase {
 
     /// lightweight copies of every track for the songs list
     func allSongs() async throws -> [Song] {
-        try await container.performBackgroundTask { context in
+        if let loadError { throw loadError }
+        return try await container.performBackgroundTask { context in
             let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
             return try context.fetch(request).map(Self.song)
         }
@@ -159,6 +165,7 @@ final class LibraryDatabase {
     /// the named tracks keyed by id, for putting a stored play queue back
     /// together; ids that have left the library are simply absent
     func songs(ids: [String]) async throws -> [String: Song] {
+        if let loadError { throw loadError }
         guard !ids.isEmpty else { return [:] }
         return try await container.performBackgroundTask { context in
             let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
@@ -195,7 +202,8 @@ final class LibraryDatabase {
 
     /// lightweight copies of every playlist for the playlists list
     func allPlaylists() async throws -> [PlaylistItem] {
-        try await container.performBackgroundTask { context in
+        if let loadError { throw loadError }
+        return try await container.performBackgroundTask { context in
             let request = NSFetchRequest<PlaylistEntity>(entityName: "PlaylistEntity")
             let playlists = try context.fetch(request)
             return playlists.map {
@@ -211,13 +219,15 @@ final class LibraryDatabase {
     }
 
     func trackCount() async throws -> Int {
-        try await container.performBackgroundTask { context in
+        if let loadError { throw loadError }
+        return try await container.performBackgroundTask { context in
             try context.count(for: NSFetchRequest<TrackEntity>(entityName: "TrackEntity"))
         }
     }
 
     private func fetchFilenames(attribute: String) async throws -> Set<String> {
-        try await container.performBackgroundTask { context in
+        if let loadError { throw loadError }
+        return try await container.performBackgroundTask { context in
             let request = NSFetchRequest<NSDictionary>(entityName: "TrackEntity")
             request.resultType = .dictionaryResultType
             request.propertiesToFetch = [attribute]

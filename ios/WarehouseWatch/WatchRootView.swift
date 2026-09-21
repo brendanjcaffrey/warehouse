@@ -4,19 +4,16 @@ struct WatchRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SyncStore.self) private var sync
-    @Environment(SongsStore.self) private var songs
-    @Environment(PlaylistsStore.self) private var playlists
+    @Environment(WatchLibraryStore.self) private var library
     @Environment(WatchRemoteStore.self) private var remote
 
-    /// only the library gates the menu now; tracks arrive on demand, so
-    /// there's nothing outstanding to wait on
-    private var isLibraryReady: Bool {
-        settings.isConfigured && !songs.songs.isEmpty && sync.completedSyncs > 0
+    private var startup: WatchLibraryStore.State {
+        library.presentation(isConfigured: settings.isConfigured)
     }
 
     var body: some View {
         Group {
-            if isLibraryReady {
+            if startup == .ready {
                 WatchMenuView()
             } else if remote.isAvailable {
                 // nothing of our own to browse yet, but the phone is playing:
@@ -25,19 +22,19 @@ struct WatchRootView: View {
                 NavigationStack {
                     WatchRemoteNowPlayingView()
                 }
-            } else if !settings.isConfigured {
-                WatchWaitingView()
             } else {
-                WatchSyncProgressView()
+                startupContent
             }
         }
         .task(id: settings.selectionChanges) {
+            // make the saved library available before starting any network work
+            await library.load()
             // first sync, plus a re-sync whenever the phone changes the selection
+            guard settings.isConfigured else { return }
             await sync.sync(token: settings.token, baseURL: settings.baseURL())
         }
-        .task(id: sync.completedSyncs) {
-            await songs.load()
-            await playlists.load()
+        .onChange(of: sync.completedSyncs) {
+            Task { await library.load() }
         }
         .onChange(of: scenePhase) {
             // a sync that died offline is otherwise only retried when asked.
@@ -48,5 +45,45 @@ struct WatchRootView: View {
                 await sync.sync(token: settings.token, baseURL: settings.baseURL())
             }
         }
+    }
+
+    @ViewBuilder
+    private var startupContent: some View {
+        switch startup {
+        case .setup:
+            WatchWaitingView()
+        case .loading:
+            ProgressView("Loading saved library…")
+        case .needsSync:
+            WatchSyncProgressView()
+        case .empty:
+            ContentUnavailableView {
+                Label("No Songs", systemImage: "music.note")
+            } description: {
+                Text("Your selected playlists contain no songs.")
+            } actions: {
+                refreshButton
+            }
+        case .failed(let message):
+            ContentUnavailableView {
+                Label("Can't Load Library", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(message)
+            } actions: {
+                refreshButton
+            }
+        case .ready:
+            WatchMenuView()
+        }
+    }
+
+    private var refreshButton: some View {
+        Button("Try Again") {
+            Task {
+                await library.load()
+                await sync.sync(token: settings.token, baseURL: settings.baseURL())
+            }
+        }
+        .disabled(sync.isBusy)
     }
 }
