@@ -104,6 +104,7 @@ final class PlayerStore {
     /// called with the track id when a track plays through to its finish; the
     /// phone records a play to push back into itunes, the watch leaves it nil
     private let onTrackPlayed: (@MainActor (String) -> Void)?
+    private let prefetchDownloader: SingleFileDownloading
     private let downloader: FileDownloader
     /// a queue player so the track after this one can be handed over before it
     /// is needed. an enqueued item is loaded by the media daemon rather than
@@ -246,6 +247,7 @@ final class PlayerStore {
         fileStore: FileStore,
         client: LibraryClient = LibraryClient(),
         fileCache: FileCache? = nil,
+        prefetchDownloader: SingleFileDownloading? = nil,
         fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
         onTrackPlayed: (@MainActor (String) -> Void)? = nil,
         streams: Bool = false,
@@ -262,6 +264,7 @@ final class PlayerStore {
         self.prefetchRetryDelay = prefetchRetryDelay
         self.activateSessionForTests = activateSessionForTests
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
+        self.prefetchDownloader = prefetchDownloader ?? self.downloader
         // the point of the queue: at the end of a track the daemon plays
         // straight on into the item behind it instead of waiting for us
         player.actionAtItemEnd = .advance
@@ -621,7 +624,7 @@ final class PlayerStore {
 
         let generation = startGeneration
         prefetch = (filename, Task { @MainActor in
-            let ok = await downloader.download(.music, filename: filename, token: token, baseURL: baseURL)
+            let ok = await prefetchDownloader.download(.music, filename: filename, token: token, baseURL: baseURL)
             guard !Task.isCancelled else { return ok }
             guard ok else {
                 // a finished task hands the same answer to everything that

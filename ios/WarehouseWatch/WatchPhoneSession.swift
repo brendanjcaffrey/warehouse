@@ -7,6 +7,7 @@ import WatchConnectivity
 /// going out
 @MainActor
 final class WatchPhoneSession: NSObject {
+    weak var files: WatchFileDownloader?
     private let settings: WatchSettingsStore
 
     /// fired once the session activates so held plays can be drained
@@ -68,7 +69,29 @@ final class WatchPhoneSession: NSObject {
             })
     }
 
+    func requestFile(_ transfer: WatchFileTransfer, token: String, reply: @escaping @MainActor (Bool) -> Void) {
+        guard canSend, isReachable else { reply(false); return }
+        var message = transfer.encode()
+        message["token"] = token
+        WCSession.default.sendMessage(message, replyHandler: { response in
+            let accepted = response["accepted"] as? Bool ?? false
+            Task { @MainActor in reply(accepted) }
+        }, errorHandler: { _ in
+            Task { @MainActor in reply(false) }
+        })
+    }
+
+    func cancelFile(_ id: UUID) {
+        guard canSend, isReachable else { return }
+        WCSession.default.sendMessage(
+            ["kind": "cancelCachedFile", "id": id.uuidString], replyHandler: nil, errorHandler: { _ in })
+    }
+
     private func apply(message: [String: Any]) {
+        if message["failed"] as? Bool == true, let transfer = WatchFileTransfer(dictionary: message) {
+            files?.failed(transfer)
+            return
+        }
         guard let message = WatchRemoteMessage(dictionary: message) else { return }
         remote?.apply(message)
     }
@@ -101,6 +124,17 @@ extension WatchPhoneSession: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in
             apply(message: message)
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        guard let (transfer, temporary) = WatchFileTransfer.stage(file.fileURL, metadata: file.metadata) else { return }
+        Task { @MainActor in
+            guard let files else {
+                try? FileManager.default.removeItem(at: temporary)
+                return
+            }
+            files.receive(transfer, from: temporary)
         }
     }
 

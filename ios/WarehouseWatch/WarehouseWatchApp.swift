@@ -31,7 +31,13 @@ struct WarehouseWatchApp: App {
         let fileCache = FileCache(fileStore: fileStore)
         // music & artwork aren't synced, so the player & the rows pull them as
         // they need them
-        let artwork = WatchArtworkFetcher(fileCache: fileCache, credentials: credentials)
+        let files = WatchFileDownloader(
+            fileStore: fileStore, fallback: FileDownloader(client: LibraryClient(), fileStore: fileStore),
+            transport: .init(
+                isReachable: { phone.canSend && phone.isReachable }, currentToken: { settings.token },
+                request: { phone.requestFile($0, token: $1, reply: $2) }, cancel: { phone.cancelFile($0) }))
+        phone.files = files
+        let artwork = WatchArtworkFetcher(fileCache: fileCache, downloader: files, credentials: credentials)
         // tracks arrive & are evicted as the user plays, so the download marks
         // on the rows follow the cache rather than the last sync
         fileCache.onMusicChanged = { songs.refreshDownloads() }
@@ -59,6 +65,7 @@ struct WarehouseWatchApp: App {
         _player = State(initialValue: PlayerStore(
             fileStore: fileStore,
             fileCache: fileCache,
+            prefetchDownloader: files,
             fetchArtwork: { await artwork.fetch($0, priority: .nowPlaying) },
             onTrackPlayed: { plays.add(trackId: $0) },
             // a track that isn't cached is played straight off the server.

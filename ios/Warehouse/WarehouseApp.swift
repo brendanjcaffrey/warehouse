@@ -1,6 +1,7 @@
 import AppIntents
 import CoreSpotlight
 import SwiftUI
+import WatchConnectivity
 
 @main
 struct WarehouseApp: App {
@@ -46,7 +47,17 @@ struct WarehouseApp: App {
         _router = State(initialValue: routerStore)
 
         let watchSettings = WatchSyncSettingsStore()
+        let phoneFiles = PhoneFileProvider(
+            fileStore: fileStore, currentToken: { authStore.token },
+            outstanding: {
+                WCSession.default.outstandingFileTransfers.compactMap {
+                    $0.file.metadata.flatMap(WatchFileTransfer.init(dictionary:))
+                }
+            }, enqueue: { transfer, url in
+                WCSession.default.transferFile(url, metadata: transfer.encode())
+            })
         let watchSession = PhoneWatchSession(
+            files: phoneFiles,
             payload: {
                 WatchPayload(
                     serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),

@@ -8,17 +8,20 @@ import WatchConnectivity
 /// phone is playing so the watch can drive it as a remote
 @MainActor
 final class PhoneWatchSession: NSObject {
+    private let files: PhoneFileProvider?
     private let payload: @MainActor () -> WatchPayload
     private let onPlay: @MainActor (String) -> Void
     private let nowPlaying: @MainActor () -> RemotePlaybackPayload?
     private let onCommand: @MainActor (RemoteCommand) -> Void
 
     init(
+        files: PhoneFileProvider? = nil,
         payload: @escaping @MainActor () -> WatchPayload,
         onPlay: @escaping @MainActor (String) -> Void,
         nowPlaying: @escaping @MainActor () -> RemotePlaybackPayload? = { nil },
         onCommand: @escaping @MainActor (RemoteCommand) -> Void = { _ in }
     ) {
+        self.files = files
         self.payload = payload
         self.onPlay = onPlay
         self.nowPlaying = nowPlaying
@@ -91,6 +94,17 @@ extension PhoneWatchSession: WCSessionDelegate {
         didReceiveMessage message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void
     ) {
+        receive(message: message, replyHandler: replyHandler)
+    }
+
+    nonisolated func receive(message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        if let transfer = WatchFileTransfer(dictionary: message) {
+            let token = message["token"] as? String ?? ""
+            Task { @MainActor in
+                replyHandler(["accepted": files?.request(transfer, token: token) ?? false])
+            }
+            return
+        }
         receive(message: message)
         Task { @MainActor in
             replyHandler(WatchRemoteMessage.nowPlaying(nowPlaying()).encode())
@@ -99,6 +113,16 @@ extension PhoneWatchSession: WCSessionDelegate {
 
     /// split from the delegate method for the same reason as `receive(userInfo:)`
     nonisolated func receive(message: [String: Any]) {
+        if message["kind"] as? String == "cancelCachedFile",
+           let rawID = message["id"] as? String, let id = UUID(uuidString: rawID) {
+            for transfer in WCSession.default.outstandingFileTransfers {
+                if let metadata = transfer.file.metadata,
+                   WatchFileTransfer(dictionary: metadata)?.id == id {
+                    transfer.cancel()
+                }
+            }
+            return
+        }
         guard case .command(let command)? = WatchRemoteMessage(dictionary: message) else { return }
         Task { @MainActor in
             // a state request only wants the answer below
@@ -109,6 +133,16 @@ extension PhoneWatchSession: WCSessionDelegate {
             // actually did
             pushNowPlaying()
         }
+    }
+
+    nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        guard error != nil, session.isReachable,
+              let metadata = fileTransfer.file.metadata,
+              let transfer = WatchFileTransfer(dictionary: metadata)
+        else { return }
+        var message = transfer.encode()
+        message["failed"] = true
+        session.sendMessage(message, replyHandler: nil, errorHandler: { _ in })
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {

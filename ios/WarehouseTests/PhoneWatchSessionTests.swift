@@ -88,4 +88,34 @@ struct PhoneWatchSessionTests {
         while commands.commands.isEmpty { await Task.yield() }
         #expect(commands.commands == [.pause])
     }
+    @Test("file requests get a cache answer instead of remote playback state")
+    func fileRequests() async throws {
+        let store = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        try store.write(.music, "song.m4a", data: Data("music".utf8))
+        var queued = [WatchFileTransfer]()
+        let files = PhoneFileProvider(
+            fileStore: store, currentToken: { "token" }, outstanding: { queued },
+            enqueue: { transfer, _ in queued.append(transfer) })
+        let session = PhoneWatchSession(
+            files: files, payload: { WatchPayload(serverURL: "", token: "token", playlistIds: []) }, onPlay: { _ in })
+        let transfer = WatchFileTransfer(type: .music, filename: "song.m4a")
+        var message = transfer.encode()
+        message["token"] = "token"
+        let accepted: Bool = await withCheckedContinuation { continuation in
+            session.receive(message: message) { reply in
+                continuation.resume(returning: reply["accepted"] as? Bool ?? false)
+            }
+        }
+        #expect(accepted)
+        #expect(queued == [transfer])
+        message["token"] = "stale"
+        let rejected: Bool = await withCheckedContinuation { continuation in
+            session.receive(message: message) { reply in
+                continuation.resume(returning: reply["accepted"] as? Bool ?? true)
+            }
+        }
+        #expect(!rejected)
+    }
+
 }

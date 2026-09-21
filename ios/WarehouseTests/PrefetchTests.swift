@@ -10,6 +10,48 @@ import Testing
 /// cases are serialized to bound concurrent real players, as in the shared suite
 @Suite("PlayerStore prefetch", .serialized)
 struct PrefetchTests {
+    @MainActor
+    final class PhoneFiles: SingleFileDownloading {
+        let store: FileStore
+        var filenames = [String]()
+
+        init(store: FileStore) { self.store = store }
+
+        @MainActor
+        func download(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async -> Bool {
+            filenames.append(filename)
+            try? store.write(type, filename, data: PlayerStoreTests.musicBytes)
+            return store.exists(type, filename)
+        }
+    }
+
+    @Test("the injected phone route fills prefetch without replacing cold playback streaming")
+    @MainActor
+    func phonePrefetchKeepsStreaming() async throws {
+        let store = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        let cache = FileCache(fileStore: store)
+        let files = PhoneFiles(store: store)
+        let player = PlayerStore(
+            fileStore: store, fileCache: cache, prefetchDownloader: files,
+            streams: true, activateSessionForTests: { true })
+        let baseURL = PlayerStoreTests.silentBaseURL()
+        player.play([PlayerStoreTests.song(id: "1")], token: "tok", baseURL: baseURL)
+        try await PlayerStoreTests.waitFor { player.hasLoadedTrack }
+        #expect(player.isStreamingCurrentTrack)
+        #expect(player.currentItemURL == baseURL.appending(path: "music/1.wav"))
+        #expect(files.filenames.isEmpty)
+        player.pause()
+
+        try store.write(.music, "1.wav", data: PlayerStoreTests.musicBytes)
+        player.play(PlayerStoreTests.songs(2), token: "tok", baseURL: baseURL)
+        try await PlayerStoreTests.waitFor { store.exists(.music, "2.wav") }
+        #expect(files.filenames == ["2.wav"])
+        #expect(player.currentItemURL == store.fileURL(.music, "1.wav"))
+        #expect(!player.isStreamingCurrentTrack)
+        player.pause()
+    }
+
     /// how many music files the given number of tracks takes up, for a cache
     /// budget that fits an exact number of them
     static func trackBudget(_ tracks: Int) -> FileCacheBudget {
