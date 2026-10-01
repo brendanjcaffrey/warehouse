@@ -3,61 +3,8 @@ import Foundation
 import MediaPlayer
 import Observation
 import OSLog
-import UIKit
 
 private let log = Logger(subsystem: "com.jcaffrey.warehouse", category: "player")
-
-/// what happens when a track finishes: stop at the end of the queue,
-/// repeat the whole queue, or repeat the current track
-enum RepeatMode: String, Codable, Sendable {
-    case off
-    case all
-    case one
-
-    /// the state after this one when the repeat button is tapped
-    var next: RepeatMode {
-        switch self {
-        case .off: .all
-        case .all: .one
-        case .one: .off
-        }
-    }
-
-    /// maps from the system now playing controls' repeat setting
-    init(_ repeatType: MPRepeatType) {
-        switch repeatType {
-        case .one: self = .one
-        case .all: self = .all
-        default: self = .off
-        }
-    }
-
-    /// maps back into the system now playing controls' repeat setting
-    var repeatType: MPRepeatType {
-        switch self {
-        case .off: .off
-        case .all: .all
-        case .one: .one
-        }
-    }
-}
-
-/// what the player is doing with the current track beyond playing or paused.
-/// the watch fetches tracks on demand, so a tap can mean "downloading" or
-/// "not here and no way to get it" rather than an instant start
-enum PlaybackStatus: Equatable, Sendable {
-    case ready
-    /// the file isn't on disk yet & is being fetched before playback starts
-    case fetching
-    /// the remote item is waiting for enough audio to play
-    case buffering
-    /// not on disk & the server can't be reached, so there's nothing to play
-    case unavailable
-    /// watchos only: the audio session wouldn't activate. long form audio has
-    /// to go to a bluetooth output there, so this is what no headphones looks
-    /// like from here
-    case needsOutput
-}
 
 @MainActor
 @Observable
@@ -109,14 +56,14 @@ final class PlayerStore {
     /// else that tells a step onto the tail apart from a restart
     private(set) var advancedOntoEnqueuedItem = false
 
-    private let fileStore: FileStore
+    let fileStore: FileStore
     /// the watch bounds what it keeps & passes one in; the phone mirrors the
     /// whole library, so there is nothing to evict and it leaves this nil
     private let fileCache: FileCache?
     /// pulls an artwork file that isn't on disk, for the now playing info. the
     /// downloaded-only playback never calls this; the phone mirrors the
     /// library and leaves it nil
-    private let fetchArtwork: (@MainActor (String) async -> Bool)?
+    let fetchArtwork: (@MainActor (String) async -> Bool)?
     /// called with the track id when a track plays through to its finish; the
     /// phone records a play to push back into itunes, the watch leaves it nil
     private let onTrackPlayed: (@MainActor (String) -> Void)?
@@ -171,14 +118,12 @@ final class PlayerStore {
     /// notices the daemon stepping onto the enqueued item, which is the only
     /// sign that a track started when we weren't the ones to start it
     private var currentItemObserver: NSKeyValueObservation?
-    private var interruptionObserver: NSObjectProtocol?
-    private var routeChangeObserver: NSObjectProtocol?
-    /// the audio session belongs to the process, not a player instance
-    private static var audioSessionConfigured = false
-    private var remoteCommandsConfigured = false
+    var interruptionObserver: NSObjectProtocol?
+    var routeChangeObserver: NSObjectProtocol?
+    var remoteCommandsConfigured = false
     /// on watchos the session activates asynchronously (it can prompt for a
     /// bluetooth output) & needs re-activating after the route goes away
-    private var sessionActivated = false
+    var sessionActivated = false
     /// set when the user scrubs past the stop time, so the track plays
     /// through to the end of the file instead of stopping right away
     private var ignoresFinish = false
@@ -189,14 +134,14 @@ final class PlayerStore {
     /// started. the track before it may still be playing on underneath while
     /// its file downloads, dragging the clock with it, so the position can't
     /// just be read back off currentTime when the item finally lands
-    private var pendingStartTime: TimeInterval?
+    private(set) var pendingStartTime: TimeInterval?
     /// a playhead a restored queue hasn't started at yet. consumed by the
     /// start that picks the track up, so a position saved before the app died
     /// can't follow the queue on to some later track
     private var resumeTime: TimeInterval?
     /// bumped every time a new track starts, so a download that finishes after
     /// the user has moved on doesn't hijack playback
-    private var startGeneration = 0
+    private(set) var startGeneration = 0
     /// the one fetch running ahead of the current track, kept by name so
     /// starting that very track can join it instead of racing a second
     /// download of the same file. the window decides what goes in here next;
@@ -224,7 +169,7 @@ final class PlayerStore {
     private var prefetchRetried = false
     /// the now playing artwork being fetched for the current track, cancelled
     /// when another track starts
-    private var artworkFetch: Task<Void, Never>?
+    var artworkFetch: Task<Void, Never>?
     /// how long a failed fetch waits before its one retry
     private let retryDelay: TimeInterval
     /// how far into the track a missed prefetch waits before trying again;
@@ -242,7 +187,7 @@ final class PlayerStore {
     private static let failureLimit = 3
     /// stands in for the platform's audio session activation, so tests can
     /// reproduce the watch refusing to activate without a bluetooth output
-    private let activateSessionForTests: (@MainActor () async -> Bool)?
+    let activateSessionForTests: (@MainActor () async -> Bool)?
     /// whether a track that isn't on disk is handed to the player as a server
     /// url rather than downloaded first. downloaded-only playback prevents
     /// both paths regardless of this setting
@@ -1113,25 +1058,6 @@ final class PlayerStore {
         }
     }
 
-    /// the metadata shown on the lock screen & in control center;
-    /// artwork is added separately since it needs the file store
-    nonisolated static func baseNowPlayingInfo(for song: Song, duration: TimeInterval) -> [String: Any] {
-        var info: [String: Any] = [
-            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
-            MPMediaItemPropertyTitle: song.name,
-            MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0,
-            MPNowPlayingInfoPropertyPlaybackRate: 1.0
-        ]
-        if !song.artistName.isEmpty {
-            info[MPMediaItemPropertyArtist] = song.artistName
-        }
-        if !song.albumName.isEmpty {
-            info[MPMediaItemPropertyAlbumTitle] = song.albumName
-        }
-        return info
-    }
-
     /// where playback will stop: the track's stop time normally, or the end
     /// of the file once the user scrubs past the stop time
     private var effectiveEnd: TimeInterval {
@@ -1145,194 +1071,6 @@ final class PlayerStore {
         } else {
             item.forwardPlaybackEndTime = .invalid
         }
-    }
-
-    private func configureAudioSessionIfNeeded() {
-        guard !Self.audioSessionConfigured else { return }
-        Self.audioSessionConfigured = true
-        let session = AVAudioSession.sharedInstance()
-        // long form audio is how watchos routes music to bluetooth headphones,
-        // and on ios it puts us in the same route group as the music app: with
-        // the default policy an airplay output picked outside the app still
-        // gets our audio, but our session keeps reporting the built in speaker,
-        // so the route picker in now playing shows the wrong output
-        try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
-    }
-
-    /// makes the audio session ready for playback; on watchos activation is
-    /// async & prompts the user to pick a bluetooth output, which can be
-    /// declined, so playback only starts once it succeeds
-    private func activateSession() async -> Bool {
-        if let activateSessionForTests { return await activateSessionForTests() }
-        #if os(watchOS)
-        if sessionActivated { return true }
-        sessionActivated = (try? await AVAudioSession.sharedInstance().activate(options: [])) ?? false
-        return sessionActivated
-        #else
-        // failures here have never blocked playback on ios, keep it that way
-        try? AVAudioSession.sharedInstance().setActive(true)
-        return true
-        #endif
-    }
-
-    /// listens for interruptions (calls, siri, other apps) and route changes
-    /// (unplugging headphones) so playback state stays in sync with the system
-    private func observeAudioSession() {
-        let center = NotificationCenter.default
-        let session = AVAudioSession.sharedInstance()
-        interruptionObserver = center.addObserver(
-            forName: AVAudioSession.interruptionNotification, object: session, queue: .main
-        ) { [weak self] note in
-            MainActor.assumeIsolated { self?.handleInterruption(note) }
-        }
-        routeChangeObserver = center.addObserver(
-            forName: AVAudioSession.routeChangeNotification, object: session, queue: .main
-        ) { [weak self] note in
-            MainActor.assumeIsolated { self?.handleRouteChange(note) }
-        }
-    }
-
-    /// the system paused us for a call or siri; reflect that, then resume when
-    /// it ends if the interruption says we should
-    func handleInterruption(_ note: Notification) {
-        guard let info = note.userInfo,
-              let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-        switch type {
-        case .began:
-            // a track that hasn't started yet has no audio to interrupt, and
-            // watchos raises one of these as the audio session activates for a
-            // bluetooth output; taking the pending start down with it is what
-            // left a finished download sitting at a play button
-            guard status != .fetching else { break }
-            guard status != .buffering || pendingStartTime == nil else { break }
-            pause()
-        case .ended:
-            let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
-                .map(AVAudioSession.InterruptionOptions.init(rawValue:))
-            if options?.contains(.shouldResume) == true {
-                resume()
-            }
-        @unknown default:
-            break
-        }
-    }
-
-    /// pause when the headphones are unplugged, matching the system music app
-    func handleRouteChange(_ note: Notification) {
-        guard let info = note.userInfo,
-              let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
-        if reason == .oldDeviceUnavailable {
-            #if os(watchOS)
-            // the output is gone, so the next play must re-activate & re-route
-            sessionActivated = false
-            #endif
-            pause()
-        }
-    }
-
-    private func configureRemoteCommandsIfNeeded() {
-        guard !remoteCommandsConfigured else { return }
-        remoteCommandsConfigured = true
-
-        let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.resume() }
-            return .success
-        }
-        center.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.pause() }
-            return .success
-        }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.togglePlayPause() }
-            return .success
-        }
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skipToPrevious() }
-            return .success
-        }
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skipToNext() }
-            return .success
-        }
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            let position = event.positionTime
-            Task { @MainActor in self?.seek(to: position) }
-            return .success
-        }
-        center.changeShuffleModeCommand.addTarget { [weak self] event in
-            guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
-            let shuffled = event.shuffleType != .off
-            Task { @MainActor in self?.setShuffled(shuffled) }
-            return .success
-        }
-        center.changeRepeatModeCommand.addTarget { [weak self] event in
-            guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
-            let mode = RepeatMode(event.repeatType)
-            Task { @MainActor in self?.setRepeatMode(mode) }
-            return .success
-        }
-        updateRemoteCommandModes()
-    }
-
-    /// mirrors shuffle & repeat into the system now playing controls; watchos
-    /// takes the commands but has no properties to reflect their state
-    private func updateRemoteCommandModes() {
-        #if !os(watchOS)
-        let center = MPRemoteCommandCenter.shared()
-        center.changeShuffleModeCommand.currentShuffleType = queue.isShuffled ? .items : .off
-        center.changeRepeatModeCommand.currentRepeatType = repeatMode.repeatType
-        #endif
-    }
-
-    private func setNowPlayingInfo(for song: Song) {
-        var info = Self.baseNowPlayingInfo(for: song, duration: window.duration)
-        artworkFetch?.cancel()
-        artworkFetch = nil
-        if let filename = song.artworkFilename {
-            if fileStore.exists(.artwork, filename) {
-                info[MPMediaItemPropertyArtwork] = artwork(filename)
-            } else if !downloadedOnly, let fetchArtwork {
-                fetchNowPlayingArtwork(filename, using: fetchArtwork)
-            }
-        }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-    }
-
-    private func artwork(_ filename: String) -> MPMediaItemArtwork {
-        let url = fileStore.fileURL(.artwork, filename)
-        let size = CGSize(width: 600, height: 600)
-        return MPMediaItemArtwork(boundsSize: size) { _ in
-            UIImage(contentsOfFile: url.path) ?? UIImage()
-        }
-    }
-
-    /// the info above went up without artwork because the file isn't here yet,
-    /// so fetch it & fold it in, as long as the same track is still playing
-    private func fetchNowPlayingArtwork(
-        _ filename: String, using fetch: @escaping @MainActor (String) async -> Bool
-    ) {
-        let generation = startGeneration
-        artworkFetch = Task { @MainActor in
-            let downloaded = await fetch(filename)
-            guard downloaded, !Task.isCancelled, generation == startGeneration,
-                  song?.artworkFilename == filename,
-                  var info = MPNowPlayingInfoCenter.default().nowPlayingInfo
-            else { return }
-            info[MPMediaItemPropertyArtwork] = artwork(filename)
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        }
-    }
-
-    private func updateNowPlayingPlaybackState() {
-        let center = MPNowPlayingInfoCenter.default()
-        guard var info = center.nowPlayingInfo else { return }
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isActuallyPlaying ? 1.0 : 0.0
-        center.nowPlayingInfo = info
     }
 
     private func observeTimeIfNeeded() {
