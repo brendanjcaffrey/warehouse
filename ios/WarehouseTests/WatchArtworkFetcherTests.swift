@@ -340,4 +340,21 @@ struct WatchArtworkFetcherTests {
         #expect(await fetcher.artworkURL(nil) == nil)
         #expect(Self.names(host).isEmpty)
     }
+
+    @Test("local-only now-playing artwork reads saved files without asking either transport")
+    func localNowPlayingArtwork() async throws {
+        let store = Self.makeStore()
+        try store.write(.artwork, "saved.jpg", data: Data([1, 2, 3]))
+        let downloader = GatedDownloader()
+        defer { downloader.finishEverything() }
+        let fetcher = WatchArtworkFetcher(
+            fileCache: Self.makeCache(store), downloader: downloader,
+            credentials: { ("token", URL(string: "https://artwork.test")!) })
+        let missing = await fetcher.artworkURL("missing.jpg", priority: .nowPlaying, allowNetwork: false)
+        let saved = await fetcher.artworkURL("saved.jpg", priority: .nowPlaying, allowNetwork: false)
+        #expect(missing == nil)
+        #expect(saved == store.fileURL(.artwork, "saved.jpg"))
+        #expect(downloader.started.isEmpty)
+    }
+
 }

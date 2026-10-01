@@ -30,8 +30,7 @@ struct WarehouseWatchApp: App {
         // selected offline music is retained; the rest is a bounded cache.
         // every eviction sees both offline selections and the player's in-use files.
         let fileCache = FileCache(fileStore: fileStore)
-        // music & artwork aren't synced, so the player & the rows pull them as
-        // they need them
+        // preparation and browsing keep their legacy transport during migration.
         let files = WatchFileDownloader(
             fileStore: fileStore,
             transport: .init(
@@ -74,14 +73,8 @@ struct WarehouseWatchApp: App {
         let player = PlayerStore(
             fileStore: fileStore,
             fileCache: fileCache,
-            prefetchDownloader: files,
-            fetchArtwork: { await artwork.fetch($0, priority: .nowPlaying) },
             onTrackPlayed: { plays.add(trackId: $0) },
-            // a track that isn't cached is played straight off the server.
-            // the download it replaces ran in this process & died whenever
-            // watchos stopped scheduling us, which is every wrist drop
-            streams: true)
-        player.onPrefetchDemand = { offline.setPlaybackDemand($0) }
+            musicPolicy: .downloadedOnly)
         fileCache.onMusicChanged = { [weak offline, weak player] in
             songs.refreshDownloads()
             offline?.refreshFiles()
@@ -116,24 +109,8 @@ struct WarehouseWatchApp: App {
                 .environment(\.diagnosticSender, phone)
                 .onChange(of: settings.configurationChanges, initial: true) {
                     offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
-                    player.setCredentials(token: settings.token, baseURL: settings.baseURL())
-                    if !settings.isConfigured {
-                        player.pause()
-                    }
-                }
-                .onChange(of: settings.deepPrefetchDepth, initial: true) {
-                    // how far the prefetch reaches is the phone's call: it is
-                    // this watch's disk & this watch's battery being spent
-                    player.deepPrefetchDepth = settings.deepPrefetchDepth
-                    player.prefetchNext()
                 }
                 .onChange(of: scenePhase, initial: true) {
-                    // prefetch only runs frontmost. out of sight the app is
-                    // most likely on a wrist mid-workout, where a download
-                    // would be competing with the stream that is actually
-                    // making sound; coming back is the chance to fill the
-                    // cache & cover the next dead zone
-                    player.setForeground(scenePhase == .active)
                     offline.setForeground(scenePhase == .active)
                     // pushes only reach a watch that was listening at the
                     // time, so coming to the front is when to ask

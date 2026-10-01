@@ -22,7 +22,7 @@ struct WatchNowPlayingView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 WatchArtworkThumbnail(
-                    filename: song.artworkFilename, priority: .nowPlaying, maxPixelSize: 132, allowNetwork: !player.downloadedOnly)
+                    filename: song.artworkFilename, priority: .nowPlaying, maxPixelSize: 132, allowNetwork: false)
                     .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.name)
@@ -34,9 +34,7 @@ struct WatchNowPlayingView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    // tracks arrive on demand & the audio session needs a
-                    // bluetooth output, so say which one is missing rather
-                    // than looking like a tap that did nothing
+                    // the audio session still needs a bluetooth output.
                     if let note = statusNote {
                         Text(note)
                             .font(.caption2)

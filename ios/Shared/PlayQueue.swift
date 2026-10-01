@@ -200,6 +200,17 @@ struct PlayQueue: Sendable {
             isShuffled: isShuffled)
     }
 
+    /// keeps queue identities and shuffle context while dropping unavailable songs.
+    /// if the current track is gone, prefer the next retained track, then wrap.
+    mutating func retainSongs(where keep: (Song) -> Bool) {
+        let targetID = entries.dropFirst(index).first { keep($0.song) }?.id
+            ?? entries.first { keep($0.song) }?.id
+        entries = entries.filter { keep($0.song) }
+        context = context.filter { keep($0.song) }
+        history = history.filter { keep($0.song) }
+        index = targetID.flatMap { id in entries.firstIndex { $0.id == id } } ?? 0
+    }
+
     /// rebuilds a stored queue against the library as it stands now. tracks
     /// that have since left it are dropped, & a queue whose current track is
     /// one of them isn't worth putting back at all

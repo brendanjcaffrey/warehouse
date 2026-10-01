@@ -26,8 +26,9 @@ final class WatchLibraryStore {
     }
 
     func presentation(isConfigured: Bool) -> State {
-        // explicit sign-out hides the saved library; a network failure does not
-        isConfigured ? state : .setup
+        // saved content does not need server credentials to browse or play.
+        if state == .ready || state == .empty { return state }
+        return isConfigured ? state : .setup
     }
 
     func load() async {

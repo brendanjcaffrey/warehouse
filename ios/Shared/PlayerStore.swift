@@ -62,6 +62,19 @@ enum PlaybackStatus: Equatable, Sendable {
 @MainActor
 @Observable
 final class PlayerStore {
+    enum MusicPolicy {
+        case onDemand
+        case downloadedOnly
+
+        static var platformDefault: Self {
+            #if os(watchOS)
+            .downloadedOnly
+            #else
+            .onDemand
+            #endif
+        }
+    }
+
     private(set) var queue = PlayQueue(songs: [])
     /// requested play intent; buffering does not turn it into a pause.
     private(set) var isPlaying = false
@@ -101,8 +114,8 @@ final class PlayerStore {
     /// whole library, so there is nothing to evict and it leaves this nil
     private let fileCache: FileCache?
     /// pulls an artwork file that isn't on disk, for the now playing info. the
-    /// watch fetches artwork on demand & wires this to its fetcher; the phone
-    /// mirrors the library and leaves it nil
+    /// downloaded-only playback never calls this; the phone mirrors the
+    /// library and leaves it nil
     private let fetchArtwork: (@MainActor (String) async -> Bool)?
     /// called with the track id when a track plays through to its finish; the
     /// phone records a play to push back into itunes, the watch leaves it nil
@@ -231,11 +244,11 @@ final class PlayerStore {
     /// reproduce the watch refusing to activate without a bluetooth output
     private let activateSessionForTests: (@MainActor () async -> Bool)?
     /// whether a track that isn't on disk is handed to the player as a server
-    /// url rather than downloaded first. the watch turns this on: its fetches
-    /// happen mid-workout with the app backgrounded, where a download stalls
-    /// and a stream doesn't. the phone mirrors the library & leaves it off
+    /// url rather than downloaded first. downloaded-only playback prevents
+    /// both paths regardless of this setting
     private let streams: Bool
-    private(set) var downloadedOnly = false
+    private let musicPolicy: MusicPolicy
+    private(set) var downloadedOnly: Bool
     var onPrefetchDemand: (@MainActor ([String]) -> Void)?
     /// how far ahead of the playhead a stream is asked to buffer. the default
     /// is 0, meaning the media daemon picks, and it picks for the general case
@@ -286,6 +299,7 @@ final class PlayerStore {
         fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
         onTrackPlayed: (@MainActor (String) -> Void)? = nil,
         streams: Bool = false,
+        musicPolicy: MusicPolicy = .platformDefault,
         retryDelay: TimeInterval = 1,
         prefetchRetryDelay: TimeInterval = 30,
         activateSessionForTests: (@MainActor () async -> Bool)? = nil,
@@ -297,6 +311,8 @@ final class PlayerStore {
         self.fetchArtwork = fetchArtwork
         self.onTrackPlayed = onTrackPlayed
         self.streams = streams
+        self.musicPolicy = musicPolicy
+        self.downloadedOnly = musicPolicy == .downloadedOnly
         self.retryDelay = retryDelay
         self.prefetchRetryDelay = prefetchRetryDelay
         self.activateSessionForTests = activateSessionForTests
@@ -330,14 +346,19 @@ final class PlayerStore {
     /// one they want, not the one from last time
     func restore(_ snapshot: PlaybackSnapshot, songs: [String: Song], token: String?, baseURL: URL?) {
         guard queue.current == nil,
-              let restored = PlayQueue(snapshot: snapshot.queue, songs: songs),
-              let song = restored.current?.song else { return }
+              var restored = PlayQueue(snapshot: snapshot.queue, songs: songs) else { return }
+        let previousID = restored.current?.id
+        if downloadedOnly {
+            restored.retainSongs { fileStore.exists(.music, $0.musicFilename) }
+        }
+        guard let song = restored.current?.song else { return }
         queue = restored
         repeatMode = snapshot.repeatMode
         self.token = token
         self.baseURL = baseURL
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
-        currentTime = min(max(snapshot.currentTime, window.start), window.duration)
+        currentTime = restored.current?.id == previousID
+            ? min(max(snapshot.currentTime, window.start), window.duration) : window.start
         resumeTime = currentTime
         status = .ready
         isPlaying = false
@@ -376,6 +397,7 @@ final class PlayerStore {
         _ songs: [Song], startingAt index: Int, token: String?, baseURL: URL?,
         downloadedOnly: Bool, preservingModes: Bool
     ) {
+        let downloadedOnly = musicPolicy == .downloadedOnly || downloadedOnly
         let playable = downloadedOnly ? songs.filter { fileStore.exists(.music, $0.musicFilename) } : songs
         guard !playable.isEmpty else { return }
         let target = songs.dropFirst(max(0, index)).first { !downloadedOnly || fileStore.exists(.music, $0.musicFilename) }
@@ -392,6 +414,7 @@ final class PlayerStore {
     /// starts playing songs in a random order; replaces the current queue and
     /// repeats it once it runs out
     func playShuffled(_ songs: [Song], token: String?, baseURL: URL?, downloadedOnly: Bool = false) {
+        let downloadedOnly = musicPolicy == .downloadedOnly || downloadedOnly
         let playable = downloadedOnly ? songs.filter { fileStore.exists(.music, $0.musicFilename) } : songs
         guard !playable.isEmpty else { return }
         self.downloadedOnly = downloadedOnly
@@ -420,6 +443,14 @@ final class PlayerStore {
     /// plays the queue's current track, downloading it from the server first
     /// when it isn't already on disk
     private func startCurrent() {
+        if downloadedOnly, let song, !fileStore.exists(.music, song.musicFilename) {
+            queue.retainSongs { fileStore.exists(.music, $0.musicFilename) }
+            resumeTime = nil
+            guard queue.current != nil else {
+                markNotLoaded(.unavailable)
+                return
+            }
+        }
         guard let song else { return }
         diagnosticID = UUID()
         diagnosticStart = Date()
@@ -835,6 +866,11 @@ final class PlayerStore {
     }
 
     func downloadsChanged() {
+        if downloadedOnly {
+            // leave the current track alone while its loaded audio may still play.
+            let currentID = song?.id
+            queue.retainSongs { $0.id == currentID || fileStore.exists(.music, $0.musicFilename) }
+        }
         reconcileNextItem()
     }
 
@@ -959,7 +995,7 @@ final class PlayerStore {
     func playNext(_ song: Song, token: String?, baseURL: URL?) {
         guard !downloadedOnly || fileStore.exists(.music, song.musicFilename) else { return }
         if queue.current == nil {
-            play([song], token: token, baseURL: baseURL)
+            play([song], token: token, baseURL: baseURL, downloadedOnly: downloadedOnly)
         } else {
             queue.playNext(song)
             // the inserted track is the next one now, so whatever was being
@@ -1455,6 +1491,10 @@ final class PlayerStore {
     private func advanceOntoNextItem(_ reason: Advance) -> Bool {
         guard let next = nextItem, let target = nextEnqueueEntry, target.id == next.entryID,
               let finished = song else { return false }
+        if downloadedOnly, !fileStore.exists(.music, next.filename) {
+            removeNextItem()
+            return false
+        }
         // emptied before the player moves, so the currentItem observation this
         // is about to set off finds nothing left to do: the end notification &
         // the observation both land here for the same advance
