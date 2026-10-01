@@ -56,7 +56,7 @@ final class OfflineLibrary {
         self.availableBytes = availableBytes
         self.prepareMusic = prepareMusic
         downloaded = fileCache.fileStore.list(.music)
-        if let data = try? Data(contentsOf: manifestURL) {
+        if !fileCache.hasWatchSelection, let data = try? Data(contentsOf: manifestURL) {
             do {
                 selections = try JSONDecoder().decode([String: Selection].self, from: data)
             } catch {
@@ -66,6 +66,7 @@ final class OfflineLibrary {
         durableSelections = selections
         updateRetention()
         prepareMusic(Set(desired))
+        retireForPhoneSelection()
     }
 
     var selectedPlaylistIds: [String] { selections.keys.sorted() }
@@ -101,7 +102,7 @@ final class OfflineLibrary {
     }
 
     func prepare(_ playlist: PlaylistItem, songs: [Song]) {
-        guard !playlist.isFolder else { return }
+        guard !fileCache.hasWatchSelection, !playlist.isFolder else { return }
         selections[playlist.id] = selection(for: playlist, songs: songs)
         if let selection = selections[playlist.id] {
             for filename in selection.filenames.values { failures[filename] = nil }
@@ -142,6 +143,7 @@ final class OfflineLibrary {
 
     /// absent playlists keep their saved membership until explicitly removed
     func reconcile(playlists: [PlaylistItem], songs: [Song]) {
+        guard !fileCache.hasWatchSelection else { retireForPhoneSelection(); return }
         for playlist in playlists where selections[playlist.id] != nil {
             var updated = selection(for: playlist, songs: songs)
             updated.paused = selections[playlist.id]?.paused ?? false
@@ -234,7 +236,7 @@ final class OfflineLibrary {
     }
 
     private func schedule() {
-        guard job == nil, foreground, !persistenceFailed, let token, let baseURL else { return }
+        guard !fileCache.hasWatchSelection, job == nil, foreground, !persistenceFailed, let token, let baseURL else { return }
         let candidates = Array(demand.prefix(1)) + desired + demand.dropFirst()
         guard let filename = candidates.first(where: { !downloaded.contains($0) && failures[$0] == nil }) else { return }
         let selected = retained.contains(filename)
@@ -274,5 +276,22 @@ final class OfflineLibrary {
         }
         refreshFiles()
         fileCache.noteMusicStored()
+    }
+
+    /// the durable phone intent must exist before legacy preparation is retired.
+    func retireForPhoneSelection() {
+        guard fileCache.hasDurableWatchSelection else { return }
+        cancelJob()
+        selections = [:]
+        durableSelections = [:]
+        demand = []
+        prepareMusic([])
+        do {
+            if FileManager.default.fileExists(atPath: manifestURL.path) { try FileManager.default.removeItem(at: manifestURL) }
+            persistenceFailed = false
+        } catch {
+            persistenceFailed = true
+        }
+        refreshFiles()
     }
 }

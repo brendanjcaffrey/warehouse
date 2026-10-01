@@ -76,6 +76,7 @@ struct WarehouseWatchApp: App {
         _library = State(initialValue: library)
         receiver.onChanged = {
             try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+            offline.retireForPhoneSelection()
             if !receiver.allowsLegacySync {
                 syncStore.requestWatchSync(token: nil, baseURL: nil, playlistIds: [], generation: settings.configurationChanges + 1)
                 offline.setCredentials(token: nil, baseURL: nil)
@@ -123,7 +124,7 @@ struct WarehouseWatchApp: App {
         Task { @MainActor in
             await receiver.waitForImport()
             try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
-            fileCache.evict()
+            if receiver.allowsLegacySync || fileCache.hasDurableWatchSelection { fileCache.evict() }
         }
     }
 

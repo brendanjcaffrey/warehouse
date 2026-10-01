@@ -49,6 +49,7 @@ final class FileCache {
     /// takes one — so the watch's rows can refresh which tracks are cached.
     /// the phone mirrors the library & has no cache to leave a listener on
     var onMusicChanged: (@MainActor () -> Void)?
+    var onFilesReleased: (@MainActor () -> Void)?
 
     private let budget: @MainActor (Int64) -> FileCacheBudget
     private let now: @Sendable () -> Date
@@ -57,6 +58,17 @@ final class FileCache {
     /// offline selections are separate from the player's transient protection
     private var retainedMusic: Set<String> = []
     private var retainedArtwork: Set<String> = []
+    private struct WatchSelection: Codable {
+        let music: Set<String>
+        let artwork: Set<String>
+    }
+    private var watchSelection: WatchSelection?
+    private var unreadableWatchSelection = false
+    private var awaitingWatchSelection = false
+    private var cleaning = false
+    private let beforeWatchSelectionSave: () throws -> Void
+    var hasWatchSelection: Bool { watchSelection != nil || unreadableWatchSelection }
+    var hasDurableWatchSelection: Bool { watchSelection != nil }
     /// files that must survive eviction: the track playing & anything
     /// prefetched behind it, keyed the same way
     private var inUse: [String: Set<String>] = [:]
@@ -69,7 +81,8 @@ final class FileCache {
         budget: @escaping @MainActor (Int64) -> FileCacheBudget = FileCacheBudget.forDevice,
         now: @escaping @Sendable () -> Date = { Date() },
         freeSpaceReserve: Int64 = 32_000_000,
-        diagnostics: WatchDiagnostics? = nil
+        diagnostics: WatchDiagnostics? = nil,
+        beforeWatchSelectionSave: @escaping () throws -> Void = {}
     ) {
         self.fileStore = fileStore
         self.budget = budget
@@ -77,6 +90,18 @@ final class FileCache {
         self.freeSpaceReserve = freeSpaceReserve
         self.diagnostics = diagnostics ?? .shared
         self.recency = Self.load(from: Self.indexURL(fileStore))
+        self.beforeWatchSelectionSave = beforeWatchSelectionSave
+        let selectionURL = fileStore.rootURL.appending(path: "watch-selection.json")
+        if FileManager.default.fileExists(atPath: selectionURL.path) {
+            do {
+                let selection = try JSONDecoder().decode(WatchSelection.self, from: Data(contentsOf: selectionURL))
+                for name in selection.music.union(selection.artwork) { try FileStore.checkFilename(name) }
+                watchSelection = selection
+            } catch {
+                // preserve downloaded content until a valid persisted snapshot repairs the intent.
+                unreadableWatchSelection = true
+            }
+        }
     }
 
     /// marks a file as just used, so eviction sees it as the newest
@@ -96,24 +121,75 @@ final class FileCache {
     /// replaces the set of files of one type that eviction may not touch,
     /// so starting a track both protects the new file & releases the old one
     func setInUse(_ type: LibraryFileType, _ filenames: Set<String>) {
+        let released = (inUse[type.directory] ?? []).subtracting(filenames)
         inUse[type.directory] = filenames
+        cleanWatchFiles(type)
+        if !released.isEmpty { onFilesReleased?() }
     }
 
     /// explicit offline selections remain protected independently of the player
     func retainMusic(_ filenames: Set<String>) {
+        guard !hasWatchSelection else { return }
         retainedMusic = filenames
     }
 
     func retainArtwork(_ filenames: Set<String>) {
+        guard !hasWatchSelection else { return }
         retainedArtwork = filenames
     }
 
     private func retainedFiles(_ type: LibraryFileType) -> Set<String> {
-        type == .music ? retainedMusic : retainedArtwork
+        if unreadableWatchSelection || awaitingWatchSelection {
+            let selected = watchSelection.map { type == .music ? $0.music : $0.artwork }
+                ?? (type == .music ? retainedMusic : retainedArtwork)
+            return selected.union(fileStore.list(type))
+        }
+        if let watchSelection { return type == .music ? watchSelection.music : watchSelection.artwork }
+        return type == .music ? retainedMusic : retainedArtwork
+    }
+
+    func awaitWatchSelection() { awaitingWatchSelection = true }
+
+    /// persist authoritative intent before releasing legacy retention or deleting files.
+    func adoptWatchSelection(music: Set<String>, artwork: Set<String>) throws {
+        for name in music.union(artwork) { try FileStore.checkFilename(name) }
+        let next = WatchSelection(music: music, artwork: artwork)
+        if watchSelection?.music != music || watchSelection?.artwork != artwork {
+            try FileManager.default.createDirectory(at: fileStore.rootURL, withIntermediateDirectories: true)
+            try beforeWatchSelectionSave()
+            try JSONEncoder().encode(next).write(to: fileStore.rootURL.appending(path: "watch-selection.json"), options: .atomic)
+        }
+        watchSelection = next
+        unreadableWatchSelection = false
+        awaitingWatchSelection = false
+        reservations = reservations.filter { retainedFiles($0.key.type).contains($0.key.filename) }
+        for type in LibraryFileType.allCases { cleanWatchFiles(type) }
+    }
+
+    /// scans durable intent again when the player releases a file, including after relaunch.
+    private func cleanWatchFiles(_ type: LibraryFileType) {
+        guard watchSelection != nil, !awaitingWatchSelection, !cleaning else { return }
+        cleaning = true
+        defer { cleaning = false }
+        let protected = retainedFiles(type).union(inUse[type.directory] ?? [])
+        var removed = false
+        for name in fileStore.list(type).subtracting(protected) {
+            guard (try? fileStore.delete(type, name)) != nil else { continue }
+            recency[type.directory]?[name] = nil
+            removed = true
+        }
+        if removed {
+            save()
+            if type == .music { onMusicChanged?() }
+        }
     }
 
     func isMusicInUse(_ filename: String) -> Bool {
-        inUse[LibraryFileType.music.directory]?.contains(filename) == true
+        isInUse(.music, filename)
+    }
+
+    func isInUse(_ type: LibraryFileType, _ filename: String) -> Bool {
+        inUse[type.directory]?.contains(filename) == true
     }
 
     /// claim the space for a transfer before either transport starts. the

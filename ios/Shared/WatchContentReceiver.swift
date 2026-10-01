@@ -13,6 +13,7 @@ final class WatchContentReceiver {
     private let now: () -> Date
     private let beforeReceipt: () throws -> Void
     private var head: WatchLibraryHead?
+    private var pendingHead: WatchLibraryHead?
     private var snapshot: WatchLibrarySnapshot?
     private(set) var receipts: [WatchContentReceipt]
     private(set) var errorMessage: String?
@@ -31,6 +32,9 @@ final class WatchContentReceiver {
         let url = directory.appending(path: "receipts.json")
         receipts = FileManager.default.fileExists(atPath: url.path)
             ? try JSONDecoder().decode([WatchContentReceipt].self, from: Data(contentsOf: url)) : []
+        fileCache.onFilesReleased = { [weak self] in
+            Task { @MainActor [weak self] in self?.resume() }
+        }
     }
 
     nonisolated static func defaultDirectory() -> URL { URL.applicationSupportDirectory.appending(path: "watch-content-inbox") }
@@ -54,21 +58,24 @@ final class WatchContentReceiver {
     }
 
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
-        self.head = head
+        pendingHead = head
+        self.head = nil
         self.snapshot = snapshot
-        // retain selection before any storage admission or eviction can run.
-        if head != nil {
-            fileCache.retainMusic((try? snapshot?.music) ?? [])
-            fileCache.retainArtwork((try? snapshot?.artwork) ?? [])
+        // an absent or pending snapshot cannot revoke the last durable selection.
+        if head != nil { fileCache.awaitWatchSelection() }
+        if let snapshot, snapshot.head == head {
+            _ = try snapshot.validatedLibrary()
+            try fileCache.adoptWatchSelection(music: snapshot.music, artwork: snapshot.artwork)
         }
+        self.head = head
         try drain()
     }
 
     /// stop commits while the database serializes a newly received control message.
-    func pause() { head = nil }
+    func pause() { head = nil; pendingHead = nil }
 
     func resume() {
-        do { try drain(); errorMessage = nil } catch { errorMessage = error.localizedDescription }
+        do { try reconcile(head: pendingHead, snapshot: snapshot); errorMessage = nil } catch { errorMessage = error.localizedDescription }
     }
 
     private func isDesired(_ file: WatchContentFile) -> Bool {
@@ -139,8 +146,8 @@ final class WatchContentReceiver {
             }
             guard isDesired(file) else {
                 // only the context authorizes files; future files wait for their snapshot.
-                if let head, head.publisher == file.head.publisher && (head.revision > file.head.revision
-                    || head.revision == file.head.revision && (snapshot?.head == head || head.libraryID != file.head.libraryID)) {
+                if let head, snapshot?.head == head,
+                   head.publisher != file.head.publisher || head.revision >= file.head.revision {
                     try FileManager.default.removeItem(at: url)
                 }
                 continue
@@ -175,6 +182,8 @@ final class WatchContentReceiver {
             try FileManager.default.removeItem(at: url)
             return
         }
+        // replacing bytes under the same name also waits for active playback to release them.
+        if fileCache.fileStore.exists(file.type, file.filename), fileCache.isInUse(file.type, file.filename) { return }
         // staging already occupies this space, so admission accounts for the pending move.
         guard fileCache.reserve(file.type, file.filename, bytes: file.bytes,
                                 availableBytes: availableBytes().map { $0 + file.bytes }, allowOversized: true) else {
