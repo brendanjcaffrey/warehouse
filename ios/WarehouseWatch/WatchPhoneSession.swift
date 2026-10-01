@@ -76,8 +76,12 @@ final class WatchPhoneSession: NSObject {
         WCSession.default.sendMessage(message, replyHandler: { response in
             let result = (response["result"] as? String).flatMap(PhoneFileReply.init(rawValue:)) ?? .unavailable
             Task { @MainActor in reply(result) }
-        }, errorHandler: { _ in
-            Task { @MainActor in reply(.unavailable) }
+        }, errorHandler: { error in
+            Task { @MainActor in
+                WatchDiagnostics.shared.record(.init(kind: .requestRejected, id: transfer.id,
+                                                     source: .phone, reply: .unavailable, error: error))
+                reply(.unavailable)
+            }
         })
     }
 
@@ -108,6 +112,8 @@ final class WatchPhoneSession: NSObject {
     }
 
     private func updateReachability() {
+        WatchDiagnostics.shared.record(.init(kind: .reachabilityChanged, id: UUID(), source: .system,
+                                             detail: isReachable ? .reachable : .unreachable))
         remote?.setReachable(isReachable)
         reconcileFiles()
     }
@@ -134,6 +140,10 @@ extension WatchPhoneSession: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        Task { @MainActor in
+            WatchDiagnostics.shared.record(.init(kind: .activationChanged, id: UUID(), source: .system,
+                                                 error: error, detail: activationState == .activated ? .activated : .inactive))
+        }
         guard activationState == .activated else { return }
         // the last received context persists across launches, so settings
         // are available even when the phone isn't reachable

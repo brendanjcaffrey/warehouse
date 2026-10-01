@@ -114,6 +114,23 @@ final class PlayerStore {
     /// by us, so it keeps pulling ahead while the app is backgrounded — which
     /// is the whole of a workout, & the only kind of prefetch that works there
     private let player = AVQueuePlayer()
+    private static func currentRoute() -> WatchDiagnostic.Detail {
+        switch AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType {
+        case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE: .bluetooth
+        case .headphones: .headphones
+        case .builtInSpeaker: .speaker
+        default: .otherRoute
+        }
+    }
+    private func waitingReason() -> WatchDiagnostic.WaitingReason? {
+        switch player.reasonForWaitingToPlay {
+        case .toMinimizeStalls: .minimizeStalls
+        case .evaluatingBufferingRate: .evaluatingBufferingRate
+        case .noItemToPlay: .noItem
+        case nil: nil
+        default: .other
+        }
+    }
     /// kept from the last play call for loading later tracks in the queue
     private var token: String?
     private var baseURL: URL?
@@ -122,6 +139,13 @@ final class PlayerStore {
     /// watches loading, buffer prediction and transport changes for the current item
     private var cancelPlaybackObservation: (() -> Void)?
     private let observePlayback: PlaybackObservation.Start
+    private let diagnostics: WatchDiagnostics
+    private var diagnosticID = UUID()
+    private var diagnosticStart = Date()
+    private var diagnosticWasPlaying = false
+    private var diagnosticHasPlayed = false
+    private var diagnosticObservedWaiting = false
+    private var diagnosticSource: WatchDiagnostic.Source = .http
     private var playbackObservationState: PlaybackObservationState?
     var isActuallyPlaying: Bool {
         isPlaying && playbackObservationState?.timeControlStatus == .playing
@@ -265,7 +289,8 @@ final class PlayerStore {
         retryDelay: TimeInterval = 1,
         prefetchRetryDelay: TimeInterval = 30,
         activateSessionForTests: (@MainActor () async -> Bool)? = nil,
-        observePlayback: @escaping PlaybackObservation.Start = PlaybackObservation.start
+        observePlayback: @escaping PlaybackObservation.Start = PlaybackObservation.start,
+        diagnostics: WatchDiagnostics? = nil
     ) {
         self.fileStore = fileStore
         self.fileCache = fileCache
@@ -276,6 +301,7 @@ final class PlayerStore {
         self.prefetchRetryDelay = prefetchRetryDelay
         self.activateSessionForTests = activateSessionForTests
         self.observePlayback = observePlayback
+        self.diagnostics = diagnostics ?? .shared
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
         self.prefetchDownloader = prefetchDownloader ?? self.downloader
         // the point of the queue: at the end of a track the daemon plays
@@ -395,6 +421,11 @@ final class PlayerStore {
     /// when it isn't already on disk
     private func startCurrent() {
         guard let song else { return }
+        diagnosticID = UUID()
+        diagnosticStart = Date()
+        diagnosticWasPlaying = false
+        diagnosticHasPlayed = false
+        diagnosticObservedWaiting = false
         startGeneration += 1
         let generation = startGeneration
         cancelPlaybackObservation?()
@@ -408,6 +439,10 @@ final class PlayerStore {
         failedNextEntryID = nil
 
         let isDownloaded = fileStore.exists(.music, song.musicFilename)
+        diagnosticSource = isDownloaded ? .cache : .http
+        diagnostics.record(.init(kind: .playbackRequested, id: diagnosticID,
+                                 source: diagnosticSource,
+                                 detail: Self.currentRoute()))
         // a prefetch already running for this very track is the fetch we're
         // about to need, so let it finish; so is one for a track still ahead
         // of us in the chain, which is progress on the same slow link.
@@ -1305,6 +1340,7 @@ final class PlayerStore {
     private func observeStatus(of item: AVPlayerItem) {
         cancelPlaybackObservation?()
         playbackObservationState = nil
+        diagnosticSource = (item.asset as? AVURLAsset)?.url.isFileURL == true ? .cache : .http
         let generation = startGeneration
         let identity = ObjectIdentifier(item)
         cancelPlaybackObservation = observePlayback(player, item) { [weak self] state in
@@ -1318,6 +1354,20 @@ final class PlayerStore {
             guard let current = self.player.currentItem, ObjectIdentifier(current) == identity else { return }
             let couldPrefetch = self.streamAllowsPrefetch
             self.playbackObservationState = state
+            let actuallyPlaying = self.isActuallyPlaying
+            if !self.isPlaying {
+                self.diagnosticWasPlaying = false
+            } else if actuallyPlaying != self.diagnosticWasPlaying {
+                let kind: WatchDiagnostic.Kind = actuallyPlaying
+                    ? (self.diagnosticHasPlayed ? .playbackRecovered : .playbackStarted)
+                    : .playbackStalled
+                if actuallyPlaying { self.diagnosticHasPlayed = true }
+                self.diagnosticWasPlaying = actuallyPlaying
+                self.recordPlayback(kind, item: current)
+            } else if !actuallyPlaying && !self.diagnosticHasPlayed && !self.diagnosticObservedWaiting {
+                self.diagnosticObservedWaiting = true
+                self.recordPlayback(.playbackBuffering, item: current)
+            }
             if state.itemStatus == .readyToPlay {
                 self.consecutiveItemFailures = 0
                 if self.isStreamingCurrentTrack, current.preferredForwardBufferDuration != Self.streamForwardBufferDuration {
@@ -1335,6 +1385,19 @@ final class PlayerStore {
         }
     }
 
+    private func recordPlayback(_ kind: WatchDiagnostic.Kind, item: AVPlayerItem) {
+        let ranges = item.loadedTimeRanges.map(\.timeRangeValue)
+        let position = item.currentTime().seconds
+        let buffer = ranges.filter { $0.start.seconds <= position && position < $0.end.seconds }
+            .map { $0.end.seconds - position }.filter(\.isFinite).max()
+        let access = item.accessLog()?.events.last
+        diagnostics.record(.init(kind: kind, id: diagnosticID, source: diagnosticSource,
+                                 bytes: access.map { Int64($0.numberOfBytesTransferred) },
+                                 throughput: access?.observedBitrate, bufferSeconds: buffer,
+                                 elapsed: Date().timeIntervalSince(diagnosticStart), detail: Self.currentRoute(),
+                                 waitingReason: kind == .playbackStarted || kind == .playbackRecovered ? nil : waitingReason()))
+    }
+
     /// the file we handed the player is no good. leaving it on disk would be
     /// worse than not having it: every later fetch short circuits on the file
     /// already being there, so the track would never play again. drop it and
@@ -1342,6 +1405,8 @@ final class PlayerStore {
     /// if the queue comes back around to it
     private func handleItemFailure(_ reason: String) {
         guard let song else { return }
+        diagnostics.record(.init(kind: .playbackFailed, id: diagnosticID, source: diagnosticSource,
+                                 elapsed: Date().timeIntervalSince(diagnosticStart), detail: Self.currentRoute()))
         log.error("item failed for \(song.musicFilename, privacy: .public): \(reason, privacy: .public)")
         // only a file we wrote can be the bad one. a stream that failed says
         // something about the link, not about the disk — and by the time it
@@ -1429,6 +1494,14 @@ final class PlayerStore {
             fileCache?.recordUse(.music, song.musicFilename)
         }
         isStreamingCurrentTrack = next.streaming
+        diagnosticID = UUID()
+        diagnosticStart = Date()
+        diagnosticWasPlaying = false
+        diagnosticHasPlayed = false
+        diagnosticObservedWaiting = false
+        diagnosticSource = next.streaming ? .http : .cache
+        diagnostics.record(.init(kind: .playbackRequested, id: diagnosticID,
+                                 source: diagnosticSource, detail: Self.currentRoute()))
         advancedOntoEnqueuedItem = true
         observeEnd(of: next.item)
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)

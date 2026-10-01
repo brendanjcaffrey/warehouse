@@ -35,11 +35,13 @@ final class WatchFileDownloader: SingleFileDownloading {
 
     private struct Active {
         let id = UUID()
+        let started = Date()
         let token: String
         let baseURL: URL
         var waiters: [UUID: Waiter] = [:]
         var deadline: Task<Void, Never>?
         var http: Task<Void, Never>?
+        var httpStarted: Date?
     }
 
     typealias Fetch = @MainActor (LibraryFileType, String, String, URL) async throws -> URL
@@ -53,6 +55,7 @@ final class WatchFileDownloader: SingleFileDownloading {
     private let wait: @MainActor (Duration) async throws -> Void
     private let timeout: Duration
     private let transport: Transport
+    private let diagnostics: WatchDiagnostics
     private var generation: UUID
     private var desired: Set<FileToDownload> = []
     private(set) var jobs: [UUID: Job] = [:]
@@ -69,12 +72,14 @@ final class WatchFileDownloader: SingleFileDownloading {
         fileCache: FileCache? = nil,
         availableBytes: @escaping @MainActor () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
         size: @escaping Size = { try await LibraryClient().fileSize($0, filename: $1, token: $2, baseURL: $3) },
-        moveIn: (@MainActor (LibraryFileType, String, URL) throws -> Void)? = nil
+        moveIn: (@MainActor (LibraryFileType, String, URL) throws -> Void)? = nil,
+        diagnostics: WatchDiagnostics? = nil
     ) {
         self.fileStore = fileStore
         self.fileCache = fileCache
         self.timeout = timeout
         self.transport = transport
+        self.diagnostics = diagnostics ?? .shared
         self.wait = wait
         self.fetch = fetch
         self.moveIn = moveIn ?? { try fileStore.moveIn($0, $1, from: $2) }
@@ -133,8 +138,12 @@ final class WatchFileDownloader: SingleFileDownloading {
     ) async -> FileDownloadResult {
         configurationChanged()
         guard !Task.isCancelled, WatchFileTransfer.validFilename(filename), token == transport.currentToken() else { return .failed }
-        if fileStore.exists(type, filename) { return .downloaded }
+        if fileStore.exists(type, filename) {
+            diagnostics.record(.init(kind: .cacheHit, id: UUID(), source: .cache, fileType: type))
+            return .downloaded
+        }
         let file = FileToDownload(type: type, filename: filename)
+        let diagnosticID = jobs.values.first { $0.transfer.file == file }?.transfer.id ?? UUID()
         var didReserve = false
         if let fileCache {
             let bytes: Int64
@@ -145,19 +154,28 @@ final class WatchFileDownloader: SingleFileDownloading {
                     bytes = try await size(type, filename, token, baseURL)
                 }
             } catch {
+                diagnostics.record(.init(kind: .httpFailed, id: diagnosticID, source: .http,
+                                         fileType: type, error: error))
                 return .failed
             }
             configurationChanged()
             guard !Task.isCancelled, token == transport.currentToken() else { return .failed }
-            if fileStore.exists(type, filename) { return .downloaded }
+            if fileStore.exists(type, filename) {
+                diagnostics.record(.init(kind: .cacheHit, id: diagnosticID, source: .cache, fileType: type))
+                return .downloaded
+            }
             if !active.keys.contains(where: { jobs[$0]?.transfer.file == file }) {
                 guard fileCache.reserve(type, filename, bytes: bytes, availableBytes: availableBytes(),
-                                        allowOversized: desired.contains(file)) else { return .outOfSpace }
+                                        allowOversized: desired.contains(file)) else {
+                    diagnostics.record(.init(kind: .storageFailure, id: diagnosticID, source: .cache,
+                                             fileType: type, bytes: bytes))
+                    return .outOfSpace
+                }
                 didReserve = true
             }
         }
         let transfer = jobs.values.first { $0.transfer.file == file }?.transfer
-            ?? WatchFileTransfer(generation: generation, type: type, filename: filename)
+            ?? WatchFileTransfer(id: diagnosticID, generation: generation, type: type, filename: filename)
         let waiterID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -170,7 +188,14 @@ final class WatchFileDownloader: SingleFileDownloading {
                 if isNew { jobs[transfer.id] = Job(transfer: transfer) }
                 active[transfer.id, default: Active(token: token, baseURL: baseURL)].waiters[waiterID] = Waiter(
                     continuation: continuation, onPhase: onPhase)
-                guard persist() else { complete(transfer.id, result: .failed, keepPhone: false); return }
+                if isNew {
+                    diagnostics.record(.init(kind: .queued, id: transfer.id, source: .phone, fileType: type))
+                }
+                guard persist() else {
+                    diagnostics.record(.init(kind: .storageFailure, id: transfer.id, source: .cache))
+                    complete(transfer.id, result: .failed, keepPhone: false)
+                    return
+                }
                 if isNew, let job = jobs[transfer.id] { onEvent?(job) }
                 if active[transfer.id]?.http != nil { onPhase(.downloading); return }
                 onPhase(.waitingForPhone)
@@ -187,6 +212,9 @@ final class WatchFileDownloader: SingleFileDownloading {
                         try await wait(duration)
                         try Task.checkCancellation()
                     } catch { return }
+                    self?.diagnostics.record(.init(kind: .phoneTimedOut, id: transfer.id, source: .phone,
+                                                   fileType: type,
+                                                   elapsed: self?.active[transfer.id].map { Date().timeIntervalSince($0.started) }))
                     self?.startHTTP(transfer.id, token: token, baseURL: baseURL)
                 }
                 transport.request(transfer, token) { [weak self] reply in
@@ -201,12 +229,14 @@ final class WatchFileDownloader: SingleFileDownloading {
     }
 
     func receive(_ transfer: WatchFileTransfer, from temporary: URL) {
-        commit(transfer, temporary: temporary)
+        commit(transfer, temporary: temporary, source: .phone)
     }
 
     func stagingFailed(_ transfer: WatchFileTransfer, outOfSpace: Bool) {
         guard jobs[transfer.id]?.transfer == transfer else { return }
         if outOfSpace {
+            diagnostics.record(.init(kind: .storageFailure, id: transfer.id, source: .phone,
+                                     fileType: transfer.type))
             complete(transfer.id, result: .outOfSpace, keepPhone: false)
         } else {
             failed(transfer)
@@ -223,6 +253,10 @@ final class WatchFileDownloader: SingleFileDownloading {
 
     private func startHTTP(_ id: UUID, token: String, baseURL: URL) {
         guard let job = jobs[id], let running = active[id], running.http == nil else { return }
+        active[id]?.httpStarted = Date()
+        diagnostics.record(.init(kind: .httpStarted, id: id, source: .http,
+                                 fileType: job.transfer.type,
+                                 elapsed: Date().timeIntervalSince(running.started)))
         active[id]?.deadline?.cancel()
         active[id]?.deadline = nil
         guard token == transport.currentToken(), job.transfer.generation == transport.currentGeneration() else { revoke(id); return }
@@ -231,23 +265,31 @@ final class WatchFileDownloader: SingleFileDownloading {
             do {
                 let temporary = try await fetch(job.transfer.type, job.transfer.filename, token, baseURL)
                 guard let self else { try? FileManager.default.removeItem(at: temporary); return }
-                self.commit(job.transfer, temporary: temporary)
+                self.commit(job.transfer, temporary: temporary, source: .http)
             } catch {
                 // cancellation can finish after a new foreground caller has
                 // resumed this same durable transfer. only finish our attempt.
                 guard self?.active[id]?.id == running.id else { return }
+                self?.diagnostics.record(.init(kind: .httpFailed, id: id, source: .http,
+                                               fileType: job.transfer.type,
+                                               elapsed: self?.active[id]?.httpStarted.map { Date().timeIntervalSince($0) },
+                                               error: error))
                 self?.complete(id, result: BackgroundDownload.isOutOfSpace(error) ? .outOfSpace : .failed, keepPhone: true)
             }
         }
     }
 
-    private func commit(_ transfer: WatchFileTransfer, temporary: URL) {
+    private func commit(_ transfer: WatchFileTransfer, temporary: URL, source: WatchDiagnostic.Source) {
         defer { try? FileManager.default.removeItem(at: temporary) }
         configurationChanged()
         guard jobs[transfer.id]?.transfer == transfer,
               transfer.generation == transport.currentGeneration(), transport.currentToken() != nil,
               desired.contains(transfer.file) || active[transfer.id] != nil else { return }
-        guard !persistenceFailed else { complete(transfer.id, result: .failed, keepPhone: false); return }
+        guard !persistenceFailed else {
+            diagnostics.record(.init(kind: .storageFailure, id: transfer.id, source: .cache))
+            complete(transfer.id, result: .failed, keepPhone: false)
+            return
+        }
         do {
             if let fileCache, !fileStore.exists(transfer.type, transfer.filename) {
                 let bytes = Int64((try temporary.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0)
@@ -260,6 +302,8 @@ final class WatchFileDownloader: SingleFileDownloading {
                     guard fileCache.reserve(transfer.type, transfer.filename, bytes: bytes,
                                             availableBytes: availableBytes().map { $0 + bytes },
                                             allowOversized: desired.contains(transfer.file)) else {
+                        diagnostics.record(.init(kind: .storageFailure, id: transfer.id, source: source,
+                                                 fileType: transfer.type, bytes: bytes))
                         complete(transfer.id, result: .outOfSpace, keepPhone: false)
                         return
                     }
@@ -271,9 +315,19 @@ final class WatchFileDownloader: SingleFileDownloading {
                 try moveIn(transfer.type, transfer.filename, temporary)
             }
             update(transfer.id, state: .delivered, fraction: 1)
+            diagnostics.record(.init(kind: source == .phone ? .phoneDelivered : .httpDelivered,
+                                     id: transfer.id, source: source, fileType: transfer.type,
+                                     bytes: Int64((try? temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0),
+                                     elapsed: active[transfer.id].map {
+                                         Date().timeIntervalSince(source == .http ? ($0.httpStarted ?? $0.started) : $0.started)
+                                     }))
             complete(transfer.id, result: .downloaded, keepPhone: false)
             onStored?(transfer.type)
         } catch {
+            let kind: WatchDiagnostic.Kind = BackgroundDownload.isOutOfSpace(error)
+                ? .storageFailure : (source == .phone ? .phoneFailed : .httpFailed)
+            diagnostics.record(.init(kind: kind, id: transfer.id, source: source,
+                                     fileType: transfer.type, error: error))
             complete(transfer.id, result: BackgroundDownload.isOutOfSpace(error) ? .outOfSpace : .failed, keepPhone: false)
         }
     }
@@ -305,10 +359,20 @@ final class WatchFileDownloader: SingleFileDownloading {
 
     private func update(_ id: UUID, state: State, reason: PhoneFileReply? = nil, fraction: Double = 0) {
         guard var job = jobs[id] else { return }
+        let previous = job.state
         job.state = state
         job.reason = reason
         job.fraction = fraction
         jobs[id] = job
+        if let reason {
+            diagnostics.record(.init(kind: .phoneReply(reason), id: id, source: .phone,
+                                     fileType: job.transfer.type, reply: reason,
+                                     elapsed: active[id].map { Date().timeIntervalSince($0.started) }))
+        } else if state == .transferring && previous != .transferring {
+            diagnostics.record(.init(kind: .phoneTransferring, id: id, source: .phone,
+                                     fileType: job.transfer.type,
+                                     elapsed: active[id].map { Date().timeIntervalSince($0.started) }))
+        }
         persist()
         onEvent?(job)
     }

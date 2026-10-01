@@ -61,17 +61,20 @@ final class FileCache {
     private var inUse: [String: Set<String>] = [:]
     private var reservations: [FileToDownload: Int64] = [:]
     private let freeSpaceReserve: Int64
+    private let diagnostics: WatchDiagnostics
 
     init(
         fileStore: FileStore,
         budget: @escaping @MainActor (Int64) -> FileCacheBudget = FileCacheBudget.forDevice,
         now: @escaping @Sendable () -> Date = { Date() },
-        freeSpaceReserve: Int64 = 32_000_000
+        freeSpaceReserve: Int64 = 32_000_000,
+        diagnostics: WatchDiagnostics? = nil
     ) {
         self.fileStore = fileStore
         self.budget = budget
         self.now = now
         self.freeSpaceReserve = freeSpaceReserve
+        self.diagnostics = diagnostics ?? .shared
         self.recency = Self.load(from: Self.indexURL(fileStore))
     }
 
@@ -135,6 +138,8 @@ final class FileCache {
             guard !protected.contains(entry.filename),
                   (try? fileStore.delete(type, entry.filename)) != nil else { continue }
             typeHeld -= entry.sizeBytes
+            diagnostics.record(.init(kind: .evicted, id: UUID(), source: .cache,
+                                     fileType: type, bytes: entry.sizeBytes))
             reclaimed += entry.sizeBytes
             musicRemoved = musicRemoved || type == .music
             recency[type.directory]?[entry.filename] = nil
@@ -148,6 +153,8 @@ final class FileCache {
                     guard !protectedOther.contains(entry.filename),
                           (try? fileStore.delete(other, entry.filename)) != nil else { continue }
                     reclaimed += entry.sizeBytes
+                    diagnostics.record(.init(kind: .evicted, id: UUID(), source: .cache,
+                                             fileType: other, bytes: entry.sizeBytes))
                     musicRemoved = musicRemoved || other == .music
                     recency[other.directory]?[entry.filename] = nil
                 }
@@ -238,6 +245,8 @@ final class FileCache {
             guard total > budget else { break }
             guard (try? fileStore.delete(type, entry.filename)) != nil else { continue }
             total -= entry.sizeBytes
+            diagnostics.record(.init(kind: .evicted, id: UUID(), source: .cache,
+                                     fileType: type, bytes: entry.sizeBytes))
             recency[type.directory]?[entry.filename] = nil
             removed.append(FileToDownload(type: type, filename: entry.filename))
         }

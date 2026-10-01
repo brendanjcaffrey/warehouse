@@ -64,6 +64,10 @@ extension PhoneWatchSession: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        Task { @MainActor in
+            WatchDiagnostics.shared.record(.init(kind: .activationChanged, id: UUID(), source: .system,
+                                                 error: error, detail: activationState == .activated ? .activated : .inactive))
+        }
         guard activationState == .activated else { return }
         Task { @MainActor in
             self.push()
@@ -156,6 +160,10 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        if let metadata = fileTransfer.file.metadata,
+           let transfer = WatchFileTransfer(dictionary: metadata) {
+            Task { @MainActor in files?.finished(transfer, error: error) }
+        }
         guard error != nil, session.isReachable,
               let metadata = fileTransfer.file.metadata,
               let transfer = WatchFileTransfer(dictionary: metadata)
