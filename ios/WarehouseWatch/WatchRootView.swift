@@ -31,20 +31,24 @@ struct WatchRootView: View {
                 }
             } else {
                 NavigationStack {
-                    VStack {
-                        startupContent
-                        NavigationLink {
-                            WatchDiagnosticView()
-                        } label: {
-                            Label("Diagnostics", systemImage: "waveform.path.ecg")
-                        }
-                        if remote.isAvailable {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            startupContent
+                                .fixedSize(horizontal: false, vertical: true)
                             NavigationLink {
-                                WatchRemoteNowPlayingView()
+                                WatchDiagnosticView()
                             } label: {
-                                Label("Open iPhone Now Playing", systemImage: "iphone")
+                                Label("Diagnostics", systemImage: "waveform.path.ecg")
+                            }
+                            if remote.isAvailable {
+                                NavigationLink {
+                                    WatchRemoteNowPlayingView()
+                                } label: {
+                                    Label("Open iPhone Now Playing", systemImage: "iphone")
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity)
                     }
                 }
             }
