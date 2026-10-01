@@ -31,6 +31,16 @@ struct WatchRemoteStoreTests {
         #expect(store.nowPlaying == Self.song)
     }
 
+    @Test("a paused phone remains available for manual remote control")
+    func pausedPhoneIsManuallyAvailable() {
+        let store = Self.makeStore(sent: SentCommands())
+        store.setReachable(true)
+        store.apply(.nowPlaying(Self.song.with(isPlaying: false)))
+
+        #expect(store.isAvailable)
+        #expect(!store.isPhonePlaying)
+    }
+
     @Test("a phone with nothing playing has nothing to remote control")
     func nothingPlayingIsNotAvailable() {
         let store = Self.makeStore(sent: SentCommands())

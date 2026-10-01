@@ -24,6 +24,7 @@ struct RemotePlaybackPayload: Equatable, Sendable {
     let artistName: String
     let artworkFilename: String?
     let isPlaying: Bool
+    let isActuallyPlaying: Bool
     let isShuffled: Bool
     let repeatMode: RepeatMode
 
@@ -32,6 +33,7 @@ struct RemotePlaybackPayload: Equatable, Sendable {
     private static let artistNameKey = "artistName"
     private static let artworkFilenameKey = "artworkFilename"
     private static let isPlayingKey = "isPlaying"
+    private static let isActuallyPlayingKey = "isActuallyPlaying"
     private static let isShuffledKey = "isShuffled"
     private static let repeatModeKey = "repeatMode"
 
@@ -41,6 +43,7 @@ struct RemotePlaybackPayload: Equatable, Sendable {
         artistName: String,
         artworkFilename: String?,
         isPlaying: Bool,
+        isActuallyPlaying: Bool = false,
         isShuffled: Bool = false,
         repeatMode: RepeatMode = .off
     ) {
@@ -49,6 +52,7 @@ struct RemotePlaybackPayload: Equatable, Sendable {
         self.artistName = artistName
         self.artworkFilename = artworkFilename
         self.isPlaying = isPlaying
+        self.isActuallyPlaying = isActuallyPlaying
         self.isShuffled = isShuffled
         self.repeatMode = repeatMode
     }
@@ -68,6 +72,7 @@ struct RemotePlaybackPayload: Equatable, Sendable {
             // absent for a track with no artwork
             artworkFilename: dictionary[Self.artworkFilenameKey] as? String,
             isPlaying: isPlaying,
+            isActuallyPlaying: dictionary[Self.isActuallyPlayingKey] as? Bool ?? false,
             isShuffled: dictionary[Self.isShuffledKey] as? Bool ?? false,
             repeatMode: (dictionary[Self.repeatModeKey] as? String).flatMap(RepeatMode.init(rawValue:)) ?? .off)
     }
@@ -78,6 +83,7 @@ struct RemotePlaybackPayload: Equatable, Sendable {
             Self.nameKey: name,
             Self.artistNameKey: artistName,
             Self.isPlayingKey: isPlaying,
+            Self.isActuallyPlayingKey: isActuallyPlaying,
             Self.isShuffledKey: isShuffled,
             Self.repeatModeKey: repeatMode.rawValue
         ]
@@ -154,6 +160,7 @@ extension RemotePlaybackPayload {
             artistName: song.artistName,
             artworkFilename: song.artworkFilename,
             isPlaying: player.isPlaying,
+            isActuallyPlaying: player.isActuallyPlaying,
             isShuffled: player.queue.isShuffled,
             repeatMode: player.repeatMode)
     }

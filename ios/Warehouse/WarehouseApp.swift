@@ -136,6 +136,9 @@ struct WarehouseApp: App {
                     watchSession.pushNowPlaying()
                     savePlayback()
                 }
+                .onChange(of: player.isActuallyPlaying) {
+                    watchSession.pushNowPlaying()
+                }
                 .onChange(of: player.queue.isShuffled) {
                     watchSession.pushNowPlaying()
                     savePlayback()

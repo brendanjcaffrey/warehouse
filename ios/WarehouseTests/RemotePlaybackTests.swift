@@ -20,6 +20,7 @@ struct RemotePlaybackTests {
         #expect(payload?.name == "Believe")
         #expect(payload?.artistName == "Cher")
         #expect(payload?.artworkFilename == "a.jpg")
+        #expect(payload?.isActuallyPlaying == false)
         #expect(payload?.isShuffled == false)
         #expect(payload?.repeatMode == .all)
     }

@@ -25,6 +25,15 @@ struct WatchRemoteMessageTests {
         #expect(WatchRemoteMessage(dictionary: message.encode()) == message)
     }
 
+    @Test("observed phone playback survives the remote message")
+    func observedPlaybackRoundTrip() {
+        let payload = RemotePlaybackPayload(
+            trackId: "t1", name: "Song", artistName: "Artist", artworkFilename: nil,
+            isPlaying: true, isActuallyPlaying: true)
+        let message = WatchRemoteMessage.nowPlaying(payload)
+        #expect(WatchRemoteMessage(dictionary: message.encode()) == message)
+    }
+
     @Test("nothing playing round trips as an empty now playing message")
     func nothingPlayingRoundTrip() {
         let message = WatchRemoteMessage.nowPlaying(nil)
@@ -56,5 +65,6 @@ struct WatchRemoteMessageTests {
         #expect(payload?.isShuffled == false)
         #expect(payload?.repeatMode == .off)
         #expect(payload?.artworkFilename == nil)
+        #expect(payload?.isActuallyPlaying == false)
     }
 }

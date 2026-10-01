@@ -18,6 +18,7 @@ final class WatchRemoteStore {
     /// whether the remote screen is worth showing: the phone has a track & is
     /// close enough to take commands
     var isAvailable: Bool { isReachable && nowPlaying != nil }
+    var isPhonePlaying: Bool { isReachable && nowPlaying?.isActuallyPlaying == true }
 
     private let send: (RemoteCommand) -> Void
 
@@ -92,6 +93,7 @@ extension RemotePlaybackPayload {
             artistName: artistName,
             artworkFilename: artworkFilename,
             isPlaying: isPlaying ?? self.isPlaying,
+            isActuallyPlaying: isPlaying == nil ? isActuallyPlaying : false,
             isShuffled: isShuffled ?? self.isShuffled,
             repeatMode: repeatMode ?? self.repeatMode)
     }

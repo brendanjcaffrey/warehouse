@@ -18,7 +18,7 @@ struct WatchRootView: View {
         Group {
             if startup == .ready {
                 WatchMenuView()
-            } else if remote.isAvailable {
+            } else if remote.isPhonePlaying {
                 // nothing of our own to browse yet, but the phone is playing:
                 // the remote is the whole app in that case, so skip the
                 // waiting screens rather than hiding the one useful thing
@@ -26,7 +26,18 @@ struct WatchRootView: View {
                     WatchRemoteNowPlayingView()
                 }
             } else {
-                startupContent
+                NavigationStack {
+                    VStack {
+                        startupContent
+                        if remote.isAvailable {
+                            NavigationLink {
+                                WatchRemoteNowPlayingView()
+                            } label: {
+                                Label("Open iPhone Now Playing", systemImage: "iphone")
+                            }
+                        }
+                    }
+                }
             }
         }
         .task(id: settings.configurationChanges) {

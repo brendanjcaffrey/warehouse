@@ -83,16 +83,18 @@ struct WatchMenuView: View {
             .navigationDestination(isPresented: $showingRemote) {
                 WatchRemoteNowPlayingView()
             }
-            .onChange(of: remote.isAvailable, initial: true) {
-                // opening the app while the phone is playing means the remote
-                // is what was wanted; browsing our own library is a step back
-                // away. only the once, though — backing out has to hold
-                guard autoOpen.shouldOpen(
-                    isRemoteAvailable: remote.isAvailable, isPlayingLocally: player.isPlaying)
-                else { return }
-                showingRemote = true
-            }
+            .onChange(of: remote.isAvailable, initial: true) { updateRemoteOpen() }
+            .onChange(of: remote.isPhonePlaying) { updateRemoteOpen() }
         }
+    }
+
+    private func updateRemoteOpen() {
+        guard autoOpen.shouldOpen(
+            isRemoteAvailable: remote.isAvailable,
+            isRemotePlaying: remote.isPhonePlaying,
+            isPlayingLocally: player.isPlaying)
+        else { return }
+        showingRemote = true
     }
 
     @ViewBuilder

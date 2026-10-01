@@ -14,7 +14,9 @@ extension PlayerStoreTests {
             itemStatus: .readyToPlay, likelyToKeepUp: true, timeControlStatus: .playing,
             hasBufferedAudio: true, hasPlaybackProgress: false))
         #expect(rig.store.status == .buffering)
+        #expect(rig.store.isPlaying)
         #expect(!rig.store.isActuallyPlaying)
+        #expect(RemotePlaybackPayload(player: rig.store)?.isActuallyPlaying == false)
         try await Self.settle()
         #expect(rig.downloads.started.isEmpty)
 
@@ -22,6 +24,7 @@ extension PlayerStoreTests {
         try await Self.waitFor { rig.downloads.started.count == 1 }
         #expect(rig.store.status == .ready)
         #expect(rig.store.isActuallyPlaying)
+        #expect(RemotePlaybackPayload(player: rig.store)?.isActuallyPlaying == true)
     }
 
     @Test("buffer coverage must contain audio at the requested playhead, not elsewhere in the file")
