@@ -33,13 +33,19 @@ struct WarehouseWatchApp: App {
         // music & artwork aren't synced, so the player & the rows pull them as
         // they need them
         let files = WatchFileDownloader(
-            fileStore: fileStore, fallback: FileDownloader(client: LibraryClient(), fileStore: fileStore),
+            fileStore: fileStore,
             transport: .init(
                 isReachable: { phone.canSend && phone.isReachable }, currentToken: { settings.token },
+                currentGeneration: { settings.fileGeneration },
                 request: { phone.requestFile($0, token: $1, reply: $2) }, cancel: { phone.cancelFile($0) }))
         phone.files = files
         let artwork = WatchArtworkFetcher(fileCache: fileCache, downloader: files, credentials: credentials)
-        let offline = OfflineLibrary(fileCache: fileCache, downloader: files)
+        let offline = OfflineLibrary(fileCache: fileCache, downloader: files, prepareMusic: { files.setDesiredMusic($0) })
+        files.onStored = { type in
+            guard type == .music else { return }
+            fileCache.evict()
+            fileCache.noteMusicStored()
+        }
         _offline = State(initialValue: offline)
         // the library still syncs; the files it references do not
         let syncStore = SyncStore(

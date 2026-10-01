@@ -98,10 +98,21 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func receive(message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        if message["kind"] as? String == "reconcileCachedFiles" {
+            let token = message["token"] as? String ?? ""
+            Task { @MainActor in
+                guard let progress = files?.progress(token: token) else {
+                    replyHandler(["result": PhoneFileReply.unauthorized.rawValue])
+                    return
+                }
+                replyHandler(["transfers": progress.map { $0.encode() }])
+            }
+            return
+        }
         if let transfer = WatchFileTransfer(dictionary: message) {
             let token = message["token"] as? String ?? ""
             Task { @MainActor in
-                replyHandler(["accepted": files?.request(transfer, token: token) ?? false])
+                replyHandler(["result": (files?.request(transfer, token: token) ?? .unavailable).rawValue])
             }
             return
         }
@@ -115,12 +126,7 @@ extension PhoneWatchSession: WCSessionDelegate {
     nonisolated func receive(message: [String: Any]) {
         if message["kind"] as? String == "cancelCachedFile",
            let rawID = message["id"] as? String, let id = UUID(uuidString: rawID) {
-            for transfer in WCSession.default.outstandingFileTransfers {
-                if let metadata = transfer.file.metadata,
-                   WatchFileTransfer(dictionary: metadata)?.id == id {
-                    transfer.cancel()
-                }
-            }
+            Task { @MainActor in files?.cancel(id) }
             return
         }
         guard case .command(let command)? = WatchRemoteMessage(dictionary: message) else { return }

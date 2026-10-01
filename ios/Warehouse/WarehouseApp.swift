@@ -55,6 +55,15 @@ struct WarehouseApp: App {
                 }
             }, enqueue: { transfer, url in
                 WCSession.default.transferFile(url, metadata: transfer.encode())
+            }, cancel: { id in
+                for transfer in WCSession.default.outstandingFileTransfers
+                    where transfer.file.metadata.flatMap(WatchFileTransfer.init(dictionary:))?.id == id {
+                    transfer.cancel()
+                }
+            }, progress: { id in
+                WCSession.default.outstandingFileTransfers.first {
+                    $0.file.metadata.flatMap(WatchFileTransfer.init(dictionary:))?.id == id
+                }?.progress.fractionCompleted ?? 0
             })
         let watchSession = PhoneWatchSession(
             files: phoneFiles,

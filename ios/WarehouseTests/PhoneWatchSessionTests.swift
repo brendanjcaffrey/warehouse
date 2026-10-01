@@ -102,20 +102,26 @@ struct PhoneWatchSessionTests {
         let transfer = WatchFileTransfer(type: .music, filename: "song.m4a")
         var message = transfer.encode()
         message["token"] = "token"
-        let accepted: Bool = await withCheckedContinuation { continuation in
+        let accepted: String? = await withCheckedContinuation { continuation in
             session.receive(message: message) { reply in
-                continuation.resume(returning: reply["accepted"] as? Bool ?? false)
+                continuation.resume(returning: reply["result"] as? String)
             }
         }
-        #expect(accepted)
+        #expect(accepted == "accepted")
         #expect(queued == [transfer])
         message["token"] = "stale"
-        let rejected: Bool = await withCheckedContinuation { continuation in
+        let rejected: String? = await withCheckedContinuation { continuation in
             session.receive(message: message) { reply in
-                continuation.resume(returning: reply["accepted"] as? Bool ?? true)
+                continuation.resume(returning: reply["result"] as? String)
             }
         }
-        #expect(!rejected)
+        #expect(rejected == "unauthorized")
+        let snapshot: [[String: Any]]? = await withCheckedContinuation { continuation in
+            session.receive(message: ["kind": "reconcileCachedFiles", "token": "token"]) { reply in
+                continuation.resume(returning: reply["transfers"] as? [[String: Any]])
+            }
+        }
+        #expect(snapshot?.compactMap(PhoneFileProgress.init(dictionary:)).map(\.transfer) == [transfer])
     }
 
 }

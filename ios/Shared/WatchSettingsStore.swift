@@ -9,9 +9,11 @@ final class WatchSettingsStore {
     private static let serverURLKey = "serverURL"
     private static let playlistIdsKey = "watchPlaylistIds"
     private static let deepPrefetchDepthKey = "deepPrefetchDepth"
+    private static let fileGenerationKey = "fileGeneration"
 
     private(set) var serverURL: String
     private(set) var token: String?
+    private(set) var fileGeneration: UUID
     private(set) var playlistIds: [String]
     /// how many tracks past the one about to play the player pulls down while
     /// the app is frontmost; 0 is off
@@ -35,8 +37,10 @@ final class WatchSettingsStore {
         metadata = LibraryMetadata(defaults: defaults)
         serverURL = defaults.string(forKey: Self.serverURLKey) ?? ""
         token = readToken()
+        fileGeneration = defaults.string(forKey: Self.fileGenerationKey).flatMap(UUID.init(uuidString:)) ?? UUID()
         playlistIds = defaults.stringArray(forKey: Self.playlistIdsKey) ?? []
         deepPrefetchDepth = defaults.integer(forKey: Self.deepPrefetchDepthKey)
+        defaults.set(fileGeneration.uuidString, forKey: Self.fileGenerationKey)
     }
 
     var isConfigured: Bool {
@@ -44,6 +48,11 @@ final class WatchSettingsStore {
     }
 
     func apply(_ payload: WatchPayload) {
+        let newToken = payload.token.isEmpty ? nil : payload.token
+        if token != newToken || serverURL != payload.serverURL {
+            fileGeneration = UUID()
+            defaults.set(fileGeneration.uuidString, forKey: Self.fileGenerationKey)
+        }
         if payload.playlistIds != playlistIds {
             // force a library refetch: the server trims the library to the
             // selection, so a new selection means a different library
@@ -54,7 +63,7 @@ final class WatchSettingsStore {
         defaults.set(payload.serverURL, forKey: Self.serverURLKey)
         playlistIds = payload.playlistIds
         defaults.set(payload.playlistIds, forKey: Self.playlistIdsKey)
-        token = payload.token.isEmpty ? nil : payload.token
+        token = newToken
         writeToken(token)
         deepPrefetchDepth = payload.deepPrefetchDepth
         defaults.set(payload.deepPrefetchDepth, forKey: Self.deepPrefetchDepthKey)

@@ -42,16 +42,19 @@ final class OfflineLibrary {
     private let fileCache: FileCache
     private let downloader: SingleFileDownloading
     private let availableBytes: @MainActor () -> Int64?
+    private let prepareMusic: @MainActor (Set<String>) -> Void
     private var fileStore: FileStore { fileCache.fileStore }
     private var manifestURL: URL { fileStore.rootURL.appending(path: "offline-playlists.json") }
 
     init(
         fileCache: FileCache, downloader: SingleFileDownloading,
-        availableBytes: @escaping @MainActor () -> Int64? = { FileStore.deviceStorage()?.availableBytes }
+        availableBytes: @escaping @MainActor () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
+        prepareMusic: @escaping @MainActor (Set<String>) -> Void = { _ in }
     ) {
         self.fileCache = fileCache
         self.downloader = downloader
         self.availableBytes = availableBytes
+        self.prepareMusic = prepareMusic
         downloaded = fileCache.fileStore.list(.music)
         if let data = try? Data(contentsOf: manifestURL) {
             do {
@@ -62,6 +65,7 @@ final class OfflineLibrary {
         }
         durableSelections = selections
         updateRetention()
+        prepareMusic(Set(desired))
     }
 
     var selectedPlaylistIds: [String] { selections.keys.sorted() }
@@ -155,6 +159,7 @@ final class OfflineLibrary {
         cancelJob()
         self.token = token
         self.baseURL = baseURL
+        prepareMusic(token == nil ? [] : Set(desired))
         failures = [:]
         schedule()
     }
@@ -211,6 +216,7 @@ final class OfflineLibrary {
             persistenceFailed = true
         }
         updateRetention()
+        prepareMusic(Set(desired))
         refreshFiles()
         let wanted = Set(desired + demand)
         failures = failures.filter { wanted.contains($0.key) }

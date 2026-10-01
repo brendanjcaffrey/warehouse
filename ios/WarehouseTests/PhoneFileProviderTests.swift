@@ -46,18 +46,52 @@ struct PhoneFileProviderTests {
             fileStore: store, currentToken: { "token" }, outstanding: { queued },
             enqueue: { transfer, url in queued.append(transfer); urls.append(url) })
         let hit = WatchFileTransfer(type: .music, filename: "song.m4a")
-        #expect(!provider.request(hit, token: "old"))
-        #expect(!provider.request(hit, token: ""))
-        #expect(!provider.request(WatchFileTransfer(type: .music, filename: "missing"), token: "token"))
-        #expect(!provider.request(WatchFileTransfer(type: .music, filename: "../secret"), token: "token"))
-        #expect(provider.request(hit, token: "token"))
+        #expect(provider.request(hit, token: "old") == .unauthorized)
+        #expect(provider.request(hit, token: "") == .unauthorized)
+        #expect(provider.request(WatchFileTransfer(type: .music, filename: "missing"), token: "token") == .cacheMiss)
+        #expect(provider.request(WatchFileTransfer(type: .music, filename: "../secret"), token: "token") == .invalidRequest)
+        #expect(provider.request(hit, token: "token") == .accepted)
         #expect(urls == [store.fileURL(.music, hit.filename)])
-        #expect(provider.request(hit, token: "token"))
+        #expect(provider.request(hit, token: "token") == .accepted)
         #expect(queued == [hit])
-        #expect(!provider.request(WatchFileTransfer(type: .music, filename: hit.filename), token: "token"))
+        #expect(provider.request(WatchFileTransfer(type: .music, filename: hit.filename), token: "token") == .duplicate)
         queued = (0..<PhoneFileProvider.maximumTransfers).map {
             WatchFileTransfer(type: .music, filename: "\($0).m4a")
         }
-        #expect(!provider.request(hit, token: "token"))
+        #expect(provider.request(hit, token: "token") == .queueFull)
+    }
+
+    @Test("the system queue and progress survive provider recreation without enqueueing duplicates")
+    func reconcilesSystemQueue() {
+        let store = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        let desired = WatchFileTransfer(type: .music, filename: "song.m4a")
+        let stale = WatchFileTransfer(type: .music, filename: "old.m4a")
+        var cancelled: [UUID] = []
+        let provider = PhoneFileProvider(
+            fileStore: store, currentToken: { "token" }, outstanding: { [desired, stale] },
+            enqueue: { _, _ in Issue.record("reconciliation must use the existing system transfer") },
+            cancel: { cancelled.append($0) }, progress: { _ in 0.75 })
+        #expect(provider.progress(token: "wrong") == nil)
+        #expect(cancelled.isEmpty)
+        let restored = provider.progress(token: "token")
+        #expect(restored?.map(\.transfer) == [desired, stale])
+        #expect(restored?.first?.fraction == 0.75)
+        #expect(cancelled.isEmpty)
+        // an already queued file remains accepted even if the phone cache
+        // no longer holds its source after a sync.
+        #expect(provider.request(desired, token: "token") == .accepted)
+    }
+
+    @Test("wire progress rejects malformed metadata and nonfinite fractions")
+    func progressMetadata() throws {
+        let transfer = WatchFileTransfer(type: .music, filename: "song.m4a")
+        let progress = PhoneFileProgress(transfer: transfer, fraction: 0.25)
+        #expect(PhoneFileProgress(dictionary: progress.encode())?.fraction == 0.25)
+        for fraction in [-1.0, 2.0, Double.infinity, Double.nan] {
+            #expect(PhoneFileProgress(dictionary: PhoneFileProgress(transfer: transfer, fraction: fraction).encode()) == nil)
+        }
+        var message = transfer.encode()
+        message["generation"] = nil
+        #expect(WatchFileTransfer(dictionary: message) == nil)
     }
 }

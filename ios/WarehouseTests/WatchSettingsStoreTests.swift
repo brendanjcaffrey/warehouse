@@ -100,4 +100,24 @@ struct WatchSettingsStoreTests {
         store.apply(WatchPayload(serverURL: "http://local.test", token: "tok", playlistIds: ["p1"]))
         #expect(store.baseURL() == URL(string: "http://local.test"))
     }
+
+    @Test("file generations persist and change for credentials or library origin")
+    func fileGeneration() {
+        let (store, defaults, tokens) = Self.makeStore("file-generation")
+        let payload = WatchPayload(serverURL: "example.com", token: "token", playlistIds: ["p1"])
+        store.apply(payload)
+        let generation = store.fileGeneration
+        store.apply(payload)
+        #expect(store.fileGeneration == generation)
+        let reloaded = WatchSettingsStore(defaults: defaults, readToken: { tokens.token }, writeToken: { tokens.token = $0 })
+        #expect(reloaded.fileGeneration == generation)
+        reloaded.apply(WatchPayload(serverURL: "other.example.com", token: "token", playlistIds: ["p1"]))
+        #expect(reloaded.fileGeneration != generation)
+        let other = reloaded.fileGeneration
+        reloaded.apply(WatchPayload(serverURL: "other.example.com", token: "replacement", playlistIds: ["p1"]))
+        #expect(reloaded.fileGeneration != other)
+        let refreshed = reloaded.fileGeneration
+        reloaded.apply(WatchPayload(serverURL: "other.example.com", token: "", playlistIds: ["p1"]))
+        #expect(reloaded.fileGeneration != refreshed)
+    }
 }

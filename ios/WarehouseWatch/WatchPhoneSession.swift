@@ -69,15 +69,15 @@ final class WatchPhoneSession: NSObject {
             })
     }
 
-    func requestFile(_ transfer: WatchFileTransfer, token: String, reply: @escaping @MainActor (Bool) -> Void) {
-        guard canSend, isReachable else { reply(false); return }
+    func requestFile(_ transfer: WatchFileTransfer, token: String, reply: @escaping @MainActor (PhoneFileReply) -> Void) {
+        guard canSend, isReachable else { reply(.unavailable); return }
         var message = transfer.encode()
         message["token"] = token
         WCSession.default.sendMessage(message, replyHandler: { response in
-            let accepted = response["accepted"] as? Bool ?? false
-            Task { @MainActor in reply(accepted) }
+            let result = (response["result"] as? String).flatMap(PhoneFileReply.init(rawValue:)) ?? .unavailable
+            Task { @MainActor in reply(result) }
         }, errorHandler: { _ in
-            Task { @MainActor in reply(false) }
+            Task { @MainActor in reply(.unavailable) }
         })
     }
 
@@ -98,6 +98,22 @@ final class WatchPhoneSession: NSObject {
 
     private func updateReachability() {
         remote?.setReachable(isReachable)
+        reconcileFiles()
+    }
+
+    private func reconcileFiles() {
+        files?.configurationChanged()
+        guard canSend, isReachable, let token = settings.token, files != nil else { return }
+        let generation = settings.fileGeneration
+        WCSession.default.sendMessage(
+            ["kind": "reconcileCachedFiles", "token": token],
+            replyHandler: { [weak self] message in
+                let progress = (message["transfers"] as? [[String: Any]])?.compactMap(PhoneFileProgress.init(dictionary:))
+                Task { @MainActor in
+                    guard let self, self.settings.fileGeneration == generation, let progress else { return }
+                    self.files?.reconcile(progress)
+                }
+            }, errorHandler: { _ in })
     }
 }
 
@@ -110,8 +126,10 @@ extension WatchPhoneSession: WCSessionDelegate {
         guard activationState == .activated else { return }
         // the last received context persists across launches, so settings
         // are available even when the phone isn't reachable
-        apply(session.receivedApplicationContext)
+        let payload = WatchPayload(dictionary: session.receivedApplicationContext)
         Task { @MainActor in
+            if let payload { settings.apply(payload) }
+            files?.configurationChanged()
             onActivated?()
             updateReachability()
         }
@@ -148,6 +166,8 @@ extension WatchPhoneSession: WCSessionDelegate {
         guard let payload = WatchPayload(dictionary: context) else { return }
         Task { @MainActor in
             settings.apply(payload)
+            files?.configurationChanged()
+            reconcileFiles()
         }
     }
 }
