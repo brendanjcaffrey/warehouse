@@ -56,26 +56,34 @@ struct WatchSettingsStoreTests {
         #expect(reloaded.deepPrefetchDepth == 20)
     }
 
-    @Test("a selection change resets the sync watermark and bumps the counter")
+    @Test("url, token and selection changes trigger sync and reset the watermark")
     func selectionChangeForcesResync() {
         let (store, defaults, _) = Self.makeStore("selection")
         let metadata = LibraryMetadata(defaults: defaults)
 
         store.apply(WatchPayload(serverURL: "example.com", token: "tok", playlistIds: ["p1"]))
-        #expect(store.selectionChanges == 1)
+        #expect(store.configurationChanges == 1)
 
         // as if a sync already ran
         metadata.updateTimeNs = 43
 
         // same selection: nothing forced
         store.apply(WatchPayload(serverURL: "example.com", token: "tok2", playlistIds: ["p1"]))
-        #expect(store.selectionChanges == 1)
-        #expect(metadata.updateTimeNs == 43)
+        #expect(store.configurationChanges == 2)
+        #expect(metadata.updateTimeNs == 0)
+        metadata.updateTimeNs = 43
+
+        store.apply(WatchPayload(serverURL: "other.example.com", token: "tok2", playlistIds: ["p1"]))
+        #expect(store.configurationChanges == 3)
+        #expect(metadata.updateTimeNs == 0)
+        metadata.updateTimeNs = 43
 
         // new selection: refetch forced
-        store.apply(WatchPayload(serverURL: "example.com", token: "tok2", playlistIds: ["p1", "p2"]))
-        #expect(store.selectionChanges == 2)
+        store.apply(WatchPayload(serverURL: "other.example.com", token: "tok2", playlistIds: ["p1", "p2"]))
+        #expect(store.configurationChanges == 4)
         #expect(metadata.updateTimeNs == 0)
+        store.apply(WatchPayload(serverURL: "other.example.com", token: "tok2", playlistIds: ["p1", "p2"], deepPrefetchDepth: 3))
+        #expect(store.configurationChanges == 4)
     }
 
     @Test("an empty token logs the watch out")

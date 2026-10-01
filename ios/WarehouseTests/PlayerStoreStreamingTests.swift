@@ -3,6 +3,25 @@ import Testing
 @testable import Warehouse
 
 extension PlayerStoreTests {
+    @Test("credential changes rearm the next remote item while local playback continues")
+    @MainActor
+    func credentialsRefreshUpcomingStream() async throws {
+        let (player, fileStore, baseURL) = Self.makeStreamingPlayer(host: "credentials-\(UUID().uuidString).test")
+        try fileStore.prepare()
+        try Self.musicBytes.write(to: fileStore.fileURL(.music, "1.wav"))
+        player.setForeground(false)
+        player.play(Self.songs(2), token: "old", baseURL: baseURL)
+        try await Self.waitFor { player.nextItemURL == baseURL.appending(path: "music/2.wav") }
+
+        let newURL = URL(string: "https://new.example.test")!
+        player.setCredentials(token: "new", baseURL: newURL)
+
+        #expect(player.currentItemURL == fileStore.fileURL(.music, "1.wav"))
+        #expect(player.nextItemURL == newURL.appending(path: "music/2.wav"))
+        #expect(player.isPlaying)
+        player.pause()
+    }
+
     @Test("a track that isn't on disk is streamed from the server")
     @MainActor
     func uncachedTrackStreams() async throws {

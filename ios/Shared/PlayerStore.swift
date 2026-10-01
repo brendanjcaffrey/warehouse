@@ -323,8 +323,15 @@ final class PlayerStore {
     /// stored with the queue would be the one that expired while the app was gone
     func setCredentials(token: String?, baseURL: URL?) {
         guard queue.current != nil else { return }
+        guard self.token != token || self.baseURL != baseURL else { return }
         self.token = token
         self.baseURL = baseURL
+        cancelPrefetch()
+        if nextItem?.streaming == true {
+            removeNextItem()
+            reconcileNextItem()
+        }
+        prefetchNext()
     }
 
     /// starts playing songs in order, positioned at the tapped one so previous

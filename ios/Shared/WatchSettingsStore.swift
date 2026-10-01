@@ -18,9 +18,8 @@ final class WatchSettingsStore {
     /// how many tracks past the one about to play the player pulls down while
     /// the app is frontmost; 0 is off
     private(set) var deepPrefetchDepth: Int
-    /// bumped whenever the phone changes the playlist selection, so the ui
-    /// can kick off a new sync
-    private(set) var selectionChanges = 0
+    /// bumped for every change that affects library sync or playback credentials
+    private(set) var configurationChanges = 0
 
     private let defaults: UserDefaults
     private let metadata: LibraryMetadata
@@ -49,15 +48,17 @@ final class WatchSettingsStore {
 
     func apply(_ payload: WatchPayload) {
         let newToken = payload.token.isEmpty ? nil : payload.token
+        let originChanged = serverURL != payload.serverURL
+        let selectionChanged = payload.playlistIds != playlistIds
+        let credentialsChanged = token != newToken
+        let configurationChanged = originChanged || selectionChanged || credentialsChanged
         if token != newToken || serverURL != payload.serverURL {
             fileGeneration = UUID()
             defaults.set(fileGeneration.uuidString, forKey: Self.fileGenerationKey)
         }
-        if payload.playlistIds != playlistIds {
-            // force a library refetch: the server trims the library to the
-            // selection, so a new selection means a different library
+        if configurationChanged {
+            // refetch when the server, account or selected library may differ
             metadata.updateTimeNs = 0
-            selectionChanges += 1
         }
         serverURL = payload.serverURL
         defaults.set(payload.serverURL, forKey: Self.serverURLKey)
@@ -67,6 +68,7 @@ final class WatchSettingsStore {
         writeToken(token)
         deepPrefetchDepth = payload.deepPrefetchDepth
         defaults.set(payload.deepPrefetchDepth, forKey: Self.deepPrefetchDepthKey)
+        if configurationChanged { configurationChanges += 1 }
     }
 
     // the same normalization as the phone's AuthStore

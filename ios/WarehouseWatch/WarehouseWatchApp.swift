@@ -111,16 +111,11 @@ struct WarehouseWatchApp: App {
                 .environment(remote)
                 .environment(offline)
                 .environment(\.artworkFetcher, artwork)
-                .onChange(of: settings.token, initial: true) {
+                .onChange(of: settings.configurationChanges, initial: true) {
                     offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
-                }
-                .onChange(of: settings.serverURL) {
-                    offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
-                }
-                .onChange(of: settings.isConfigured) {
+                    player.setCredentials(token: settings.token, baseURL: settings.baseURL())
                     if !settings.isConfigured {
                         player.pause()
-                        player.setCredentials(token: nil, baseURL: nil)
                     }
                 }
                 .onChange(of: settings.deepPrefetchDepth, initial: true) {

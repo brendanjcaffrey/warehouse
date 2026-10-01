@@ -29,12 +29,10 @@ struct WatchRootView: View {
                 startupContent
             }
         }
-        .task(id: settings.selectionChanges) {
-            // make the saved library available before starting any network work
+        .task(id: settings.configurationChanges) {
+            requestSync()
+            // load saved data for browsing while the latest sync runs
             await loadLibrary()
-            // first sync, plus a re-sync whenever the phone changes the selection
-            guard settings.isConfigured else { return }
-            await sync.sync(token: settings.token, baseURL: settings.baseURL())
         }
         .onChange(of: sync.completedSyncs) {
             Task { await loadLibrary() }
@@ -44,9 +42,7 @@ struct WatchRootView: View {
             // coming back to the front is the moment the wrist is likely in
             // range again, & it's the only signal the watch gets
             guard scenePhase == .active, sync.state == .offline else { return }
-            Task {
-                await sync.sync(token: settings.token, baseURL: settings.baseURL())
-            }
+            requestSync()
         }
     }
 
@@ -54,6 +50,12 @@ struct WatchRootView: View {
         await library.load()
         guard songs.errorMessage == nil, playlists.errorMessage == nil else { return }
         offline.reconcile(playlists: playlists.playlists, songs: songs.songs)
+    }
+
+    private func requestSync() {
+        sync.requestWatchSync(
+            token: settings.token, baseURL: settings.baseURL(),
+            playlistIds: settings.playlistIds, generation: settings.configurationChanges)
     }
 
     @ViewBuilder
@@ -90,7 +92,7 @@ struct WatchRootView: View {
         Button("Try Again") {
             Task {
                 await loadLibrary()
-                await sync.sync(token: settings.token, baseURL: settings.baseURL())
+                requestSync()
             }
         }
         .disabled(sync.isBusy)

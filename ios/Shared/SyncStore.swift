@@ -65,6 +65,16 @@ final class SyncStore {
     private let transfersFiles: Bool
     private var lastDownloadRefresh = Date.distantPast
     private var syncInProgress = false
+    private struct WatchRequest {
+        let token: String
+        let baseURL: URL
+        let playlistIds: [String]
+        let generation: Int
+    }
+    private var watchRequest: WatchRequest?
+    private var watchGeneration = 0
+    private var watchRunner: Task<Void, Never>?
+    private var activeWatchSync: Task<Void, Never>?
 
     // the session, defaults, interval, downloader & clock parameters are here for tests
     init(
@@ -142,6 +152,44 @@ final class SyncStore {
     /// any; when this store transfers files it then downloads everything missing
     func sync(token: String?, baseURL: URL?) async {
         guard let token, let baseURL, !syncInProgress else { return }
+        await performSync(token: token, baseURL: baseURL, playlistIds: syncedPlaylistIds?(), isCurrent: { true })
+        startWatchRunner()
+    }
+
+    /// serializes watch syncs and keeps only the newest settings while one is running
+    func requestWatchSync(token: String?, baseURL: URL?, playlistIds: [String], generation: Int) {
+        if generation != watchGeneration { activeWatchSync?.cancel() }
+        watchGeneration = generation
+        if let token, let baseURL, !playlistIds.isEmpty {
+            watchRequest = WatchRequest(token: token, baseURL: baseURL, playlistIds: playlistIds, generation: generation)
+        } else {
+            watchRequest = nil
+            state = .idle
+        }
+        startWatchRunner()
+    }
+
+    private func startWatchRunner() {
+        guard watchRunner == nil, watchRequest != nil, !syncInProgress else { return }
+        watchRunner = Task { @MainActor in
+            while let request = watchRequest {
+                watchRequest = nil
+                let task = Task { @MainActor in
+                    await performSync(
+                        token: request.token, baseURL: request.baseURL, playlistIds: request.playlistIds,
+                        isCurrent: { [weak self] in self?.watchGeneration == request.generation })
+                }
+                activeWatchSync = task
+                await task.value
+                activeWatchSync = nil
+            }
+            watchRunner = nil
+        }
+    }
+
+    private func performSync(
+        token: String, baseURL: URL, playlistIds: [String]?, isCurrent: () -> Bool
+    ) async {
         syncInProgress = true
         defer {
             syncInProgress = false
@@ -156,18 +204,24 @@ final class SyncStore {
             state = .checkingForUpdates
             switch try await fetchLibraryStatus(token: token, baseURL: baseURL) {
             case .offline:
+                guard isCurrent() else { return }
                 // if we're offline, use whatever we already have
                 state = .offline
                 return
             case .haveLatestVersion:
-                break
+                guard isCurrent() else { return }
             case .needsUpdate:
+                guard isCurrent() else { return }
                 state = .fetchingLibrary
-                let library = try await fetchLibrary(token: token, baseURL: baseURL)
+                let library = try await fetchLibrary(token: token, baseURL: baseURL, playlistIds: playlistIds)
+                guard isCurrent() else { return }
                 state = .savingLibrary
                 try await database.replaceLibrary(with: library)
+                guard isCurrent() else { return }
                 metadata.update(from: library)
             }
+
+            guard isCurrent() else { return }
 
             // the cache decides what the watch keeps on disk, so there's
             // nothing to enumerate, delete or download here
@@ -181,9 +235,9 @@ final class SyncStore {
                 ? .storageFull
                 : .upToDate(failedDownloads: progress.failed)
         } catch let error as URLError where error.isOfflineError {
-            state = .offline
+            if isCurrent() { state = .offline }
         } catch {
-            state = .error(error.localizedDescription)
+            if isCurrent() { state = .error(error.localizedDescription) }
         }
     }
 
@@ -207,8 +261,8 @@ final class SyncStore {
         }
     }
 
-    private func fetchLibrary(token: String, baseURL: URL) async throws -> Library {
-        switch try await client.fetchLibrary(token: token, baseURL: baseURL, playlistIds: syncedPlaylistIds?()) {
+    private func fetchLibrary(token: String, baseURL: URL, playlistIds: [String]?) async throws -> Library {
+        switch try await client.fetchLibrary(token: token, baseURL: baseURL, playlistIds: playlistIds) {
         case .library(let library):
             return library
         case .error(let message):

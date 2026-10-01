@@ -622,6 +622,101 @@ struct SyncStoreTests {
         #expect(!env.store.isTransferringLibrary)
         #expect(!env.store.isBusy)
     }
+
+    @Test("watch sync applies the latest url, token or playlist selection after a suspended fetch", arguments: ["url", "token", "selection"])
+    func watchConfigurationWins(change: String) async throws {
+        let host = "watch-config-\(change).test"
+        let env = Self.makeEnv(host: host, transfersFiles: false)
+        let oldLibrary = try LibraryResponse.with { $0.library = Self.makeLibrary() }.serializedData()
+        let release = DispatchSemaphore(value: 0)
+        MockURLProtocol.setHandler(forHost: host) { request in
+            _ = release.wait(timeout: .now() + 10)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, oldLibrary)
+        }
+
+        env.store.requestWatchSync(token: "old", baseURL: env.baseURL, playlistIds: ["p1"], generation: 1)
+        for _ in 0..<200 where Self.requestPaths(host: host).isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!Self.requestPaths(host: host).isEmpty)
+
+        let newHost = change == "url" ? "watch-config-new.test" : host
+        var newLibrary = Self.makeLibrary(updateTimeNs: 44)
+        newLibrary.tracks.removeLast()
+        try Self.installHandler(host: newHost, versionNs: 44, library: newLibrary)
+        env.store.requestWatchSync(
+            token: change == "token" ? "new" : "old",
+            baseURL: URL(string: "https://\(newHost)")!,
+            playlistIds: change == "selection" ? ["p2"] : ["p1"], generation: 2)
+        release.signal()
+
+        for _ in 0..<300 where env.store.completedSyncs < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(env.store.completedSyncs == 2)
+        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(try await env.database.trackCount() == 1)
+        #expect(env.metadata.updateTimeNs == 44)
+        let newRequest = try #require(MockURLProtocol.requests(forHost: newHost).last)
+        #expect(newRequest.value(forHTTPHeaderField: "Authorization") == "Bearer \(change == "token" ? "new" : "old")")
+        if change == "selection" {
+            let body = try #require(Self.body(of: newRequest))
+            #expect(try LibraryRequest(serializedBytes: body).playlistIds == ["p2"])
+        }
+    }
+
+    @Test("watch recovers from failed initial sync when only the token changes")
+    func watchTokenRecoversInitialSync() async throws {
+        let host = "watch-token-recovery.test"
+        let env = Self.makeEnv(host: host, transfersFiles: false)
+        try Self.installHandler(host: host, error: URLError(.badServerResponse))
+        env.store.requestWatchSync(token: "expired", baseURL: env.baseURL, playlistIds: ["p1"], generation: 1)
+        for _ in 0..<200 where env.store.completedSyncs < 1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(env.store.completedSyncs == 1)
+        #expect(try await env.database.trackCount() == 0)
+
+        try Self.installHandler(host: host)
+        env.store.requestWatchSync(token: "fresh", baseURL: env.baseURL, playlistIds: ["p1"], generation: 2)
+        for _ in 0..<200 where env.store.completedSyncs < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(env.store.state == .upToDate(failedDownloads: 0))
+        #expect(try await env.database.trackCount() == 2)
+        #expect(env.metadata.updateTimeNs == 43)
+    }
+
+    @Test("watch sign-out cancels an in-flight library fetch without clearing saved data")
+    func watchSignOutStopsStaleSync() async throws {
+        let host = "watch-signout.test"
+        let env = Self.makeEnv(host: host, transfersFiles: false)
+        try await env.database.replaceLibrary(with: Self.makeLibrary())
+        let release = DispatchSemaphore(value: 0)
+        let oldLibrary = try LibraryResponse.with {
+            var library = Self.makeLibrary(updateTimeNs: 44)
+            library.tracks.removeLast()
+            $0.library = library
+        }.serializedData()
+        MockURLProtocol.setHandler(forHost: host) { request in
+            _ = release.wait(timeout: .now() + 10)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, oldLibrary)
+        }
+        env.store.requestWatchSync(token: "old", baseURL: env.baseURL, playlistIds: ["p1"], generation: 1)
+        for _ in 0..<200 where Self.requestPaths(host: host).isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!Self.requestPaths(host: host).isEmpty)
+
+        env.store.requestWatchSync(token: nil, baseURL: env.baseURL, playlistIds: ["p1"], generation: 2)
+        release.signal()
+        for _ in 0..<200 where env.store.completedSyncs < 1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(env.store.state == .idle)
+        #expect(try await env.database.trackCount() == 2)
+        #expect(env.metadata.updateTimeNs == 0)
+    }
 }
 
 /// advances a controlled clock as each file finishes, including the exact
