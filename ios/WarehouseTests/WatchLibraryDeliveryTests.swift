@@ -310,6 +310,35 @@ struct WatchLibraryDeliveryTests {
         #expect(try await env.watch.trackCount() == 4)
     }
 
+    @Test("metadata is queued before selected music and artwork can occupy delivery")
+    func metadataBeforeContent() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        let publisher = try env.publisher()
+        var contentStartedBeforeMetadata = false
+        var publishedSnapshots = 0
+        publisher.onSnapshot = { head, snapshot in
+            guard snapshot != nil else { return }
+            publishedSnapshots += 1
+            if !env.outstanding.contains(PhoneWatchLibraryPublisher.key(head)) {
+                contentStartedBeforeMetadata = true
+            }
+        }
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        #expect(!contentStartedBeforeMetadata)
+        #expect(env.deliveries.count == 1)
+        #expect(publishedSnapshots == 1)
+        publisher.publish(identity: "account", playlistIDs: [])
+        await publisher.waitForPublication()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(!contentStartedBeforeMetadata)
+        #expect(env.deliveries.count == 3)
+        #expect(publishedSnapshots == 3)
+    }
+
     @Test("durable publication retries without a live round trip and background lifetime waits for import")
     func backgroundDelivery() async throws {
         let env = try Env()
@@ -317,10 +346,15 @@ struct WatchLibraryDeliveryTests {
         try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
         env.unavailable = true
         var publisher = try env.publisher()
+        var contentStarted = false
+        publisher.onSnapshot = { _, snapshot in
+            if snapshot != nil { contentStarted = true }
+        }
         publisher.publish(identity: "account", playlistIDs: ["p1"])
         await publisher.waitForPublication()
         let head = publisher.head
         #expect(head.metadataReady && env.deliveries.isEmpty)
+        #expect(!contentStarted)
         env.unavailable = false
         publisher = try env.publisher()
         publisher.publish(identity: "account", playlistIDs: ["p1"])
