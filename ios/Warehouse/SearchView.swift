@@ -156,7 +156,7 @@ struct SearchView: View {
 
     /// plays a tapped song within the displayed search results
     private func play(_ song: Song) {
-        player.play(
+        player.playSelected(
             results.songs, startingAt: results.songs.firstIndex(of: song) ?? 0,
             token: auth.token, baseURL: auth.baseURL())
     }

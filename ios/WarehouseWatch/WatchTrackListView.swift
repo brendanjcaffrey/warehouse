@@ -74,7 +74,7 @@ struct WatchTrackListView: View {
                     ForEach(filtered) { song in
                         Button {
                             // a tap always plays the whole list, dropping any filter
-                            play(startingAt: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
+                            play(startingAt: songs.firstIndex(where: { $0.id == song.id }) ?? 0, selected: true)
                         } label: {
                             WatchSongRow(song: song, downloaded: store.isDownloaded(song), allowNetwork: allowStreaming)
                         }
@@ -97,8 +97,12 @@ struct WatchTrackListView: View {
         }
     }
 
-    private func play(startingAt index: Int) {
-        player.play(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL(), downloadedOnly: !allowStreaming)
+    private func play(startingAt index: Int, selected: Bool = false) {
+        if selected {
+            player.playSelected(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL(), downloadedOnly: !allowStreaming)
+        } else {
+            player.play(songs, startingAt: index, token: settings.token, baseURL: settings.baseURL(), downloadedOnly: !allowStreaming)
+        }
         startedPlaying()
     }
 

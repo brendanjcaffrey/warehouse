@@ -331,13 +331,29 @@ final class PlayerStore {
     /// walks back through the earlier tracks; replaces the current queue and
     /// turns repeat off
     func play(_ songs: [Song], startingAt index: Int = 0, token: String?, baseURL: URL?, downloadedOnly: Bool = false) {
+        playSongs(songs, startingAt: index, token: token, baseURL: baseURL, downloadedOnly: downloadedOnly, preservingModes: false)
+    }
+
+    /// starts at a selected track while keeping the current shuffle and repeat modes
+    func playSelected(_ songs: [Song], startingAt index: Int, token: String?, baseURL: URL?, downloadedOnly: Bool = false) {
+        playSongs(songs, startingAt: index, token: token, baseURL: baseURL, downloadedOnly: downloadedOnly, preservingModes: true)
+    }
+
+    private func playSongs(
+        _ songs: [Song], startingAt index: Int, token: String?, baseURL: URL?,
+        downloadedOnly: Bool, preservingModes: Bool
+    ) {
         let playable = downloadedOnly ? songs.filter { fileStore.exists(.music, $0.musicFilename) } : songs
         guard !playable.isEmpty else { return }
         let target = songs.dropFirst(max(0, index)).first { !downloadedOnly || fileStore.exists(.music, $0.musicFilename) }
         let startIndex = downloadedOnly ? (target.flatMap { playable.firstIndex(of: $0) } ?? 0) : index
         self.downloadedOnly = downloadedOnly
         if downloadedOnly { cancelPrefetch() }
-        start(PlayQueue(songs: playable, startingAt: startIndex), repeating: .off, token: token, baseURL: baseURL)
+        var newQueue = PlayQueue(songs: playable, startingAt: startIndex)
+        if preservingModes && queue.isShuffled {
+            newQueue.setShuffled(true)
+        }
+        start(newQueue, repeating: preservingModes ? repeatMode : .off, token: token, baseURL: baseURL)
     }
 
     /// starts playing songs in a random order; replaces the current queue and

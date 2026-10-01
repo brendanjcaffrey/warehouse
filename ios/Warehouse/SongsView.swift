@@ -214,7 +214,7 @@ struct SongsView: View {
             pendingScroll = song
             search = ""
         }
-        player.play(songs, startingAt: start, token: auth.token, baseURL: auth.baseURL())
+        player.playSelected(songs, startingAt: start, token: auth.token, baseURL: auth.baseURL())
     }
 
     /// the full list in display order, ignoring any active search filter

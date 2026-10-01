@@ -144,7 +144,7 @@ struct AlbumView: View {
 
     /// plays a tapped song within its album
     private func play(_ song: Song) {
-        player.play(
+        player.playSelected(
             album.songs, startingAt: album.songs.firstIndex(of: song) ?? 0,
             token: auth.token, baseURL: auth.baseURL())
     }

@@ -474,6 +474,40 @@ struct PlayerStoreTests {
         #expect(player.repeatMode == .all)
     }
 
+    @Test("selecting a track keeps shuffle and repeat on phone and watch", arguments: [false, true], [RepeatMode.off, .all, .one])
+    @MainActor
+    func selectedTrackKeepsModes(shuffled: Bool, repeatMode: RepeatMode) throws {
+        try checkSelectedTrack(shuffled: shuffled, repeatMode: repeatMode, downloadedOnly: false)
+        try checkSelectedTrack(shuffled: shuffled, repeatMode: repeatMode, downloadedOnly: true)
+    }
+
+    @MainActor
+    private func checkSelectedTrack(shuffled: Bool, repeatMode: RepeatMode, downloadedOnly: Bool) throws {
+        let songs = Self.songs(8)
+        let fileStore = FileStore(rootURL: FileManager.default.temporaryDirectory
+            .appending(path: "selected-track-tests-\(UUID().uuidString)"))
+        let player = PlayerStore(fileStore: fileStore, activateSessionForTests: { true })
+        if downloadedOnly {
+            for song in songs {
+                try fileStore.write(.music, song.musicFilename, data: Data([0]))
+            }
+        }
+        player.play(songs, token: nil, baseURL: nil)
+        player.setShuffled(shuffled)
+        player.setRepeatMode(repeatMode)
+
+        player.playSelected(songs, startingAt: 2, token: nil, baseURL: nil, downloadedOnly: downloadedOnly)
+
+        #expect(player.song?.id == "3")
+        #expect(player.queue.isShuffled == shuffled)
+        #expect(player.repeatMode == repeatMode)
+        let upcoming = player.queue.upcoming.map(\.song.id)
+        #expect(Set(upcoming) == Set(["4", "5", "6", "7", "8"]))
+        if !shuffled {
+            #expect(upcoming == ["4", "5", "6", "7", "8"])
+        }
+    }
+
     @Test("a track playing through to its finish reports a play")
     @MainActor
     func trackEndReportsPlay() {
