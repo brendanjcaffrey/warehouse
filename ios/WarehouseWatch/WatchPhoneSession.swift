@@ -7,6 +7,8 @@ import WatchConnectivity
 /// going out
 @MainActor
 final class WatchPhoneSession: NSObject {
+    nonisolated let contentActivity = WatchContentActivity()
+    var content: WatchContentReceiver?
     weak var files: WatchFileDownloader?
     private let settings: WatchSettingsStore
     let library: WatchLibraryReceiver
@@ -59,7 +61,7 @@ final class WatchPhoneSession: NSObject {
 
     func updateBackgroundLifetime() {
         lifetime.update(activated: WCSession.default.activationState == .activated,
-                        contentPending: WCSession.default.hasContentPending, importsPending: library.pendingOperations)
+                        contentPending: WCSession.default.hasContentPending, importsPending: library.pendingOperations + contentActivity.count)
     }
 
     func requestLibrary() {
@@ -192,6 +194,7 @@ extension WatchPhoneSession: WCSessionDelegate {
         Task { @MainActor in
             applyContext(context)
             library.resume()
+            content?.resume()
             updateBackgroundLifetime()
             files?.configurationChanged()
             onActivated?()
@@ -209,7 +212,29 @@ extension WatchPhoneSession: WCSessionDelegate {
         }
     }
 
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard userInfo["kind"] as? String == "watchContentQuery", let file = WatchContentFile(dictionary: userInfo) else { return }
+        Task { @MainActor in try? content?.query(file) }
+    }
+
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        if file.metadata?["kind"] as? String == "watchContentFile",
+           let metadata = file.metadata, let contentFile = WatchContentFile(dictionary: metadata) {
+            contentActivity.begin()
+            do {
+                try WatchContentReceiver.stage(file.fileURL, file: contentFile)
+                Task { @MainActor in
+                    defer { contentActivity.end(); updateBackgroundLifetime() }
+                    content?.resume()
+                }
+            } catch {
+                Task { @MainActor in
+                    defer { contentActivity.end(); updateBackgroundLifetime() }
+                    content?.stagingFailed(contentFile, error: error)
+                }
+            }
+            return
+        }
         if file.metadata?["kind"] as? String == "watchLibrarySnapshot" {
             do {
                 _ = try WatchLibraryReceiver.stage(file.fileURL)
@@ -231,7 +256,7 @@ extension WatchPhoneSession: WCSessionDelegate {
         }
         let (transfer, temporary) = staged
         Task { @MainActor in
-            guard let files else {
+            guard library.allowsLegacySync, let files else {
                 try? FileManager.default.removeItem(at: temporary)
                 return
             }
@@ -251,6 +276,7 @@ extension WatchPhoneSession: WCSessionDelegate {
 
     private func applyContext(_ context: [String: Any]) {
         if context["watchLibraryHead"] != nil {
+            content?.pause()
             if let head = WatchLibraryHead(context: context) {
                 library.expect(head)
             } else {

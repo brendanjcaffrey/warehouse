@@ -8,6 +8,7 @@ import WatchConnectivity
 /// phone is playing so the watch can drive it as a remote
 @MainActor
 final class PhoneWatchSession: NSObject {
+    var content: PhoneWatchContentQueue?
     var publishLibrary: (() -> Void)?
     private let files: PhoneFileProvider?
     private let payload: @MainActor () -> WatchPayload
@@ -88,6 +89,12 @@ extension PhoneWatchSession: WCSessionDelegate {
     nonisolated func receive(userInfo: [String: Any]) {
         if userInfo["kind"] as? String == "watchLibraryRequest" {
             Task { @MainActor in publishLibrary?() }
+            return
+        }
+        if let receipt = WatchContentReceipt(dictionary: userInfo) {
+            Task { @MainActor in
+                try? content?.receive(receipt)
+            }
             return
         }
         guard let payload = PlayPayload(dictionary: userInfo) else { return }
@@ -182,6 +189,11 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        if fileTransfer.file.metadata?["kind"] as? String == "watchContentFile",
+           let metadata = fileTransfer.file.metadata, let file = WatchContentFile(dictionary: metadata) {
+            Task { @MainActor in try? content?.finished(file, error: error) }
+            return
+        }
         if fileTransfer.file.metadata?["kind"] as? String == "watchLibrarySnapshot" {
             guard error != nil else { return }
             Task { @MainActor in

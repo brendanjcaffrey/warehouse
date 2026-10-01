@@ -84,6 +84,26 @@ struct WarehouseApp: App {
             nowPlaying: { RemotePlaybackPayload(player: playerStore) },
             onCommand: { playerStore.apply($0) },
             diagnosticInbox: diagnosticInbox)
+        let content = try? PhoneWatchContentQueue(fileStore: fileStore, transport: .init(
+            available: { WCSession.isSupported() && WCSession.default.activationState == .activated && WCSession.default.isWatchAppInstalled },
+            outstanding: {
+                WCSession.default.outstandingFileTransfers.compactMap {
+                    guard $0.file.metadata?["kind"] as? String == "watchContentFile" else { return nil }
+                    return $0.file.metadata.flatMap(WatchContentFile.init(dictionary:))
+                }
+            }, enqueue: { file, url in
+                if let metadata = try? file.encode() { WCSession.default.transferFile(url, metadata: metadata) }
+            }, cancel: { id in
+                for transfer in WCSession.default.outstandingFileTransfers
+                    where transfer.file.metadata.flatMap(WatchContentFile.init(dictionary:))?.id == id { transfer.cancel() }
+            }, query: { file in
+                guard let info = try? file.encode(kind: "watchContentQuery") else { return }
+                let alreadyQueued = WCSession.default.outstandingUserInfoTransfers.contains {
+                    $0.userInfo["kind"] as? String == "watchContentQuery" && WatchContentFile(dictionary: $0.userInfo) == file
+                }
+                if !alreadyQueued { WCSession.default.transferUserInfo(info) }
+            }))
+        watchSession.content = content
         let publisher = try? PhoneWatchLibraryPublisher(database: database, transport: .init(
             context: { head in
                 guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
@@ -101,7 +121,10 @@ struct WarehouseApp: App {
             }, enqueue: { url, key in
                 WCSession.default.transferFile(url, metadata: ["kind": "watchLibrarySnapshot", "watchLibraryKey": key])
             }))
+        publisher?.onSnapshot = { head, snapshot in content?.update(head: head, snapshot: snapshot) }
         watchSession.publishLibrary = {
+            try? content?.invalidate(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
+                                     playlistIDs: watchSettings.playlistIds)
             publisher?.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
                                playlistIDs: watchSettings.playlistIds)
         }
@@ -180,6 +203,7 @@ struct WarehouseApp: App {
                     // push any stuck updates when coming back to the foreground
                     if scenePhase == .active {
                         Task { await updates.flush() }
+                        watchSession.push()
                     } else {
                         // the last chance to write the playhead down: from here
                         // the app is suspended & may never run again

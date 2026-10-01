@@ -8,3 +8,4 @@
 - **Offline preparation**: Obtaining every missing music file in a watch playlist from the paired phone whenever the system permits, without requiring playback, charging or an open watch app. Ready means every selected track is present on the watch.
 - **Storage full**: Watch preparation is waiting for enough free space to receive missing music, while downloaded music needed by selected playlists remains retained and playable. The selection stays pending and preparation resumes when space permits.
 - **Downloaded-only playback**: A queue built from tracks already on disk, with music streaming, playback downloads, and now-playing artwork fetches disabled for that queue. This is the required playback policy for music played on the watch.
+- **Watch file receipt**: A persisted acknowledgment that a file matching the desired watch library identity, revision, type, name and verified bytes is stored on the watch. A queued or system-completed transfer is not a receipt.

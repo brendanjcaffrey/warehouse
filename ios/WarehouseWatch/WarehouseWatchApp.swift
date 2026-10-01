@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchKit
+import WatchConnectivity
 
 @main
 struct WarehouseWatchApp: App {
@@ -36,6 +37,14 @@ struct WarehouseWatchApp: App {
         // selected offline music is retained; the rest is a bounded cache.
         // every eviction sees both offline selections and the player's in-use files.
         let fileCache = FileCache(fileStore: fileStore)
+        let content = try? WatchContentReceiver(fileCache: fileCache, send: { receipt in
+            guard phone.canSend, let info = try? receipt.encode() else { return }
+            let alreadyQueued = WCSession.default.outstandingUserInfoTransfers.contains {
+                WatchContentReceipt(dictionary: $0.userInfo) == receipt
+            }
+            if !alreadyQueued { WCSession.default.transferUserInfo(info) }
+        })
+        phone.content = content
         // preparation and browsing keep their legacy transport during migration.
         let files = WatchFileDownloader(
             fileStore: fileStore,
@@ -66,6 +75,7 @@ struct WarehouseWatchApp: App {
         let library = WatchLibraryStore(songs: songs, playlists: playlists, receiver: receiver)
         _library = State(initialValue: library)
         receiver.onChanged = {
+            try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
             if !receiver.allowsLegacySync {
                 syncStore.requestWatchSync(token: nil, baseURL: nil, playlistIds: [], generation: settings.configurationChanges + 1)
                 offline.setCredentials(token: nil, baseURL: nil)
@@ -75,6 +85,7 @@ struct WarehouseWatchApp: App {
             await library.load()
             guard songs.errorMessage == nil, playlists.errorMessage == nil else { return }
             offline.reconcile(playlists: playlists.playlists, songs: songs.songs)
+            try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
         }
         // finished plays queue here & ride the connectivity session back to
         // the phone, which pushes them to the server
@@ -109,7 +120,11 @@ struct WarehouseWatchApp: App {
         phone.activate()
 
         // restore offline retention before collecting opportunistic cache leftovers.
-        Task { @MainActor in fileCache.evict() }
+        Task { @MainActor in
+            await receiver.waitForImport()
+            try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+            fileCache.evict()
+        }
     }
 
     var body: some Scene {
@@ -155,6 +170,7 @@ final class WatchBackgroundDelegate: NSObject, WKApplicationDelegate {
                 continue
             }
             phone.library.resume()
+            phone.content?.resume()
             phone.updateBackgroundLifetime()
             phone.lifetime.hold { connectivity.setTaskCompletedWithSnapshot(false) }
         }

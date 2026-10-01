@@ -56,6 +56,7 @@ final class FileCache {
     private var recency: [String: [String: Double]]
     /// offline selections are separate from the player's transient protection
     private var retainedMusic: Set<String> = []
+    private var retainedArtwork: Set<String> = []
     /// files that must survive eviction: the track playing & anything
     /// prefetched behind it, keyed the same way
     private var inUse: [String: Set<String>] = [:]
@@ -103,6 +104,14 @@ final class FileCache {
         retainedMusic = filenames
     }
 
+    func retainArtwork(_ filenames: Set<String>) {
+        retainedArtwork = filenames
+    }
+
+    private func retainedFiles(_ type: LibraryFileType) -> Set<String> {
+        type == .music ? retainedMusic : retainedArtwork
+    }
+
     func isMusicInUse(_ filename: String) -> Bool {
         inUse[LibraryFileType.music.directory]?.contains(filename) == true
     }
@@ -124,7 +133,7 @@ final class FileCache {
         let limit = budget(held)[type]
         let reserved = reservations.filter { $0.key.type == type }.values.reduce(0, +)
         let allReserved = reservations.values.reduce(0, +)
-        let protected = (inUse[type.directory] ?? []).union(type == .music ? retainedMusic : [])
+        let protected = (inUse[type.directory] ?? []).union(retainedFiles(type))
         let protectedBytes = entries.filter { protected.contains($0.filename) }.reduce(0) { $0 + $1.sizeBytes }
         if bytes > limit && !allowOversized { return false }
         let target = allowOversized ? max(limit, protectedBytes + reserved + bytes) : limit
@@ -147,7 +156,7 @@ final class FileCache {
         if typeHeld + reserved + bytes <= target,
            availableBytes + reclaimed - allReserved - bytes < freeSpaceReserve {
             for other in LibraryFileType.allCases where other != type {
-                let protectedOther = (inUse[other.directory] ?? []).union(other == .music ? retainedMusic : [])
+                let protectedOther = (inUse[other.directory] ?? []).union(retainedFiles(other))
                 for entry in fileStore.entries(other).sorted(by: { lastUsed($0, other) < lastUsed($1, other) }) {
                     guard availableBytes + reclaimed - allReserved - bytes < freeSpaceReserve else { break }
                     guard !protectedOther.contains(entry.filename),
@@ -231,7 +240,7 @@ final class FileCache {
         var total = entries.reduce(0) { $0 + $1.sizeBytes }
         guard total > budget else { return [] }
 
-        let protected = (inUse[type.directory] ?? []).union(type == .music ? retainedMusic : [])
+        let protected = (inUse[type.directory] ?? []).union(retainedFiles(type))
         let ordered = entries.sorted { lastUsed($0, type) < lastUsed($1, type) }
         // ordinary eviction protects the newest file: it is the one just fetched far
         // more often than not, and skipping it also makes a store holding a

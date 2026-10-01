@@ -85,7 +85,10 @@ final class LibraryDatabase {
             let albumArtist = library.artists[track.albumArtistID]
             let album = library.albums[track.albumID]
 
-            let entity = TrackEntity(context: context)
+            guard let description = NSEntityDescription.entity(forEntityName: "TrackEntity", in: context) else {
+                throw CocoaError(.persistentStoreInvalidType)
+            }
+            let entity = TrackEntity(entity: description, insertInto: context)
             entity.id = track.id
             entity.name = track.name
             entity.sortName = track.sortName
@@ -118,7 +121,10 @@ final class LibraryDatabase {
         }
 
         for playlist in library.playlists {
-            let entity = PlaylistEntity(context: context)
+            guard let description = NSEntityDescription.entity(forEntityName: "PlaylistEntity", in: context) else {
+                throw CocoaError(.persistentStoreInvalidType)
+            }
+            let entity = PlaylistEntity(entity: description, insertInto: context)
             entity.id = playlist.id
             entity.name = playlist.name
             entity.parentId = playlist.parentID

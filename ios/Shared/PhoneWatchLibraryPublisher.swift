@@ -23,6 +23,8 @@ final class PhoneWatchLibraryPublisher {
     private var request = 0
     private(set) var errorMessage: String?
 
+    var onSnapshot: (WatchLibraryHead, WatchLibrarySnapshot?) -> Void = { _, _ in }
+
     var head: WatchLibraryHead { saved.head }
 
     init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport) throws {
@@ -77,6 +79,7 @@ final class PhoneWatchLibraryPublisher {
                     _ = try snapshot.validatedLibrary()
                     try persist(Saved(head: head, libraryData: data))
                 }
+                onSnapshot(saved.head, saved.libraryData.map { WatchLibrarySnapshot(head: saved.head, libraryData: $0) })
                 preparing = false
                 errorMessage = nil
                 try deliver()
@@ -100,6 +103,7 @@ final class PhoneWatchLibraryPublisher {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(next).write(to: directory.appending(path: "state.json"), options: .atomic)
         saved = next
+        onSnapshot(next.head, next.libraryData.map { WatchLibrarySnapshot(head: next.head, libraryData: $0) })
     }
 
     private func deliver() throws {

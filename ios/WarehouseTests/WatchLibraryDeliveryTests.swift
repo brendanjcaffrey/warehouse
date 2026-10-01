@@ -425,7 +425,8 @@ struct WatchLibraryDeliveryTests {
         var failure: Error?
         legacy.loadPersistentStores { _, error in failure = error }
         #expect(failure == nil)
-        let track = TrackEntity(context: legacy.viewContext)
+        let description = try #require(NSEntityDescription.entity(forEntityName: "TrackEntity", in: legacy.viewContext))
+        let track = TrackEntity(entity: description, insertInto: legacy.viewContext)
         track.id = "old"
         track.name = "Saved before migration"
         track.musicFilename = "old.mp3"
