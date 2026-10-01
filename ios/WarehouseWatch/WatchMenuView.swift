@@ -64,6 +64,11 @@ struct WatchMenuView: View {
                 } label: {
                     Label("Offline Playlists", systemImage: "arrow.down.circle")
                 }
+                NavigationLink {
+                    WatchDiagnosticView()
+                } label: {
+                    Label("Diagnostics", systemImage: "waveform.path.ecg")
+                }
                 ForEach(PlaylistListBuilder.children(of: "", in: playlists.playlists)) { playlist in
                     NavigationLink {
                         WatchTrackListView(

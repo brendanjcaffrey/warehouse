@@ -113,6 +113,7 @@ struct WarehouseWatchApp: App {
                 .environment(remote)
                 .environment(offline)
                 .environment(\.artworkFetcher, artwork)
+                .environment(\.diagnosticSender, phone)
                 .onChange(of: settings.configurationChanges, initial: true) {
                     offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
                     player.setCredentials(token: settings.token, baseURL: settings.baseURL())

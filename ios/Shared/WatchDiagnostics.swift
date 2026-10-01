@@ -74,24 +74,81 @@ struct WatchDiagnostic: Codable {
     }
 }
 
+struct WatchDiagnosticReport: Codable {
+    let capturedAt: Date
+    let deviceModel: String
+    let systemVersion: String
+    let events: [WatchDiagnostic]
+
+    var count: Int { events.count }
+
+    func count(_ kind: WatchDiagnostic.Kind) -> Int {
+        events.count { $0.kind == kind }
+    }
+
+    func encoded() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try? encoder.encode(self)
+    }
+
+    static func decode(_ data: Data) -> Self? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        return try? decoder.decode(Self.self, from: data)
+    }
+}
+
 @MainActor
 final class WatchDiagnostics {
-    static let shared = WatchDiagnostics()
+    static let shared = WatchDiagnostics(
+        storeURL: FileStore.defaultRootURL().appending(path: "watch-diagnostics.json"))
     private let logger = Logger(subsystem: "com.jcaffrey.warehouse", category: "watch-diagnostics")
     private let capacity: Int
     private let logEvents: Bool
+    private let storeURL: URL?
     private(set) var events: [WatchDiagnostic] = []
 
-    init(capacity: Int = 512, logEvents: Bool = true) {
+    init(capacity: Int = 512, logEvents: Bool = true, storeURL: URL? = nil) {
         self.capacity = max(1, capacity)
         self.logEvents = logEvents
+        self.storeURL = storeURL
+        if let storeURL, let data = try? Data(contentsOf: storeURL),
+           let report = WatchDiagnosticReport.decode(data) {
+            events = Array(report.events.suffix(self.capacity))
+        }
     }
 
     func record(_ event: WatchDiagnostic) {
         events.append(event)
         if events.count > capacity { events.removeFirst(events.count - capacity) }
+        persist()
         if logEvents, let message = Self.line(for: event) {
             logger.info("\(message, privacy: .public)")
+        }
+    }
+
+    func report(deviceModel: String, systemVersion: String) -> WatchDiagnosticReport {
+        WatchDiagnosticReport(capturedAt: Date(), deviceModel: deviceModel,
+                              systemVersion: systemVersion, events: events)
+    }
+
+    func clear() {
+        events = []
+        persist()
+    }
+
+    private func persist() {
+        guard let storeURL else { return }
+        let report = report(deviceModel: "", systemVersion: "")
+        guard let data = report.encoded() else { return }
+        do {
+            try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try data.write(to: storeURL, options: .atomic)
+        } catch {
+            logger.error("diagnostic persistence failed")
         }
     }
 

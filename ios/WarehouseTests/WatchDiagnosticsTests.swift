@@ -5,6 +5,44 @@ import Testing
 @Suite("watch diagnostics")
 @MainActor
 struct WatchDiagnosticsTests {
+    @Test("capture survives relaunch and clear starts a distinct run")
+    func persistsCapture() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let id = UUID()
+        let first = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        first.record(.init(kind: .phoneAccepted, id: id, source: .phone))
+        first.record(.init(kind: .phoneDelivered, id: id, source: .phone))
+        first.record(.init(kind: .playbackStarted, id: UUID(), source: .http))
+
+        let restored = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        #expect(restored.events.map(\.kind) == [.phoneDelivered, .playbackStarted])
+        restored.clear()
+        #expect(WatchDiagnostics(logEvents: false, storeURL: url).events.isEmpty)
+    }
+
+    @Test("the phone saves multiple bounded reports for sharing")
+    func savesReports() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let capture = WatchDiagnostics(logEvents: false)
+        capture.record(.init(kind: .phoneMiss, id: UUID(), source: .phone,
+                             error: NSError(domain: "secret-token=abc", code: 7)))
+        let data = try #require(capture.report(deviceModel: "Apple Watch", systemVersion: "11").encoded())
+        #expect(inbox.receive(data))
+        #expect(inbox.receive(data))
+        #expect(inbox.reports.count == 2)
+        let saved = try Data(contentsOf: #require(inbox.reports.first))
+        #expect(WatchDiagnosticReport.decode(saved)?.count(.phoneMiss) == 1)
+        #expect(!(String(data: saved, encoding: .utf8) ?? "").contains("secret-token"))
+        #expect(!inbox.receive(Data("invalid".utf8)))
+        #expect(!inbox.receive(Data(count: 256_001)))
+        #expect(inbox.reports.count == 2)
+        #expect(WatchDiagnosticInbox(directory: root).reports.count == 2)
+    }
+
     @Test("phone replies distinguish misses and rejected requests")
     func classifiesReplies() {
         #expect(WatchDiagnostic.Kind.phoneReply(.cacheMiss) == .phoneMiss)

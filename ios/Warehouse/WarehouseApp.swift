@@ -15,6 +15,7 @@ struct WarehouseApp: App {
     @State private var player: PlayerStore
     @State private var router: NavigationRouter
     @State private var watchSettings: WatchSyncSettingsStore
+    @State private var diagnosticInbox: WatchDiagnosticInbox
     @State private var seeded = false
     @State private var restoredPlayback = false
 
@@ -47,6 +48,7 @@ struct WarehouseApp: App {
         _router = State(initialValue: routerStore)
 
         let watchSettings = WatchSyncSettingsStore()
+        let diagnosticInbox = WatchDiagnosticInbox()
         let phoneFiles = PhoneFileProvider(
             fileStore: fileStore, currentToken: { authStore.token },
             outstanding: {
@@ -80,9 +82,11 @@ struct WarehouseApp: App {
             // the watch app opened while the phone is playing acts as a
             // remote for it rather than starting a second stream
             nowPlaying: { RemotePlaybackPayload(player: playerStore) },
-            onCommand: { playerStore.apply($0) })
+            onCommand: { playerStore.apply($0) },
+            diagnosticInbox: diagnosticInbox)
         watchSettings.onChange = { watchSession.push() }
         _watchSettings = State(initialValue: watchSettings)
+        _diagnosticInbox = State(initialValue: diagnosticInbox)
         self.watchSession = watchSession
         // activate here rather than in the scene: watch connectivity launches
         // the app in the background to deliver queued plays, & the delegate
@@ -121,6 +125,7 @@ struct WarehouseApp: App {
                 .environment(player)
                 .environment(router)
                 .environment(watchSettings)
+                .environment(diagnosticInbox)
                 .onChange(of: auth.token) {
                     // keep the watch's credentials current across log in/out
                     watchSession.push()

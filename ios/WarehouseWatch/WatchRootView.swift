@@ -29,6 +29,11 @@ struct WatchRootView: View {
                 NavigationStack {
                     VStack {
                         startupContent
+                        NavigationLink {
+                            WatchDiagnosticView()
+                        } label: {
+                            Label("Diagnostics", systemImage: "waveform.path.ecg")
+                        }
                         if remote.isAvailable {
                             NavigationLink {
                                 WatchRemoteNowPlayingView()

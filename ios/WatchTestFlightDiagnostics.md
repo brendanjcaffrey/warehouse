@@ -1,0 +1,11 @@
+# TestFlight watch diagnostics
+
+The iPhone app embeds WarehouseWatch. An internal TestFlight build installs on the paired iPhone and can be installed on its watch without running the watch from Xcode. Upload with `rake ios:testflight` after setting `ASC_KEY_ID` and `ASC_ISSUER_ID`; the task prompts for the login keychain password. If the login keychain is already unlocked, `SKIP_KEYCHAIN_UNLOCK=1 rake ios:testflight` skips that prompt. Add the processed build to an internal tester group in App Store Connect, then install it through TestFlight on the iPhone and the Watch app on the paired watch.
+
+1. On the watch, open **Diagnostics** and tap **Start New Capture** before each trial. This clears the prior on-watch capture, so send and share any result you need first.
+2. Reproduce the playback or offline preparation condition. The watch keeps up to 512 structured events on disk across app relaunches. Its screen shows transfer and playback event counts; refresh after each run.
+3. Tap **Send to iPhone**. A success message means the iPhone saved the complete JSON report. If sending fails, leave the capture on the watch and retry when the phone is nearby. Sending uses a live Watch Connectivity data message, separate from the file-transfer path under test.
+4. On the iPhone, open **Settings → Apple Watch → Diagnostics** and share each saved report. Each send creates a separate file. Save it privately before starting another trial.
+5. Record the watch and phone models, OS versions, TestFlight build, network, app foreground state, cache state, tap time, first audible sound time, and any visible stalls alongside the report. The event named `playbackStarted` is a media-clock proxy; confirm audible startup with a recording. Follow the device matrix and endpoint checks in `WatchDiagnosticsCapture.md`.
+
+The report contains event IDs, timestamps, source, file type, bounded transfer metrics and classified errors. It omits tokens, URLs, filenames and error descriptions. The watch's 512-event limit can truncate a long run, so send after each trial. TestFlight crash reports and feedback do not replace this event report. The phone must be reachable for the explicit send; the watch retains the capture when sending fails. The report path itself still needs validation on a paired device.

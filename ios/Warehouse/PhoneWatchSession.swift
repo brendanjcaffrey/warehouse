@@ -13,19 +13,22 @@ final class PhoneWatchSession: NSObject {
     private let onPlay: @MainActor (String) -> Void
     private let nowPlaying: @MainActor () -> RemotePlaybackPayload?
     private let onCommand: @MainActor (RemoteCommand) -> Void
+    private let diagnosticInbox: WatchDiagnosticInbox
 
     init(
         files: PhoneFileProvider? = nil,
         payload: @escaping @MainActor () -> WatchPayload,
         onPlay: @escaping @MainActor (String) -> Void,
         nowPlaying: @escaping @MainActor () -> RemotePlaybackPayload? = { nil },
-        onCommand: @escaping @MainActor (RemoteCommand) -> Void = { _ in }
+        onCommand: @escaping @MainActor (RemoteCommand) -> Void = { _ in },
+        diagnosticInbox: WatchDiagnosticInbox? = nil
     ) {
         self.files = files
         self.payload = payload
         self.onPlay = onPlay
         self.nowPlaying = nowPlaying
         self.onCommand = onCommand
+        self.diagnosticInbox = diagnosticInbox ?? WatchDiagnosticInbox()
     }
 
     func activate() {
@@ -89,6 +92,19 @@ extension PhoneWatchSession: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         receive(message: message)
+    }
+
+    nonisolated func session(
+        _ session: WCSession, didReceiveMessageData messageData: Data,
+        replyHandler: @escaping (Data) -> Void
+    ) {
+        receive(data: messageData, replyHandler: replyHandler)
+    }
+
+    nonisolated func receive(data: Data, replyHandler: @escaping (Data) -> Void) {
+        Task { @MainActor in
+            replyHandler(diagnosticInbox.receive(data) ? Data("saved".utf8) : Data())
+        }
     }
 
     /// the watch asks with a reply handler so the answer doesn't depend on the

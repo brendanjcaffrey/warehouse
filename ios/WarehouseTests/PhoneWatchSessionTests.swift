@@ -5,6 +5,29 @@ import Testing
 @Suite("PhoneWatchSession")
 @MainActor
 struct PhoneWatchSessionTests {
+    @Test("diagnostic messages are acknowledged only after the report is saved")
+    func receivesDiagnosticReport() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let session = PhoneWatchSession(
+            payload: { WatchPayload(serverURL: "", token: "", playlistIds: []) },
+            onPlay: { _ in }, diagnosticInbox: inbox)
+        let capture = WatchDiagnostics(logEvents: false)
+        capture.record(.init(kind: .playbackStalled, id: UUID(), source: .http))
+        let data = try #require(capture.report(deviceModel: "Apple Watch", systemVersion: "11").encoded())
+        let reply = await withCheckedContinuation { continuation in
+            session.receive(data: data) { continuation.resume(returning: $0) }
+        }
+        #expect(reply == Data("saved".utf8))
+        #expect(inbox.reports.count == 1)
+        let badReply = await withCheckedContinuation { continuation in
+            session.receive(data: Data("bad".utf8)) { continuation.resume(returning: $0) }
+        }
+        #expect(badReply.isEmpty)
+        #expect(inbox.reports.count == 1)
+    }
+
     @MainActor
     final class PlayedTracks {
         var ids = [String]()

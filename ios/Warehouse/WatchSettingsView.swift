@@ -5,6 +5,7 @@ import SwiftUI
 struct WatchSettingsView: View {
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(WatchSyncSettingsStore.self) private var settings
+    @Environment(WatchDiagnosticInbox.self) private var diagnosticInbox
 
     var body: some View {
         List {
@@ -36,6 +37,18 @@ struct WatchSettingsView: View {
                     + "For retained downloads, open Offline Playlists on the watch and choose Prepare for Offline. "
                     + "Keep the watch app open until the playlist says Ready.")
             }
+            Section("Diagnostics") {
+                if diagnosticInbox.reports.isEmpty {
+                    Text("Send a capture from Diagnostics on the watch, then return here to share it.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(diagnosticInbox.reports, id: \.self) { url in
+                        ShareLink(item: url) {
+                            Label(url.deletingPathExtension().lastPathComponent, systemImage: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
             let sections = PlaylistListBuilder.watchSections(in: playlists.playlists)
             if sections.isEmpty {
                 Text("No playlists to choose from yet. Sync your library first.")
@@ -55,6 +68,7 @@ struct WatchSettingsView: View {
         .navigationTitle("Apple Watch")
         .task {
             await playlists.load()
+            diagnosticInbox.refresh()
         }
     }
 

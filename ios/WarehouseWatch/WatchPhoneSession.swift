@@ -9,6 +9,7 @@ import WatchConnectivity
 final class WatchPhoneSession: NSObject {
     weak var files: WatchFileDownloader?
     private let settings: WatchSettingsStore
+    private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void
 
     /// fired once the session activates so held plays can be drained
     var onActivated: (@MainActor () -> Void)?
@@ -16,8 +17,27 @@ final class WatchPhoneSession: NSObject {
     /// sends its commands back through here
     weak var remote: WatchRemoteStore?
 
-    init(settings: WatchSettingsStore) {
+    init(
+        settings: WatchSettingsStore,
+        sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void = { data, completion in
+            guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
+                completion(false)
+                return
+            }
+            WCSession.default.sendMessageData(data, replyHandler: { reply in
+                Task { @MainActor in completion(reply == Data("saved".utf8)) }
+            }, errorHandler: { _ in
+                Task { @MainActor in completion(false) }
+            })
+        }
+    ) {
         self.settings = settings
+        self.sendDiagnosticData = sendDiagnosticData
+    }
+
+    func sendDiagnostics(_ report: WatchDiagnosticReport, completion: @escaping @MainActor (Bool) -> Void) {
+        guard let data = report.encoded() else { completion(false); return }
+        sendDiagnosticData(data, completion)
     }
 
     func activate() {
