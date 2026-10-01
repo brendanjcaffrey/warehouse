@@ -2,6 +2,7 @@ import SwiftUI
 import WatchKit
 
 struct WatchMenuView: View {
+    @Environment(WatchLibraryReceiver.self) private var receiver
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SyncStore.self) private var sync
     @Environment(SongsStore.self) private var songs
@@ -69,20 +70,28 @@ struct WatchMenuView: View {
                 } label: {
                     Label("Diagnostics", systemImage: "waveform.path.ecg")
                 }
-                ForEach(PlaylistListBuilder.children(of: "", in: playlists.playlists)) { playlist in
-                    NavigationLink {
-                        WatchTrackListView(
-                            title: playlist.name,
-                            songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds),
-                            playlist: playlist)
-                    } label: {
-                        Label(playlist.name, systemImage: "music.note.list")
+                ForEach(PlaylistListBuilder.watchSections(in: playlists.playlists)) { section in
+                    Section(section.title) {
+                        ForEach(section.playlists) { playlist in
+                            NavigationLink {
+                                WatchTrackListView(
+                                    title: playlist.name,
+                                    songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds),
+                                    playlist: playlist)
+                            } label: {
+                                Label(playlist.name, systemImage: "music.note.list")
+                            }
+                        }
                     }
                 }
-                Button(action: runSync) {
-                    syncLabel
+                if receiver.protocolSelected {
+                    Text(libraryStatus)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(action: runSync) { syncLabel }
+                        .disabled(isSyncing)
                 }
-                .disabled(isSyncing)
             }
             .navigationTitle("Warehouse")
             .navigationDestination(isPresented: $showingRemote) {
@@ -91,6 +100,13 @@ struct WatchMenuView: View {
             .onChange(of: remote.isAvailable, initial: true) { updateRemoteOpen() }
             .onChange(of: remote.isPhonePlaying) { updateRemoteOpen() }
         }
+    }
+
+    private var libraryStatus: String {
+        if receiver.refreshFailed { return "Library refresh failed. Saved library available." }
+        if receiver.waitingForUpdate { return "Waiting for library update from iPhone…" }
+        if receiver.head?.libraryID == nil { return "Sign in on iPhone to update this library." }
+        return "Library supplied by iPhone"
     }
 
     private func updateRemoteOpen() {
@@ -128,7 +144,7 @@ struct WatchMenuView: View {
     }
 
     private func runSync() {
-        guard !isSyncing else { return }
+        guard receiver.allowsLegacySync, !isSyncing else { return }
         Task {
             isSyncing = true
             syncOutcome = nil

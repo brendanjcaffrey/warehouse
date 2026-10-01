@@ -154,4 +154,15 @@ struct PhoneWatchSessionTests {
         #expect(snapshot?.compactMap(PhoneFileProgress.init(dictionary:)).map(\.transfer) == [transfer])
     }
 
+    @Test("activation pushes and durable library requests invoke the phone publisher")
+    func publishesLibrary() async throws {
+        let session = PhoneWatchSession(payload: { WatchPayload(serverURL: "", token: "", playlistIds: []) }, onPlay: { _ in })
+        var published = 0
+        session.publishLibrary = { published += 1 }
+        session.push()
+        #expect(published == 1)
+        session.receive(userInfo: ["kind": "watchLibraryRequest"])
+        try await PlayerStoreTests.waitFor { published == 2 }
+    }
+
 }

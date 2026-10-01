@@ -1,0 +1,500 @@
+import CoreData
+import Foundation
+import SwiftProtobuf
+import Testing
+@testable import Warehouse
+
+@Suite("WatchLibraryDelivery", .serialized)
+@MainActor
+struct WatchLibraryDeliveryTests {
+    @Test("a failed replacement preserves the last committed library")
+    func failedReplacement() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let database = LibraryDatabase(storeURL: root.appending(path: "library.sqlite"))
+        try await database.replaceLibrary(with: LibraryDatabaseTests.makeLibrary())
+        var fail = true
+        database.beforeLibrarySave = { if fail { throw CocoaError(.fileWriteOutOfSpace) } }
+        await #expect(throws: CocoaError.self) { try await database.replaceLibrary(with: Library()) }
+        fail = false
+        #expect(try await database.trackCount() == 2)
+        #expect(try await database.allPlaylists().count == 4)
+    }
+
+    @MainActor
+    final class Env {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let phone: LibraryDatabase
+        let watch: LibraryDatabase
+        var heads = [WatchLibraryHead]()
+        var deliveries = [(URL, String)]()
+        var outstanding = Set<String>()
+        var unavailable = false
+
+        init() throws {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            phone = LibraryDatabase(storeURL: root.appending(path: "phone.sqlite"))
+            watch = LibraryDatabase(storeURL: root.appending(path: "watch.sqlite"))
+        }
+
+        var inbox: URL { root.appending(path: "inbox") }
+        func publisher() throws -> PhoneWatchLibraryPublisher {
+            try PhoneWatchLibraryPublisher(database: phone, directory: root.appending(path: "publisher"), transport: .init(
+                context: { [self] head in
+                    if unavailable { throw WatchLibraryError.notLoaded }
+                    heads.append(try #require(WatchLibraryHead(context: head.encode())))
+                }, outstanding: { [self] in outstanding }, enqueue: { [self] url, key in
+                    deliveries.append((url, key)); outstanding.insert(key)
+                }))
+        }
+
+        func receiver() -> WatchLibraryReceiver { WatchLibraryReceiver(database: watch, directory: inbox) }
+        func stage(_ index: Int) throws {
+            _ = try WatchLibraryReceiver.stage(deliveries[index].0, directory: inbox)
+        }
+
+        func cleanUp() {
+            WatchLibraryStoreTests.Env.close(phone)
+            WatchLibraryStoreTests.Env.close(watch)
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
+
+    static func library(count: Int = 500) -> Library {
+        var library = LibraryDatabaseTests.makeLibrary()
+        let template = library.tracks[0]
+        library.tracks = (0..<count).map { index in
+            var track = template
+            track.id = "t\(index)"
+            track.musicFilename = "m\(index).mp3"
+            track.playlistIds = ["p1", "p2"]
+            return track
+        }
+        library.playlists = [
+            Playlist.with { $0.id = "folder"; $0.name = "Folder" },
+            Playlist.with {
+                $0.id = "p1"; $0.name = "First"; $0.parentID = "folder"
+                $0.trackIds = library.tracks.map(\.id).reversed()
+            },
+            Playlist.with { $0.id = "p2"; $0.name = "Second"; $0.trackIds = ["t0", "t1"] }
+        ]
+        return library
+    }
+
+    @Test("hundreds of selected tracks traverse production serialization, adapter and database without credentials")
+    func roundTrip() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(), sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p1", "p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.errorMessage == nil)
+        #expect(env.deliveries.count == 1)
+        let receiver = env.receiver()
+        // file arrives before the context, and the delegate-owned source disappears.
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(try await env.watch.trackCount() == 0)
+        receiver.expect(try #require(env.heads.last))
+        await receiver.waitForImport()
+        #expect(receiver.errorMessage == nil)
+        #expect(try await env.watch.trackCount() == 500)
+        let songs = try await env.watch.allSongs()
+        let song = try #require(songs.first { $0.id == "t0" })
+        #expect(song.artistName == "The Beatles" && song.albumName == "Abbey Road")
+        #expect(song.addedDate == Date(timeIntervalSince1970: 1_600_000_000))
+        #expect(song.start == 0 && song.rating == 100 && song.playCount == 5)
+        let playlists = try await env.watch.allPlaylists()
+        #expect(playlists.count == 3)
+        #expect(playlists.first { $0.id == "folder" }?.isFolder == true)
+        #expect(playlists.first { $0.id == "p1" }?.parentId == "folder")
+        #expect(playlists.first { $0.id == "p1" }?.trackIds.first == "t499")
+        #expect(playlists.first { $0.id == "p2" }?.trackIds == ["t0", "t1"])
+        let sections = PlaylistListBuilder.watchSections(in: playlists)
+        #expect(sections.map(\.title) == ["", "Folder"])
+        #expect(sections.flatMap(\.playlists).map(\.id) == ["p2", "p1"])
+        let saved = try #require(try await env.watch.watchSnapshot())
+        #expect(try saved.music.count == 500)
+        #expect(try saved.artwork == ["a1.jpg"])
+        #expect(saved.head == publisher.head)
+        #expect(!receiver.allowsLegacySync)
+        try await env.watch.replaceLibrary(with: Library())
+        #expect(try await env.watch.trackCount() == 500)
+        let downloader = WatchArtworkFetcherTests.GatedDownloader()
+        let localFiles = FileStore(rootURL: env.root.appending(path: "artwork-policy"))
+        let fetcher = WatchArtworkFetcher(fileCache: FileCache(fileStore: localFiles), downloader: downloader, credentials: {
+            guard receiver.allowsLegacySync else { return nil }
+            return ("old-token", URL(string: "https://old-origin.test")!)
+        })
+        #expect(await fetcher.artworkURL("a1.jpg") == nil)
+        #expect(downloader.started.isEmpty)
+        let data = try Data(contentsOf: env.deliveries[0].0)
+        #expect(String(data: data, encoding: .utf8)?.contains("token") == false)
+        let defaults = UserDefaults(suiteName: env.root.lastPathComponent)!
+        defer { defaults.removePersistentDomain(forName: env.root.lastPathComponent) }
+        let files = FileStore(rootURL: env.root.appending(path: "files"))
+        let local = WatchLibraryStore(songs: SongsStore(database: env.watch, fileStore: files),
+                                     playlists: PlaylistsStore(database: env.watch), defaults: defaults, receiver: receiver)
+        await local.load()
+        #expect(local.presentation(isConfigured: false) == .ready)
+    }
+
+    @Test("empty selection is saved but failed or wrong-account phone loads cannot publish an empty library")
+    func emptyAndFailedLoads() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: [])
+        await publisher.waitForPublication()
+        #expect(env.deliveries.isEmpty && publisher.errorMessage != nil && publisher.head.failed == true)
+        try await env.phone.replaceLibrary(with: Self.library(), sourceIdentity: "account")
+        publisher.publish(identity: "account", playlistIDs: [])
+        await publisher.waitForPublication()
+        let receiver = env.receiver()
+        receiver.expect(publisher.head)
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.snapshot != nil)
+        #expect(try await env.watch.trackCount() == 0)
+        let defaults = UserDefaults(suiteName: env.root.lastPathComponent)!
+        defer { defaults.removePersistentDomain(forName: env.root.lastPathComponent) }
+        let files = FileStore(rootURL: env.root.appending(path: "files"))
+        let local = WatchLibraryStore(songs: SongsStore(database: env.watch, fileStore: files),
+                                     playlists: PlaylistsStore(database: env.watch), defaults: defaults, receiver: receiver)
+        await local.load()
+        #expect(local.presentation(isConfigured: false) == .empty)
+        publisher.publish(identity: "another-account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        #expect(env.deliveries.count == 1 && !publisher.head.metadataReady)
+        #expect(publisher.errorMessage != nil)
+    }
+
+    @Test("relaunch, duplicate and stale revisions retain the latest library and file inventory")
+    func revisionsAndRelaunch() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(), sourceIdentity: "account")
+        var publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        let old = publisher.head
+        let originalBytes = try Data(contentsOf: env.deliveries[0].0)
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let current = publisher.head
+        #expect(current.revision > old.revision)
+        // the system may still be reading the previous transfer file.
+        #expect(try Data(contentsOf: env.deliveries[0].0) == originalBytes)
+        let receiver = env.receiver()
+        receiver.expect(current)
+        try env.stage(1)
+        receiver.received()
+        await receiver.waitForImport()
+        receiver.expect(old)
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.head == current)
+        #expect(try await env.watch.trackCount() == 2)
+        try env.stage(1)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.snapshot?.head == current)
+        publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.head == current && env.deliveries.count == 2)
+        WatchLibraryStoreTests.Env.close(env.watch)
+        let reopened = LibraryDatabase(storeURL: env.root.appending(path: "watch.sqlite"))
+        defer { WatchLibraryStoreTests.Env.close(reopened) }
+        let restored = WatchLibraryReceiver(database: reopened, directory: env.inbox)
+        await restored.waitForImport()
+        #expect(restored.snapshot?.head == current)
+        #expect(try restored.snapshot?.music == ["m0.mp3", "m1.mp3"])
+        #expect(try await reopened.trackCount() == 2)
+    }
+
+    @Test("corrupt data and interrupted save preserve the accepted revision and retry staged receipt after launch")
+    func corruptAndInterrupted() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(), sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        var receiver = env.receiver()
+        receiver.expect(publisher.head)
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        let accepted = receiver.snapshot
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        receiver.expect(publisher.head)
+        await receiver.waitForImport()
+        try Data("corrupt".utf8).write(to: env.inbox.appending(path: "bad.json"))
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.snapshot == accepted && receiver.errorMessage != nil)
+        env.watch.beforeLibrarySave = { throw CocoaError(.fileWriteOutOfSpace) }
+        try env.stage(1)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.snapshot == accepted && receiver.errorMessage != nil)
+        #expect(try await env.watch.trackCount() == 2)
+        #expect(try await env.watch.watchSnapshot() == accepted)
+        env.watch.beforeLibrarySave = {}
+        // no scene or phone reachability is required to recover the inbox.
+        receiver = env.receiver()
+        await receiver.waitForImport()
+        #expect(receiver.snapshot?.head == publisher.head)
+        #expect(try await env.watch.trackCount() == 500)
+    }
+
+    @Test("identity changes and sign-out reject old account data; refreshed token keeps the namespace")
+    func accountChanges() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        func token(_ signature: String, username: String = "user") -> String {
+            let claims = Data("{\"username\":\"\(username)\"}".utf8).base64EncodedString()
+            return "header.\(claims).\(signature)"
+        }
+        let origin = URL(string: "https://library.test")!
+        let identity = try #require(LibraryIdentity.make(token: token("one"), baseURL: origin))
+        #expect(LibraryIdentity.make(token: token("two"), baseURL: origin) == identity)
+        #expect(LibraryIdentity.make(token: token("two", username: "other"), baseURL: origin) != identity)
+        #expect(LibraryIdentity.make(token: token("two"), baseURL: URL(string: "https://other.test")) != identity)
+        try await env.phone.replaceLibrary(with: Self.library(), sourceIdentity: identity)
+        let publisher = try env.publisher()
+        publisher.publish(identity: identity, playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let old = publisher.head
+        let receiver = env.receiver()
+        receiver.expect(old)
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        publisher.publish(identity: nil, playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        receiver.expect(publisher.head)
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.head?.libraryID == nil)
+        #expect(receiver.snapshot?.head == old)
+        #expect(try await env.watch.trackCount() == 2)
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "new-account")
+        publisher.publish(identity: "new-account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        receiver.expect(publisher.head)
+        try env.stage(1)
+        receiver.received()
+        receiver.expect(old)
+        await receiver.waitForImport()
+        #expect(receiver.snapshot?.head.libraryID == "new-account")
+        #expect(try await env.watch.trackCount() == 4)
+        var unsupported = WatchLibraryHead(publisher: old.publisher, revision: publisher.head.revision + 1,
+                                           libraryID: "new-account", playlistIDs: ["p1"])
+        unsupported.version = 99
+        receiver.expect(unsupported)
+        await receiver.waitForImport()
+        #expect(receiver.head?.version == 99 && receiver.errorMessage != nil)
+        let incompatible = WatchLibrarySnapshot(head: .init(publisher: unsupported.publisher, revision: unsupported.revision,
+                                                           libraryID: "new-account", playlistIDs: ["p1"], metadataReady: true),
+                                               libraryData: try WatchLibrarySnapshot.selected(Self.library(count: 4), ids: ["p1"]).serializedData())
+        #expect(try await !env.watch.importWatchLibrary(incompatible))
+        #expect(try await env.watch.trackCount() == 4)
+    }
+
+    @Test("durable publication retries without a live round trip and background lifetime waits for import")
+    func backgroundDelivery() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        env.unavailable = true
+        var publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        let head = publisher.head
+        #expect(head.metadataReady && env.deliveries.isEmpty)
+        env.unavailable = false
+        publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        #expect(publisher.head == head && env.deliveries.count == 1)
+        let lifetime = WatchLibraryBackgroundLifetime()
+        var completed = 0
+        lifetime.hold { completed += 1 }
+        lifetime.update(activated: true, contentPending: false, importsPending: 1)
+        #expect(completed == 0)
+        lifetime.update(activated: true, contentPending: false, importsPending: 0)
+        #expect(completed == 1)
+        lifetime.finishIfIdle()
+        #expect(completed == 1)
+    }
+
+    @Test("malformed graph, missing tracks and unsafe filenames cannot replace saved content")
+    func invalidSnapshots() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let head = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "account", playlistIDs: ["p1"], metadataReady: true)
+        _ = try await env.watch.expectWatchLibrary(head)
+        var bad = Self.library(count: 4)
+        bad.playlists[0].parentID = "p1"
+        let cyclic = WatchLibrarySnapshot(head: head, libraryData: try bad.serializedData())
+        await #expect(throws: WatchLibraryError.self) { _ = try await env.watch.importWatchLibrary(cyclic) }
+        bad = Self.library(count: 4)
+        bad.playlists[1].trackIds = ["missing"]
+        let missing = WatchLibrarySnapshot(head: head, libraryData: try bad.serializedData())
+        await #expect(throws: WatchLibraryError.self) { _ = try await env.watch.importWatchLibrary(missing) }
+        bad = Self.library(count: 4)
+        bad.tracks[0].musicFilename = "../outside.mp3"
+        let traversal = WatchLibrarySnapshot(head: head, libraryData: try bad.serializedData())
+        await #expect(throws: FileStore.FilenameError.self) { _ = try await env.watch.importWatchLibrary(traversal) }
+        #expect(try await env.watch.trackCount() == 0)
+    }
+    @Test("selection changes and local metadata edits publish new snapshots while missing selections fail safely")
+    func updatedContent() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let original = publisher.head
+        let edited = LibraryDatabaseTests.editedSong(id: "t0", artworkFilename: "updated.jpg")
+        try await env.phone.updateTrack(edited)
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.head.revision > original.revision)
+        let receiver = env.receiver()
+        receiver.expect(publisher.head)
+        try env.stage(1)
+        receiver.received()
+        await receiver.waitForImport()
+        let song = try #require(try await env.watch.allSongs().first { $0.id == "t0" })
+        #expect(song.name == "Something" && song.artistName == "George Harrison" && song.rating == 80)
+        #expect(try receiver.snapshot?.artwork == ["a1.jpg", "updated.jpg"])
+        let accepted = receiver.snapshot
+        publisher.publish(identity: "account", playlistIDs: ["deleted-playlist"])
+        await publisher.waitForPublication()
+        #expect(publisher.head.failed == true && env.deliveries.count == 2)
+        receiver.expect(publisher.head)
+        await receiver.waitForImport()
+        #expect(receiver.refreshFailed && receiver.snapshot == accepted)
+        publisher.publish(identity: "account", playlistIDs: [])
+        await publisher.waitForPublication()
+        receiver.expect(publisher.head)
+        try env.stage(2)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(try await env.watch.allSongs().isEmpty)
+        #expect(receiver.snapshot != nil && !receiver.refreshFailed)
+    }
+
+    @Test("a replacement phone publisher retires the old namespace permanently")
+    func retiredPublisher() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let first = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "first", playlistIDs: [], metadataReady: true)
+        let replacement = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "second", playlistIDs: [], metadataReady: true)
+        #expect(try await env.watch.expectWatchLibrary(first))
+        #expect(try await env.watch.importWatchLibrary(WatchLibrarySnapshot(head: first, libraryData: Library().serializedData())))
+        let receiver = env.receiver()
+        receiver.expect(replacement)
+        await receiver.waitForImport()
+        #expect(receiver.waitingForUpdate && receiver.snapshot?.head == first)
+        let late = WatchLibraryHead(publisher: first.publisher, revision: 99, libraryID: "first", playlistIDs: [], metadataReady: true)
+        #expect(try await !env.watch.expectWatchLibrary(late))
+        #expect(try await env.watch.watchHead() == replacement)
+    }
+
+    @Test("older saved stores migrate without losing tracks before the first phone snapshot")
+    func oldStoreMigration() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let model = try #require(env.phone.container.managedObjectModel.copy() as? NSManagedObjectModel)
+        model.entities = model.entities.filter { $0.name != "LibraryDocument" }
+        let url = env.root.appending(path: "legacy.sqlite")
+        let legacy = NSPersistentContainer(name: "Library", managedObjectModel: model)
+        legacy.persistentStoreDescriptions.first?.url = url
+        var failure: Error?
+        legacy.loadPersistentStores { _, error in failure = error }
+        #expect(failure == nil)
+        let track = TrackEntity(context: legacy.viewContext)
+        track.id = "old"
+        track.name = "Saved before migration"
+        track.musicFilename = "old.mp3"
+        try legacy.viewContext.save()
+        for store in legacy.persistentStoreCoordinator.persistentStores { try legacy.persistentStoreCoordinator.remove(store) }
+        let migrated = LibraryDatabase(storeURL: url)
+        defer { WatchLibraryStoreTests.Env.close(migrated) }
+        #expect(try await migrated.allSongs().first?.id == "old")
+        let head = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "account", playlistIDs: [], metadataReady: true)
+        #expect(try await migrated.expectWatchLibrary(head))
+        #expect(try await migrated.importWatchLibrary(WatchLibrarySnapshot(head: head, libraryData: Library().serializedData())))
+        #expect(try await migrated.watchSnapshot()?.head == head)
+    }
+
+    @Test("a phone store without ownership requests a full refresh before publishing its saved library")
+    func sourceOwnershipRefresh() async throws {
+        let host = "watch-source-ownership.test"
+        let env = SyncStoreTests.makeEnv(host: host, transfersFiles: false)
+        defer { try? FileManager.default.removeItem(at: env.fileStore.rootURL) }
+        let library = SyncStoreTests.makeLibrary()
+        try await env.database.replaceLibrary(with: library)
+        env.metadata.update(from: library)
+        let claims = Data("{\"username\":\"user\"}".utf8).base64EncodedString()
+        let token = "header.\(claims).signature"
+        try SyncStoreTests.installHandler(host: host)
+        await env.store.checkForUpdates(token: token, baseURL: env.baseURL)
+        #expect(env.store.state == .updateAvailable(newLibraryData: true, missingFiles: 0))
+        var published = 0
+        env.store.onLibrarySaved = { published += 1 }
+        await env.store.sync(token: token, baseURL: env.baseURL)
+        #expect(env.store.state == .upToDate(failedDownloads: 0) && published == 1)
+        let identity = try #require(LibraryIdentity.make(token: token, baseURL: env.baseURL))
+        #expect(try await env.database.hasPhoneLibrary(identity: identity))
+        #expect(SyncStoreTests.requestPaths(host: host).contains("/api/library"))
+    }
+
+    @Test("incomplete phone membership never becomes a successful empty snapshot")
+    func incompletePhoneLibrary() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        var incomplete = Self.library(count: 4)
+        incomplete.playlists[1].trackIds = ["missing"]
+        try await env.phone.replaceLibrary(with: incomplete, sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        #expect(publisher.head.failed == true && publisher.errorMessage != nil)
+        #expect(env.deliveries.isEmpty)
+    }
+
+    @Test("unreadable new protocol control persists the migration guard without an HTTP fallback")
+    func unreadableControl() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.watch.replaceLibrary(with: Self.library(count: 4))
+        let receiver = env.receiver()
+        await receiver.waitForImport()
+        #expect(receiver.allowsLegacySync)
+        #expect(WatchLibraryHead(context: ["watchLibraryHead": Data("future-format".utf8)]) == nil)
+        receiver.rejectContext()
+        #expect(!receiver.allowsLegacySync)
+        await receiver.waitForImport()
+        #expect(receiver.refreshFailed)
+        try await env.watch.replaceLibrary(with: Library())
+        #expect(try await env.watch.trackCount() == 4)
+        let restored = env.receiver()
+        await restored.waitForImport()
+        #expect(restored.protocolSelected && restored.refreshFailed && !restored.allowsLegacySync)
+        #expect(try await env.watch.trackCount() == 4)
+    }
+
+}

@@ -18,8 +18,10 @@ final class WatchLibraryStore {
     private let songs: SongsStore
     private let playlists: PlaylistsStore
     private let metadata: LibraryMetadata
+    private let receiver: WatchLibraryReceiver?
 
-    init(songs: SongsStore, playlists: PlaylistsStore, defaults: UserDefaults = .standard) {
+    init(songs: SongsStore, playlists: PlaylistsStore, defaults: UserDefaults = .standard, receiver: WatchLibraryReceiver? = nil) {
+        self.receiver = receiver
         self.songs = songs
         self.playlists = playlists
         metadata = LibraryMetadata(defaults: defaults)
@@ -38,7 +40,7 @@ final class WatchLibraryStore {
             state = .failed(message)
         } else if !songs.songs.isEmpty {
             state = .ready
-        } else if metadata.hasSavedLibrary || !playlists.playlists.isEmpty {
+        } else if receiver?.snapshot != nil || metadata.hasSavedLibrary || !playlists.playlists.isEmpty {
             state = .empty
         } else {
             state = .needsSync

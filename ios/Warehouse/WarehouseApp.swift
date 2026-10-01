@@ -84,6 +84,29 @@ struct WarehouseApp: App {
             nowPlaying: { RemotePlaybackPayload(player: playerStore) },
             onCommand: { playerStore.apply($0) },
             diagnosticInbox: diagnosticInbox)
+        let publisher = try? PhoneWatchLibraryPublisher(database: database, transport: .init(
+            context: { head in
+                guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
+                    throw WatchLibraryError.notLoaded
+                }
+                // the legacy payload remains available to older peers during migration.
+                var context = WatchPayload(
+                    serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
+                    token: authStore.token ?? "", playlistIds: watchSettings.playlistIds,
+                    deepPrefetchDepth: watchSettings.deepPrefetchDepth).encode()
+                context.merge(try head.encode(), uniquingKeysWith: { _, new in new })
+                try WCSession.default.updateApplicationContext(context)
+            }, outstanding: {
+                Set(WCSession.default.outstandingFileTransfers.compactMap { $0.file.metadata?["watchLibraryKey"] as? String })
+            }, enqueue: { url, key in
+                WCSession.default.transferFile(url, metadata: ["kind": "watchLibrarySnapshot", "watchLibraryKey": key])
+            }))
+        watchSession.publishLibrary = {
+            publisher?.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
+                               playlistIDs: watchSettings.playlistIds)
+        }
+        syncStore.onLibrarySaved = { watchSession.publishLibrary?() }
+        songsStore.onLibraryChanged = { watchSession.publishLibrary?() }
         watchSettings.onChange = { watchSession.push() }
         _watchSettings = State(initialValue: watchSettings)
         _diagnosticInbox = State(initialValue: diagnosticInbox)
@@ -133,6 +156,7 @@ struct WarehouseApp: App {
                     // whatever token was around before the refresh
                     player.setCredentials(token: auth.token, baseURL: auth.baseURL())
                 }
+                .onChange(of: auth.serverURL) { watchSession.push() }
                 .onChange(of: player.song?.id) {
                     watchSession.pushNowPlaying()
                     savePlayback()

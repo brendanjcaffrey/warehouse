@@ -165,7 +165,7 @@ struct FileStore: Sendable {
     /// methods that mutate the filesystem check, since a name this rejects
     /// should never reach the read paths either. throwing rather than skipping
     /// keeps a compromised library from looking like a network failure
-    private static func checkFilename(_ filename: String) throws {
+    static func checkFilename(_ filename: String) throws {
         guard !filename.isEmpty, !filename.hasPrefix("."), !filename.contains("/") else {
             throw FilenameError.invalid(filename)
         }

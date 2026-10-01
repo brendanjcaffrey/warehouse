@@ -48,6 +48,7 @@ final class SyncStore {
     /// bumped when a sync attempt finishes, so views can reload without
     /// observing every per-file progress update in `state`
     private(set) var completedSyncs = 0
+    var onLibrarySaved: () -> Void = {}
     /// bumped at most once per refresh interval while files download, so the
     /// songs list can update its downloaded icons during long syncs
     private(set) var downloadRefreshTicks = 0
@@ -216,9 +217,10 @@ final class SyncStore {
                 let library = try await fetchLibrary(token: token, baseURL: baseURL, playlistIds: playlistIds)
                 guard isCurrent() else { return }
                 state = .savingLibrary
-                try await database.replaceLibrary(with: library)
+                try await database.replaceLibrary(with: library, sourceIdentity: LibraryIdentity.make(token: token, baseURL: baseURL))
                 guard isCurrent() else { return }
                 metadata.update(from: library)
+                onLibrarySaved()
             }
 
             guard isCurrent() else { return }
@@ -242,6 +244,10 @@ final class SyncStore {
     }
 
     private func fetchLibraryStatus(token: String, baseURL: URL) async throws -> LibraryStatus {
+        if let identity = LibraryIdentity.make(token: token, baseURL: baseURL),
+           try await !database.hasPhoneLibrary(identity: identity) {
+            return .needsUpdate
+        }
         // nothing synced yet, no point checking the version
         if metadata.updateTimeNs == 0 {
             return .needsUpdate

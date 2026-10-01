@@ -20,6 +20,14 @@ enum JWT {
         return expiry <= now
     }
 
+    static func username(of token: String) -> String? {
+        let segments = token.components(separatedBy: ".")
+        guard segments.count == 3, let data = base64URLDecode(segments[1]),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let username = claims["username"] as? String, !username.isEmpty else { return nil }
+        return username
+    }
+
     private static func base64URLDecode(_ segment: String) -> Data? {
         var base64 = segment
             .replacingOccurrences(of: "-", with: "+")

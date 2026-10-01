@@ -1,13 +1,16 @@
 import SwiftUI
+import WatchKit
 
 @main
 struct WarehouseWatchApp: App {
+    @WKApplicationDelegateAdaptor(WatchBackgroundDelegate.self) private var backgroundDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var settings: WatchSettingsStore
     @State private var sync: SyncStore
     @State private var songs: SongsStore
     @State private var playlists: PlaylistsStore
     @State private var library: WatchLibraryStore
+    @State private var receiver: WatchLibraryReceiver
     @State private var player: PlayerStore
     @State private var offline: OfflineLibrary
     @State private var remote: WatchRemoteStore
@@ -22,9 +25,12 @@ struct WarehouseWatchApp: App {
         let settings = WatchSettingsStore()
         let songs = SongsStore(database: database, fileStore: fileStore)
         let playlists = PlaylistsStore(database: database)
-        let phone = WatchPhoneSession(settings: settings)
-        let credentials: @Sendable () -> (token: String, baseURL: URL)? = {
-            guard let token = settings.token, let baseURL = settings.baseURL() else { return nil }
+        let receiver = WatchLibraryReceiver(database: database)
+        let phone = WatchPhoneSession(settings: settings, library: receiver)
+        _receiver = State(initialValue: receiver)
+        WatchBackgroundDelegate.phone = phone
+        let credentials: @MainActor @Sendable () -> (token: String, baseURL: URL)? = {
+            guard receiver.allowsLegacySync, let token = settings.token, let baseURL = settings.baseURL() else { return nil }
             return (token: token, baseURL: baseURL)
         }
         // selected offline music is retained; the rest is a bounded cache.
@@ -57,7 +63,19 @@ struct WarehouseWatchApp: App {
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: songs)
         _playlists = State(initialValue: playlists)
-        _library = State(initialValue: WatchLibraryStore(songs: songs, playlists: playlists))
+        let library = WatchLibraryStore(songs: songs, playlists: playlists, receiver: receiver)
+        _library = State(initialValue: library)
+        receiver.onChanged = {
+            if !receiver.allowsLegacySync {
+                syncStore.requestWatchSync(token: nil, baseURL: nil, playlistIds: [], generation: settings.configurationChanges + 1)
+                offline.setCredentials(token: nil, baseURL: nil)
+            } else {
+                offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
+            }
+            await library.load()
+            guard songs.errorMessage == nil, playlists.errorMessage == nil else { return }
+            offline.reconcile(playlists: playlists.playlists, songs: songs.songs)
+        }
         // finished plays queue here & ride the connectivity session back to
         // the phone, which pushes them to the server
         let plays = PlayReportQueue(
@@ -102,22 +120,43 @@ struct WarehouseWatchApp: App {
                 .environment(songs)
                 .environment(playlists)
                 .environment(library)
+                .environment(receiver)
                 .environment(player)
                 .environment(remote)
                 .environment(offline)
                 .environment(\.artworkFetcher, artwork)
                 .environment(\.diagnosticSender, phone)
                 .onChange(of: settings.configurationChanges, initial: true) {
-                    offline.setCredentials(token: settings.token, baseURL: settings.baseURL())
+                    offline.setCredentials(token: receiver.allowsLegacySync ? settings.token : nil,
+                                           baseURL: receiver.allowsLegacySync ? settings.baseURL() : nil)
                 }
                 .onChange(of: scenePhase, initial: true) {
                     offline.setForeground(scenePhase == .active)
                     // pushes only reach a watch that was listening at the
                     // time, so coming to the front is when to ask
                     if scenePhase == .active {
+                        receiver.resume()
+                        phone.requestLibrary()
                         remote.requestState()
                     }
                 }
+        }
+    }
+}
+
+@MainActor
+final class WatchBackgroundDelegate: NSObject, WKApplicationDelegate {
+    static var phone: WatchPhoneSession?
+
+    func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
+        for task in backgroundTasks {
+            guard let connectivity = task as? WKWatchConnectivityRefreshBackgroundTask, let phone = Self.phone else {
+                task.setTaskCompletedWithSnapshot(false)
+                continue
+            }
+            phone.library.resume()
+            phone.updateBackgroundLifetime()
+            phone.lifetime.hold { connectivity.setTaskCompletedWithSnapshot(false) }
         }
     }
 }

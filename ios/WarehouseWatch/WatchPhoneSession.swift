@@ -9,6 +9,9 @@ import WatchConnectivity
 final class WatchPhoneSession: NSObject {
     weak var files: WatchFileDownloader?
     private let settings: WatchSettingsStore
+    let library: WatchLibraryReceiver
+    let lifetime = WatchLibraryBackgroundLifetime()
+    private var contentObservation: NSKeyValueObservation?
     private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void
 
     /// fired once the session activates so held plays can be drained
@@ -19,6 +22,7 @@ final class WatchPhoneSession: NSObject {
 
     init(
         settings: WatchSettingsStore,
+        library: WatchLibraryReceiver,
         sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void = { data, completion in
             guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
                 completion(false)
@@ -32,7 +36,10 @@ final class WatchPhoneSession: NSObject {
         }
     ) {
         self.settings = settings
+        self.library = library
         self.sendDiagnosticData = sendDiagnosticData
+        super.init()
+        library.onIdle = { [weak self] in self?.updateBackgroundLifetime() }
     }
 
     func sendDiagnostics(_ report: WatchDiagnosticReport, completion: @escaping @MainActor (Bool) -> Void) {
@@ -42,8 +49,22 @@ final class WatchPhoneSession: NSObject {
 
     func activate() {
         guard WCSession.isSupported() else { return }
+        contentObservation = WCSession.default.observe(\.hasContentPending, options: [.initial, .new]) { [weak self] _, _ in
+            guard let self else { return }
+            Task { @MainActor in self.updateBackgroundLifetime() }
+        }
         WCSession.default.delegate = self
         WCSession.default.activate()
+    }
+
+    func updateBackgroundLifetime() {
+        lifetime.update(activated: WCSession.default.activationState == .activated,
+                        contentPending: WCSession.default.hasContentPending, importsPending: library.pendingOperations)
+    }
+
+    func requestLibrary() {
+        guard canSend else { return }
+        WCSession.default.transferUserInfo(["kind": "watchLibraryRequest"])
     }
 
     var canSend: Bool {
@@ -167,9 +188,11 @@ extension WatchPhoneSession: WCSessionDelegate {
         guard activationState == .activated else { return }
         // the last received context persists across launches, so settings
         // are available even when the phone isn't reachable
-        let payload = WatchPayload(dictionary: session.receivedApplicationContext)
+        let context = session.receivedApplicationContext
         Task { @MainActor in
-            if let payload { settings.apply(payload) }
+            applyContext(context)
+            library.resume()
+            updateBackgroundLifetime()
             files?.configurationChanged()
             onActivated?()
             updateReachability()
@@ -187,6 +210,15 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        if file.metadata?["kind"] as? String == "watchLibrarySnapshot" {
+            do {
+                _ = try WatchLibraryReceiver.stage(file.fileURL)
+                Task { @MainActor in library.received(); updateBackgroundLifetime() }
+            } catch {
+                Task { @MainActor in library.failed(error); updateBackgroundLifetime() }
+            }
+            return
+        }
         let staged: (WatchFileTransfer, URL)
         do {
             guard let result = try WatchFileTransfer.stage(file.fileURL, metadata: file.metadata) else { return }
@@ -214,11 +246,23 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     private nonisolated func apply(_ context: [String: Any]) {
-        guard let payload = WatchPayload(dictionary: context) else { return }
-        Task { @MainActor in
-            settings.apply(payload)
-            files?.configurationChanged()
-            reconcileFiles()
+        Task { @MainActor in applyContext(context) }
+    }
+
+    private func applyContext(_ context: [String: Any]) {
+        if context["watchLibraryHead"] != nil {
+            if let head = WatchLibraryHead(context: context) {
+                library.expect(head)
+            } else {
+                library.rejectContext()
+            }
+            updateBackgroundLifetime()
+            return
         }
+        // after migration an old peer must not reopen direct metadata sync.
+        guard !library.protocolSelected, library.head == nil, let payload = WatchPayload(dictionary: context) else { return }
+        settings.apply(payload)
+        files?.configurationChanged()
+        reconcileFiles()
     }
 }

@@ -38,7 +38,7 @@ final class WatchArtworkFetcher {
     private let fileCache: FileCache
     private let fileStore: FileStore
     private let downloader: SingleFileDownloading
-    private let credentials: @Sendable () -> (token: String, baseURL: URL)?
+    private let credentials: @MainActor @Sendable () -> (token: String, baseURL: URL)?
     private let now: @Sendable () -> Date
 
     /// one task per filename, so rows that want the same artwork at the same
@@ -64,7 +64,7 @@ final class WatchArtworkFetcher {
         fileCache: FileCache,
         client: LibraryClient = LibraryClient(),
         downloader: SingleFileDownloading? = nil,
-        credentials: @escaping @Sendable () -> (token: String, baseURL: URL)?,
+        credentials: @escaping @MainActor @Sendable () -> (token: String, baseURL: URL)?,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.fileCache = fileCache

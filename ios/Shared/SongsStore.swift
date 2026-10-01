@@ -7,6 +7,7 @@ final class SongsStore {
     private(set) var songs = [Song]()
     private(set) var downloadedMusic = Set<String>()
     private(set) var errorMessage: String?
+    var onLibraryChanged: () -> Void = {}
 
     private let database: LibraryDatabase
     private let fileStore: FileStore
@@ -38,6 +39,7 @@ final class SongsStore {
     func applyTrackEdit(_ song: Song) async {
         do {
             try await database.updateTrack(song)
+            onLibraryChanged()
             await load()
         } catch {
             errorMessage = error.localizedDescription

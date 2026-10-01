@@ -8,6 +8,7 @@ import WatchConnectivity
 /// phone is playing so the watch can drive it as a remote
 @MainActor
 final class PhoneWatchSession: NSObject {
+    var publishLibrary: (() -> Void)?
     private let files: PhoneFileProvider?
     private let payload: @MainActor () -> WatchPayload
     private let onPlay: @MainActor (String) -> Void
@@ -38,6 +39,7 @@ final class PhoneWatchSession: NSObject {
     }
 
     func push() {
+        if let publishLibrary { publishLibrary(); return }
         guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
         // failures are fine: the context is re-pushed on the next change or activation
         try? WCSession.default.updateApplicationContext(payload().encode())
@@ -84,6 +86,10 @@ extension PhoneWatchSession: WCSessionDelegate {
     // split from the delegate method so tests can exercise the decode & hop
     // without a real session
     nonisolated func receive(userInfo: [String: Any]) {
+        if userInfo["kind"] as? String == "watchLibraryRequest" {
+            Task { @MainActor in publishLibrary?() }
+            return
+        }
         guard let payload = PlayPayload(dictionary: userInfo) else { return }
         Task { @MainActor in
             onPlay(payload.trackId)
@@ -176,6 +182,14 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        if fileTransfer.file.metadata?["kind"] as? String == "watchLibrarySnapshot" {
+            guard error != nil else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                publishLibrary?()
+            }
+            return
+        }
         if let metadata = fileTransfer.file.metadata,
            let transfer = WatchFileTransfer(dictionary: metadata) {
             Task { @MainActor in files?.finished(transfer, error: error) }

@@ -4,6 +4,7 @@ struct WatchRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(WatchSettingsStore.self) private var settings
     @Environment(SyncStore.self) private var sync
+    @Environment(WatchLibraryReceiver.self) private var receiver
     @Environment(WatchLibraryStore.self) private var library
     @Environment(OfflineLibrary.self) private var offline
     @Environment(SongsStore.self) private var songs
@@ -11,7 +12,10 @@ struct WatchRootView: View {
     @Environment(WatchRemoteStore.self) private var remote
 
     private var startup: WatchLibraryStore.State {
-        library.presentation(isConfigured: settings.isConfigured)
+        if receiver.protocolSelected, receiver.refreshFailed, library.state != .ready, library.state != .empty {
+            return .failed("Library refresh failed. Check that the iPhone and watch apps are up to date.")
+        }
+        return library.presentation(isConfigured: receiver.head?.libraryID != nil || settings.isConfigured)
     }
 
     var body: some View {
@@ -46,6 +50,7 @@ struct WatchRootView: View {
             }
         }
         .task(id: settings.configurationChanges) {
+            await receiver.waitForImport()
             requestSync()
             // load saved data for browsing while the latest sync runs
             await loadLibrary()
@@ -69,6 +74,7 @@ struct WatchRootView: View {
     }
 
     private func requestSync() {
+        guard receiver.allowsLegacySync else { return }
         sync.requestWatchSync(
             token: settings.token, baseURL: settings.baseURL(),
             playlistIds: settings.playlistIds, generation: settings.configurationChanges)
@@ -82,7 +88,11 @@ struct WatchRootView: View {
         case .loading:
             ProgressView("Loading saved library…")
         case .needsSync:
-            WatchSyncProgressView()
+            if receiver.protocolSelected {
+                Text(!receiver.refreshFailed ? "Waiting for library from iPhone…" : "Library refresh failed. Waiting for iPhone…")
+            } else {
+                WatchSyncProgressView()
+            }
         case .empty:
             ContentUnavailableView {
                 Label("No Songs", systemImage: "music.note")

@@ -42,8 +42,10 @@ final class PlaylistEntity: NSManagedObject {
 /// the web app's indexeddb: artist/album/genre names are flattened into each track
 final class LibraryDatabase {
     let container: NSPersistentContainer
+    let libraryWriter: NSManagedObjectContext
 
     private var loadError: Error?
+    var beforeLibrarySave: () throws -> Void = {}
 
     init(inMemory: Bool = false, storeURL: URL? = nil) {
         container = NSPersistentContainer(name: "Library", managedObjectModel: Self.model)
@@ -53,6 +55,7 @@ final class LibraryDatabase {
         if inMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
         }
+        libraryWriter = container.newBackgroundContext()
         container.loadPersistentStores { _, error in
             self.loadError = error
         }
@@ -60,62 +63,69 @@ final class LibraryDatabase {
     }
 
     /// wipes all existing data and imports the given library
-    func replaceLibrary(with library: Library) async throws {
+    func replaceLibrary(with library: Library, sourceIdentity: String? = nil) async throws {
         if let loadError { throw loadError }
-        let viewContext = container.viewContext
-        try await container.performBackgroundTask { context in
-            try Self.deleteAll(entityName: "TrackEntity", context: context, mergeInto: viewContext)
-            try Self.deleteAll(entityName: "PlaylistEntity", context: context, mergeInto: viewContext)
-
-            for track in library.tracks {
-                let artist = library.artists[track.artistID]
-                let albumArtist = library.artists[track.albumArtistID]
-                let album = library.albums[track.albumID]
-
-                let entity = TrackEntity(context: context)
-                entity.id = track.id
-                entity.name = track.name
-                entity.sortName = track.sortName
-                entity.artistName = artist?.name ?? ""
-                entity.artistSortName = Self.sortName(artist)
-                entity.albumArtistName = albumArtist?.name ?? ""
-                entity.albumArtistSortName = Self.sortName(albumArtist)
-                entity.albumName = album?.name ?? ""
-                entity.albumSortName = Self.sortName(album)
-                entity.genre = library.genres[track.genreID]?.name ?? ""
-                entity.year = Int32(track.year)
-                entity.duration = Double(track.duration)
-                entity.start = Double(track.start)
-                entity.finish = Double(track.finish)
-                entity.trackNumber = Int32(track.trackNumber)
-                entity.discNumber = Int32(track.discNumber)
-                entity.playCount = Int64(track.playCount)
-                entity.rating = track.rating
-                entity.musicFilename = track.musicFilename
-                entity.artworkFilename = track.artworkFilename.isEmpty ? nil : track.artworkFilename
-                entity.addedDate = track.hasAddedDate ? Date(timeIntervalSince1970: TimeInterval(track.addedDate)) : nil
-                entity.playlistIds = track.playlistIds
-            }
-
-            var parentId = [String: String]()
-            var childIds = [String: [String]]()
-            for playlist in library.playlists {
-                parentId[playlist.id] = playlist.parentID
-                childIds[playlist.parentID, default: []].append(playlist.id)
-            }
-
-            for playlist in library.playlists {
-                let entity = PlaylistEntity(context: context)
-                entity.id = playlist.id
-                entity.name = playlist.name
-                entity.parentId = playlist.parentID
-                entity.isLibrary = playlist.isLibrary
-                entity.trackIds = playlist.trackIds
-                entity.parentPlaylistIds = Self.gatherParentPlaylistIds(playlist.id, parentId)
-                entity.childPlaylistIds = Self.gatherChildPlaylistIds(playlist.id, childIds)
-            }
-
+        let beforeSave = beforeLibrarySave
+        try await performLibraryWrite { context in
+            // legacy watch sync cannot overwrite a phone-owned library after migration.
+            guard try Self.document("watchProtocolSelected", context: context) == nil else { return }
+            try Self.importLibrary(library, context: context)
+            try Self.setDocument("phoneLibraryIdentity", data: sourceIdentity.map { Data($0.utf8) }, context: context)
+            try beforeSave()
             try context.save()
+        }
+    }
+
+    static func importLibrary(_ library: Library, context: NSManagedObjectContext) throws {
+        for name in ["TrackEntity", "PlaylistEntity"] {
+            for object in try context.fetch(NSFetchRequest<NSManagedObject>(entityName: name)) { context.delete(object) }
+        }
+        for track in library.tracks {
+            let artist = library.artists[track.artistID]
+            let albumArtist = library.artists[track.albumArtistID]
+            let album = library.albums[track.albumID]
+
+            let entity = TrackEntity(context: context)
+            entity.id = track.id
+            entity.name = track.name
+            entity.sortName = track.sortName
+            entity.artistName = artist?.name ?? ""
+            entity.artistSortName = Self.sortName(artist)
+            entity.albumArtistName = albumArtist?.name ?? ""
+            entity.albumArtistSortName = Self.sortName(albumArtist)
+            entity.albumName = album?.name ?? ""
+            entity.albumSortName = Self.sortName(album)
+            entity.genre = library.genres[track.genreID]?.name ?? ""
+            entity.year = Int32(track.year)
+            entity.duration = Double(track.duration)
+            entity.start = Double(track.start)
+            entity.finish = Double(track.finish)
+            entity.trackNumber = Int32(track.trackNumber)
+            entity.discNumber = Int32(track.discNumber)
+            entity.playCount = Int64(track.playCount)
+            entity.rating = track.rating
+            entity.musicFilename = track.musicFilename
+            entity.artworkFilename = track.artworkFilename.isEmpty ? nil : track.artworkFilename
+            entity.addedDate = track.hasAddedDate ? Date(timeIntervalSince1970: TimeInterval(track.addedDate)) : nil
+            entity.playlistIds = track.playlistIds
+        }
+
+        var parentId = [String: String]()
+        var childIds = [String: [String]]()
+        for playlist in library.playlists {
+            parentId[playlist.id] = playlist.parentID
+            childIds[playlist.parentID, default: []].append(playlist.id)
+        }
+
+        for playlist in library.playlists {
+            let entity = PlaylistEntity(context: context)
+            entity.id = playlist.id
+            entity.name = playlist.name
+            entity.parentId = playlist.parentID
+            entity.isLibrary = playlist.isLibrary
+            entity.trackIds = playlist.trackIds
+            entity.parentPlaylistIds = Self.gatherParentPlaylistIds(playlist.id, parentId)
+            entity.childPlaylistIds = Self.gatherChildPlaylistIds(playlist.id, childIds)
         }
     }
 
@@ -238,17 +248,6 @@ final class LibraryDatabase {
         }
     }
 
-    private static func deleteAll(entityName: String, context: NSManagedObjectContext,
-                                  mergeInto viewContext: NSManagedObjectContext) throws {
-        let fetch = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
-        let request = NSBatchDeleteRequest(fetchRequest: fetch)
-        request.resultType = .resultTypeObjectIDs
-        let result = try context.execute(request) as? NSBatchDeleteResult
-        let objectIDs = result?.result as? [NSManagedObjectID] ?? []
-        NSManagedObjectContext.mergeChanges(
-            fromRemoteContextSave: [NSDeletedObjectsKey: objectIDs], into: [context, viewContext])
-    }
-
     /// matches the web app: empty when there's no sort name or it duplicates the name
     private static func sortName(_ value: SortName?) -> String {
         guard let value, !value.sortName.isEmpty, value.sortName != value.name else { return "" }
@@ -317,7 +316,15 @@ final class LibraryDatabase {
         ]
 
         let model = NSManagedObjectModel()
-        model.entities = [track, playlist]
+        let document = NSEntityDescription()
+        document.name = "LibraryDocument"
+        document.managedObjectClassName = "NSManagedObject"
+        let data = NSAttributeDescription()
+        data.name = "data"
+        data.attributeType = .binaryDataAttributeType
+        data.isOptional = false
+        document.properties = [stringAttribute("id"), data]
+        model.entities = [track, playlist, document]
         return model
     }()
 
