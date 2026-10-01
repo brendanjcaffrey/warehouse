@@ -17,10 +17,27 @@ struct LibraryClient: Sendable {
     enum FileError: Error, Equatable {
         case badStatus(Int)
         case notAFile
+        case unknownSize
     }
 
     // this can be changed for tests
     var session: URLSession = .shared
+
+    /// read the server's authoritative file length before asking either
+    /// transport for the file.
+    func fileSize(_ type: LibraryFileType, filename: String, token: String, baseURL: URL) async throws -> Int64 {
+        let url = baseURL.appendingPathComponent("api/file-size")
+            .appendingPathComponent(type.directory).appendingPathComponent(filename)
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FileError.unknownSize }
+        guard http.statusCode == 200 else { throw FileError.badStatus(http.statusCode) }
+        guard http.mimeType != "text/html" else { throw FileError.notAFile }
+        guard let length = String(data: data, encoding: .utf8),
+              let bytes = Int64(length), bytes > 0 else { throw FileError.unknownSize }
+        return bytes
+    }
 
     /// GET /api/version to check for new library data
     func fetchVersion(token: String, baseURL: URL) async throws -> VersionResult {

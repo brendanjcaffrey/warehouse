@@ -37,7 +37,9 @@ struct WarehouseWatchApp: App {
             transport: .init(
                 isReachable: { phone.canSend && phone.isReachable }, currentToken: { settings.token },
                 currentGeneration: { settings.fileGeneration },
-                request: { phone.requestFile($0, token: $1, reply: $2) }, cancel: { phone.cancelFile($0) }))
+                request: { phone.requestFile($0, token: $1, reply: $2) }, cancel: { phone.cancelFile($0) },
+                fileSize: { await phone.fileSize($0, filename: $1, token: $2) }),
+            fileCache: fileCache)
         phone.files = files
         let artwork = WatchArtworkFetcher(fileCache: fileCache, downloader: files, credentials: credentials)
         let offline = OfflineLibrary(fileCache: fileCache, downloader: files, prepareMusic: { files.setDesiredMusic($0) })

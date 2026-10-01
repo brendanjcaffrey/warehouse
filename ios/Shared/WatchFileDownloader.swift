@@ -10,6 +10,7 @@ final class WatchFileDownloader: SingleFileDownloading {
         var currentGeneration: @MainActor () -> UUID
         var request: @MainActor (WatchFileTransfer, String, @escaping @MainActor (PhoneFileReply) -> Void) -> Void
         var cancel: @MainActor (UUID) -> Void
+        var fileSize: @MainActor (LibraryFileType, String, String) async -> Int64? = { _, _, _ in nil }
     }
 
     enum State: String, Codable { case queued, accepted, transferring, delivered, rejected, cancelled }
@@ -42,8 +43,13 @@ final class WatchFileDownloader: SingleFileDownloading {
     }
 
     typealias Fetch = @MainActor (LibraryFileType, String, String, URL) async throws -> URL
+    typealias Size = @MainActor (LibraryFileType, String, String, URL) async throws -> Int64
     private let fileStore: FileStore
+    private let fileCache: FileCache?
     private let fetch: Fetch
+    private let moveIn: @MainActor (LibraryFileType, String, URL) throws -> Void
+    private let size: Size
+    private let availableBytes: @MainActor () -> Int64?
     private let wait: @MainActor (Duration) async throws -> Void
     private let timeout: Duration
     private let transport: Transport
@@ -59,13 +65,21 @@ final class WatchFileDownloader: SingleFileDownloading {
     init(
         fileStore: FileStore, timeout: Duration = .seconds(30), transport: Transport,
         wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        fetch: @escaping Fetch = { try await LibraryClient().downloadFile($0, filename: $1, token: $2, baseURL: $3) }
+        fetch: @escaping Fetch = { try await LibraryClient().downloadFile($0, filename: $1, token: $2, baseURL: $3) },
+        fileCache: FileCache? = nil,
+        availableBytes: @escaping @MainActor () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
+        size: @escaping Size = { try await LibraryClient().fileSize($0, filename: $1, token: $2, baseURL: $3) },
+        moveIn: (@MainActor (LibraryFileType, String, URL) throws -> Void)? = nil
     ) {
         self.fileStore = fileStore
+        self.fileCache = fileCache
         self.timeout = timeout
         self.transport = transport
         self.wait = wait
         self.fetch = fetch
+        self.moveIn = moveIn ?? { try fileStore.moveIn($0, $1, from: $2) }
+        self.availableBytes = availableBytes
+        self.size = size
         generation = transport.currentGeneration()
         if let data = try? Data(contentsOf: journalURL),
            let journal = try? JSONDecoder().decode(Journal.self, from: data), journal.generation == generation {
@@ -121,12 +135,37 @@ final class WatchFileDownloader: SingleFileDownloading {
         guard !Task.isCancelled, WatchFileTransfer.validFilename(filename), token == transport.currentToken() else { return .failed }
         if fileStore.exists(type, filename) { return .downloaded }
         let file = FileToDownload(type: type, filename: filename)
+        var didReserve = false
+        if let fileCache {
+            let bytes: Int64
+            do {
+                if let phoneBytes = transport.isReachable() ? await transport.fileSize(type, filename, token) : nil {
+                    bytes = phoneBytes
+                } else {
+                    bytes = try await size(type, filename, token, baseURL)
+                }
+            } catch {
+                return .failed
+            }
+            configurationChanged()
+            guard !Task.isCancelled, token == transport.currentToken() else { return .failed }
+            if fileStore.exists(type, filename) { return .downloaded }
+            if !active.keys.contains(where: { jobs[$0]?.transfer.file == file }) {
+                guard fileCache.reserve(type, filename, bytes: bytes, availableBytes: availableBytes(),
+                                        allowOversized: desired.contains(file)) else { return .outOfSpace }
+                didReserve = true
+            }
+        }
         let transfer = jobs.values.first { $0.transfer.file == file }?.transfer
             ?? WatchFileTransfer(generation: generation, type: type, filename: filename)
         let waiterID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                guard !Task.isCancelled else { continuation.resume(returning: .failed); return }
+                guard !Task.isCancelled else {
+                    if didReserve { fileCache?.release(type, filename) }
+                    continuation.resume(returning: .failed)
+                    return
+                }
                 let isNew = jobs[transfer.id] == nil
                 if isNew { jobs[transfer.id] = Job(transfer: transfer) }
                 active[transfer.id, default: Active(token: token, baseURL: baseURL)].waiters[waiterID] = Waiter(
@@ -165,6 +204,15 @@ final class WatchFileDownloader: SingleFileDownloading {
         commit(transfer, temporary: temporary)
     }
 
+    func stagingFailed(_ transfer: WatchFileTransfer, outOfSpace: Bool) {
+        guard jobs[transfer.id]?.transfer == transfer else { return }
+        if outOfSpace {
+            complete(transfer.id, result: .outOfSpace, keepPhone: false)
+        } else {
+            failed(transfer)
+        }
+    }
+
     func failed(_ transfer: WatchFileTransfer) {
         guard jobs[transfer.id]?.transfer == transfer else { return }
         update(transfer.id, state: .rejected, reason: .transferFailed)
@@ -201,10 +249,26 @@ final class WatchFileDownloader: SingleFileDownloading {
               desired.contains(transfer.file) || active[transfer.id] != nil else { return }
         guard !persistenceFailed else { complete(transfer.id, result: .failed, keepPhone: false); return }
         do {
+            if let fileCache, !fileStore.exists(transfer.type, transfer.filename) {
+                let bytes = Int64((try temporary.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0)
+                guard bytes > 0 else {
+                    complete(transfer.id, result: .failed, keepPhone: false)
+                    return
+                }
+                if bytes > (fileCache.reservedBytes(transfer.type, transfer.filename) ?? 0) {
+                    fileCache.release(transfer.type, transfer.filename)
+                    guard fileCache.reserve(transfer.type, transfer.filename, bytes: bytes,
+                                            availableBytes: availableBytes().map { $0 + bytes },
+                                            allowOversized: desired.contains(transfer.file)) else {
+                        complete(transfer.id, result: .outOfSpace, keepPhone: false)
+                        return
+                    }
+                }
+            }
             // main-actor serialization covers the existence check and move for
             // both transports. neither transport writes the destination itself.
             if !fileStore.exists(transfer.type, transfer.filename) {
-                try fileStore.moveIn(transfer.type, transfer.filename, from: temporary)
+                try moveIn(transfer.type, transfer.filename, temporary)
             }
             update(transfer.id, state: .delivered, fraction: 1)
             complete(transfer.id, result: .downloaded, keepPhone: false)
@@ -227,6 +291,7 @@ final class WatchFileDownloader: SingleFileDownloading {
     }
 
     private func complete(_ id: UUID, result: FileDownloadResult, keepPhone: Bool) {
+        if let transfer = jobs[id]?.transfer { fileCache?.release(transfer.type, transfer.filename) }
         let running = active.removeValue(forKey: id)
         running?.deadline?.cancel()
         running?.http?.cancel()

@@ -5,6 +5,30 @@ import Testing
 
 @Suite("LibraryClient")
 struct LibraryClientTests {
+    @Test("file size uses authenticated response and rejects missing lengths")
+    func fileSize() async throws {
+        let host = "file-size-\(UUID().uuidString).test"
+        MockURLProtocol.setHandler(forHost: host) { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                           headerFields: ["Content-Type": "text/plain"])!
+            return (response, Data("12345".utf8))
+        }
+        let client = LibraryClient(session: MockURLProtocol.makeSession())
+        #expect(try await client.fileSize(.music, filename: "song.mp3", token: "secret",
+                                          baseURL: Self.baseURL(host)) == 12345)
+        let request = try #require(MockURLProtocol.requests(forHost: host).first)
+        #expect(request.url?.path == "/api/file-size/music/song.mp3")
+        #expect(request.httpMethod == "GET")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+        MockURLProtocol.setHandler(forHost: host) { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                             headerFields: ["Content-Type": "text/plain"])!, Data())
+        }
+        await #expect(throws: LibraryClient.FileError.unknownSize) {
+            try await client.fileSize(.music, filename: "song.mp3", token: "secret", baseURL: Self.baseURL(host))
+        }
+    }
+
     static func ok(_ data: Data, contentType: String = "application/octet-stream") -> (URLRequest) throws -> (HTTPURLResponse, Data) {
         { request in
             let response = HTTPURLResponse(

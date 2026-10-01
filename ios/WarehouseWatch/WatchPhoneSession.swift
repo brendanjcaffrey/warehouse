@@ -81,6 +81,17 @@ final class WatchPhoneSession: NSObject {
         })
     }
 
+    func fileSize(_ type: LibraryFileType, filename: String, token: String) async -> Int64? {
+        guard canSend, isReachable else { return nil }
+        return await withCheckedContinuation { continuation in
+            WCSession.default.sendMessage(
+                ["kind": "cachedFileSize", "fileType": type.rawValue, "filename": filename, "token": token],
+                replyHandler: { response in
+                    continuation.resume(returning: (response["bytes"] as? NSNumber)?.int64Value)
+                }, errorHandler: { _ in continuation.resume(returning: nil) })
+        }
+    }
+
     func cancelFile(_ id: UUID) {
         guard canSend, isReachable else { return }
         WCSession.default.sendMessage(
@@ -146,7 +157,17 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
-        guard let (transfer, temporary) = WatchFileTransfer.stage(file.fileURL, metadata: file.metadata) else { return }
+        let staged: (WatchFileTransfer, URL)
+        do {
+            guard let result = try WatchFileTransfer.stage(file.fileURL, metadata: file.metadata) else { return }
+            staged = result
+        } catch {
+            guard let metadata = file.metadata, let transfer = WatchFileTransfer(dictionary: metadata) else { return }
+            let outOfSpace = BackgroundDownload.isOutOfSpace(error)
+            Task { @MainActor in files?.stagingFailed(transfer, outOfSpace: outOfSpace) }
+            return
+        }
+        let (transfer, temporary) = staged
         Task { @MainActor in
             guard let files else {
                 try? FileManager.default.removeItem(at: temporary)

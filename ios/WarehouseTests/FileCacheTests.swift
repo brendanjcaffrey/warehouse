@@ -241,8 +241,8 @@ struct FileCacheTests {
     @Test("the budget is a clamped fraction of the space the cache could occupy")
     func budgetIsClamped() {
         let small = FileCacheBudget.forSpace(1_000_000)
-        #expect(small.music == 256_000_000) // floored
-        #expect(small.artwork == 16_000_000)
+        #expect(small.music == 500_000)
+        #expect(small.artwork == 50_000)
 
         let middling = FileCacheBudget.forSpace(8_000_000_000)
         #expect(middling.music == 4_000_000_000) // half the space
@@ -368,5 +368,68 @@ struct FileCacheTests {
         // the two halves have budgets of their own; only what the budget is
         // sized against counts both
         #expect(cache.musicRoom() == 150)
+    }
+
+    @Test("small devices never receive a fictitious minimum cache budget")
+    func smallDeviceBudget() {
+        #expect(FileCacheBudget.forSpace(100).music == 50)
+        #expect(FileCacheBudget.forSpace(100).artwork == 5)
+    }
+
+    @Test("reservation reclaims evictable files before transfer and keeps pinned files")
+    func admissionReclaims() throws {
+        let store = Self.makeStore()
+        let cache = FileCache(fileStore: store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        try Self.write(store, .music, "pinned.mp3", bytes: 30)
+        try Self.write(store, .music, "playing.mp3", bytes: 20)
+        try Self.write(store, .music, "old.mp3", bytes: 40)
+        cache.retainMusic(["pinned.mp3"])
+        cache.setInUse(.music, ["playing.mp3"])
+
+        #expect(cache.reserve(.music, "new.mp3", bytes: 50, availableBytes: 20))
+        #expect(store.exists(.music, "pinned.mp3"))
+        #expect(store.exists(.music, "playing.mp3"))
+        #expect(!store.exists(.music, "old.mp3"))
+        #expect(!cache.reserve(.music, "next.mp3", bytes: 20, availableBytes: 20))
+        cache.release(.music, "new.mp3")
+        #expect(cache.reserve(.music, "next.mp3", bytes: 20, availableBytes: 30))
+    }
+
+    @Test("reservation refuses unknown capacity and preserves pinned files when disk is full")
+    func admissionRejects() throws {
+        let store = Self.makeStore()
+        let cache = FileCache(fileStore: store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        try Self.write(store, .music, "pinned.mp3", bytes: 100)
+        cache.retainMusic(["pinned.mp3"])
+        #expect(!cache.reserve(.music, "unknown.mp3", bytes: 10, availableBytes: nil))
+        #expect(!cache.reserve(.music, "full.mp3", bytes: 10, availableBytes: 15,
+                               allowOversized: true))
+        #expect(!cache.reserve(.music, "huge.mp3", bytes: 150, availableBytes: 500))
+        #expect(store.exists(.music, "pinned.mp3"))
+        #expect(cache.reserve(.music, "selected.mp3", bytes: 10, availableBytes: 100,
+                              allowOversized: true))
+    }
+
+    @Test("one oversized selected file may use real free space after eviction")
+    func oversizedAdmission() throws {
+        let store = Self.makeStore()
+        let cache = FileCache(fileStore: store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        try Self.write(store, .music, "old.mp3", bytes: 80)
+        #expect(!cache.reserve(.music, "large.mp3", bytes: 150, availableBytes: 200))
+        #expect(cache.reserve(.music, "large.mp3", bytes: 150, availableBytes: 200, allowOversized: true))
+        #expect(!store.exists(.music, "old.mp3"))
+    }
+
+    @Test("music reservation can reclaim unrelated artwork when disk is full")
+    func admissionReclaimsArtwork() throws {
+        let store = Self.makeStore()
+        let cache = FileCache(fileStore: store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        try Self.write(store, .artwork, "old.jpg", bytes: 30)
+        #expect(cache.reserve(.music, "new.mp3", bytes: 20, availableBytes: 0))
+        #expect(!store.exists(.artwork, "old.jpg"))
     }
 }

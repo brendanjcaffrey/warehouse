@@ -20,14 +20,14 @@ struct FileCacheBudget: Equatable, Sendable {
         forSpace((FileStore.deviceStorage()?.availableBytes ?? 0) + heldBytes)
     }
 
-    /// half the space for music, floored so a nearly full disk still caches a
-    /// few tracks & capped so a roomy one isn't handed over whole. artwork is
+    /// half the space for music, capped so a roomy disk isn't handed over
+    /// whole. artwork is
     /// small and hot, so it gets its own slice rather than competing with
     /// tracks hundreds of times its size
     static func forSpace(_ bytes: Int64) -> FileCacheBudget {
         FileCacheBudget(
-            music: clamp(bytes / 2, low: 256_000_000, high: 16_000_000_000),
-            artwork: clamp(bytes / 20, low: 16_000_000, high: 1_000_000_000))
+            music: clamp(bytes / 2, low: 0, high: 16_000_000_000),
+            artwork: clamp(bytes / 20, low: 0, high: 1_000_000_000))
     }
 
     private static func clamp(_ value: Int64, low: Int64, high: Int64) -> Int64 {
@@ -59,15 +59,19 @@ final class FileCache {
     /// files that must survive eviction: the track playing & anything
     /// prefetched behind it, keyed the same way
     private var inUse: [String: Set<String>] = [:]
+    private var reservations: [FileToDownload: Int64] = [:]
+    private let freeSpaceReserve: Int64
 
     init(
         fileStore: FileStore,
         budget: @escaping @MainActor (Int64) -> FileCacheBudget = FileCacheBudget.forDevice,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        freeSpaceReserve: Int64 = 32_000_000
     ) {
         self.fileStore = fileStore
         self.budget = budget
         self.now = now
+        self.freeSpaceReserve = freeSpaceReserve
         self.recency = Self.load(from: Self.indexURL(fileStore))
     }
 
@@ -100,6 +104,73 @@ final class FileCache {
         inUse[LibraryFileType.music.directory]?.contains(filename) == true
     }
 
+    /// claim the space for a transfer before either transport starts. the
+    /// caller releases the claim after commit, failure or cancellation.
+    func reserve(
+        _ type: LibraryFileType, _ filename: String, bytes: Int64,
+        availableBytes: Int64?, allowOversized: Bool = false
+    ) -> Bool {
+        guard bytes > 0, let availableBytes, availableBytes >= 0 else { return false }
+        let file = FileToDownload(type: type, filename: filename)
+        if reservations[file] != nil { return true }
+        if fileStore.exists(type, filename) { return true }
+
+        let entries = fileStore.entries(type)
+        let held = entries.reduce(0) { $0 + $1.sizeBytes }
+            + LibraryFileType.allCases.filter { $0 != type }.reduce(0) { $0 + fileStore.totalSize($1) }
+        let limit = budget(held)[type]
+        let reserved = reservations.filter { $0.key.type == type }.values.reduce(0, +)
+        let allReserved = reservations.values.reduce(0, +)
+        let protected = (inUse[type.directory] ?? []).union(type == .music ? retainedMusic : [])
+        let protectedBytes = entries.filter { protected.contains($0.filename) }.reduce(0) { $0 + $1.sizeBytes }
+        if bytes > limit && !allowOversized { return false }
+        let target = allowOversized ? max(limit, protectedBytes + reserved + bytes) : limit
+        var typeHeld = entries.reduce(0) { $0 + $1.sizeBytes }
+        var reclaimed: Int64 = 0
+        var musicRemoved = false
+        for entry in entries.sorted(by: { lastUsed($0, type) < lastUsed($1, type) }) {
+            let fitsBudget = typeHeld + reserved + bytes <= target
+            let fitsDisk = availableBytes + reclaimed - allReserved - bytes >= freeSpaceReserve
+            if fitsBudget && fitsDisk { break }
+            guard !protected.contains(entry.filename),
+                  (try? fileStore.delete(type, entry.filename)) != nil else { continue }
+            typeHeld -= entry.sizeBytes
+            reclaimed += entry.sizeBytes
+            musicRemoved = musicRemoved || type == .music
+            recency[type.directory]?[entry.filename] = nil
+        }
+        if typeHeld + reserved + bytes <= target,
+           availableBytes + reclaimed - allReserved - bytes < freeSpaceReserve {
+            for other in LibraryFileType.allCases where other != type {
+                let protectedOther = (inUse[other.directory] ?? []).union(other == .music ? retainedMusic : [])
+                for entry in fileStore.entries(other).sorted(by: { lastUsed($0, other) < lastUsed($1, other) }) {
+                    guard availableBytes + reclaimed - allReserved - bytes < freeSpaceReserve else { break }
+                    guard !protectedOther.contains(entry.filename),
+                          (try? fileStore.delete(other, entry.filename)) != nil else { continue }
+                    reclaimed += entry.sizeBytes
+                    musicRemoved = musicRemoved || other == .music
+                    recency[other.directory]?[entry.filename] = nil
+                }
+            }
+        }
+        if reclaimed > 0 {
+            save()
+            if musicRemoved { onMusicChanged?() }
+        }
+        guard typeHeld + reserved + bytes <= target,
+              availableBytes + reclaimed - allReserved - bytes >= freeSpaceReserve else { return false }
+        reservations[file] = bytes
+        return true
+    }
+
+    func release(_ type: LibraryFileType, _ filename: String) {
+        reservations[FileToDownload(type: type, filename: filename)] = nil
+    }
+
+    func reservedBytes(_ type: LibraryFileType, _ filename: String) -> Int64? {
+        reservations[FileToDownload(type: type, filename: filename)]
+    }
+
     /// how much more music the cache could take before what it already holds
     /// fills the music budget. this is the question a fill that runs deep into
     /// a queue has to ask: the files it pulls are evictable as soon as the
@@ -120,16 +191,6 @@ final class FileCache {
             held += bytes
         }
         return budget(held).music - musicBytes
-    }
-
-    /// preparation may replace opportunistic files even when the cache is exactly full
-    func makeMusicRoom() -> Bool {
-        let music = fileStore.entries(.music)
-        let held = music.reduce(0) { $0 + $1.sizeBytes } + fileStore.totalSize(.artwork)
-        let removed = evict(.music, entries: music, budget: max(0, budget(held).music - 1), preservingNewest: false)
-        save()
-        if !removed.isEmpty { onMusicChanged?() }
-        return musicRoom() > 0
     }
 
     /// drops least recently used files until each type is back under budget,

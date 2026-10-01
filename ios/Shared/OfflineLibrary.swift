@@ -86,7 +86,7 @@ final class OfflineLibrary {
             state = .ready
         } else if selection.paused {
             state = .paused
-        } else if failures.values.contains(.storageFull) {
+        } else if selection.filenames.values.contains(where: { failures[$0] == .storageFull }) {
             state = .storageFull
         } else if let failure = selection.filenames.values.compactMap({ failures[$0] }).first {
             state = failure
@@ -235,13 +235,12 @@ final class OfflineLibrary {
 
     private func schedule() {
         guard job == nil, foreground, !persistenceFailed, let token, let baseURL else { return }
-        guard !failures.values.contains(.storageFull) else { return }
         let candidates = Array(demand.prefix(1)) + desired + demand.dropFirst()
         guard let filename = candidates.first(where: { !downloaded.contains($0) && failures[$0] == nil }) else { return }
         let selected = retained.contains(filename)
         // deep opportunistic filling stops at the budget instead of evicting its own work
         guard selected || filename == demand.first || fileCache.musicRoom() > 0 else { return }
-        guard !selected || fileCache.makeMusicRoom(), let available = availableBytes(), available > 32_000_000 else {
+        guard availableBytes() != nil else {
             failures[filename] = .storageFull
             return
         }
@@ -265,16 +264,13 @@ final class OfflineLibrary {
         case .downloaded:
             let selected = retained.contains(filename)
             if selected || filename == demand.first { fileCache.evict() }
-            if selected, fileCache.musicRoom() < 0, !fileCache.isMusicInUse(filename) {
-                try? fileStore.delete(.music, filename)
-                failures[filename] = .storageFull
-            } else if !fileStore.exists(.music, filename) {
+            if !fileStore.exists(.music, filename) {
                 failures[filename] = .failed
             }
         case .failed:
             failures[filename] = .failed
         case .outOfSpace:
-            failures[filename] = .storageFull
+            failures[filename] = retained.contains(filename) ? .storageFull : .failed
         }
         refreshFiles()
         fileCache.noteMusicStored()

@@ -210,6 +210,28 @@ describe 'Warehouse Server' do
       expect(last_response.body).to eq("fake mp3 contents\n")
     end
 
+    it 'reports the music file length without sending the file' do
+      get "/api/file-size/music/#{music_filename}", {}, get_auth_header
+      expect(last_response.status).to eq(200)
+      expect(last_response.body).to eq(File.size(File.join(Config.env.music_path, music_filename)).to_s)
+    end
+
+    it 'rejects unknown files when asking for their size' do
+      get '/api/file-size/music/missing.mp3', {}, get_auth_header
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'requires authentication for file sizes' do
+      get "/api/file-size/music/#{music_filename}"
+      expect(last_response.status).to eq(302)
+    end
+
+    it 'reports artwork size through the same endpoint' do
+      get "/api/file-size/artwork/#{artwork_filename}", {}, get_auth_header
+      expect(last_response.status).to eq(200)
+      expect(last_response.body).to eq(File.size(File.join(Config.env.artwork_path, artwork_filename)).to_s)
+    end
+
     it 'sends a path to the file in remote mode' do
       Config.set_remote(true)
       get "/music/#{music_filename}", {}, get_auth_header

@@ -99,6 +99,13 @@ struct PhoneWatchSessionTests {
             enqueue: { transfer, _ in queued.append(transfer) })
         let session = PhoneWatchSession(
             files: files, payload: { WatchPayload(serverURL: "", token: "token", playlistIds: []) }, onPlay: { _ in })
+        let size: Int64? = await withCheckedContinuation { continuation in
+            session.receive(message: ["kind": "cachedFileSize", "fileType": "music",
+                                      "filename": "song.m4a", "token": "token"]) { reply in
+                continuation.resume(returning: (reply["bytes"] as? NSNumber)?.int64Value)
+            }
+        }
+        #expect(size == 5)
         let transfer = WatchFileTransfer(type: .music, filename: "song.m4a")
         var message = transfer.encode()
         message["token"] = "token"

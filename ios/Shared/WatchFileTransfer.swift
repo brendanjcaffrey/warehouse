@@ -37,17 +37,20 @@ struct WatchFileTransfer: Equatable, Codable, Sendable {
 
     var file: FileToDownload { FileToDownload(type: type, filename: filename) }
 
-    /// the system removes an incoming file when its delegate returns. copy it
-    /// synchronously before hopping to the main actor, then consume the copy.
-    static func stage(_ source: URL, metadata: [String: Any]?) -> (WatchFileTransfer, URL)? {
+    /// the system removes an incoming file when its delegate returns. move it
+    /// synchronously before hopping to the main actor, then consume the move.
+    static func stage(
+        _ source: URL, metadata: [String: Any]?,
+        move: (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) }
+    ) throws -> (WatchFileTransfer, URL)? {
         guard let metadata, let transfer = WatchFileTransfer(dictionary: metadata) else { return nil }
         let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         do {
-            try FileManager.default.copyItem(at: source, to: temporary)
+            try move(source, temporary)
             return (transfer, temporary)
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            return nil
+            throw error
         }
     }
 }

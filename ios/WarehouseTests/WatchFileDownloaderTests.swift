@@ -12,6 +12,7 @@ struct WatchFileDownloaderTests {
         var suspended = false
         var released: Set<Int>?
         var failedCalls: Set<Int> = []
+        var error: Error?
         var completed = 0
         let store: FileStore
 
@@ -22,6 +23,7 @@ struct WatchFileDownloaderTests {
             calls.append(filename)
             while suspended || released.map({ !$0.contains(index) }) == true { await Task.yield() }
             defer { completed += 1 }
+            if let error { throw error }
             guard succeeds, !failedCalls.contains(index) else { throw URLError(.networkConnectionLost) }
             let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             try Data("server".utf8).write(to: url)
@@ -46,7 +48,8 @@ struct WatchFileDownloaderTests {
         lazy var fallback = Fallback(store: store)
         lazy var downloader = makeDownloader()
 
-        func makeDownloader() -> WatchFileDownloader {
+        func makeDownloader(fileCache: FileCache? = nil, availableBytes: Int64? = nil,
+                            size: Int64 = 6, phoneSize: Int64? = nil, moveError: Error? = nil) -> WatchFileDownloader {
             WatchFileDownloader(
                 fileStore: store, timeout: timeout,
                 transport: .init(
@@ -55,7 +58,8 @@ struct WatchFileDownloaderTests {
                     request: { [unowned self] transfer, _, reply in
                         self.requests.append(transfer)
                         self.replies[transfer.id] = reply
-                    }, cancel: { [unowned self] in self.cancelled.append($0) }),
+                    }, cancel: { [unowned self] in self.cancelled.append($0) },
+                    fileSize: { _, _, _ in phoneSize }),
                 wait: { [unowned self] duration in
                     self.waits.append(duration)
                     if self.manualClock {
@@ -64,7 +68,12 @@ struct WatchFileDownloaderTests {
                         try await Task.sleep(for: duration)
                     }
                 },
-                fetch: { [unowned self] in try await self.fallback.fetch($0, filename: $1, token: $2, baseURL: $3) })
+                fetch: { [unowned self] in try await self.fallback.fetch($0, filename: $1, token: $2, baseURL: $3) },
+                fileCache: fileCache, availableBytes: { availableBytes }, size: { _, _, _, _ in size },
+                moveIn: { [unowned self] type, filename, url in
+                    if let moveError { throw moveError }
+                    try self.store.moveIn(type, filename, from: url)
+                })
         }
 
         func fetch(_ filename: String = "song.m4a", type: LibraryFileType = .music) -> Task<Bool, Never> {
@@ -85,6 +94,88 @@ struct WatchFileDownloaderTests {
         try env.store.write(.music, "song.m4a", data: Data("cached".utf8))
         #expect(await env.fetch().value)
         #expect(env.requests.isEmpty)
+        #expect(env.fallback.calls.isEmpty)
+    }
+
+    @Test("storage admission stops phone and http before a request")
+    func admissionStopsTransport() async {
+        let env = Fixture()
+        let cache = FileCache(fileStore: env.store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        let downloader = env.makeDownloader(fileCache: cache, availableBytes: 15, size: 10)
+        let result = await downloader.downloadResult(.music, filename: "song.m4a", token: "token",
+                                                     baseURL: URL(string: "https://example.com")!, onPhase: { _ in })
+        #expect(result == .outOfSpace)
+        #expect(env.requests.isEmpty)
+        #expect(env.fallback.calls.isEmpty)
+    }
+
+    @Test("phone file length admits a transfer without a server size probe")
+    func phoneSizeAdmits() async throws {
+        let env = Fixture()
+        let cache = FileCache(fileStore: env.store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        let downloader = env.makeDownloader(fileCache: cache, availableBytes: 100, size: 1_000,
+                                            phoneSize: 6)
+        let task = Task {
+            await downloader.downloadResult(.music, filename: "song.m4a", token: "token",
+                                            baseURL: URL(string: "https://example.com")!, onPhase: { _ in })
+        }
+        try await PlayerStoreTests.waitFor { !env.requests.isEmpty }
+        let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try Data("phone!".utf8).write(to: temporary)
+        downloader.receive(try #require(env.requests.first), from: temporary)
+        #expect(await task.value == .downloaded)
+        #expect(env.fallback.calls.isEmpty)
+    }
+
+    @Test("disk full during commit is distinct and releases its claim")
+    func commitStorageFailure() async throws {
+        let env = Fixture()
+        let cache = FileCache(fileStore: env.store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        let downloader = env.makeDownloader(fileCache: cache, availableBytes: 100, size: 6,
+                                            moveError: POSIXError(.ENOSPC))
+        let task = Task {
+            await downloader.downloadResult(.music, filename: "song.m4a", token: "token",
+                                            baseURL: URL(string: "https://example.com")!, onPhase: { _ in })
+        }
+        try await PlayerStoreTests.waitFor { !env.requests.isEmpty }
+        let transfer = try #require(env.requests.first)
+        let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try Data("server".utf8).write(to: temporary)
+        downloader.receive(transfer, from: temporary)
+        #expect(await task.value == .outOfSpace)
+        #expect(cache.reserve(.music, "next.m4a", bytes: 95, availableBytes: 110))
+    }
+
+    @Test("disk full during http fallback is returned distinctly")
+    func fallbackDiskFull() async throws {
+        let env = Fixture()
+        let cache = FileCache(fileStore: env.store, budget: { _ in FileCacheBudget(music: 100, artwork: 100) },
+                              freeSpaceReserve: 10)
+        env.fallback.error = POSIXError(.ENOSPC)
+        let downloader = env.makeDownloader(fileCache: cache, availableBytes: 100, size: 6)
+        let task = Task {
+            await downloader.downloadResult(.music, filename: "song.m4a", token: "token",
+                                            baseURL: URL(string: "https://example.com")!, onPhase: { _ in })
+        }
+        try await PlayerStoreTests.waitFor { !env.requests.isEmpty }
+        env.replies[try #require(env.requests.first).id]?(.cacheMiss)
+        #expect(await task.value == .outOfSpace)
+        #expect(env.fallback.calls == ["song.m4a"])
+    }
+
+    @Test("staging disk full reaches the caller without starting http")
+    func stagingDiskFull() async throws {
+        let env = Fixture()
+        let task = Task {
+            await env.downloader.downloadResult(.music, filename: "song.m4a", token: "token",
+                                                baseURL: URL(string: "https://example.com")!, onPhase: { _ in })
+        }
+        try await PlayerStoreTests.waitFor { !env.requests.isEmpty }
+        env.downloader.stagingFailed(try #require(env.requests.first), outOfSpace: true)
+        #expect(await task.value == .outOfSpace)
         #expect(env.fallback.calls.isEmpty)
     }
 

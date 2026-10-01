@@ -98,6 +98,20 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func receive(message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        if message["kind"] as? String == "cachedFileSize" {
+            let token = message["token"] as? String ?? ""
+            let type = (message["fileType"] as? String).flatMap(LibraryFileType.init(rawValue:))
+            let filename = message["filename"] as? String
+            Task { @MainActor in
+                guard let type, let filename,
+                      let size = files?.fileSize(type, filename: filename, token: token) else {
+                    replyHandler([:])
+                    return
+                }
+                replyHandler(["bytes": size])
+            }
+            return
+        }
         if message["kind"] as? String == "reconcileCachedFiles" {
             let token = message["token"] as? String ?? ""
             Task { @MainActor in

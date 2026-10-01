@@ -10,12 +10,26 @@ struct PhoneFileProviderTests {
         let source = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try Data("file".utf8).write(to: source)
         let transfer = WatchFileTransfer(type: .artwork, filename: "cover.jpg")
-        let (staged, temporary) = try #require(WatchFileTransfer.stage(source, metadata: transfer.encode()))
+        let (staged, temporary) = try #require(try WatchFileTransfer.stage(source, metadata: transfer.encode()))
         defer { try? FileManager.default.removeItem(at: temporary) }
-        try FileManager.default.removeItem(at: source)
+        #expect(!FileManager.default.fileExists(atPath: source.path))
         #expect(staged == transfer)
         #expect(try Data(contentsOf: temporary) == Data("file".utf8))
-        #expect(WatchFileTransfer.stage(temporary, metadata: [:]) == nil)
+        #expect(try WatchFileTransfer.stage(temporary, metadata: [:]) == nil)
+    }
+
+    @Test("staging surfaces disk full without consuming the incoming file")
+    func stagingDiskFull() throws {
+        let source = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try Data("file".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let transfer = WatchFileTransfer(type: .music, filename: "song.m4a")
+        #expect(throws: POSIXError.self) {
+            try WatchFileTransfer.stage(source, metadata: transfer.encode(), move: { _, _ in
+                throw POSIXError(.ENOSPC)
+            })
+        }
+        #expect(FileManager.default.fileExists(atPath: source.path))
     }
 
     @Test("only safe file metadata is decoded")
@@ -46,6 +60,9 @@ struct PhoneFileProviderTests {
             fileStore: store, currentToken: { "token" }, outstanding: { queued },
             enqueue: { transfer, url in queued.append(transfer); urls.append(url) })
         let hit = WatchFileTransfer(type: .music, filename: "song.m4a")
+        #expect(provider.fileSize(.music, filename: "song.m4a", token: "token") == 5)
+        #expect(provider.fileSize(.music, filename: "song.m4a", token: "old") == nil)
+        #expect(provider.fileSize(.music, filename: "../secret", token: "token") == nil)
         #expect(provider.request(hit, token: "old") == .unauthorized)
         #expect(provider.request(hit, token: "") == .unauthorized)
         #expect(provider.request(WatchFileTransfer(type: .music, filename: "missing"), token: "token") == .cacheMiss)

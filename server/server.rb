@@ -117,6 +117,28 @@ class Server < Sinatra::Base
     end
   end
 
+  get '/api/file-size/:type/*' do
+    if authed?
+      type = params['type']
+      file = params['splat'][0]
+      music = type == 'music'
+      raise Sinatra::NotFound unless music || type == 'artwork'
+
+      root = music ? Config.env.music_path : Config.env.artwork_path
+      full_path = File.expand_path(File.join(root, file))
+      ext = File.extname(file).delete('.').downcase
+      allowed_types = music ? AUDIO_MIME_TYPES : IMAGE_MIME_TYPES
+      rows = query(music ? TRACK_HAS_MUSIC_SQL : TRACK_HAS_ARTWORK_SQL, [file])
+      valid_file = !rows.empty? && rows[0]['exists'] == 't'
+      raise Sinatra::NotFound unless valid_file && File.file?(full_path) && allowed_types.key?(ext)
+
+      content_type 'text/plain'
+      File.size(full_path).to_s
+    else
+      redirect to('/')
+    end
+  end
+
   namespace '/api' do
     def proto(msg)
       content_type 'application/octet-stream'

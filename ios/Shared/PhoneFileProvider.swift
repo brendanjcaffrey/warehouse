@@ -40,6 +40,14 @@ final class PhoneFileProvider {
         return .accepted
     }
 
+    func fileSize(_ type: LibraryFileType, filename: String, token: String) -> Int64? {
+        guard !token.isEmpty, token == currentToken(), WatchFileTransfer.validFilename(filename) else { return nil }
+        let url = fileStore.fileURL(type, filename)
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize, size > 0 else { return nil }
+        return Int64(size)
+    }
+
     /// the watch compares this snapshot with its current intent. the phone
     /// must not cancel jobs using a watch snapshot that can arrive out of order.
     func progress(token: String) -> [PhoneFileProgress]? {

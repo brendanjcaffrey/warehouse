@@ -139,6 +139,19 @@ struct OfflineLibraryTests {
         #expect(env.downloader.calls.count == 2)
     }
 
+    @Test("an optional cache fill running out of room does not block selected preparation")
+    func optionalStorageFailure() async throws {
+        let env = Fixture()
+        env.downloader.result = .outOfSpace
+        env.activate()
+        env.offline.setPlaybackDemand(["urgent.wav"])
+        try await PlayerStoreTests.waitFor { env.downloader.calls == ["urgent.wav"] }
+        env.downloader.result = .downloaded
+        env.offline.prepare(Self.playlist(["1"]), songs: PlayerStoreTests.songs(1))
+        try await PlayerStoreTests.waitFor { env.offline.progress("p").state == .ready }
+        #expect(env.downloader.calls == ["urgent.wav", "1.wav"])
+    }
+
     @Test("queue demand changes do not cancel preparation; pause and cancel do")
     func cancellation() async throws {
         let env = Fixture()
@@ -194,16 +207,14 @@ struct OfflineLibraryTests {
         #expect(env.downloader.calls == ["1.wav", "1.wav"])
     }
 
-    @Test("low or unknown free space reports storage full before starting transport")
+    @Test("unknown free space reports storage full before starting transport")
     func noCapacity() {
-        for capacity: Int64? in [0, nil] {
-            let env = Fixture()
-            let offline = OfflineLibrary(fileCache: env.cache, downloader: env.downloader, availableBytes: { capacity })
-            env.activate(offline)
-            offline.prepare(Self.playlist(["1"]), songs: PlayerStoreTests.songs(1))
-            #expect(offline.progress("p").state == .storageFull)
-            #expect(env.downloader.calls.isEmpty)
-        }
+        let env = Fixture()
+        let offline = OfflineLibrary(fileCache: env.cache, downloader: env.downloader, availableBytes: { nil })
+        env.activate(offline)
+        offline.prepare(Self.playlist(["1"]), songs: PlayerStoreTests.songs(1))
+        #expect(offline.progress("p").state == .storageFull)
+        #expect(env.downloader.calls.isEmpty)
     }
 
     @Test("preparation reclaims a full opportunistic cache without deleting selected music")
@@ -243,14 +254,16 @@ struct OfflineLibraryTests {
     @Test("removing an oversized selection unblocks other preparation")
     func removeStorageBlocker() async throws {
         let env = Fixture()
-        env.downloader.bytes = 120
+        env.downloader.result = .outOfSpace
         env.activate()
         env.offline.prepare(Self.playlist(["1"]), songs: PlayerStoreTests.songs(1))
         try await PlayerStoreTests.waitFor { env.offline.progress("p").state == .storageFull }
         env.offline.prepare(Self.playlist(["2"], id: "other"), songs: PlayerStoreTests.songs(2))
+        try await PlayerStoreTests.waitFor { env.offline.progress("other").state == .storageFull }
         #expect(env.offline.progress("other").state == .storageFull)
-        env.downloader.bytes = 10
+        env.downloader.result = .downloaded
         env.offline.remove("p")
+        env.offline.resume("other")
         try await PlayerStoreTests.waitFor { env.offline.progress("other").state == .ready }
     }
 
@@ -308,8 +321,7 @@ struct OfflineLibraryTests {
         env.offline.prepare(Self.playlist(["1", "2"]), songs: PlayerStoreTests.songs(2))
         try await PlayerStoreTests.waitFor { env.offline.progress("p").state == .storageFull }
         #expect(env.files.exists(.music, "1.wav"))
-        env.downloader.result = .downloaded
-        env.downloader.bytes = 120
+        env.downloader.result = .outOfSpace
         env.offline.prepare(Self.playlist(["1", "2"]), songs: PlayerStoreTests.songs(2))
         try await PlayerStoreTests.waitFor { env.offline.progress("p").state == .storageFull }
         #expect(env.offline.progress("p").completed == 1)
