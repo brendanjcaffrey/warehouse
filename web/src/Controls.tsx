@@ -22,6 +22,7 @@ import useBreakpoint from "@restart/hooks/useBreakpoint";
 import IconButton from "./IconButton";
 import { player } from "./Player";
 import { playingAtom } from "./State";
+import { displayedTracksAtom } from "./DisplayedTracks";
 
 const ACTIVE_COLOR = "var(--bs-body-color)";
 const DISABLED_COLOR = "var(--bs-secondary-color)";
@@ -34,6 +35,22 @@ function Controls() {
   const [repeat, setRepeat] = useAtom(repeatAtom);
   const volume = useAtomValue(volumeAtom);
   const playing = useAtomValue(playingAtom);
+  const displayedTracks = useAtomValue(displayedTracksAtom);
+
+  const playPause = () => {
+    const currentPlayer = player();
+    if (currentPlayer.queue.isEmpty) {
+      if (displayedTracks?.tracks.length) {
+        void currentPlayer.playTracksInOrder(
+          displayedTracks.source,
+          displayedTracks.tracks,
+          0
+        );
+      }
+    } else {
+      currentPlayer.playPause();
+    }
+  };
 
   const toggleShuffle = () => {
     const next = !shuffle;
@@ -63,7 +80,7 @@ function Controls() {
       <IconButton onClick={() => player().prev()}>
         <SkipStartFill size={30} color={ACTIVE_COLOR} />
       </IconButton>
-      <IconButton onClick={() => player().playPause()}>
+      <IconButton onClick={playPause}>
         {playing ? (
           <PauseFill size={30} color={ACTIVE_COLOR} />
         ) : (

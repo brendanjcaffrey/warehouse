@@ -22,6 +22,7 @@ import { searchAtom } from "./State";
 import { trackLayoutAtom } from "./Settings";
 import { useTrackListReveal } from "./Reveal";
 import { useFollowPlaying } from "./FollowPlaying";
+import { useDisplayedTracks } from "./DisplayedTracks";
 import PlayingIndicator from "./PlayingIndicator";
 import { useTrackContextMenu } from "./TrackContextMenu";
 import {
@@ -266,6 +267,7 @@ function TrackList({ playlistId }: TrackListProps) {
     const filtered = filterTracks(searched, filters, TRACK_COLUMNS);
     return sortTracks(filtered, sortKeys, TRACK_COLUMNS);
   }, [tracks, search, filters, sortKeys]);
+  useDisplayedTracks(source, rows);
 
   // a "go to song" or a "show in playlist" for this playlist selects the track,
   // centres it and consumes the request. it waits for the tracks to load, then

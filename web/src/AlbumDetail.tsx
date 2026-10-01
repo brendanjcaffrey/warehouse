@@ -6,6 +6,7 @@ import { useTrackListNav } from "./useTrackListNav";
 import { useAlbumArtworkRequests } from "./useAlbumArtworkRequests";
 import { useTrackContextMenu } from "./TrackContextMenu";
 import { FileRequestSource } from "./WorkerTypes";
+import { useDisplayedTracks } from "./DisplayedTracks";
 
 interface AlbumDetailProps {
   name: string;
@@ -20,6 +21,7 @@ function AlbumDetail({ name, tracks }: AlbumDetailProps) {
     () => albums.flatMap((album) => album.tracks),
     [albums]
   );
+  useDisplayedTracks(`album:${name}`, flatTracks);
   const containerRef = useRef<HTMLDivElement>(null);
   // enter plays the focused track within its own album, matching a double-click
   const playTrack = useCallback(
