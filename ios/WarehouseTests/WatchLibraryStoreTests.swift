@@ -77,6 +77,53 @@ struct WatchLibraryStoreTests {
         #expect(songs.isDownloaded(try #require(songs.songs.first)))
     }
 
+    @Test("delivery presentation uses stored music while pending and failed refreshes preserve browsing")
+    func deliveryPresentation() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let delivery = try WatchContentDeliveryTests.Env()
+        defer { delivery.cleanUp() }
+        let snapshot = try delivery.snapshot(count: 4)
+        let receiver = WatchLibraryReceiver(database: env.database, directory: env.root.appending(path: "inbox"))
+        await receiver.waitForImport()
+        receiver.expect(snapshot.head)
+        await receiver.waitForImport()
+        let source = env.root.appending(path: "snapshot.json")
+        try JSONEncoder().encode(snapshot).write(to: source)
+        _ = try WatchLibraryReceiver.stage(source, directory: env.root.appending(path: "inbox"))
+        receiver.received()
+        await receiver.waitForImport()
+        let content = try WatchContentReceiver(fileCache: FileCache(fileStore: env.files),
+                                               directory: env.root.appending(path: "content"), send: { _ in })
+        try env.files.write(.music, "m0.mp3", data: PlayerStoreTests.musicBytes)
+        try content.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+        let library = WatchLibraryStore(songs: env.songs, playlists: env.playlists, defaults: env.defaults,
+                                        receiver: receiver, content: content)
+        await library.load()
+        #expect(library.state == .ready)
+        #expect(library.progress().music.downloaded == 1)
+        #expect(library.progress(playlistID: "p2").music.total == 2)
+        #expect(library.progress(playlistID: "p2").state == .waiting)
+        var head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
+                                    playlistIDs: snapshot.head.playlistIDs)
+        receiver.expect(head)
+        await receiver.waitForImport()
+        try content.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+        #expect(library.progress().state == .preparing)
+        #expect(library.progress().music.downloaded == 1)
+        head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 3, libraryID: "account",
+                                playlistIDs: snapshot.head.playlistIDs)
+        head.failed = true
+        receiver.expect(head)
+        await receiver.waitForImport()
+        try content.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+        await library.load()
+        #expect(library.presentation(isConfigured: false) == .ready)
+        #expect(library.progress().state == .refreshFailed)
+        #expect(library.progress().music.downloaded == 1)
+        #expect(env.playlists.playlists.map(\.id).contains("p2"))
+    }
+
     @Test("saved library and local playback are ready while the version request never replies")
     func suspendedVersionDoesNotGateLibrary() async throws {
         let env = try Env()

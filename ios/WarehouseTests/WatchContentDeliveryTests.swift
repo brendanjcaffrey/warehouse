@@ -15,6 +15,7 @@ struct WatchContentDeliveryTests {
         var queued = [(WatchContentFile, URL)]()
         var queries = [WatchContentFile]()
         var receipts = [WatchContentReceipt]()
+        var reports = [WatchLibraryDeliveryReport]()
         var now = Date(timeIntervalSince1970: 1000)
         var available: Int64 = 1_000_000_000
         var beforeCommit: () throws -> Void = {}
@@ -34,7 +35,7 @@ struct WatchContentDeliveryTests {
                     if enqueuesEnabled { outstanding.append(file); queued.append((file, url)) }
                 },
                 cancel: { [self] id in outstanding.removeAll { $0.id == id } },
-                query: { [self] in queries.append($0) }), now: { [self] in now }, schedulesRetries: false)
+                query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) }), now: { [self] in now }, schedulesRetries: false)
         }
 
         func receiver() throws -> WatchContentReceiver {
@@ -63,6 +64,176 @@ struct WatchContentDeliveryTests {
         }
 
         func cleanUp() { try? FileManager.default.removeItem(at: root) }
+    }
+
+    @Test("progress counts watch commits rather than phone files or system completion, and survives restart")
+    func deliveredProgress() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        var queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(queue.progress().music.downloaded == 0)
+        #expect(queue.progress().music.total == 4)
+        #expect(queue.progress(playlistID: "p2").music.total == 2)
+        let (file, url) = env.queued[0]
+        env.outstanding.removeAll { $0.id == file.id }
+        try queue.finished(file, error: nil)
+        #expect(queue.progress().music.downloaded == 0)
+        try env.stage(file, url: url)
+        var receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(receiver.progress(playlistID: "p2").music.downloaded == 1)
+        #expect(queue.progress().music.downloaded == 0)
+        let receipt = try #require(env.receipts.last)
+        try queue.receive(receipt)
+        try queue.receive(receipt)
+        queue = try env.queue()
+        receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(queue.progress().music.downloaded == 1)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(queue.progress().state == .waiting)
+        #expect(queue.progress(playlistID: "p2").music.downloaded == 1)
+    }
+
+    @Test("storage and permanent failures are visible without marking partial playlists ready")
+    func progressFailures() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        let file = env.queued[0].0
+        // the receiver's receipt can arrive before the system completion callback.
+        try queue.receive(.init(file: file, status: .storageFull))
+        #expect(queue.progress().state == .storageFull)
+        #expect(queue.progress().music.downloaded == 0)
+        #expect(queue.progress(playlistID: "p2").state == .storageFull)
+        env.outstanding.removeAll { $0.id == file.id }
+        try queue.receive(.init(file: file, status: .failed))
+        #expect(queue.progress().state == .failed)
+        #expect(queue.progress().music.failed == 1)
+        #expect(queue.progress().music.downloaded == 0)
+    }
+
+    @Test("missing phone files request normal sync even when delivery is unavailable")
+    func missingProgress() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        let queue = try PhoneWatchContentQueue(fileStore: env.files, directory: env.root.appending(path: "queue"),
+                                             transport: .init(available: { false }, outstanding: { [] },
+                                                              enqueue: { _, _ in }, cancel: { _ in }, query: { _ in }),
+                                             schedulesRetries: false)
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(queue.progress().state == .needsPhoneSync)
+        #expect(queue.progress().music.total == 4)
+        #expect(queue.progress().music.downloaded == 0)
+        try env.cache(snapshot)
+        #expect(queue.progress().state == .waiting)
+        #expect(queue.progress().music.downloaded == 0)
+    }
+
+    @Test("empty selection and artwork failures have independent music readiness")
+    func emptyAndArtworkProgress() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        for index in 0..<4 {
+            let file = env.queued[index].0
+            env.outstanding.removeAll { $0.id == file.id }
+            try queue.receive(.init(file: file, status: .delivered))
+        }
+        for (file, _) in env.queued where file.type == .artwork {
+            try queue.receive(.init(file: file, status: .failed))
+        }
+        #expect(queue.progress().state == .ready)
+        #expect(queue.progress().music.downloaded == 4)
+        #expect(queue.progress().artwork.failed > 0)
+        let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
+                                    playlistIDs: [], metadataReady: true)
+        let empty = WatchLibrarySnapshot(head: head, libraryData: try Library().serializedData())
+        try queue.reconcile(head: head, snapshot: empty)
+        #expect(queue.progress().state == .empty)
+        #expect(queue.progress().music.total == 0)
+        try queue.receive(.init(file: env.queued[0].0, status: .delivered))
+        #expect(queue.progress().music.downloaded == 0)
+    }
+
+    @Test("phone preparation reports survive out-of-order delivery and restart without inventing watch downloads")
+    func preparationReports() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        let queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        let missing = try #require(env.reports.last)
+        #expect(missing.overall.state == .needsPhoneSync)
+        #expect(WatchLibraryDeliveryReport(dictionary: try missing.encode()) == missing)
+        var receiver = try env.receiver()
+        // user-info can arrive before its matching metadata snapshot.
+        try receiver.receive(missing)
+        receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(receiver.progress().state == .needsPhoneSync)
+        #expect(receiver.progress(playlistID: "p2").state == .needsPhoneSync)
+        #expect(receiver.progress().music.downloaded == 0)
+        try env.cache(snapshot)
+        env.now += 60
+        queue.resume()
+        let waiting = try #require(env.reports.last)
+        try receiver.receive(waiting)
+        try receiver.receive(missing)
+        #expect(receiver.progress().state == .waiting)
+        let file = env.queued[0].0
+        try queue.receive(.init(file: file, status: .failed))
+        try receiver.receive(try #require(env.reports.last))
+        #expect(receiver.progress().state == .failed)
+        #expect(receiver.progress(playlistID: "p2").state == .failed)
+        #expect(receiver.progress().music.downloaded == 0)
+        // even a phone report of delivered work cannot advance the local count.
+        try queue.receive(.init(file: file, status: .delivered))
+        try receiver.receive(try #require(env.reports.last))
+        #expect(receiver.progress().music.downloaded == 0)
+        try env.stage(file, url: env.files.fileURL(file.type, file.filename))
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
+        let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
+                                    playlistIDs: [], metadataReady: true)
+        let empty = WatchLibrarySnapshot(head: head, libraryData: try Library().serializedData())
+        try receiver.reconcile(head: head, snapshot: empty)
+        try receiver.receive(missing)
+        #expect(receiver.progress().state == .empty)
+        #expect(receiver.progress().music.downloaded == 0)
+    }
+
+    @Test("saved library progress stays available during a pending or failed refresh")
+    func refreshProgress() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.watchFiles.write(.music, "m0.mp3", data: Data("existing".utf8))
+        let receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        var pending = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
+                                       playlistIDs: snapshot.head.playlistIDs)
+        try receiver.reconcile(head: pending, snapshot: snapshot)
+        #expect(receiver.progress().state == .preparing)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(receiver.progress().music.total == 4)
+        pending.failed = true
+        try receiver.reconcile(head: pending, snapshot: snapshot)
+        #expect(receiver.progress().state == .refreshFailed)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(env.watchFiles.exists(.music, "m0.mp3"))
     }
 
     @Test("300 cached songs and artwork drain through bounded restartable production queues")

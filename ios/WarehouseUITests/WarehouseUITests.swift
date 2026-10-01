@@ -26,6 +26,30 @@ final class WarehouseUITests: XCTestCase {
     }
 
     @MainActor
+    func testWatchSelectionShowsAutomaticDelivery() throws {
+        let app = launchWithFixtures()
+        app.tabBars.buttons["Settings"].tap()
+        let watch = app.buttons["Playlists & Downloads"]
+        XCTAssertTrue(watch.waitForExistence(timeout: 5))
+        watch.tap()
+        XCTAssertTrue(app.navigationBars["Apple Watch"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Server URL"].exists)
+        XCTAssertFalse(app.staticTexts["Fill Ahead"].exists)
+        let playlist = app.buttons["watch-playlist-p1"]
+        for _ in 0..<5 where !playlist.isHittable { app.swipeUp() }
+        XCTAssertTrue(playlist.waitForExistence(timeout: 5))
+        let initiallySelected = playlist.value as? String == "Selected"
+        playlist.tap()
+        XCTAssertEqual(playlist.value as? String, initiallySelected ? "Not selected" : "Selected")
+        if initiallySelected { playlist.tap() }
+        XCTAssertTrue(app.staticTexts["Set up on iPhone"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["Prepare for Offline"].exists)
+        XCTAssertFalse(app.staticTexts["Ready"].exists)
+        playlist.tap()
+        XCTAssertEqual(playlist.value as? String, "Not selected")
+    }
+
+    @MainActor
     func testShowInSongsScrollsToSong() throws {
         let app = launchWithFixtures()
 

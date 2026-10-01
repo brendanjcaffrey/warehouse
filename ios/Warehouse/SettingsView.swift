@@ -24,7 +24,7 @@ struct SettingsView: View {
                 }
 
                 Section("Apple Watch") {
-                    NavigationLink("Playlists & Server URL") {
+                    NavigationLink("Playlists & Downloads") {
                         WatchSettingsView()
                     }
                 }

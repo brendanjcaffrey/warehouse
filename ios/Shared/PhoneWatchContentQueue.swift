@@ -11,6 +11,7 @@ final class PhoneWatchContentQueue {
         var enqueue: (WatchContentFile, URL) -> Void
         var cancel: (UUID) -> Void
         var query: (WatchContentFile) -> Void
+        var report: (WatchLibraryDeliveryReport) -> Void = { _ in }
     }
 
     struct Job: Codable {
@@ -25,6 +26,8 @@ final class PhoneWatchContentQueue {
     private struct Saved: Codable {
         var head: WatchLibraryHead?
         var jobs: [Job] = []
+        var snapshot: WatchLibrarySnapshot?
+        var report: WatchLibraryDeliveryReport?
     }
 
     static let maximumTransfers = 4
@@ -66,6 +69,11 @@ final class PhoneWatchContentQueue {
             try save()
             old.forEach { transport.cancel($0.id) }
         }
+        if let snapshot, snapshot.head == head {
+            _ = try snapshot.validatedLibrary()
+            saved.snapshot = snapshot
+            try save()
+        }
         if saved.jobs.isEmpty, let snapshot, snapshot.head == head {
             _ = try snapshot.validatedLibrary()
             saved.jobs = try snapshot.music.sorted().map { Job(type: .music, filename: $0) }
@@ -73,6 +81,14 @@ final class PhoneWatchContentQueue {
             try save()
         }
         try pump()
+    }
+
+    func progress(playlistID: String? = nil) -> WatchLibraryProgress {
+        WatchLibraryProgress.make(head: saved.head, snapshot: saved.snapshot, playlistID: playlistID) { type, name in
+            guard let job = saved.jobs.first(where: { $0.type == type && $0.filename == name }) else { return .pending }
+            if job.file == nil && !fileStore.exists(type, name) { return .missingOnPhone }
+            return job.status
+        }
     }
 
     func receive(_ receipt: WatchContentReceipt) throws {
@@ -128,7 +144,7 @@ final class PhoneWatchContentQueue {
 
     private func pump() throws {
         timer?.cancel()
-        guard transport.available() else { return }
+        guard transport.available() else { try publishReport(); return }
         let outstanding = transport.outstanding()
         let systemIDs = Set(outstanding.map(\.id))
         // source copies may be removed only after the system relinquishes them.
@@ -144,7 +160,7 @@ final class PhoneWatchContentQueue {
             var job = saved.jobs[index]
             guard job.status != .delivered, job.status != .failed else { continue }
             if let file = job.file, systemIDs.contains(file.id) {
-                job.status = .transferring
+                if ![.storageFull, .retrying].contains(job.status) { job.status = .transferring }
                 saved.jobs[index] = job
                 continue
             }
@@ -196,7 +212,20 @@ final class PhoneWatchContentQueue {
             }
         }
         try save()
+        try publishReport()
         schedule()
+    }
+
+    private func publishReport() throws {
+        guard let head = saved.head, saved.snapshot?.head == head else { return }
+        let overall = progress()
+        let playlists = Dictionary(uniqueKeysWithValues: head.playlistIDs.map { ($0, progress(playlistID: $0)) })
+        if saved.report?.head != head || saved.report?.overall != overall || saved.report?.playlists != playlists {
+            let sequence = (saved.report?.sequence ?? 0) + 1
+            saved.report = WatchLibraryDeliveryReport(head: head, sequence: sequence, overall: overall, playlists: playlists)
+            try save()
+        }
+        if let report = saved.report { transport.report(report) }
     }
 
     private func schedule() {

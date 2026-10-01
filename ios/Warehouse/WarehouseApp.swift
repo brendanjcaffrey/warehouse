@@ -102,8 +102,18 @@ struct WarehouseApp: App {
                     $0.userInfo["kind"] as? String == "watchContentQuery" && WatchContentFile(dictionary: $0.userInfo) == file
                 }
                 if !alreadyQueued { WCSession.default.transferUserInfo(info) }
+            }, report: { report in
+                guard WCSession.isSupported(), WCSession.default.activationState == .activated,
+                      let info = try? report.encode() else { return }
+                let outstanding = WCSession.default.outstandingUserInfoTransfers.filter {
+                    $0.userInfo["kind"] as? String == "watchLibraryDeliveryReport"
+                }
+                if outstanding.contains(where: { WatchLibraryDeliveryReport(dictionary: $0.userInfo) == report }) { return }
+                outstanding.forEach { $0.cancel() }
+                WCSession.default.transferUserInfo(info)
             }))
         watchSession.content = content
+        watchSettings.content = content
         let publisher = try? PhoneWatchLibraryPublisher(database: database, transport: .init(
             context: { head in
                 guard WCSession.isSupported(), WCSession.default.activationState == .activated else {

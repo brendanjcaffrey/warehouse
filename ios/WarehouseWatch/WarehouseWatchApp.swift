@@ -72,7 +72,7 @@ struct WarehouseWatchApp: App {
         _sync = State(initialValue: syncStore)
         _songs = State(initialValue: songs)
         _playlists = State(initialValue: playlists)
-        let library = WatchLibraryStore(songs: songs, playlists: playlists, receiver: receiver)
+        let library = WatchLibraryStore(songs: songs, playlists: playlists, receiver: receiver, content: content)
         _library = State(initialValue: library)
         receiver.onChanged = {
             try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)

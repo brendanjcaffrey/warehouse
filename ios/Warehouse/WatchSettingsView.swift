@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// picks which playlists the watch's library is trimmed to, the url it
-/// reaches the server on, & how far ahead of the playhead it fills its cache
+/// the phone owns selection; download counts come from durable watch receipts.
 struct WatchSettingsView: View {
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(WatchSyncSettingsStore.self) private var settings
@@ -9,33 +8,11 @@ struct WatchSettingsView: View {
 
     var body: some View {
         List {
-            Section {
-                TextField("Same as phone", text: overrideBinding)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            } header: {
-                Text("Server URL")
-            } footer: {
-                Text("Where the watch reaches the server, for its library and "
-                    + "for tracks as they play. The watch can't join the tailnet, "
-                    + "so this needs to be a public URL — the Tailscale Funnel URL, "
-                    + "on the default HTTPS port 443 (no port suffix), not nginx's "
-                    + "internal 20601. Left blank, the watch uses the phone's server "
-                    + "URL, which only works if that's reachable off the tailnet.")
-            }
-            Section {
-                Picker("Tracks ahead", selection: depthBinding) {
-                    ForEach(depthOptions, id: \.self) { depth in
-                        Text(Self.depthLabel(depth)).tag(depth)
-                    }
-                }
-            } header: {
-                Text("Fill Ahead")
-            } footer: {
-                Text("Fills an opportunistic cache while the watch app is open. "
-                    + "For retained downloads, open Offline Playlists on the watch and choose Prepare for Offline. "
-                    + "Keep the watch app open until the playlist says Ready.")
+            Section("Downloads on Apple Watch") {
+                WatchLibraryProgressView(progress: settings.progress())
+                Text("Counts show the last download status reported by the watch. Updates may be delayed while disconnected.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             Section("Diagnostics") {
                 if diagnosticInbox.reports.isEmpty {
@@ -54,7 +31,8 @@ struct WatchSettingsView: View {
                 Text("No playlists to choose from yet. Sync your library first.")
                     .foregroundStyle(.secondary)
             }
-            Text("These selections control which playlists appear on the watch. Choose which to download in Offline Playlists on the watch.")
+            Text("Selecting a playlist automatically copies and keeps its music and artwork on the watch. "
+                + "Deselecting removes files no other selected playlist needs.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             ForEach(sections) { section in
@@ -72,40 +50,19 @@ struct WatchSettingsView: View {
         }
     }
 
-    private var overrideBinding: Binding<String> {
-        Binding(
-            get: { settings.serverURLOverride },
-            set: { settings.setServerURLOverride($0) })
-    }
-
-    private var depthBinding: Binding<Int> {
-        Binding(
-            get: { settings.deepPrefetchDepth },
-            set: { settings.setDeepPrefetchDepth($0) })
-    }
-
-    /// the depths on offer, coarser as they go: past a couple of hundred
-    /// tracks the difference between one and the next is more disk than any
-    /// watch has, so the cache budget is what stops the fill rather than this
-    private static let depths = [0, 10, 25, 50, 100, 250, 1000, WatchSyncSettingsStore.maxDeepPrefetchDepth]
-
-    private var depthOptions: [Int] {
-        // a depth stored by an older build needn't be one of these, & a picker
-        // with nothing selected reads as broken
-        Set(Self.depths + [settings.deepPrefetchDepth]).sorted()
-    }
-
-    private static func depthLabel(_ depth: Int) -> String {
-        depth == 0 ? "Off" : "\(depth.formatted()) tracks"
-    }
-
     private func row(_ playlist: PlaylistItem) -> some View {
         Button {
             settings.toggle(playlist.id)
         } label: {
             HStack {
-                Text(playlist.name)
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(playlist.name)
+                        .foregroundStyle(.primary)
+                    if settings.isSelected(playlist.id) {
+                        WatchLibraryProgressView(progress: settings.progress(playlistID: playlist.id), compact: true)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 if settings.isSelected(playlist.id) {
                     Image(systemName: "checkmark")
@@ -113,5 +70,7 @@ struct WatchSettingsView: View {
                 }
             }
         }
+        .accessibilityIdentifier("watch-playlist-\(playlist.id)")
+        .accessibilityValue(settings.isSelected(playlist.id) ? "Selected" : "Not selected")
     }
 }

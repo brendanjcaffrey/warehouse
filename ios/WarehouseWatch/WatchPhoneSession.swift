@@ -213,6 +213,10 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if let report = WatchLibraryDeliveryReport(dictionary: userInfo) {
+            Task { @MainActor in try? content?.receive(report) }
+            return
+        }
         guard userInfo["kind"] as? String == "watchContentQuery", let file = WatchContentFile(dictionary: userInfo) else { return }
         Task { @MainActor in try? content?.query(file) }
     }

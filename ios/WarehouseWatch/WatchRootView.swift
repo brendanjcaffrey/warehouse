@@ -97,9 +97,7 @@ struct WatchRootView: View {
             ContentUnavailableView {
                 Label("No Songs", systemImage: "music.note")
             } description: {
-                Text("Your selected playlists contain no songs.")
-            } actions: {
-                refreshButton
+                Text("Choose playlists in the iPhone app's Apple Watch settings. Selected playlists may also contain no songs.")
             }
         case .failed(let message):
             ContentUnavailableView {

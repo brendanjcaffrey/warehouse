@@ -15,6 +15,7 @@ final class WatchContentReceiver {
     private var head: WatchLibraryHead?
     private var pendingHead: WatchLibraryHead?
     private var snapshot: WatchLibrarySnapshot?
+    private var reports: [WatchLibraryDeliveryReport]
     private(set) var receipts: [WatchContentReceipt]
     private(set) var errorMessage: String?
 
@@ -29,6 +30,8 @@ final class WatchContentReceiver {
         self.beforeCommit = beforeCommit
         self.beforeReceipt = beforeReceipt
         self.now = now
+        let reportsURL = directory.appending(path: "phone-progress.json")
+        reports = (try? JSONDecoder().decode([WatchLibraryDeliveryReport].self, from: Data(contentsOf: reportsURL))) ?? []
         let url = directory.appending(path: "receipts.json")
         receipts = FileManager.default.fileExists(atPath: url.path)
             ? try JSONDecoder().decode([WatchContentReceipt].self, from: Data(contentsOf: url)) : []
@@ -69,6 +72,39 @@ final class WatchContentReceiver {
         }
         self.head = head
         try drain()
+    }
+
+    func receive(_ report: WatchLibraryDeliveryReport) throws {
+        if let previous = reports.first(where: { $0.head == report.head }), previous.sequence >= report.sequence { return }
+        var next = reports.filter { $0.head != report.head }
+        next.append(report)
+        // retain a few revisions because status can arrive before its metadata context.
+        next = Array(next.suffix(8))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(next).write(to: directory.appending(path: "phone-progress.json"), options: .atomic)
+        reports = next
+    }
+
+    func progress(playlistID: String? = nil) -> WatchLibraryProgress {
+        var progress = WatchLibraryProgress.make(head: pendingHead, snapshot: snapshot, playlistID: playlistID) { type, name in
+            // restored and retained local files are playable before a new acknowledgment arrives.
+            if fileCache.fileStore.exists(type, name) { return .delivered }
+            return receipts.last(where: {
+                $0.file.head == snapshot?.head && $0.file.type == type && $0.file.filename == name
+            }).map { $0.status == .delivered ? .pending : $0.status } ?? .pending
+        }
+        if let report = reports.last(where: { $0.head == snapshot?.head && $0.head == pendingHead }) {
+            let reported = playlistID.flatMap { report.playlists[$0] } ?? report.overall
+            if progress.state == .waiting && [.needsPhoneSync, .storageFull, .failed].contains(reported.state) {
+                progress.state = reported.state
+                progress.music.failed = min(reported.music.failed, progress.music.total - progress.music.downloaded)
+            }
+            let remainingArtwork = progress.artwork.total - progress.artwork.downloaded
+            progress.artwork.failed = max(progress.artwork.failed, min(reported.artwork.failed, remainingArtwork))
+            progress.artwork.missingOnPhone = min(reported.artwork.missingOnPhone, remainingArtwork)
+            progress.artwork.storageFull = max(progress.artwork.storageFull, min(reported.artwork.storageFull, remainingArtwork))
+        }
+        return progress
     }
 
     /// stop commits while the database serializes a newly received control message.

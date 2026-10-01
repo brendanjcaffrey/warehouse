@@ -1,25 +1,14 @@
 import SwiftUI
-import WatchKit
 
 struct WatchMenuView: View {
-    @Environment(WatchLibraryReceiver.self) private var receiver
-    @Environment(WatchSettingsStore.self) private var settings
-    @Environment(SyncStore.self) private var sync
+    @Environment(WatchLibraryStore.self) private var library
     @Environment(SongsStore.self) private var songs
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(PlayerStore.self) private var player
     @Environment(WatchRemoteStore.self) private var remote
 
-    @State private var isSyncing = false
-    @State private var syncOutcome: SyncOutcome?
     @State private var showingRemote = false
     @State private var autoOpen = RemoteAutoOpen()
-
-    private enum SyncOutcome: Equatable {
-        case upToDate
-        case offline
-        case failed(String)
-    }
 
     /// every track the watch already holds, so what plays without the network
     /// is one tap away. hidden while the cache is empty rather than offering a
@@ -61,11 +50,6 @@ struct WatchMenuView: View {
                     }
                 }
                 NavigationLink {
-                    WatchOfflineView()
-                } label: {
-                    Label("Offline Playlists", systemImage: "arrow.down.circle")
-                }
-                NavigationLink {
                     WatchDiagnosticView()
                 } label: {
                     Label("Diagnostics", systemImage: "waveform.path.ecg")
@@ -79,18 +63,16 @@ struct WatchMenuView: View {
                                     songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds),
                                     playlist: playlist)
                             } label: {
-                                Label(playlist.name, systemImage: "music.note.list")
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Label(playlist.name, systemImage: "music.note.list")
+                                    WatchLibraryProgressView(progress: library.progress(playlistID: playlist.id), compact: true)
+                                }
                             }
                         }
                     }
                 }
-                if receiver.protocolSelected {
-                    Text(libraryStatus)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button(action: runSync) { syncLabel }
-                        .disabled(isSyncing)
+                Section("Downloads") {
+                    WatchLibraryProgressView(progress: library.progress())
                 }
             }
             .navigationTitle("Warehouse")
@@ -102,13 +84,6 @@ struct WatchMenuView: View {
         }
     }
 
-    private var libraryStatus: String {
-        if receiver.refreshFailed { return "Library refresh failed. Saved library available." }
-        if receiver.waitingForUpdate { return "Waiting for library update from iPhone…" }
-        if receiver.head?.libraryID == nil { return "Sign in on iPhone to update this library." }
-        return "Library supplied by iPhone"
-    }
-
     private func updateRemoteOpen() {
         guard autoOpen.shouldOpen(
             isRemoteAvailable: remote.isAvailable,
@@ -116,60 +91,5 @@ struct WatchMenuView: View {
             isPlayingLocally: player.isPlaying)
         else { return }
         showingRemote = true
-    }
-
-    @ViewBuilder
-    private var syncLabel: some View {
-        if isSyncing {
-            Label {
-                Text("Checking…")
-            } icon: {
-                ProgressView()
-            }
-        } else if let syncOutcome {
-            switch syncOutcome {
-            case .upToDate:
-                Label("Up to date", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            case .offline:
-                Label("Offline", systemImage: "wifi.slash")
-                    .foregroundStyle(.orange)
-            case .failed(let message):
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-            }
-        } else {
-            Label("Check for Updates", systemImage: "arrow.trianglehead.2.clockwise")
-        }
-    }
-
-    private func runSync() {
-        guard receiver.allowsLegacySync, !isSyncing else { return }
-        Task {
-            isSyncing = true
-            syncOutcome = nil
-            await sync.sync(token: settings.token, baseURL: settings.baseURL())
-            isSyncing = false
-            let outcome = outcome(for: sync.state)
-            syncOutcome = outcome
-            WKInterfaceDevice.current().play(outcome == .upToDate ? .success : .failure)
-            // hold the confirmation briefly so a no-op or instant sync is visible
-            try? await Task.sleep(for: .seconds(2))
-            syncOutcome = nil
-        }
-    }
-
-    /// the watch only ever fetches library data, so the file-transfer states
-    /// can't happen here
-    private func outcome(for state: SyncStore.State) -> SyncOutcome {
-        switch state {
-        case .error:
-            return .failed("Check failed")
-        case .offline:
-            // nothing was checked, so don't claim the library is current
-            return .offline
-        default:
-            return .upToDate
-        }
     }
 }

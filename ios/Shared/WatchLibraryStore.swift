@@ -19,12 +19,22 @@ final class WatchLibraryStore {
     private let playlists: PlaylistsStore
     private let metadata: LibraryMetadata
     private let receiver: WatchLibraryReceiver?
+    private let content: WatchContentReceiver?
 
-    init(songs: SongsStore, playlists: PlaylistsStore, defaults: UserDefaults = .standard, receiver: WatchLibraryReceiver? = nil) {
+    init(songs: SongsStore, playlists: PlaylistsStore, defaults: UserDefaults = .standard, receiver: WatchLibraryReceiver? = nil,
+         content: WatchContentReceiver? = nil) {
+        self.content = content
         self.receiver = receiver
         self.songs = songs
         self.playlists = playlists
         metadata = LibraryMetadata(defaults: defaults)
+    }
+
+    func progress(playlistID: String? = nil) -> WatchLibraryProgress {
+        var progress = content?.progress(playlistID: playlistID) ?? WatchLibraryProgress(state: .setup)
+        if receiver?.refreshFailed == true { progress.state = .refreshFailed }
+        if receiver?.waitingForUpdate == true && progress.state != .refreshFailed { progress.state = .preparing }
+        return progress
     }
 
     func presentation(isConfigured: Bool) -> State {

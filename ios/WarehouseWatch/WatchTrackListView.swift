@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WatchTrackListView: View {
+    @Environment(WatchLibraryStore.self) private var library
     @Environment(SongsStore.self) private var store
     @Environment(PlayerStore.self) private var player
     @Environment(WatchRemoteStore.self) private var remote
@@ -57,9 +58,7 @@ struct WatchTrackListView: View {
                 }
                 if let playlist, !playlist.isFolder {
                     Section {
-                        NavigationLink("Prepare for Offline") {
-                            WatchOfflinePlaylistView(playlist: playlist)
-                        }
+                        WatchLibraryProgressView(progress: library.progress(playlistID: playlist.id))
                     } footer: {
                         Text("Only downloaded tracks will play.")
                     }

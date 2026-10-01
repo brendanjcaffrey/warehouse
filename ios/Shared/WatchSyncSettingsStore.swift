@@ -9,6 +9,13 @@ import Observation
 @MainActor
 @Observable
 final class WatchSyncSettingsStore {
+    var content: PhoneWatchContentQueue?
+
+    func progress(playlistID: String? = nil) -> WatchLibraryProgress {
+        guard !playlistIds.isEmpty else { return WatchLibraryProgress(state: .empty) }
+        return content?.progress(playlistID: playlistID) ?? WatchLibraryProgress(state: .preparing)
+    }
+
     private static let playlistIdsKey = "watchPlaylistIds"
     private static let serverURLOverrideKey = "watchServerURLOverride"
     private static let deepPrefetchDepthKey = "watchDeepPrefetchDepth"

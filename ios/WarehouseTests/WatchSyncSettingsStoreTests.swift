@@ -12,6 +12,34 @@ struct WatchSyncSettingsStoreTests {
         return defaults
     }
 
+    @Test("selected playlist presentation observes the production queue's acknowledged counts")
+    func deliveredPresentation() throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let defaults = Self.makeDefaults("delivery")
+        let store = WatchSyncSettingsStore(defaults: defaults)
+        let queue = try env.queue()
+        store.content = queue
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        store.onChange = { try? queue.invalidate(identity: "account", playlistIDs: store.playlistIds) }
+        #expect(store.progress().state == .empty)
+        store.toggle("p1")
+        store.toggle("p2")
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(store.progress().music.downloaded == 0)
+        #expect(store.progress(playlistID: "p2").music.total == 2)
+        let file = env.queued[0].0
+        try queue.receive(.init(file: file, status: .delivered))
+        #expect(store.progress().music.downloaded == 1)
+        #expect(store.progress(playlistID: "p2").music.downloaded == 1)
+        store.toggle("p1")
+        store.toggle("p2")
+        #expect(store.progress().state == .empty)
+        #expect(queue.jobs.isEmpty)
+        #expect(env.outstanding.isEmpty)
+    }
+
     @Test("toggling selects and deselects playlists")
     func togglingSelectsAndDeselects() {
         let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("toggle"))
