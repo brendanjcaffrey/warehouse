@@ -16,15 +16,19 @@ struct WatchDiagnosticView: View {
         List {
             if let report {
                 LabeledContent("Events", value: report.count.formatted())
-                LabeledContent("Phone accepted", value: report.count(.phoneAccepted).formatted())
-                LabeledContent("Phone delivered", value: report.count(.phoneDelivered).formatted())
-                LabeledContent("Phone failed", value: report.count(.phoneFailed).formatted())
+                if let delivery = report.delivery {
+                    LabeledContent("Music on watch", value: "\(delivery.music.delivered.count)/\(delivery.music.desired.count)")
+                    LabeledContent("Artwork on watch", value: "\(delivery.artwork.delivered.count)/\(delivery.artwork.desired.count)")
+                }
+                LabeledContent("New music files", value: (report.totals?["contentCommitted:music"]?.count ?? 0).formatted())
+                LabeledContent("Reused music", value: (report.totals?["contentReused:music"]?.count ?? 0).formatted())
+                LabeledContent("Older events omitted", value: (report.capture?.droppedEvents ?? 0).formatted())
                 LabeledContent("Playback started", value: report.count(.playbackStarted).formatted())
                 LabeledContent("Stalls", value: report.count(.playbackStalled).formatted())
             }
             Button("Refresh") { refresh() }
             Button(sending ? "Sending…" : "Send to iPhone") { send() }
-                .disabled(sending || report?.events.isEmpty != false)
+                .disabled(sending || report == nil)
             if let result { Text(result).font(.footnote) }
             Button("Start New Capture", role: .destructive) {
                 confirmingClear = true
@@ -45,12 +49,13 @@ struct WatchDiagnosticView: View {
 
     private func refresh() {
         let device = WKInterfaceDevice.current()
-        report = WatchDiagnostics.shared.report(deviceModel: device.model, systemVersion: device.systemVersion)
+        report = sender?.diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)
+            ?? WatchDiagnostics.shared.report(deviceModel: device.model, systemVersion: device.systemVersion)
     }
 
     private func send() {
         refresh()
-        guard let report, !report.events.isEmpty else { return }
+        guard let report else { return }
         sending = true
         result = nil
         sender?.sendDiagnostics(report) { saved in

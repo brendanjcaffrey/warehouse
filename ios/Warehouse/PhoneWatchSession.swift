@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import UIKit
 
 /// pushes the server credentials & playlist selection to the watch through
 /// the application context, which is delivered even when the watch app isn't
@@ -10,6 +11,7 @@ import WatchConnectivity
 final class PhoneWatchSession: NSObject {
     var content: PhoneWatchContentQueue?
     var publishLibrary: (() -> Void)?
+    private let diagnostics: WatchDiagnostics
     private let files: PhoneFileProvider?
     private let payload: @MainActor () -> WatchPayload
     private let onPlay: @MainActor (String) -> Void
@@ -23,14 +25,19 @@ final class PhoneWatchSession: NSObject {
         onPlay: @escaping @MainActor (String) -> Void,
         nowPlaying: @escaping @MainActor () -> RemotePlaybackPayload? = { nil },
         onCommand: @escaping @MainActor (RemoteCommand) -> Void = { _ in },
-        diagnosticInbox: WatchDiagnosticInbox? = nil
+        diagnosticInbox: WatchDiagnosticInbox? = nil, diagnostics: WatchDiagnostics? = nil
     ) {
+        self.diagnostics = diagnostics ?? .shared
         self.files = files
         self.payload = payload
         self.onPlay = onPlay
         self.nowPlaying = nowPlaying
         self.onCommand = onCommand
         self.diagnosticInbox = diagnosticInbox ?? WatchDiagnosticInbox()
+    }
+
+    func diagnosticReport(deviceModel: String, systemVersion: String) -> WatchDiagnosticReport {
+        diagnostics.report(deviceModel: deviceModel, systemVersion: systemVersion, delivery: content?.diagnosticState())
     }
 
     func activate() {
@@ -116,7 +123,9 @@ extension PhoneWatchSession: WCSessionDelegate {
 
     nonisolated func receive(data: Data, replyHandler: @escaping (Data) -> Void) {
         Task { @MainActor in
-            replyHandler(diagnosticInbox.receive(data) ? Data("saved".utf8) : Data())
+            let device = UIDevice.current
+            let phone = diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)
+            replyHandler(diagnosticInbox.receive(data, phone: phone) ? Data("saved".utf8) : Data())
         }
     }
 
@@ -189,19 +198,7 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
-        if fileTransfer.file.metadata?["kind"] as? String == "watchContentFile",
-           let metadata = fileTransfer.file.metadata, let file = WatchContentFile(dictionary: metadata) {
-            Task { @MainActor in try? content?.finished(file, error: error) }
-            return
-        }
-        if fileTransfer.file.metadata?["kind"] as? String == "watchLibrarySnapshot" {
-            guard error != nil else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(5))
-                publishLibrary?()
-            }
-            return
-        }
+        if receiveFileCompletion(metadata: fileTransfer.file.metadata, error: error) { return }
         if let metadata = fileTransfer.file.metadata,
            let transfer = WatchFileTransfer(dictionary: metadata) {
             Task { @MainActor in files?.finished(transfer, error: error) }
@@ -213,6 +210,34 @@ extension PhoneWatchSession: WCSessionDelegate {
         var message = transfer.encode()
         message["failed"] = true
         session.sendMessage(message, replyHandler: nil, errorHandler: { _ in })
+    }
+
+    @discardableResult
+    nonisolated func receiveFileCompletion(metadata: [String: Any]?, error: Error?) -> Bool {
+        if metadata?["kind"] as? String == "watchContentFile", let metadata, let file = WatchContentFile(dictionary: metadata) {
+            Task { @MainActor in try? content?.finished(file, error: error) }
+            return true
+        }
+        if metadata?["kind"] as? String == "watchLibrarySnapshot" {
+            let key = metadata?["watchLibraryKey"] as? String
+            Task { @MainActor in
+                let parts = key?.split(separator: "-")
+                let publisher = key.flatMap { UUID(uuidString: String($0.prefix(36))) }
+                let revision = parts?.last.flatMap { Int64($0) }
+                let head = publisher.flatMap { publisher in
+                    revision.map { WatchLibraryHead(publisher: publisher, revision: $0, libraryID: nil, playlistIDs: []) }
+                }
+                diagnostics.record(.init(kind: error == nil ? .metadataCompleted : .metadataFailed,
+                                         id: publisher ?? UUID(), source: .system, error: error,
+                                         identity: head.map(WatchDiagnosticIdentity.init)))
+                if error != nil {
+                    try? await Task.sleep(for: .seconds(5))
+                    publishLibrary?()
+                }
+            }
+            return true
+        }
+        return false
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {

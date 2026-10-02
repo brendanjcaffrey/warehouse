@@ -31,6 +31,8 @@ struct WatchLibraryDeliveryTests {
         var deliveries = [(URL, String)]()
         var outstanding = Set<String>()
         var unavailable = false
+        let phoneDiagnostics = WatchDiagnostics(logEvents: false)
+        let watchDiagnostics = WatchDiagnostics(logEvents: false)
 
         init() throws {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -46,10 +48,10 @@ struct WatchLibraryDeliveryTests {
                     heads.append(try #require(WatchLibraryHead(context: head.encode())))
                 }, outstanding: { [self] in outstanding }, enqueue: { [self] url, key in
                     deliveries.append((url, key)); outstanding.insert(key)
-                }))
+                }), diagnostics: phoneDiagnostics)
         }
 
-        func receiver() -> WatchLibraryReceiver { WatchLibraryReceiver(database: watch, directory: inbox) }
+        func receiver() -> WatchLibraryReceiver { WatchLibraryReceiver(database: watch, directory: inbox, diagnostics: watchDiagnostics) }
         func stage(_ index: Int) throws {
             _ = try WatchLibraryReceiver.stage(deliveries[index].0, directory: inbox)
         }
@@ -102,6 +104,13 @@ struct WatchLibraryDeliveryTests {
         await receiver.waitForImport()
         #expect(receiver.errorMessage == nil)
         #expect(try await env.watch.trackCount() == 500)
+        #expect(env.phoneDiagnostics.events.contains { $0.kind == .metadataPublished && $0.identity == WatchDiagnosticIdentity(publisher.head) })
+        #expect(env.watchDiagnostics.events.contains { $0.kind == .metadataAccepted && $0.identity == WatchDiagnosticIdentity(publisher.head) })
+        let phone = env.phoneDiagnostics.report(deviceModel: "", systemVersion: "")
+        let watch = env.watchDiagnostics.report(deviceModel: "", systemVersion: "")
+        #expect(phone.totals?["metadataPublished:metadata"]?.bytes == watch.totals?["metadataAccepted:metadata"]?.bytes)
+        let published = try #require(phone.totals?["metadataPublished:metadata"])
+        #expect(published.bytes > 0)
         let songs = try await env.watch.allSongs()
         let song = try #require(songs.first { $0.id == "t0" })
         #expect(song.artistName == "The Beatles" && song.albumName == "Abbey Road")

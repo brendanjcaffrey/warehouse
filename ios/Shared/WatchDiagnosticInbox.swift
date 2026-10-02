@@ -13,13 +13,19 @@ final class WatchDiagnosticInbox {
     }
 
     @discardableResult
-    func receive(_ data: Data) -> Bool {
+    func receive(_ data: Data, phone: WatchDiagnosticReport? = nil) -> Bool {
         guard data.count <= 256_000,
-              let report = WatchDiagnosticReport.decode(data), report.events.count <= 512,
-              let cleanData = report.encoded() else { return false }
+              var report = WatchDiagnosticReport.decode(data), report.events.count <= 512 else { return false }
+        let pairID = UUID()
+        if phone != nil { report.pairID = pairID }
+        guard let cleanData = report.encoded() else { return false }
         let filename = "watch-\(Int(report.capturedAt.timeIntervalSince1970))-\(UUID().uuidString).json"
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if var phone {
+                phone.pairID = pairID
+                guard savePhone(phone) != nil else { return false }
+            }
             try cleanData.write(to: directory.appending(path: filename), options: .atomic)
             refresh()
             return true
@@ -28,10 +34,22 @@ final class WatchDiagnosticInbox {
         }
     }
 
+    @discardableResult
+    func savePhone(_ report: WatchDiagnosticReport) -> URL? {
+        guard let data = report.encoded() else { return nil }
+        let url = directory.appending(path: "phone-\(Int(report.capturedAt.timeIntervalSince1970))-\(UUID().uuidString).json")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            refresh()
+            return url
+        } catch { return nil }
+    }
+
     func refresh() {
         reports = ((try? FileManager.default.contentsOfDirectory(at: directory,
             includingPropertiesForKeys: nil)) ?? [])
-            .filter { $0.lastPathComponent.hasPrefix("watch-") && $0.pathExtension == "json" }
+            .filter { ($0.lastPathComponent.hasPrefix("watch-") || $0.lastPathComponent.hasPrefix("phone-")) && $0.pathExtension == "json" }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 }

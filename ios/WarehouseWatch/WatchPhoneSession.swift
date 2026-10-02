@@ -44,6 +44,10 @@ final class WatchPhoneSession: NSObject {
         library.onIdle = { [weak self] in self?.updateBackgroundLifetime() }
     }
 
+    func diagnosticReport(deviceModel: String, systemVersion: String) -> WatchDiagnosticReport {
+        WatchDiagnostics.shared.report(deviceModel: deviceModel, systemVersion: systemVersion, delivery: content?.diagnosticState())
+    }
+
     func sendDiagnostics(_ report: WatchDiagnosticReport, completion: @escaping @MainActor (Bool) -> Void) {
         guard let data = report.encoded() else { completion(false); return }
         sendDiagnosticData(data, completion)
@@ -229,7 +233,7 @@ extension WatchPhoneSession: WCSessionDelegate {
                 try WatchContentReceiver.stage(file.fileURL, file: contentFile)
                 Task { @MainActor in
                     defer { contentActivity.end(); updateBackgroundLifetime() }
-                    content?.resume()
+                    content?.staged(contentFile)
                 }
             } catch {
                 Task { @MainActor in

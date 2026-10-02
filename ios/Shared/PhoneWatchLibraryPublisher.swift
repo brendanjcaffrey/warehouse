@@ -15,6 +15,7 @@ final class PhoneWatchLibraryPublisher {
         var libraryData: Data?
     }
 
+    private let diagnostics: WatchDiagnostics
     private let database: LibraryDatabase
     private let directory: URL
     private let transport: Transport
@@ -27,7 +28,8 @@ final class PhoneWatchLibraryPublisher {
 
     var head: WatchLibraryHead { saved.head }
 
-    init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport) throws {
+    init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport, diagnostics: WatchDiagnostics? = nil) throws {
+        self.diagnostics = diagnostics ?? .shared
         self.database = database
         self.directory = directory
         self.transport = transport
@@ -86,6 +88,7 @@ final class PhoneWatchLibraryPublisher {
             } catch {
                 guard generation == request else { return }
                 errorMessage = error.localizedDescription
+                diagnostics.metadata(.metadataFailed, head: saved.head, error: error)
                 if preparing, identity != nil, saved.head.failed != true {
                     var head = WatchLibraryHead(publisher: saved.head.publisher, revision: saved.head.revision + 1,
                                                libraryID: saved.head.libraryID, playlistIDs: saved.head.playlistIDs)
@@ -123,5 +126,7 @@ final class PhoneWatchLibraryPublisher {
             try JSONEncoder().encode(WatchLibrarySnapshot(head: saved.head, libraryData: data)).write(to: url, options: .atomic)
         }
         transport.enqueue(url, key)
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        diagnostics.metadata(.metadataPublished, head: saved.head, bytes: (attributes?[.size] as? NSNumber)?.int64Value)
     }
 }

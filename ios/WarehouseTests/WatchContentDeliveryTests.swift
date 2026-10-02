@@ -11,6 +11,8 @@ struct WatchContentDeliveryTests {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let files: FileStore
         let watchFiles: FileStore
+        var phoneDiagnostics: WatchDiagnostics
+        var watchDiagnostics: WatchDiagnostics
         var outstanding = [WatchContentFile]()
         var queued = [(WatchContentFile, URL)]()
         var queries = [WatchContentFile]()
@@ -22,6 +24,8 @@ struct WatchContentDeliveryTests {
         var enqueuesEnabled = true
 
         init() throws {
+            phoneDiagnostics = WatchDiagnostics(logEvents: false)
+            watchDiagnostics = WatchDiagnostics(logEvents: false)
             files = FileStore(rootURL: root.appending(path: "phone-files"))
             watchFiles = FileStore(rootURL: root.appending(path: "watch-files"))
             try files.prepare()
@@ -35,7 +39,8 @@ struct WatchContentDeliveryTests {
                     if enqueuesEnabled { outstanding.append(file); queued.append((file, url)) }
                 },
                 cancel: { [self] id in outstanding.removeAll { $0.id == id } },
-                query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) }), now: { [self] in now }, schedulesRetries: false)
+                query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) }),
+                now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics)
         }
 
         func receiver() throws -> WatchContentReceiver {
@@ -44,7 +49,7 @@ struct WatchContentDeliveryTests {
             return try WatchContentReceiver(fileCache: cache, directory: root.appending(path: "receiver"),
                                             availableBytes: { [self] in available },
                                             send: { [self] in receipts.append($0) }, beforeCommit: { [self] in try beforeCommit() },
-                                            now: { [self] in now })
+                                            now: { [self] in now }, diagnostics: watchDiagnostics)
         }
 
         func snapshot(count: Int = 300, revision: Int64 = 1) throws -> WatchLibrarySnapshot {
@@ -240,6 +245,10 @@ struct WatchContentDeliveryTests {
     func bulk() async throws {
         let env = try Env()
         defer { env.cleanUp() }
+        let phoneCapture = env.root.appending(path: "phone-capture.json")
+        let watchCapture = env.root.appending(path: "watch-capture.json")
+        env.phoneDiagnostics = WatchDiagnostics(logEvents: false, storeURL: phoneCapture)
+        env.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: watchCapture)
         let snapshot = try env.snapshot()
         try env.cache(snapshot)
         var queue = try env.queue()
@@ -256,7 +265,10 @@ struct WatchContentDeliveryTests {
             env.now += 120
             env.outstanding.removeAll { $0.id == file.id }
             // recreation before commit must recover the synchronously staged bytes.
+            env.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: watchCapture)
+            env.phoneDiagnostics = WatchDiagnostics(logEvents: false, storeURL: phoneCapture)
             receiver = try env.receiver()
+            receiver.staged(file)
             try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
             queue = try env.queue()
             try queue.reconcile(head: snapshot.head, snapshot: snapshot)
@@ -269,6 +281,24 @@ struct WatchContentDeliveryTests {
         #expect(env.watchFiles.list(.music) == (try snapshot.music))
         #expect(env.watchFiles.list(.artwork) == (try snapshot.artwork))
         #expect(env.queued.count == total)
+        let phone = env.phoneDiagnostics.report(deviceModel: "phone", systemVersion: "26", delivery: queue.diagnosticState())
+        let watch = env.watchDiagnostics.report(deviceModel: "watch", systemVersion: "26", delivery: receiver.diagnosticState())
+        #expect(phone.capture!.droppedEvents > 0 && watch.capture!.droppedEvents > 0)
+        #expect(phone.totals?["contentEnqueued:music"]?.count == 300)
+        #expect(phone.totals?["phoneAcknowledged:music"]?.count == 300)
+        #expect(watch.totals?["contentCommitted:music"]?.count == 300)
+        #expect(phone.delivery?.music.delivered.count == 300)
+        #expect(watch.delivery?.music.delivered.count == 300)
+        #expect(phone.delivery?.music.delivered.bytes == watch.delivery?.music.delivered.bytes)
+        #expect(phone.delivery?.head == watch.delivery?.head)
+        #expect(watch.delivery?.localMusic?.count == 300)
+        #expect(phone.delivery?.receiptWait == 0)
+        #expect(watch.delivery?.stagedFiles == 0)
+        let exported = try #require(watch.encoded())
+        #expect(WatchDiagnosticReport.decode(exported)?.totals?["contentCommitted:music"]?.count == 300)
+        let inbox = WatchDiagnosticInbox(directory: env.root.appending(path: "reports"))
+        #expect(inbox.receive(exported, phone: phone))
+        #expect(inbox.reports.count == 2)
     }
 
     @Test("lost acknowledgments query verified storage without retransferring, and source copies survive phone cleanup")
@@ -293,6 +323,8 @@ struct WatchContentDeliveryTests {
         env.outstanding.removeAll { $0.id == file.id }
         try queue.finished(file, error: nil)
         #expect(queue.jobs.first { $0.file == file }?.status == .awaitingReceipt)
+        #expect(queue.diagnosticState().receiptWait == 1)
+        #expect(env.phoneDiagnostics.report(deviceModel: "", systemVersion: "").totals?["contentCompleted:music"]?.count == 1)
         #expect(env.queries.contains(file))
         queue = try env.queue()
         try queue.reconcile(head: snapshot.head, snapshot: snapshot)
@@ -305,6 +337,12 @@ struct WatchContentDeliveryTests {
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
         #expect(env.queued.count <= queuedCount + 1)
         #expect(env.queued.filter { $0.0.id == file.id }.count == 1)
+        let phone = env.phoneDiagnostics.report(deviceModel: "", systemVersion: "")
+        let watch = env.watchDiagnostics.report(deviceModel: "", systemVersion: "")
+        #expect(phone.totals?["phoneAcknowledged:music"]?.count == 1)
+        #expect(watch.totals?["contentCommitted:music"]?.count == 1)
+        #expect(watch.totals?["contentReused:music"] == nil)
+        #expect(watch.totals?["receiptSent:music"]?.count == 2)
     }
 
     @Test("file before context and snapshot survives recreation; a deselection rejects delayed bytes and receipts")
@@ -358,9 +396,12 @@ struct WatchContentDeliveryTests {
         // the staged bytes themselves fit, but the device cannot keep its safety reserve.
         receiver = try WatchContentReceiver(
             fileCache: FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) }),
-            directory: env.root.appending(path: "receiver"), availableBytes: { env.available }, send: { env.receipts.append($0) })
+            directory: env.root.appending(path: "receiver"), availableBytes: { env.available },
+            send: { env.receipts.append($0) }, diagnostics: env.watchDiagnostics)
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .storageFull)
+        #expect(receiver.diagnosticState().music.states["storageFull"] == 1)
+        #expect(env.watchDiagnostics.events.contains { $0.kind == .contentStorageFull && $0.id == file.id })
         #expect(env.watchFiles.exists(.music, "m3.mp3"))
         env.outstanding.removeAll { $0.id == file.id }
         try queue.receive(try #require(env.receipts.last))
@@ -492,15 +533,19 @@ struct WatchContentDeliveryTests {
         let receiver = try WatchContentReceiver(
             fileCache: cache, directory: env.root.appending(path: "receiver"),
             availableBytes: { env.available }, send: { env.receipts.append($0) },
-            beforeReceipt: { throw CocoaError(.fileWriteUnknown) })
+            beforeReceipt: { throw CocoaError(.fileWriteUnknown) }, diagnostics: env.watchDiagnostics)
         #expect(throws: CocoaError.self) { try receiver.reconcile(head: snapshot.head, snapshot: snapshot) }
         #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
         #expect(env.receipts.isEmpty)
         let restored = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
-                                                 availableBytes: { env.available }, send: { env.receipts.append($0) })
+                                                 availableBytes: { env.available }, send: { env.receipts.append($0) },
+                                                 diagnostics: env.watchDiagnostics)
         try restored.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .delivered)
         #expect(refreshed == 1)
+        let capture = env.watchDiagnostics.report(deviceModel: "", systemVersion: "")
+        #expect(capture.totals?["contentCommitted:music"]?.count == 1)
+        #expect(capture.totals?["contentReused:music"] == nil)
         try queue.receive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
     }
@@ -609,6 +654,8 @@ struct WatchContentDeliveryTests {
         var receiver = try env.receiver()
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(calls == 2 && env.receipts.allSatisfy { $0.status == .retrying })
+        #expect(env.watchDiagnostics.events.contains { $0.kind == .contentRetry && $0.errorCode == NSFileWriteUnknownError })
+        #expect(receiver.diagnosticState().music.states["retrying"] == 2)
         receiver = try env.receiver()
         env.beforeCommit = { calls += 1 }
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)

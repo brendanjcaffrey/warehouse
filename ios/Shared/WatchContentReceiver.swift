@@ -5,6 +5,7 @@ import Observation
 @MainActor
 @Observable
 final class WatchContentReceiver {
+    private let diagnostics: WatchDiagnostics
     private let fileCache: FileCache
     private let directory: URL
     private let availableBytes: () -> Int64?
@@ -22,7 +23,8 @@ final class WatchContentReceiver {
     init(fileCache: FileCache, directory: URL = defaultDirectory(),
          availableBytes: @escaping () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
-         beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }) throws {
+         beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil) throws {
+        self.diagnostics = diagnostics ?? .shared
         self.fileCache = fileCache
         self.directory = directory
         self.availableBytes = availableBytes
@@ -107,6 +109,36 @@ final class WatchContentReceiver {
         return progress
     }
 
+    func diagnosticState() -> WatchDeliveryDiagnosticState {
+        var state = WatchDeliveryDiagnosticState(peer: .watch)
+        state.head = pendingHead.map(WatchDiagnosticIdentity.init)
+        state.inventoryHead = snapshot.map { WatchDiagnosticIdentity($0.head) }
+        state.availableBytes = availableBytes()
+        let music = fileCache.fileStore.entries(.music)
+        let artwork = fileCache.fileStore.entries(.artwork)
+        state.localMusic = WatchDeliveryDiagnosticState.local(music)
+        state.localArtwork = WatchDeliveryDiagnosticState.local(artwork)
+        state.stagedFiles = ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .count { UUID(uuidString: $0) != nil }
+        for type in LibraryFileType.allCases {
+            let names = type == .music ? try? snapshot?.music : try? snapshot?.artwork
+            for name in names ?? [] {
+                let entry = (type == .music ? music : artwork).first { $0.filename == name }
+                let receipt = receipts.last { $0.file.head == snapshot?.head && $0.file.type == type && $0.file.filename == name }
+                let status: WatchContentStatus = entry != nil ? .delivered : receipt.map {
+                    $0.status == .delivered ? .pending : $0.status
+                } ?? .pending
+                state.add(type: type, status: status, bytes: entry?.sizeBytes ?? receipt?.file.bytes)
+            }
+        }
+        return state
+    }
+
+    func staged(_ file: WatchContentFile) {
+        diagnostics.delivery(.contentStaged, file: file, source: .phone)
+        resume()
+    }
+
     /// stop commits while the database serializes a newly received control message.
     func pause() { head = nil; pendingHead = nil }
 
@@ -122,6 +154,7 @@ final class WatchContentReceiver {
 
     /// a lost receipt is repaired from durable identity plus actual verified bytes, never system completion.
     func query(_ file: WatchContentFile) throws {
+        diagnostics.delivery(.receiptQuery, file: file, source: .phone)
         guard isDesired(file) else {
             if let head, head.publisher == file.head.publisher, file.head.revision < head.revision {
                 send(.init(file: file, status: .failed))
@@ -135,6 +168,7 @@ final class WatchContentReceiver {
         }
         let url = fileCache.fileStore.fileURL(file.type, file.filename)
         if receipts.contains(where: { $0.file == file && $0.status == .delivered }), file.matches(url) {
+            diagnostics.delivery(.receiptSent, file: file, source: .phone, status: .delivered)
             send(.init(file: file, status: .delivered))
         } else if let receipt = receipts.first(where: { $0.file == file && $0.status == .retrying }),
                   let retryAt = receipt.retryAt, retryAt > now() {
@@ -145,9 +179,12 @@ final class WatchContentReceiver {
     }
 
     func stagingFailed(_ file: WatchContentFile, error: Error) {
+        diagnostics.delivery(BackgroundDownload.isOutOfSpace(error) ? .contentStorageFull : .contentFailed,
+                             file: file, source: .phone, error: error)
         guard isDesired(file) else { return }
         do {
             if file.matches(fileCache.fileStore.fileURL(file.type, file.filename)) {
+                diagnostics.delivery(.contentReused, file: file, source: .cache)
                 try acknowledge(file, status: .delivered)
                 if file.type == .music { fileCache.noteMusicStored() }
                 return
@@ -168,10 +205,14 @@ final class WatchContentReceiver {
         try beforeReceipt()
         try JSONEncoder().encode(next).write(to: directory.appending(path: "receipts.json"), options: .atomic)
         receipts = next
+        diagnostics.delivery(.receiptPersisted, file: file, source: .cache, status: status)
+        diagnostics.delivery(.receiptSent, file: file, source: .phone, status: status)
         send(receipt)
     }
 
     private func drain() throws {
+        diagnostics.record(.init(kind: .queueWakeup, id: pendingHead?.publisher ?? UUID(), source: .system,
+                                 identity: pendingHead.map(WatchDiagnosticIdentity.init)))
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             where UUID(uuidString: url.lastPathComponent) != nil {
@@ -197,6 +238,8 @@ final class WatchContentReceiver {
                 let status: WatchContentStatus = permanent ? .failed : BackgroundDownload.isOutOfSpace(error) ? .storageFull : .retrying
                 let attempts = (receipts.first { $0.file == file }?.attempts ?? 0) + 1
                 let retryAt = status == .retrying ? now().addingTimeInterval(min(3600, 5 * pow(2, Double(min(attempts, 10))))) : nil
+                diagnostics.delivery(status == .storageFull ? .contentStorageFull : status == .failed ? .contentFailed : .contentRetry,
+                                     file: file, source: .cache, status: status, error: error)
                 try acknowledge(file, status: status, retryAt: retryAt, attempts: attempts)
                 if permanent || status == .storageFull { try FileManager.default.removeItem(at: url) }
                 errorMessage = error.localizedDescription
@@ -207,6 +250,7 @@ final class WatchContentReceiver {
     private func commit(_ file: WatchContentFile, from url: URL) throws {
         let destination = fileCache.fileStore.fileURL(file.type, file.filename)
         if file.matches(destination) {
+            diagnostics.delivery(.contentReused, file: file, source: .cache)
             try acknowledge(file, status: .delivered)
             try FileManager.default.removeItem(at: url)
             if file.type == .music { fileCache.noteMusicStored() }
@@ -214,6 +258,7 @@ final class WatchContentReceiver {
         }
         let staged = url.appending(path: "bytes")
         guard file.matches(staged) else {
+            diagnostics.delivery(.contentFailed, file: file, source: .cache, status: .failed, error: WatchLibraryError.invalid)
             try acknowledge(file, status: .failed)
             try FileManager.default.removeItem(at: url)
             return
@@ -223,6 +268,8 @@ final class WatchContentReceiver {
         // staging already occupies this space, so admission accounts for the pending move.
         guard fileCache.reserve(file.type, file.filename, bytes: file.bytes,
                                 availableBytes: availableBytes().map { $0 + file.bytes }, allowOversized: true) else {
+            diagnostics.delivery(.contentStorageFull, file: file, source: .cache, status: .storageFull,
+                                 error: CocoaError(.fileWriteOutOfSpace))
             try acknowledge(file, status: .storageFull)
             try FileManager.default.removeItem(at: url)
             return
@@ -236,6 +283,7 @@ final class WatchContentReceiver {
         } else {
             try FileManager.default.moveItem(at: staged, to: destination)
         }
+        diagnostics.delivery(.contentCommitted, file: file, source: .cache)
         try acknowledge(file, status: .delivered)
         try FileManager.default.removeItem(at: url)
         if file.type == .music { fileCache.noteMusicStored() }

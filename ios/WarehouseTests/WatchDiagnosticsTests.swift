@@ -5,6 +5,53 @@ import Testing
 @Suite("watch diagnostics")
 @MainActor
 struct WatchDiagnosticsTests {
+    @Test("delivery totals outlive the ring and relaunch, while replayed verification adds no bytes")
+    func cumulativeDelivery() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let capture = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "private-account-url", playlistIDs: [])
+        let file = WatchContentFile(head: head, type: .music, filename: "private-name.mp3", bytes: 42, digest: "secret")
+        capture.delivery(.contentCommitted, file: file, source: .cache)
+        capture.delivery(.contentReused, file: file, source: .cache)
+        for _ in 0..<600 { capture.delivery(.receiptSent, file: file, source: .phone) }
+        let restored = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        let report = restored.report(deviceModel: "watch", systemVersion: "26")
+        #expect(report.capture?.totalEvents == 602)
+        #expect(report.capture?.droppedEvents == 600)
+        #expect(report.totals?["contentCommitted:music"]?.bytes == 42)
+        #expect(report.totals?["contentReused:music"] == nil)
+        #expect(report.totals?["receiptSent:music"]?.count == 600)
+        #expect(report.totals?["receiptSent:music"]?.bytes == 0)
+        let data = try #require(report.encoded())
+        let encoded = try #require(String(data: data, encoding: .utf8))
+        #expect(!encoded.contains("private-account-url"))
+        #expect(!encoded.contains("private-name"))
+        #expect(!encoded.contains("secret"))
+        #expect(report.events.last?.identity?.publisher == head.publisher)
+        restored.clear()
+        #expect(restored.report(deviceModel: "", systemVersion: "").capture?.totalEvents == 0)
+    }
+
+    @Test("upgrading a legacy ring preserves events without claiming historical cumulative coverage")
+    func legacyCoverage() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appending(path: "capture.json")
+        let oldDate = Date(timeIntervalSince1970: 1000)
+        let legacy = WatchDiagnosticReport(capturedAt: oldDate, deviceModel: "watch", systemVersion: "26",
+            events: [.init(kind: .activationChanged, id: UUID(), source: .system, date: oldDate)])
+        try #require(legacy.encoded()).write(to: url)
+        let capture = WatchDiagnostics(logEvents: false, storeURL: url)
+        let report = capture.report(deviceModel: "watch", systemVersion: "26")
+        #expect(report.events.count == 1)
+        #expect(report.capture?.startedAt == oldDate)
+        #expect(try #require(report.capture?.totalsStartedAt) > oldDate)
+        #expect(report.totals?.isEmpty == true)
+    }
+
     @Test("capture survives relaunch and clear starts a distinct run")
     func persistsCapture() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

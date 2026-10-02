@@ -21,11 +21,13 @@ final class WatchLibraryReceiver {
     var onChanged: () async -> Void = {}
     var onIdle: () -> Void = {}
 
+    private let diagnostics: WatchDiagnostics
     private let database: LibraryDatabase
     private let directory: URL
     private var runner: Task<Void, Never>?
 
-    init(database: LibraryDatabase, directory: URL = defaultDirectory()) {
+    init(database: LibraryDatabase, directory: URL = defaultDirectory(), diagnostics: WatchDiagnostics? = nil) {
+        self.diagnostics = diagnostics ?? .shared
         self.database = database
         self.directory = directory
         resume()
@@ -73,7 +75,11 @@ final class WatchLibraryReceiver {
     }
 
     func received() { resume() }
-    func failed(_ error: Error) { errorMessage = error.localizedDescription }
+    func failed(_ error: Error) {
+        errorMessage = error.localizedDescription
+        diagnostics.record(.init(kind: .metadataFailed, id: head?.publisher ?? UUID(), source: .phone,
+                                 error: error, identity: head.map(WatchDiagnosticIdentity.init)))
+    }
     func waitForImport() async { await runner?.value }
 
     private func enqueue(_ operation: @escaping () async throws -> Void) {
@@ -85,7 +91,7 @@ final class WatchLibraryReceiver {
             do {
                 try await operation()
             } catch {
-                errorMessage = error.localizedDescription
+                failed(error)
             }
             await onChanged()
         }
@@ -96,11 +102,14 @@ final class WatchLibraryReceiver {
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             let incoming: WatchLibrarySnapshot
+            let incomingBytes: Int64
             do {
-                incoming = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: url))
+                let data = try Data(contentsOf: url)
+                incomingBytes = Int64(data.count)
+                incoming = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: data)
                 _ = try incoming.validatedLibrary()
             } catch {
-                errorMessage = error.localizedDescription
+                failed(error)
                 try FileManager.default.removeItem(at: url)
                 continue
             }
@@ -113,8 +122,12 @@ final class WatchLibraryReceiver {
                 }
                 continue
             }
+            let previous = snapshot?.head
             _ = try await database.importWatchLibrary(incoming)
             snapshot = try await database.watchSnapshot()
+            if previous != snapshot?.head, snapshot?.head == incoming.head {
+                diagnostics.metadata(.metadataAccepted, head: incoming.head, bytes: incomingBytes)
+            }
             errorMessage = nil
             try FileManager.default.removeItem(at: url)
         }

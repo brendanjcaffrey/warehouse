@@ -31,6 +31,7 @@ final class PhoneWatchContentQueue {
     }
 
     static let maximumTransfers = 4
+    private let diagnostics: WatchDiagnostics
     private let fileStore: FileStore
     private let directory: URL
     private let transport: Transport
@@ -42,7 +43,8 @@ final class PhoneWatchContentQueue {
     var jobs: [Job] { saved.jobs }
 
     init(fileStore: FileStore, directory: URL = defaultDirectory(), transport: Transport,
-         now: @escaping () -> Date = { Date() }, schedulesRetries: Bool = true) throws {
+         now: @escaping () -> Date = { Date() }, schedulesRetries: Bool = true, diagnostics: WatchDiagnostics? = nil) throws {
+        self.diagnostics = diagnostics ?? .shared
         self.fileStore = fileStore
         self.directory = directory
         self.transport = transport
@@ -91,6 +93,28 @@ final class PhoneWatchContentQueue {
         }
     }
 
+    func diagnosticState() -> WatchDeliveryDiagnosticState {
+        var state = WatchDeliveryDiagnosticState(peer: .phone)
+        state.head = saved.head.map(WatchDiagnosticIdentity.init)
+        state.inventoryHead = saved.snapshot.map { WatchDiagnosticIdentity($0.head) }
+        state.transportAvailable = transport.available()
+        state.systemOutstanding = transport.outstanding().count
+        state.receiptWait = saved.jobs.count { $0.status == .awaitingReceipt }
+        state.availableBytes = FileStore.deviceStorage()?.availableBytes
+        state.nextAttemptAt = saved.jobs.filter {
+            [.awaitingReceipt, .retrying, .storageFull, .missingOnPhone].contains($0.status)
+        }.map(\.nextAttempt).min()
+        let entries = Dictionary(uniqueKeysWithValues: LibraryFileType.allCases.map { type in
+            (type, Dictionary(fileStore.entries(type).map { ($0.filename, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first }))
+        })
+        for job in saved.jobs {
+            let bytes = job.file?.bytes ?? entries[job.type]?[job.filename]
+            let status: WatchContentStatus = job.file == nil && !fileStore.exists(job.type, job.filename) ? .missingOnPhone : job.status
+            state.add(type: job.type, status: status, bytes: bytes)
+        }
+        return state
+    }
+
     func receive(_ receipt: WatchContentReceipt) throws {
         guard let index = saved.jobs.firstIndex(where: { $0.file == receipt.file }), saved.head == receipt.file.head,
               [.delivered, .retrying, .storageFull, .failed].contains(receipt.status) else { return }
@@ -101,10 +125,21 @@ final class PhoneWatchContentQueue {
             saved.jobs[index].nextAttempt = now().addingTimeInterval(backoff(saved.jobs[index].attempts))
         }
         try save()
+        diagnostics.delivery(receipt.status == .delivered ? .phoneAcknowledged : Self.event(receipt.status),
+                             file: receipt.file, source: .phone, status: receipt.status)
         try pump()
     }
 
+    private static func event(_ status: WatchContentStatus) -> WatchDiagnostic.Kind {
+        switch status {
+        case .storageFull: .contentStorageFull
+        case .failed: .contentFailed
+        default: .contentRetry
+        }
+    }
+
     func finished(_ file: WatchContentFile, error: Error?) throws {
+        diagnostics.delivery(error == nil ? .contentCompleted : .contentTransferFailed, file: file, source: .system, error: error)
         guard let index = saved.jobs.firstIndex(where: { $0.file == file }),
               ![.delivered, .failed, .storageFull, .retrying].contains(saved.jobs[index].status) else {
             try pump(); return
@@ -117,6 +152,10 @@ final class PhoneWatchContentQueue {
             saved.jobs[index].nextAttempt = .distantPast
         }
         try save()
+        if let error {
+            diagnostics.delivery(Self.event(saved.jobs[index].status), file: file, source: .system,
+                                 status: saved.jobs[index].status, error: error)
+        }
         try pump()
     }
 
@@ -143,6 +182,8 @@ final class PhoneWatchContentQueue {
     }
 
     private func pump() throws {
+        diagnostics.record(.init(kind: .queueWakeup, id: saved.head?.publisher ?? UUID(), source: .system,
+                                 identity: saved.head.map(WatchDiagnosticIdentity.init)))
         timer?.cancel()
         guard transport.available() else { try publishReport(); return }
         let outstanding = transport.outstanding()
@@ -170,6 +211,7 @@ final class PhoneWatchContentQueue {
                     job.nextAttempt = now().addingTimeInterval(60)
                     saved.jobs[index] = job
                     try save()
+                    diagnostics.delivery(.receiptQuery, file: file, source: .phone)
                     transport.query(file)
                 }
                 saved.jobs[index] = job
@@ -202,6 +244,7 @@ final class PhoneWatchContentQueue {
                 // the write precedes enqueue, so interrupted enqueue is recovered by a receipt query.
                 try save()
                 transport.enqueue(file, source(file))
+                diagnostics.delivery(.contentEnqueued, file: file, source: .phone, status: .transferring)
                 occupied += 1
             } catch {
                 job.status = Self.isPermanent(error) ? .failed : .retrying
@@ -209,6 +252,12 @@ final class PhoneWatchContentQueue {
                 job.nextAttempt = now().addingTimeInterval(backoff(job.attempts))
                 saved.jobs[index] = job
                 errorMessage = error.localizedDescription
+                if let file = job.file {
+                    diagnostics.delivery(Self.event(job.status), file: file, source: .phone, status: job.status, error: error)
+                } else {
+                    diagnostics.record(.init(kind: Self.event(job.status), id: head.publisher, source: .phone,
+                                             fileType: job.type, error: error, identity: WatchDiagnosticIdentity(head), status: job.status))
+                }
             }
         }
         try save()

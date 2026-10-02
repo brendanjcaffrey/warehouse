@@ -9,6 +9,10 @@ struct WatchDiagnostic: Codable {
         case httpStarted, httpDelivered, httpFailed, storageFailure, evicted
         case playbackRequested, playbackBuffering, playbackStarted, playbackStalled, playbackRecovered, playbackFailed
         case reachabilityChanged, activationChanged
+        case metadataPublished, metadataAccepted, metadataCompleted, metadataFailed
+        case contentEnqueued, contentCompleted, contentStaged, contentCommitted, contentReused
+        case contentTransferFailed, contentFailed, contentRetry, contentStorageFull, receiptPersisted, receiptSent, receiptQuery, phoneAcknowledged
+        case queueWakeup
 
         static func phoneReply(_ reply: PhoneFileReply) -> Self {
             switch reply {
@@ -29,6 +33,8 @@ struct WatchDiagnostic: Codable {
         case minimizeStalls, evaluatingBufferingRate, noItem, other
     }
 
+    let identity: WatchDiagnosticIdentity?
+    let status: WatchContentStatus?
     let date: Date
     let kind: Kind
     let id: UUID
@@ -48,7 +54,10 @@ struct WatchDiagnostic: Codable {
          reply: PhoneFileReply? = nil, bytes: Int64? = nil,
          throughput: Double? = nil, bufferSeconds: Double? = nil,
          elapsed: TimeInterval? = nil, error: Error? = nil, detail: Detail? = nil,
-         waitingReason: WaitingReason? = nil, date: Date = Date()) {
+         waitingReason: WaitingReason? = nil, date: Date = Date(),
+         identity: WatchDiagnosticIdentity? = nil, status: WatchContentStatus? = nil) {
+        self.identity = identity
+        self.status = status
         self.date = date
         self.kind = kind
         self.id = id
@@ -79,6 +88,11 @@ struct WatchDiagnosticReport: Codable {
     let deviceModel: String
     let systemVersion: String
     let events: [WatchDiagnostic]
+    var build: WatchDiagnosticBuild? = WatchDiagnosticBuild()
+    var capture: WatchDiagnosticCapture?
+    var totals: [String: WatchDiagnosticTotal]?
+    var delivery: WatchDeliveryDiagnosticState?
+    var pairID: UUID?
 
     var count: Int { events.count }
 
@@ -109,45 +123,90 @@ final class WatchDiagnostics {
     private let logEvents: Bool
     private let storeURL: URL?
     private(set) var events: [WatchDiagnostic] = []
+    private var capture: WatchDiagnosticCapture
+    private var totals: [String: WatchDiagnosticTotal] = [:]
+    private var counted = Set<String>()
+
+    private struct Saved: Codable {
+        let report: WatchDiagnosticReport
+        let counted: Set<String>
+    }
 
     init(capacity: Int = 512, logEvents: Bool = true, storeURL: URL? = nil) {
         self.capacity = max(1, capacity)
         self.logEvents = logEvents
         self.storeURL = storeURL
-        if let storeURL, let data = try? Data(contentsOf: storeURL),
-           let report = WatchDiagnosticReport.decode(data) {
-            events = Array(report.events.suffix(self.capacity))
+        capture = WatchDiagnosticCapture(capacity: self.capacity)
+        if let storeURL, let data = try? Data(contentsOf: storeURL) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .millisecondsSince1970
+            let saved = try? decoder.decode(Saved.self, from: data)
+            if let report = saved?.report ?? WatchDiagnosticReport.decode(data) {
+                events = Array(report.events.suffix(self.capacity))
+                capture = report.capture ?? WatchDiagnosticCapture(startedAt: events.first?.date ?? Date(),
+                                                                   totalEvents: report.events.count, capacity: self.capacity)
+                capture.capacity = self.capacity
+                capture.droppedEvents = capture.totalEvents - events.count
+                totals = report.totals ?? [:]
+                counted = saved?.counted ?? []
+            }
         }
     }
 
     func record(_ event: WatchDiagnostic) {
+        capture.totalEvents += 1
+        let kind = event.kind
+        let unique = [WatchDiagnostic.Kind.contentCommitted, .contentReused, .phoneAcknowledged].contains(kind)
+        let category = kind == .contentCommitted || kind == .contentReused ? "verified" : kind.rawValue
+        if !unique || counted.insert("\(category):\(event.id)").inserted {
+            let key = "\(kind.rawValue):\(event.fileType?.rawValue ?? "metadata")"
+            var total = totals[key] ?? WatchDiagnosticTotal(firstAt: event.date, lastAt: event.date)
+            total.count += 1
+            // receipts and queries are control traffic, never newly delivered file bytes.
+            if [.contentEnqueued, .contentCompleted, .contentStaged, .contentCommitted, .contentReused,
+                .phoneAcknowledged, .metadataPublished, .metadataAccepted].contains(kind) { total.bytes += event.bytes ?? 0 }
+            total.lastAt = event.date
+            totals[key] = total
+        }
         events.append(event)
         if events.count > capacity { events.removeFirst(events.count - capacity) }
+        capture.droppedEvents = capture.totalEvents - events.count
         persist()
         if logEvents, let message = Self.line(for: event) {
             logger.info("\(message, privacy: .public)")
         }
     }
 
-    func report(deviceModel: String, systemVersion: String) -> WatchDiagnosticReport {
-        WatchDiagnosticReport(capturedAt: Date(), deviceModel: deviceModel,
-                              systemVersion: systemVersion, events: events)
+    func report(deviceModel: String, systemVersion: String,
+                delivery: WatchDeliveryDiagnosticState? = nil) -> WatchDiagnosticReport {
+        var report = WatchDiagnosticReport(capturedAt: Date(), deviceModel: deviceModel,
+                                           systemVersion: systemVersion, events: events)
+        report.capture = capture
+        report.totals = totals
+        report.delivery = delivery
+        return report
     }
 
     func clear() {
         events = []
+        totals = [:]
+        counted = []
+        capture = WatchDiagnosticCapture(capacity: capacity)
         persist()
     }
 
     private func persist() {
         guard let storeURL else { return }
         let report = report(deviceModel: "", systemVersion: "")
-        guard let data = report.encoded() else { return }
         do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .millisecondsSince1970
+            let data = try encoder.encode(Saved(report: report, counted: counted))
             try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try data.write(to: storeURL, options: .atomic)
         } catch {
+            capture.persistenceFailed = true
             logger.error("diagnostic persistence failed")
         }
     }

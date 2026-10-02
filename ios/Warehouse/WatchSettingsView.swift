@@ -1,9 +1,14 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var phoneDiagnosticReporter: (@MainActor () -> WatchDiagnosticReport)?
+}
+
 /// the phone owns selection; download counts come from durable watch receipts.
 struct WatchSettingsView: View {
     @Environment(PlaylistsStore.self) private var playlists
     @Environment(WatchSyncSettingsStore.self) private var settings
+    @Environment(\.phoneDiagnosticReporter) private var phoneReport
     @Environment(WatchDiagnosticInbox.self) private var diagnosticInbox
 
     var body: some View {
@@ -15,6 +20,9 @@ struct WatchSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Diagnostics") {
+                Button("Save iPhone Capture") {
+                    if let report = phoneReport?() { diagnosticInbox.savePhone(report) }
+                }
                 if diagnosticInbox.reports.isEmpty {
                     Text("Send a capture from Diagnostics on the watch, then return here to share it.")
                         .foregroundStyle(.secondary)

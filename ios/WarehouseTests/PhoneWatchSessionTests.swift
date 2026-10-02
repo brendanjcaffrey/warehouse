@@ -20,12 +20,62 @@ struct PhoneWatchSessionTests {
             session.receive(data: data) { continuation.resume(returning: $0) }
         }
         #expect(reply == Data("saved".utf8))
-        #expect(inbox.reports.count == 1)
+        #expect(inbox.reports.count == 2)
+        let saved = try inbox.reports.map { try #require(WatchDiagnosticReport.decode(Data(contentsOf: $0))) }
+        #expect(saved[0].pairID != nil && saved[0].pairID == saved[1].pairID)
+        #expect(saved.allSatisfy { $0.build?.number.isEmpty == false })
         let badReply = await withCheckedContinuation { continuation in
             session.receive(data: Data("bad".utf8)) { continuation.resume(returning: $0) }
         }
         #expect(badReply.isEmpty)
-        #expect(inbox.reports.count == 1)
+        #expect(inbox.reports.count == 2)
+    }
+
+    @Test("session completion and durable receipt callbacks reach the phone export with the same opaque identity")
+    func exportsContentCallbacks() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 5)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        let (file, url) = env.queued[0]
+        let session = PhoneWatchSession(payload: { .init(serverURL: "", token: "", playlistIds: []) },
+                                       onPlay: { _ in }, diagnostics: env.phoneDiagnostics)
+        session.content = queue
+        env.outstanding.removeAll { $0.id == file.id }
+        #expect(session.receiveFileCompletion(metadata: try file.encode(), error: nil))
+        while queue.jobs.first?.status != .awaitingReceipt { await Task.yield() }
+        var report = session.diagnosticReport(deviceModel: "phone", systemVersion: "26")
+        #expect(report.delivery?.music.delivered.count == .zero)
+        #expect(report.delivery?.receiptWait == 1)
+        #expect(report.count(.contentCompleted) == 1)
+        let receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try env.stage(file, url: url)
+        receiver.staged(file)
+        session.receive(userInfo: try #require(env.receipts.last).encode())
+        while queue.jobs.first?.status != .delivered { await Task.yield() }
+        report = session.diagnosticReport(deviceModel: "phone", systemVersion: "26")
+        #expect(report.delivery?.music.delivered.count == 1)
+        #expect(report.totals?["phoneAcknowledged:music"]?.bytes == file.bytes)
+        #expect(report.events.first { $0.kind == .phoneAcknowledged }?.identity == WatchDiagnosticIdentity(snapshot.head))
+        let watch = env.watchDiagnostics.report(deviceModel: "watch", systemVersion: "26", delivery: receiver.diagnosticState())
+        #expect(watch.count(.contentStaged) == 1 && watch.count(.contentCommitted) == 1)
+        #expect(watch.delivery?.music.delivered.bytes == report.delivery?.music.delivered.bytes)
+        #expect(session.receiveFileCompletion(metadata: ["kind": "watchLibrarySnapshot",
+                   "watchLibraryKey": PhoneWatchLibraryPublisher.key(snapshot.head)], error: nil))
+        while env.phoneDiagnostics.events.last?.kind != .metadataCompleted { await Task.yield() }
+        #expect(env.phoneDiagnostics.events.last?.identity?.revision == snapshot.head.revision)
+        #expect(!session.receiveFileCompletion(metadata: [:], error: nil))
+        let next = try #require(queue.jobs.first { $0.status == .transferring }?.file)
+        env.outstanding.removeAll { $0.id == next.id }
+        #expect(session.receiveFileCompletion(metadata: try next.encode(), error: CocoaError(.fileWriteUnknown)))
+        while queue.jobs.first(where: { $0.file == next })?.status != .retrying { await Task.yield() }
+        report = session.diagnosticReport(deviceModel: "phone", systemVersion: "26")
+        #expect(report.count(.contentTransferFailed) == 1)
+        #expect(report.events.contains { $0.kind == .contentRetry && $0.errorCode == NSFileWriteUnknownError })
+        #expect(report.delivery?.music.states["retrying"] == 1)
     }
 
     @MainActor

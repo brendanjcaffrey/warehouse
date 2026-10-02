@@ -182,6 +182,10 @@ struct WarehouseApp: App {
                 .environment(router)
                 .environment(watchSettings)
                 .environment(diagnosticInbox)
+                .environment(\.phoneDiagnosticReporter, {
+                    let device = UIDevice.current
+                    return watchSession.diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)
+                })
                 .onChange(of: auth.token) {
                     // keep the watch's credentials current across log in/out
                     watchSession.push()
