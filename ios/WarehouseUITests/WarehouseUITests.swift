@@ -50,6 +50,62 @@ final class WarehouseUITests: XCTestCase {
     }
 
     @MainActor
+    func testAppleWatchDiagnosticsDatesSharingAndSwipeDeletion() throws {
+        let app = launchWithFixtures()
+        app.tabBars.buttons["Settings"].tap()
+        let watch = app.buttons["Playlists & Downloads"]
+        XCTAssertTrue(watch.waitForExistence(timeout: 5))
+        watch.tap()
+        let save = app.buttons["Save iPhone Capture"]
+        for _ in 0..<5 where !save.isHittable { app.swipeUp() }
+        XCTAssertTrue(waitForVisible(save))
+        let playlist = app.buttons["watch-playlist-p1"]
+        XCTAssertLessThan(playlist.frame.minY, save.frame.minY)
+
+        let reports = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "watch-diagnostic-report-phone-"))
+        let originalIDs = Set(reports.allElementsBoundByIndex.map(\.identifier))
+        save.tap()
+        save.tap()
+        let created = reports.allElementsBoundByIndex.filter { !originalIDs.contains($0.identifier) }
+        XCTAssertEqual(created.count, 2)
+        let row = app.buttons[try XCTUnwrap(created.first).identifier]
+        let retained = app.buttons[try XCTUnwrap(created.last).identifier]
+        let filename = String(row.identifier.dropFirst("watch-diagnostic-report-".count))
+        let subtitle = app.staticTexts["watch-diagnostic-date-\(filename)"]
+        XCTAssertTrue(subtitle.exists)
+        XCTAssertFalse(subtitle.label.isEmpty)
+        XCTAssertNotEqual(subtitle.label, "Creation date unavailable")
+        for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+        XCTAssertTrue(waitForVisible(row))
+        row.tap()
+        let shareSheet = app.collectionViews["activityCollectionView"]
+        XCTAssertTrue(shareSheet.waitForExistence(timeout: 5))
+        app.terminate()
+        app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(watch.waitForExistence(timeout: 5))
+        watch.tap()
+        for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+        XCTAssertTrue(waitForVisible(row))
+        row.swipeLeft()
+        let delete = app.buttons["Delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        delete.tap()
+        XCTAssertFalse(row.exists)
+        XCTAssertTrue(retained.exists)
+
+        app.navigationBars["Apple Watch"].buttons.firstMatch.tap()
+        watch.tap()
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        XCTAssertFalse(row.exists)
+        for _ in 0..<5 where !retained.isHittable { app.swipeUp() }
+        retained.swipeLeft()
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        delete.tap()
+        XCTAssertFalse(retained.exists)
+    }
+
+    @MainActor
     func testShowInSongsScrollsToSong() throws {
         let app = launchWithFixtures()
 

@@ -52,4 +52,15 @@ final class WatchDiagnosticInbox {
             .filter { ($0.lastPathComponent.hasPrefix("watch-") || $0.lastPathComponent.hasPrefix("phone-")) && $0.pathExtension == "json" }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
+
+    func capturedAt(for url: URL) -> Date? {
+        guard reports.contains(url), let data = try? Data(contentsOf: url) else { return nil }
+        return WatchDiagnosticReport.decode(data)?.capturedAt
+    }
+
+    func delete(_ url: URL) throws {
+        guard reports.contains(url) else { throw CocoaError(.fileNoSuchFile) }
+        try FileManager.default.removeItem(at: url)
+        refresh()
+    }
 }

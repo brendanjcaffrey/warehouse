@@ -10,6 +10,7 @@ struct WatchSettingsView: View {
     @Environment(WatchSyncSettingsStore.self) private var settings
     @Environment(\.phoneDiagnosticReporter) private var phoneReport
     @Environment(WatchDiagnosticInbox.self) private var diagnosticInbox
+    @State private var deletionFailed = false
 
     var body: some View {
         List {
@@ -18,21 +19,6 @@ struct WatchSettingsView: View {
                 Text("Counts show the last download status reported by the watch. Updates may be delayed while disconnected.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-            Section("Diagnostics") {
-                Button("Save iPhone Capture") {
-                    if let report = phoneReport?() { diagnosticInbox.savePhone(report) }
-                }
-                if diagnosticInbox.reports.isEmpty {
-                    Text("Send a capture from Diagnostics on the watch, then return here to share it.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(diagnosticInbox.reports, id: \.self) { url in
-                        ShareLink(item: url) {
-                            Label(url.deletingPathExtension().lastPathComponent, systemImage: "square.and.arrow.up")
-                        }
-                    }
-                }
             }
             let sections = PlaylistListBuilder.watchSections(in: playlists.playlists)
             if sections.isEmpty {
@@ -50,11 +36,58 @@ struct WatchSettingsView: View {
                     }
                 }
             }
+            Section("Diagnostics") {
+                Button("Save iPhone Capture") {
+                    if let report = phoneReport?() { diagnosticInbox.savePhone(report) }
+                }
+                if diagnosticInbox.reports.isEmpty {
+                    Text("Send a capture from Diagnostics on the watch, then return here to share it.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(diagnosticInbox.reports, id: \.self) { url in
+                        diagnosticRow(url)
+                    }
+                }
+            }
         }
         .navigationTitle("Apple Watch")
+        .alert("Couldn’t Delete Capture", isPresented: $deletionFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The saved capture could not be removed. Try again.")
+        }
         .task {
             await playlists.load()
             diagnosticInbox.refresh()
+        }
+    }
+
+    private func diagnosticRow(_ url: URL) -> some View {
+        ShareLink(item: url) {
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(url.deletingPathExtension().lastPathComponent)
+                    Text(diagnosticInbox.capturedAt(for: url)?.formatted(date: .abbreviated, time: .shortened)
+                         ?? "Creation date unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("watch-diagnostic-date-\(url.lastPathComponent)")
+                }
+            } icon: {
+                Image(systemName: "square.and.arrow.up")
+            }
+        }
+        .accessibilityIdentifier("watch-diagnostic-report-\(url.lastPathComponent)")
+        .swipeActions {
+            Button(role: .destructive) {
+                do {
+                    try diagnosticInbox.delete(url)
+                } catch {
+                    deletionFailed = true
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
     }
 

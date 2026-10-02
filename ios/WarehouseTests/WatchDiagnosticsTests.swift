@@ -90,6 +90,59 @@ struct WatchDiagnosticsTests {
         #expect(WatchDiagnosticInbox(directory: root).reports.count == 2)
     }
 
+    @Test("report subtitles use the capture date rather than the phone receipt date")
+    func reportCaptureDates() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let date = Date(timeIntervalSince1970: 1000)
+        let report = WatchDiagnosticReport(capturedAt: date, deviceModel: "watch", systemVersion: "26", events: [])
+        #expect(inbox.receive(try #require(report.encoded())))
+        let watch = try #require(inbox.reports.first)
+        let phone = try #require(inbox.savePhone(report))
+        #expect(inbox.capturedAt(for: watch) == date)
+        #expect(inbox.capturedAt(for: phone) == date)
+        let restored = WatchDiagnosticInbox(directory: root)
+        #expect(restored.capturedAt(for: watch) == date)
+        #expect(restored.capturedAt(for: phone) == date)
+    }
+
+    @Test("deleting one report removes its file and preserves the other across relaunch")
+    func deletesReport() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let report = WatchDiagnostics(logEvents: false).report(deviceModel: "phone", systemVersion: "26")
+        let deleted = try #require(inbox.savePhone(report))
+        #expect(inbox.receive(try #require(report.encoded())))
+        let retained = try #require(inbox.reports.first { $0 != deleted })
+        let retainedData = try Data(contentsOf: retained)
+        try inbox.delete(deleted)
+        #expect(!FileManager.default.fileExists(atPath: deleted.path))
+        #expect(inbox.reports == [retained])
+        #expect(try Data(contentsOf: retained) == retainedData)
+        #expect(WatchDiagnosticInbox(directory: root).reports == [retained])
+        try inbox.delete(retained)
+        #expect(inbox.reports.isEmpty)
+        #expect(WatchDiagnosticInbox(directory: root).reports.isEmpty)
+    }
+
+    @Test("failed deletion retains the row and cannot delete a file outside the inbox")
+    func failedDeletion() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root.appending(path: "inbox"))
+        let report = WatchDiagnostics(logEvents: false).report(deviceModel: "phone", systemVersion: "26")
+        let url = try #require(inbox.savePhone(report))
+        let moved = root.appending(path: "moved")
+        try FileManager.default.moveItem(at: url.deletingLastPathComponent(), to: moved)
+        #expect(throws: (any Error).self) { try inbox.delete(url) }
+        #expect(inbox.reports == [url])
+        let outside = moved.appending(path: url.lastPathComponent)
+        #expect(throws: (any Error).self) { try inbox.delete(outside) }
+        #expect(FileManager.default.fileExists(atPath: outside.path))
+    }
+
     @Test("phone replies distinguish misses and rejected requests")
     func classifiesReplies() {
         #expect(WatchDiagnostic.Kind.phoneReply(.cacheMiss) == .phoneMiss)
