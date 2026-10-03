@@ -65,21 +65,26 @@ final class PhoneWatchContentQueue {
     }
 
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
+        let snapshot = snapshot?.head == head ? snapshot : nil
+        if let snapshot { _ = try snapshot.validatedLibrary() }
         if saved.head != head {
             let old = saved.jobs.compactMap(\.file)
-            saved = Saved(head: head)
+            // exported filenames identify content; a metadata revision does not revoke verified watch storage.
+            let retainsDelivery = head?.libraryID != nil && head?.libraryID == saved.head?.libraryID
+                && head?.publisher == saved.head?.publisher && head?.version == saved.head?.version
+                && (head?.revision ?? 0) >= (saved.head?.revision ?? 0)
+            saved = Saved(head: head, jobs: retainsDelivery ? saved.jobs.filter { $0.status == .delivered } : [],
+                          snapshot: retainsDelivery ? saved.snapshot : nil)
             try save()
             old.forEach { transport.cancel($0.id) }
         }
-        if let snapshot, snapshot.head == head {
-            _ = try snapshot.validatedLibrary()
+        if let snapshot {
+            let previous = Dictionary(grouping: saved.jobs, by: \.type).mapValues {
+                Dictionary($0.map { ($0.filename, $0) }, uniquingKeysWith: { first, _ in first })
+            }
             saved.snapshot = snapshot
-            try save()
-        }
-        if saved.jobs.isEmpty, let snapshot, snapshot.head == head {
-            _ = try snapshot.validatedLibrary()
-            saved.jobs = try snapshot.music.sorted().map { Job(type: .music, filename: $0) }
-                + snapshot.artwork.sorted().map { Job(type: .artwork, filename: $0) }
+            saved.jobs = try snapshot.music.sorted().map { previous[.music]?[$0] ?? Job(type: .music, filename: $0) }
+                + snapshot.artwork.sorted().map { previous[.artwork]?[$0] ?? Job(type: .artwork, filename: $0) }
             try save()
         }
         try pump()

@@ -104,6 +104,111 @@ struct WatchContentDeliveryTests {
         #expect(queue.progress(playlistID: "p2").music.downloaded == 1)
     }
 
+    @Test("phone sync preserves acknowledged progress for unchanged selected files")
+    func progressAfterPhoneSync() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let metadata = try WatchLibraryDeliveryTests.Env()
+        defer { metadata.cleanUp() }
+        var library = WatchLibraryDeliveryTests.library(count: 4)
+        try await metadata.phone.replaceLibrary(with: library, sourceIdentity: "account")
+        let publisher = try metadata.publisher()
+        var queue = try env.queue()
+        publisher.onSnapshot = { head, snapshot in queue.update(head: head, snapshot: snapshot) }
+        publisher.publish(identity: "account", playlistIDs: ["p1", "p2"])
+        await publisher.waitForPublication()
+        let snapshot = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: metadata.deliveries[0].0))
+        try env.cache(snapshot)
+        env.now += 60
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        let (file, url) = env.queued[0]
+        try env.stage(file, url: url)
+        let receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        env.outstanding.removeAll { $0.id == file.id }
+        try queue.receive(try #require(env.receipts.last))
+        #expect(queue.progress().music.downloaded == 1)
+        let (artwork, artworkURL) = try #require(env.queued.first { $0.0.type == .artwork })
+        try env.stage(artwork, url: artworkURL)
+        receiver.resume()
+        env.outstanding.removeAll { $0.id == artwork.id }
+        try queue.receive(try #require(env.receipts.last))
+        #expect(queue.progress().artwork.downloaded == 1)
+
+        library.tracks[0].playCount += 1
+        try await metadata.phone.replaceLibrary(with: library, sourceIdentity: "account")
+        publisher.publish(identity: "account", playlistIDs: ["p1", "p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.head.revision > snapshot.head.revision)
+        #expect(queue.errorMessage == nil)
+        let next = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: try #require(metadata.deliveries.last).0))
+        try receiver.reconcile(head: next.head, snapshot: next)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(queue.progress().music.downloaded == 1)
+        #expect(queue.progress().artwork.downloaded == 1)
+        #expect(queue.progress(playlistID: "p2").music.downloaded == 1)
+        #expect(queue.progress().state == .waiting)
+        #expect(env.queued.filter { $0.0.type == file.type && $0.0.filename == file.filename }.count == 1)
+        #expect(env.queued.filter { $0.0.type == artwork.type && $0.0.filename == artwork.filename }.count == 1)
+        let obsolete = try #require(env.queued.first { $0.0.type == .music && $0.0.id != file.id }).0
+        try queue.receive(.init(file: obsolete, status: .delivered))
+        #expect(queue.progress().music.downloaded == 1)
+        queue = try env.queue()
+        #expect(queue.progress().music.downloaded == 1)
+        #expect(queue.progress().artwork.downloaded == 1)
+        #expect(queue.jobs.filter { $0.status != .delivered }.allSatisfy { $0.file?.head == next.head })
+    }
+
+    @Test("acknowledged files survive a pending refresh but leave progress when removed from the inventory")
+    func progressDuringRefresh() throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        var queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        let file = env.queued[0].0
+        try queue.receive(.init(file: file, status: .delivered))
+        let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
+                                    playlistIDs: snapshot.head.playlistIDs, metadataReady: true)
+        try queue.reconcile(head: head, snapshot: nil)
+        queue = try env.queue()
+        #expect(queue.progress().music.downloaded == 1)
+        #expect(queue.progress().state == .preparing)
+
+        var library = try snapshot.library
+        let index = try #require(library.tracks.firstIndex { $0.musicFilename == file.filename })
+        library.tracks[index].musicFilename = "replacement.mp3"
+        let next = WatchLibrarySnapshot(head: head, libraryData: try library.serializedData())
+        try queue.reconcile(head: head, snapshot: next)
+        #expect(queue.progress().music.downloaded == 0)
+        #expect(queue.progress().music.total == 4)
+        #expect(!queue.jobs.contains { $0.filename == file.filename })
+        try queue.receive(.init(file: file, status: .delivered))
+        #expect(queue.progress().music.downloaded == 0)
+    }
+
+    @Test("delivery evidence cannot cross account, publisher or backwards revision boundaries", arguments: ["account", "publisher", "revision"])
+    func progressIdentityBoundary(_ change: String) throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4, revision: 2)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        let file = env.queued[0].0
+        try queue.receive(.init(file: file, status: .delivered))
+        #expect(queue.progress().music.downloaded == 1)
+        let head = WatchLibraryHead(publisher: change == "publisher" ? UUID() : snapshot.head.publisher,
+                                    revision: change == "revision" ? 1 : 3,
+                                    libraryID: change == "account" ? "other-account" : "account",
+                                    playlistIDs: snapshot.head.playlistIDs, metadataReady: true)
+        let next = WatchLibrarySnapshot(head: head, libraryData: snapshot.libraryData)
+        try queue.reconcile(head: head, snapshot: next)
+        try queue.receive(.init(file: file, status: .delivered))
+        #expect(queue.progress().music.downloaded == 0)
+    }
+
     @Test("storage and permanent failures are visible without marking partial playlists ready")
     func progressFailures() throws {
         let env = try Env()
