@@ -2,6 +2,7 @@ import Foundation
 
 /// a phone-owned challenge fences reports to the current selected library.
 struct WatchInventoryRequest: Codable, Equatable, Sendable {
+    static let minimumInterval: TimeInterval = 24 * 60 * 60
     let id: UUID
     let head: WatchLibraryHead
 
@@ -56,16 +57,28 @@ struct WatchInventoryReport: Codable, Equatable, Sendable {
 /// pending requests survive metadata import and transport activation; retries can safely replay individual entries.
 @MainActor
 final class WatchInventoryResponder {
+    private struct Capture: Codable {
+        let request: WatchInventoryRequest
+        let entries: [WatchInventoryReport.Entry]
+        let capturedAt: Date
+    }
+
     private let fileStore: FileStore
     private let url: URL
+    private let captureURL: URL
     private let diagnostics: WatchDiagnostics
+    private let now: () -> Date
+    private var capture: Capture?
     private(set) var requests: [WatchInventoryRequest]
     var send: (WatchInventoryReport) -> Bool = { _ in false }
+    var lastScanAt: Date? { capture?.capturedAt }
 
-    init(fileStore: FileStore, directory: URL, diagnostics: WatchDiagnostics) {
+    init(fileStore: FileStore, directory: URL, diagnostics: WatchDiagnostics, now: @escaping () -> Date = { Date() }) {
         self.fileStore = fileStore
         self.diagnostics = diagnostics
+        self.now = now
         url = directory.appending(path: "inventory-requests.json")
+        captureURL = directory.appending(path: "inventory-capture.json")
         requests = []
         if FileManager.default.fileExists(atPath: url.path) {
             do {
@@ -73,6 +86,11 @@ final class WatchInventoryResponder {
                     .filter(\.isValid).suffix(8))
             } catch {
                 // these are retryable challenges, not ownership or delivery evidence; damage must not disable the receiver.
+                diagnostics.record(.init(kind: .inventoryFailed, id: UUID(), source: .cache, error: error))
+            }
+        }
+        if FileManager.default.fileExists(atPath: captureURL.path) {
+            do { capture = try JSONDecoder().decode(Capture.self, from: Data(contentsOf: captureURL)) } catch {
                 diagnostics.record(.init(kind: .inventoryFailed, id: UUID(), source: .cache, error: error))
             }
         }
@@ -94,19 +112,16 @@ final class WatchInventoryResponder {
         _ = try snapshot.validatedLibrary()
         for request in requests where request.head == head {
             do {
-                var batch = [WatchInventoryReport.Entry]()
-                var accepted = true
-                for type in LibraryFileType.allCases {
-                    let names = try type == .music ? snapshot.music : snapshot.artwork
-                    for name in names.sorted() {
-                        batch.append(.init(type: type, filename: name, bytes: try storedBytes(type, name)))
-                        if batch.count == WatchInventoryReport.maximumEntries {
-                            accepted = emit(request, entries: batch) && accepted
-                            batch.removeAll(keepingCapacity: true)
-                        }
-                    }
+                if capture?.request != request {
+                    if let lastScanAt, now() < lastScanAt.addingTimeInterval(WatchInventoryRequest.minimumInterval) { continue }
+                    try scan(request, snapshot: snapshot)
                 }
-                if !batch.isEmpty { accepted = emit(request, entries: batch) && accepted }
+                guard let capture, capture.request == request else { continue }
+                var accepted = true
+                for start in stride(from: 0, to: capture.entries.count, by: WatchInventoryReport.maximumEntries) {
+                    let end = min(start + WatchInventoryReport.maximumEntries, capture.entries.count)
+                    accepted = emit(request, entries: Array(capture.entries[start..<end])) && accepted
+                }
                 if accepted {
                     requests.removeAll { $0 == request }
                     try save()
@@ -116,6 +131,20 @@ final class WatchInventoryResponder {
                 throw error
             }
         }
+    }
+
+    private func scan(_ request: WatchInventoryRequest, snapshot: WatchLibrarySnapshot) throws {
+        var entries = [WatchInventoryReport.Entry]()
+        for type in LibraryFileType.allCases {
+            let names = try type == .music ? snapshot.music : snapshot.artwork
+            for name in names.sorted() { entries.append(.init(type: type, filename: name, bytes: try storedBytes(type, name))) }
+        }
+        let next = Capture(request: request, entries: entries, capturedAt: now())
+        // persist the complete observation before sending any part; retries replay it without another storage scan.
+        try JSONEncoder().encode(next).write(to: captureURL, options: .atomic)
+        capture = next
+        diagnostics.record(.init(kind: .inventoryScanned, id: request.id, source: .cache,
+                                 identity: WatchDiagnosticIdentity(request.head)))
     }
 
     private func emit(_ request: WatchInventoryRequest, entries: [WatchInventoryReport.Entry]) -> Bool {

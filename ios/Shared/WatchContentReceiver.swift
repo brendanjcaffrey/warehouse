@@ -30,7 +30,7 @@ final class WatchContentReceiver {
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
          beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil) throws {
         self.diagnostics = diagnostics ?? .shared
-        inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory, diagnostics: diagnostics ?? .shared)
+        inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory, diagnostics: diagnostics ?? .shared, now: now)
         self.fileCache = fileCache
         self.directory = directory
         self.availableBytes = availableBytes
@@ -128,6 +128,8 @@ final class WatchContentReceiver {
         state.availableBytes = availableBytes()
         state.inventoryPending = inventory.requests.count
         state.inventoryRequestID = inventory.requests.first?.id
+        state.inventoryStartedAt = inventory.lastScanAt
+        state.inventoryEligibleAt = inventory.lastScanAt?.addingTimeInterval(WatchInventoryRequest.minimumInterval)
         let music = fileCache.fileStore.entries(.music)
         let artwork = fileCache.fileStore.entries(.artwork)
         state.localMusic = WatchDeliveryDiagnosticState.local(music)

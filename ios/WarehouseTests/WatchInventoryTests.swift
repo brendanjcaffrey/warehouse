@@ -158,6 +158,7 @@ struct WatchInventoryTests {
         #expect(queue.progress().state == .ready)
         #expect(env.queued.count == count)
 
+        env.now += WatchInventoryRequest.minimumInterval
         queue.requestInventory()
         let next = try #require(env.inventoryRequests.last)
         let unsolicited = WatchInventoryReport(request: next, entries: [.init(type: .music, filename: "unselected.mp3", bytes: 123)])
@@ -179,10 +180,13 @@ struct WatchInventoryTests {
         let next = try env.snapshot(count: 4, revision: 2)
         try queue.reconcile(head: next.head, snapshot: next)
         #expect(queue.progress().music.downloaded == 4)
-        let request = try #require(env.inventoryRequests.last)
-        #expect(request.head == next.head)
+        #expect(env.inventoryRequests.count == 1)
         for report in stale { try queue.receive(report) }
         #expect(queue.progress().music.downloaded == 4)
+        env.now += WatchInventoryRequest.minimumInterval
+        queue.requestInventory()
+        let request = try #require(env.inventoryRequests.last)
+        #expect(request.head == next.head)
         var wrongHead = next.head
         wrongHead.failed = true
         let invalid = WatchInventoryReport(request: .init(id: request.id, head: wrongHead),

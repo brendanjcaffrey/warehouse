@@ -14,6 +14,7 @@ struct WatchDiagnostic: Codable {
         case contentTransferFailed, contentFailed, contentRetry, contentStorageFull, receiptPersisted, receiptSent, receiptQuery, phoneAcknowledged
         case queueWakeup
         case inventoryRequested, inventoryReported, inventoryConfirmed, inventoryMissing, inventoryCompleted, inventoryRejected, inventoryFailed
+        case inventoryScanned
 
         static func phoneReply(_ reply: PhoneFileReply) -> Self {
             switch reply {

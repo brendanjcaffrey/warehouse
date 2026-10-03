@@ -89,6 +89,8 @@ struct WatchDeliveryDiagnosticState: Codable {
     var inventoryPending: Int?
     var inventoryRequestID: UUID?
     var inventoryCompletedAt: Date?
+    var inventoryStartedAt: Date?
+    var inventoryEligibleAt: Date?
 
     mutating func add(type: LibraryFileType, status: WatchContentStatus, bytes: Int64?) {
         if type == .music { music.add(status: status, bytes: bytes) } else { artwork.add(status: status, bytes: bytes) }

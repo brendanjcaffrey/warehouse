@@ -33,6 +33,7 @@ final class PhoneWatchContentQueue {
         var inventory: WatchInventoryRequest?
         var inventoryNextAttempt: Date?
         var inventoryCompletedAt: Date?
+        var inventoryStartedAt: Date?
     }
 
     static let maximumTransfers = 4
@@ -58,6 +59,10 @@ final class PhoneWatchContentQueue {
         let url = directory.appending(path: "state.json")
         saved = FileManager.default.fileExists(atPath: url.path)
             ? try JSONDecoder().decode(Saved.self, from: Data(contentsOf: url)) : Saved()
+        if saved.inventoryStartedAt == nil {
+            // older queues already sent pending challenges; start their daily limit conservatively on upgrade.
+            saved.inventoryStartedAt = saved.inventory != nil && saved.inventoryNextAttempt != .distantPast ? now() : saved.inventoryCompletedAt
+        }
         try save()
     }
 
@@ -79,7 +84,7 @@ final class PhoneWatchContentQueue {
                 && head?.publisher == saved.head?.publisher && head?.version == saved.head?.version
                 && (head?.revision ?? 0) >= (saved.head?.revision ?? 0)
             saved = Saved(head: head, jobs: retainsDelivery ? saved.jobs.filter { $0.status == .delivered } : [],
-                          snapshot: retainsDelivery ? saved.snapshot : nil)
+                          snapshot: retainsDelivery ? saved.snapshot : nil, inventoryStartedAt: saved.inventoryStartedAt)
             for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = nil }
             try save()
             old.forEach { transport.cancel($0.id) }
@@ -115,6 +120,8 @@ final class PhoneWatchContentQueue {
         state.inventoryPending = saved.jobs.count { $0.inventoryRequestID != nil }
         state.inventoryRequestID = saved.inventory?.id
         state.inventoryCompletedAt = saved.inventoryCompletedAt
+        state.inventoryStartedAt = saved.inventoryStartedAt
+        state.inventoryEligibleAt = saved.inventoryStartedAt?.addingTimeInterval(WatchInventoryRequest.minimumInterval)
         state.availableBytes = FileStore.deviceStorage()?.availableBytes
         let jobDeadlines = saved.jobs.filter {
             [.awaitingReceipt, .retrying, .storageFull, .missingOnPhone].contains($0.status)
@@ -190,6 +197,7 @@ final class PhoneWatchContentQueue {
     private func beginInventory() throws {
         guard saved.inventory == nil, let head = saved.head, saved.snapshot?.head == head,
               head.metadataReady, head.failed != true, saved.jobs.contains(where: { $0.status == .delivered }) else { return }
+        if let started = saved.inventoryStartedAt, now() < started.addingTimeInterval(WatchInventoryRequest.minimumInterval) { return }
         let request = WatchInventoryRequest(head: head)
         for index in saved.jobs.indices where saved.jobs[index].status == .delivered {
             saved.jobs[index].inventoryRequestID = request.id
@@ -259,6 +267,7 @@ final class PhoneWatchContentQueue {
         timer?.cancel()
         guard transport.available() else { try publishReport(); return }
         if let request = saved.inventory, (saved.inventoryNextAttempt ?? .distantPast) <= now() {
+            if saved.inventoryNextAttempt == .distantPast { saved.inventoryStartedAt = now() }
             saved.inventoryNextAttempt = now().addingTimeInterval(60)
             try save()
             diagnostics.record(.init(kind: .inventoryRequested, id: request.id, source: .phone,
