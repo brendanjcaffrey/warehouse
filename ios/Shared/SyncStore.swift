@@ -42,9 +42,6 @@ final class SyncStore {
     /// artwork filenames to keep even when no track references them, e.g.
     /// files still waiting in the update queue to be uploaded
     var protectedArtworkFilenames: () -> Set<String> = { [] }
-    /// when set (the watch), library fetches are trimmed server-side to just
-    /// these playlists
-    var syncedPlaylistIds: (() -> [String])?
     /// bumped when a sync attempt finishes, so views can reload without
     /// observing every per-file progress update in `state`
     private(set) var completedSyncs = 0
@@ -61,22 +58,10 @@ final class SyncStore {
     private let now: () -> Date
     /// how missing files are fetched
     private let fileDownloader: BulkFileDownloading
-    /// the phone mirrors the whole library onto disk; the watch fetches tracks
-    /// on demand into a bounded cache, so its sync stops after the library
+    /// metadata-only callers can disable the phone file mirroring phase
     private let transfersFiles: Bool
     private var lastDownloadRefresh = Date.distantPast
     private var syncInProgress = false
-    private struct WatchRequest {
-        let token: String
-        let baseURL: URL
-        let playlistIds: [String]
-        let generation: Int
-    }
-    private var watchRequest: WatchRequest?
-    private var watchGeneration = 0
-    private var watchRunner: Task<Void, Never>?
-    private var activeWatchSync: Task<Void, Never>?
-
     // the session, defaults, interval, downloader & clock parameters are here for tests
     init(
         database: LibraryDatabase,
@@ -153,39 +138,7 @@ final class SyncStore {
     /// any; when this store transfers files it then downloads everything missing
     func sync(token: String?, baseURL: URL?) async {
         guard let token, let baseURL, !syncInProgress else { return }
-        await performSync(token: token, baseURL: baseURL, playlistIds: syncedPlaylistIds?(), isCurrent: { true })
-        startWatchRunner()
-    }
-
-    /// serializes watch syncs and keeps only the newest settings while one is running
-    func requestWatchSync(token: String?, baseURL: URL?, playlistIds: [String], generation: Int) {
-        if generation != watchGeneration { activeWatchSync?.cancel() }
-        watchGeneration = generation
-        if let token, let baseURL, !playlistIds.isEmpty {
-            watchRequest = WatchRequest(token: token, baseURL: baseURL, playlistIds: playlistIds, generation: generation)
-        } else {
-            watchRequest = nil
-            state = .idle
-        }
-        startWatchRunner()
-    }
-
-    private func startWatchRunner() {
-        guard watchRunner == nil, watchRequest != nil, !syncInProgress else { return }
-        watchRunner = Task { @MainActor in
-            while let request = watchRequest {
-                watchRequest = nil
-                let task = Task { @MainActor in
-                    await performSync(
-                        token: request.token, baseURL: request.baseURL, playlistIds: request.playlistIds,
-                        isCurrent: { [weak self] in self?.watchGeneration == request.generation })
-                }
-                activeWatchSync = task
-                await task.value
-                activeWatchSync = nil
-            }
-            watchRunner = nil
-        }
+        await performSync(token: token, baseURL: baseURL, playlistIds: nil, isCurrent: { true })
     }
 
     private func performSync(

@@ -685,7 +685,7 @@ struct WatchContentDeliveryTests {
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         receiver.resume()
-        let session = PhoneWatchSession(payload: { .init(serverURL: "", token: "", playlistIds: []) }, onPlay: { _ in })
+        let session = PhoneWatchSession(onPlay: { _ in })
         session.content = queue
         session.receive(userInfo: try #require(env.receipts.last).encode())
         await Task.yield()
@@ -832,8 +832,7 @@ struct WatchContentDeliveryTests {
         for name in try snapshot.music { try env.watchFiles.write(.music, name, data: Data("selected".utf8)) }
         for name in try snapshot.artwork { try env.watchFiles.write(.artwork, name, data: Data("selected".utf8)) }
         let restored = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) })
-        let legacy = OfflineLibrary(fileCache: restored, downloader: OfflineLibraryTests.Downloader(env.watchFiles))
-        legacy.prepare(OfflineLibraryTests.playlist(["1"]), songs: PlayerStoreTests.songs(1))
+        let legacy = OfflineLibrary(fileCache: restored)
         restored.evict()
         #expect(env.watchFiles.list(.music) == (try snapshot.music))
         #expect(env.watchFiles.list(.artwork) == (try snapshot.artwork))
@@ -918,8 +917,8 @@ struct WatchContentDeliveryTests {
         let cache = FileCache(fileStore: env.watchFiles, beforeWatchSelectionSave: {
             if fails { throw CocoaError(.fileWriteOutOfSpace) }
         })
-        let offline = OfflineLibrary(fileCache: cache, downloader: OfflineLibraryTests.Downloader(env.watchFiles))
-        offline.prepare(OfflineLibraryTests.playlist(["1"]), songs: PlayerStoreTests.songs(1))
+        try OfflineLibraryTests.saveSelection(env.watchFiles)
+        let offline = OfflineLibrary(fileCache: cache)
         try env.watchFiles.write(.music, "1.wav", data: PlayerStoreTests.musicBytes)
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
@@ -1025,7 +1024,7 @@ struct WatchContentDeliveryTests {
         try Data("legacy state".utf8).write(to: manifest)
         try Data("damaged".utf8).write(to: env.watchFiles.rootURL.appending(path: "watch-selection.json"))
         let cache = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) })
-        let offline = OfflineLibrary(fileCache: cache, downloader: OfflineLibraryTests.Downloader(env.watchFiles))
+        let offline = OfflineLibrary(fileCache: cache)
         cache.evict()
         #expect(env.watchFiles.list(.music) == ["m0.mp3", "old.mp3"])
         #expect(FileManager.default.fileExists(atPath: manifest.path))

@@ -11,7 +11,6 @@ struct PhoneWatchSessionTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let inbox = WatchDiagnosticInbox(directory: root)
         let session = PhoneWatchSession(
-            payload: { WatchPayload(serverURL: "", token: "", playlistIds: []) },
             onPlay: { _ in }, diagnosticInbox: inbox)
         let capture = WatchDiagnostics(logEvents: false)
         capture.record(.init(kind: .playbackStalled, id: UUID(), source: .http))
@@ -40,8 +39,7 @@ struct PhoneWatchSessionTests {
         let queue = try env.queue()
         try queue.reconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
-        let session = PhoneWatchSession(payload: { .init(serverURL: "", token: "", playlistIds: []) },
-                                       onPlay: { _ in }, diagnostics: env.phoneDiagnostics)
+        let session = PhoneWatchSession(onPlay: { _ in }, diagnostics: env.phoneDiagnostics)
         session.content = queue
         env.outstanding.removeAll { $0.id == file.id }
         #expect(session.receiveFileCompletion(metadata: try file.encode(), error: nil))
@@ -93,7 +91,6 @@ struct PhoneWatchSessionTests {
         commands: ReceivedCommands
     ) -> PhoneWatchSession {
         PhoneWatchSession(
-            payload: { WatchPayload(serverURL: "", token: "", playlistIds: []) },
             onPlay: { played.ids.append($0) },
             onCommand: { commands.commands.append($0) })
     }
@@ -161,52 +158,24 @@ struct PhoneWatchSessionTests {
         while commands.commands.isEmpty { await Task.yield() }
         #expect(commands.commands == [.pause])
     }
-    @Test("file requests get a cache answer instead of remote playback state")
-    func fileRequests() async throws {
-        let store = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
-        defer { try? FileManager.default.removeItem(at: store.rootURL) }
-        try store.write(.music, "song.m4a", data: Data("music".utf8))
-        var queued = [WatchFileTransfer]()
-        let files = PhoneFileProvider(
-            fileStore: store, currentToken: { "token" }, outstanding: { queued },
-            enqueue: { transfer, _ in queued.append(transfer) })
-        let session = PhoneWatchSession(
-            files: files, payload: { WatchPayload(serverURL: "", token: "token", playlistIds: []) }, onPlay: { _ in })
-        let size: Int64? = await withCheckedContinuation { continuation in
-            session.receive(message: ["kind": "cachedFileSize", "fileType": "music",
-                                      "filename": "song.m4a", "token": "token"]) { reply in
-                continuation.resume(returning: (reply["bytes"] as? NSNumber)?.int64Value)
+    @Test("obsolete file requests fail safely without invoking playback or delivery")
+    func obsoleteRequests() async {
+        let commands = ReceivedCommands()
+        let session = Self.makeSession(played: PlayedTracks(), commands: commands)
+        for kind in ["cachedFile", "cachedFileSize", "reconcileCachedFiles", "cancelCachedFile"] {
+            let result: String? = await withCheckedContinuation { continuation in
+                session.receive(message: ["kind": kind, "token": "legacy-secret"]) { reply in
+                    continuation.resume(returning: reply["result"] as? String)
+                }
             }
+            #expect(result == "unavailable")
         }
-        #expect(size == 5)
-        let transfer = WatchFileTransfer(type: .music, filename: "song.m4a")
-        var message = transfer.encode()
-        message["token"] = "token"
-        let accepted: String? = await withCheckedContinuation { continuation in
-            session.receive(message: message) { reply in
-                continuation.resume(returning: reply["result"] as? String)
-            }
-        }
-        #expect(accepted == "accepted")
-        #expect(queued == [transfer])
-        message["token"] = "stale"
-        let rejected: String? = await withCheckedContinuation { continuation in
-            session.receive(message: message) { reply in
-                continuation.resume(returning: reply["result"] as? String)
-            }
-        }
-        #expect(rejected == "unauthorized")
-        let snapshot: [[String: Any]]? = await withCheckedContinuation { continuation in
-            session.receive(message: ["kind": "reconcileCachedFiles", "token": "token"]) { reply in
-                continuation.resume(returning: reply["transfers"] as? [[String: Any]])
-            }
-        }
-        #expect(snapshot?.compactMap(PhoneFileProgress.init(dictionary:)).map(\.transfer) == [transfer])
+        #expect(commands.commands.isEmpty)
     }
 
     @Test("activation pushes and durable library requests invoke the phone publisher")
     func publishesLibrary() async throws {
-        let session = PhoneWatchSession(payload: { WatchPayload(serverURL: "", token: "", playlistIds: []) }, onPlay: { _ in })
+        let session = PhoneWatchSession( onPlay: { _ in })
         var published = 0
         session.publishLibrary = { published += 1 }
         session.push()

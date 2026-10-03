@@ -140,69 +140,20 @@ struct WatchSyncSettingsStoreTests {
         let store = WatchSyncSettingsStore(defaults: defaults)
         store.toggle("p1")
         store.toggle("p2")
-        store.setServerURLOverride("funnel.example.com:8443")
-        store.setDeepPrefetchDepth(40)
 
         let reloaded = WatchSyncSettingsStore(defaults: defaults)
         #expect(reloaded.playlistIds == ["p1", "p2"])
-        #expect(reloaded.serverURLOverride == "funnel.example.com:8443")
-        #expect(reloaded.deepPrefetchDepth == 40)
     }
 
-    @Test("the deep fetch is off until it's asked for, and bounded when it is")
-    func deepPrefetchDepthIsOffAndBounded() {
-        let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("depth"))
-
-        // it costs the watch's link, battery & disk, so nobody gets it by
-        // accident
-        #expect(store.deepPrefetchDepth == 0)
-
-        store.setDeepPrefetchDepth(25)
-        #expect(store.deepPrefetchDepth == 25)
-
-        // the queue is walked against the disk every time the chain re-arms,
-        // so the reach stays finite however it is asked for
-        store.setDeepPrefetchDepth(99_999)
-        #expect(store.deepPrefetchDepth == WatchSyncSettingsStore.maxDeepPrefetchDepth)
-
-        store.setDeepPrefetchDepth(-5)
-        #expect(store.deepPrefetchDepth == 0)
-    }
-
-    @Test("onChange fires after every change")
-    func onChangeFires() {
-        let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("onchange"))
-        var changes = 0
-        store.onChange = { changes += 1 }
-
-        store.toggle("p1")
-        store.toggle("p2")
-        store.toggle("p1")
-        #expect(changes == 3)
-
-        store.setServerURLOverride("funnel.example.com:8443")
-        #expect(changes == 4)
-
-        // setting the same value again shouldn't ping the watch
-        store.setServerURLOverride("funnel.example.com:8443")
-        #expect(changes == 4)
-
-        store.setDeepPrefetchDepth(20)
-        #expect(changes == 5)
-        store.setDeepPrefetchDepth(20)
-        #expect(changes == 5)
-    }
-
-    @Test("the override wins over the phone's server url when set")
-    func effectiveServerURL() {
-        let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("effective"))
-        #expect(store.effectiveServerURL(phoneServerURL: "phone.example.com") == "phone.example.com")
-
-        store.setServerURLOverride("   ")
-        #expect(store.effectiveServerURL(phoneServerURL: "phone.example.com") == "phone.example.com")
-
-        store.setServerURLOverride(" https://funnel.example.com:8443 ")
-        #expect(store.effectiveServerURL(phoneServerURL: "phone.example.com")
-            == "https://funnel.example.com:8443")
+    @Test("obsolete server and prefetch settings are discarded without changing selection")
+    func obsoleteSettings() {
+        let defaults = Self.makeDefaults("obsolete")
+        defaults.set(["p1"], forKey: "watchPlaylistIds")
+        defaults.set("private-server", forKey: "watchServerURLOverride")
+        defaults.set(40, forKey: "watchDeepPrefetchDepth")
+        let store = WatchSyncSettingsStore(defaults: defaults)
+        #expect(store.playlistIds == ["p1"])
+        #expect(defaults.object(forKey: "watchServerURLOverride") == nil)
+        #expect(defaults.object(forKey: "watchDeepPrefetchDepth") == nil)
     }
 }

@@ -35,9 +35,8 @@ enum StreamingAsset {
             .domain: host,
             .path: "/"
         ]
-        // a funnel is always https; the scheme is only ever http against a
-        // server on the local network, where marking it secure would mean the
-        // cookie is never sent at all
+        // secure cookies are sent only over https; local http servers need
+        // the cookie without the secure attribute
         if url.scheme == "https" {
             properties[.secure] = "TRUE"
         }

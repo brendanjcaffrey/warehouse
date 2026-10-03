@@ -19,7 +19,7 @@ final class WatchLibraryStore {
     private let playlists: PlaylistsStore
     private let metadata: LibraryMetadata
     private let receiver: WatchLibraryReceiver?
-    private let content: WatchContentReceiver?
+    var content: WatchContentReceiver?
 
     init(songs: SongsStore, playlists: PlaylistsStore, defaults: UserDefaults = .standard, receiver: WatchLibraryReceiver? = nil,
          content: WatchContentReceiver? = nil) {

@@ -71,7 +71,7 @@ struct WatchTrackListView: View {
                             // a tap always plays the whole list, dropping any filter
                             play(startingAt: songs.firstIndex(where: { $0.id == song.id }) ?? 0, selected: true)
                         } label: {
-                            WatchSongRow(song: song, downloaded: store.isDownloaded(song), allowNetwork: false)
+                            WatchSongRow(song: song, downloaded: store.isDownloaded(song))
                         }
                         .disabled(!store.isDownloaded(song))
                     }
@@ -130,11 +130,10 @@ struct WatchSongRow: View {
     /// whether the track's file is in the watch's cache, so it plays without
     /// the network
     let downloaded: Bool
-    var allowNetwork = true
 
     var body: some View {
         HStack(spacing: 8) {
-            WatchArtworkThumbnail(filename: song.artworkFilename, allowNetwork: allowNetwork)
+            WatchArtworkThumbnail(filename: song.artworkFilename)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading) {
                 Text(song.name)

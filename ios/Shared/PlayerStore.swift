@@ -594,8 +594,7 @@ final class PlayerStore {
 
     /// downloads a track, joining the prefetch already running for it rather
     /// than racing a second download of the same file. a failure earns one
-    /// retry: the funnel is derp-relayed with fairness throttling, so one bad
-    /// hop says very little about the next
+    /// retry because a transient network failure may clear on the next attempt
     private func fetchMusic(
         _ filename: String, token: String, baseURL: URL, generation: Int
     ) async -> Bool {

@@ -64,14 +64,9 @@ extension PlayerStoreTests {
         var client = LibraryClient()
         client.session = MockURLProtocol.makeSession()
         var artworkRequests = 0
-        var phoneRequests = 0
         var demand: [String] = []
-        let generation = UUID()
-        let phoneFiles = WatchFileDownloader(fileStore: store, transport: .init(
-            isReachable: { true }, currentToken: { "token" }, currentGeneration: { generation },
-            request: { _, _, reply in phoneRequests += 1; reply(.unavailable) }, cancel: { _ in }))
         let player = PlayerStore(
-            fileStore: store, client: client, prefetchDownloader: phoneFiles,
+            fileStore: store, client: client,
             fetchArtwork: { _ in artworkRequests += 1; return false },
             streams: true, musicPolicy: .downloadedOnly, activateSessionForTests: { true })
         defer { player.pause() }
@@ -111,7 +106,6 @@ extension PlayerStoreTests {
         #expect(player.currentItemURL?.isFileURL == true)
         #expect(!player.isStreamingCurrentTrack)
         #expect(MockURLProtocol.requests(forHost: host).isEmpty)
-        #expect(phoneRequests == 0)
         #expect(artworkRequests == 0)
         #expect(demand.isEmpty)
     }

@@ -49,33 +49,7 @@ struct WarehouseApp: App {
 
         let watchSettings = WatchSyncSettingsStore()
         let diagnosticInbox = WatchDiagnosticInbox()
-        let phoneFiles = PhoneFileProvider(
-            fileStore: fileStore, currentToken: { authStore.token },
-            outstanding: {
-                WCSession.default.outstandingFileTransfers.compactMap {
-                    $0.file.metadata.flatMap(WatchFileTransfer.init(dictionary:))
-                }
-            }, enqueue: { transfer, url in
-                WCSession.default.transferFile(url, metadata: transfer.encode())
-            }, cancel: { id in
-                for transfer in WCSession.default.outstandingFileTransfers
-                    where transfer.file.metadata.flatMap(WatchFileTransfer.init(dictionary:))?.id == id {
-                    transfer.cancel()
-                }
-            }, progress: { id in
-                WCSession.default.outstandingFileTransfers.first {
-                    $0.file.metadata.flatMap(WatchFileTransfer.init(dictionary:))?.id == id
-                }?.progress.fractionCompleted ?? 0
-            })
         let watchSession = PhoneWatchSession(
-            files: phoneFiles,
-            payload: {
-                WatchPayload(
-                    serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
-                    token: authStore.token ?? "",
-                    playlistIds: watchSettings.playlistIds,
-                    deepPrefetchDepth: watchSettings.deepPrefetchDepth)
-            },
             onPlay: { trackId in
                 Task { await updatesStore.addPlay(trackId: trackId) }
             },
@@ -127,13 +101,7 @@ struct WarehouseApp: App {
                 guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
                     throw WatchLibraryError.notLoaded
                 }
-                // the legacy payload remains available to older peers during migration.
-                var context = WatchPayload(
-                    serverURL: watchSettings.effectiveServerURL(phoneServerURL: authStore.serverURL),
-                    token: authStore.token ?? "", playlistIds: watchSettings.playlistIds,
-                    deepPrefetchDepth: watchSettings.deepPrefetchDepth).encode()
-                context.merge(try head.encode(), uniquingKeysWith: { _, new in new })
-                try WCSession.default.updateApplicationContext(context)
+                try WCSession.default.updateApplicationContext(try head.encode())
             }, outstanding: {
                 Set(WCSession.default.outstandingFileTransfers.compactMap { $0.file.metadata?["watchLibraryKey"] as? String })
             }, enqueue: { url, key in
@@ -195,7 +163,7 @@ struct WarehouseApp: App {
                     return watchSession.diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)
                 })
                 .onChange(of: auth.token) {
-                    // keep the watch's credentials current across log in/out
+                    // publish account changes while ordinary token refresh preserves library identity
                     watchSession.push()
                     // & the restored queue's, which was put back holding
                     // whatever token was around before the refresh

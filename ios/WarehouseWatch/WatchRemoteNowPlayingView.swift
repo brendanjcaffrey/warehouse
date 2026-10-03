@@ -25,7 +25,7 @@ struct WatchRemoteNowPlayingView: View {
     private func content(_ song: RemotePlaybackPayload) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                WatchArtworkThumbnail(filename: song.artworkFilename, priority: .nowPlaying, maxPixelSize: 132)
+                WatchArtworkThumbnail(filename: song.artworkFilename, maxPixelSize: 132)
                     .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.name)

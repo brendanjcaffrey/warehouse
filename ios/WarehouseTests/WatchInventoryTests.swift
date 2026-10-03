@@ -321,7 +321,7 @@ struct WatchInventoryTests {
         let phoneCapture = env.root.appending(path: "phone-capture.json")
         env.phoneDiagnostics = WatchDiagnostics(capacity: 4, logEvents: false, storeURL: phoneCapture)
         let (snapshot, queue, receiver) = try prepared(env)
-        let session = PhoneWatchSession(payload: { .init(serverURL: "", token: "", playlistIds: []) }, onPlay: { _ in },
+        let session = PhoneWatchSession(onPlay: { _ in },
                                        diagnostics: env.phoneDiagnostics)
         session.content = queue
         var publications = 0

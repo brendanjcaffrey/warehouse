@@ -132,14 +132,9 @@ struct WatchLibraryDeliveryTests {
         #expect(!receiver.allowsLegacySync)
         try await env.watch.replaceLibrary(with: Library())
         #expect(try await env.watch.trackCount() == 500)
-        let downloader = WatchArtworkFetcherTests.GatedDownloader()
         let localFiles = FileStore(rootURL: env.root.appending(path: "artwork-policy"))
-        let fetcher = WatchArtworkFetcher(fileCache: FileCache(fileStore: localFiles), downloader: downloader, credentials: {
-            guard receiver.allowsLegacySync else { return nil }
-            return ("old-token", URL(string: "https://old-origin.test")!)
-        })
-        #expect(await fetcher.artworkURL("a1.jpg") == nil)
-        #expect(downloader.started.isEmpty)
+        let fetcher = WatchArtworkFetcher(fileStore: localFiles)
+        #expect(fetcher.artworkURL("a1.jpg") == nil)
         let data = try Data(contentsOf: env.deliveries[0].0)
         #expect(String(data: data, encoding: .utf8)?.contains("token") == false)
         let defaults = UserDefaults(suiteName: env.root.lastPathComponent)!

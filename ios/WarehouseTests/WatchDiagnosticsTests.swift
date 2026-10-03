@@ -175,19 +175,4 @@ struct WatchDiagnosticsTests {
         #expect(!line.contains("secret-token"))
     }
 
-    @Test("phone provider emits the actual acceptance reason without credentials")
-    func providerReason() {
-        let store = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
-        let capture = WatchDiagnostics(logEvents: false)
-        let provider = PhoneFileProvider(fileStore: store, currentToken: { "private-token" },
-                                         outstanding: { [] }, enqueue: { _, _ in }, diagnostics: capture)
-        let transfer = WatchFileTransfer(type: .music, filename: "missing.mp3")
-        #expect(provider.request(transfer, token: "private-token") == .cacheMiss)
-        #expect(provider.request(transfer, token: "stale-token") == .unauthorized)
-        #expect(capture.events.map(\.kind) == [.phoneMiss, .requestRejected])
-        #expect(capture.events.map(\.reply) == [.cacheMiss, .unauthorized])
-        let encoded = String(data: (try? JSONEncoder().encode(capture.events)) ?? Data(), encoding: .utf8) ?? ""
-        #expect(!encoded.contains("private-token"))
-        #expect(!encoded.contains("missing.mp3"))
-    }
 }

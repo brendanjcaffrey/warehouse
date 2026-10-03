@@ -1,6 +1,11 @@
 import Foundation
 import OSLog
 
+/// legacy reply values remain decodable in saved diagnostic captures.
+enum PhoneFileReply: String, Codable, Sendable {
+    case accepted, cacheMiss, unauthorized, invalidRequest, duplicate, queueFull, unavailable, transferFailed
+}
+
 /// bounded, credential-free events for a paired-device capture.
 struct WatchDiagnostic: Codable {
     enum Kind: String, Codable {

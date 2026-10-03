@@ -299,19 +299,6 @@ namespace :server do
     Server.run!
   end
 
-  desc 'permanently expose the server publicly on port 443 via tailscale funnel (proxies to nginx on 20601)'
-  task :funnel do
-    # --bg leaves the funnel running after this exits. the watch cannot join the tailnet, so
-    # this is its only ingress and it has to stay up, not just during a sync window.
-    sh('sudo tailscale funnel --bg --https=443 20601')
-    sh('tailscale funnel status')
-  end
-
-  desc 'stop the tailscale funnel started by server:funnel'
-  task :unfunnel do
-    sh('sudo tailscale funnel --https=443 off')
-  end
-
   desc 'run the server specs'
   RSpec::Core::RakeTask.new(:spec) do |t|
     t.pattern = Dir.glob('server/spec/*_spec.rb')

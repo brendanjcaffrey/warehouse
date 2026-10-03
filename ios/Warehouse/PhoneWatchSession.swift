@@ -2,34 +2,25 @@ import Foundation
 import WatchConnectivity
 import UIKit
 
-/// pushes the server credentials & playlist selection to the watch through
-/// the application context, which is delivered even when the watch app isn't
-/// running and always reflects the latest value; also receives play reports
-/// queued on the watch, and — while the watch app is up — mirrors what the
-/// phone is playing so the watch can drive it as a remote
+/// publishes the phone-supplied library and receives durable play reports.
+/// live remote messages mirror phone playback and carry transport commands.
 @MainActor
 final class PhoneWatchSession: NSObject {
     var content: PhoneWatchContentQueue?
     var publishLibrary: (() -> Void)?
     private let diagnostics: WatchDiagnostics
-    private let files: PhoneFileProvider?
-    private let payload: @MainActor () -> WatchPayload
     private let onPlay: @MainActor (String) -> Void
     private let nowPlaying: @MainActor () -> RemotePlaybackPayload?
     private let onCommand: @MainActor (RemoteCommand) -> Void
     private let diagnosticInbox: WatchDiagnosticInbox
 
     init(
-        files: PhoneFileProvider? = nil,
-        payload: @escaping @MainActor () -> WatchPayload,
         onPlay: @escaping @MainActor (String) -> Void,
         nowPlaying: @escaping @MainActor () -> RemotePlaybackPayload? = { nil },
         onCommand: @escaping @MainActor (RemoteCommand) -> Void = { _ in },
         diagnosticInbox: WatchDiagnosticInbox? = nil, diagnostics: WatchDiagnostics? = nil
     ) {
         self.diagnostics = diagnostics ?? .shared
-        self.files = files
-        self.payload = payload
         self.onPlay = onPlay
         self.nowPlaying = nowPlaying
         self.onCommand = onCommand
@@ -48,10 +39,7 @@ final class PhoneWatchSession: NSObject {
 
     func push() {
         content?.requestInventory()
-        if let publishLibrary { publishLibrary(); return }
-        guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
-        // failures are fine: the context is re-pushed on the next change or activation
-        try? WCSession.default.updateApplicationContext(payload().encode())
+        publishLibrary?()
     }
 
     /// sends what's playing to a watch that is listening. this rides
@@ -145,36 +133,8 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func receive(message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
-        if message["kind"] as? String == "cachedFileSize" {
-            let token = message["token"] as? String ?? ""
-            let type = (message["fileType"] as? String).flatMap(LibraryFileType.init(rawValue:))
-            let filename = message["filename"] as? String
-            Task { @MainActor in
-                guard let type, let filename,
-                      let size = files?.fileSize(type, filename: filename, token: token) else {
-                    replyHandler([:])
-                    return
-                }
-                replyHandler(["bytes": size])
-            }
-            return
-        }
-        if message["kind"] as? String == "reconcileCachedFiles" {
-            let token = message["token"] as? String ?? ""
-            Task { @MainActor in
-                guard let progress = files?.progress(token: token) else {
-                    replyHandler(["result": PhoneFileReply.unauthorized.rawValue])
-                    return
-                }
-                replyHandler(["transfers": progress.map { $0.encode() }])
-            }
-            return
-        }
-        if let transfer = WatchFileTransfer(dictionary: message) {
-            let token = message["token"] as? String ?? ""
-            Task { @MainActor in
-                replyHandler(["result": (files?.request(transfer, token: token) ?? .unavailable).rawValue])
-            }
+        if ["cachedFileSize", "reconcileCachedFiles", "cachedFile", "cancelCachedFile"].contains(message["kind"] as? String ?? "") {
+            replyHandler(["result": "unavailable"])
             return
         }
         receive(message: message)
@@ -185,11 +145,6 @@ extension PhoneWatchSession: WCSessionDelegate {
 
     /// split from the delegate method for the same reason as `receive(userInfo:)`
     nonisolated func receive(message: [String: Any]) {
-        if message["kind"] as? String == "cancelCachedFile",
-           let rawID = message["id"] as? String, let id = UUID(uuidString: rawID) {
-            Task { @MainActor in files?.cancel(id) }
-            return
-        }
         guard case .command(let command)? = WatchRemoteMessage(dictionary: message) else { return }
         Task { @MainActor in
             // a state request only wants the answer below
@@ -203,18 +158,7 @@ extension PhoneWatchSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
-        if receiveFileCompletion(metadata: fileTransfer.file.metadata, error: error) { return }
-        if let metadata = fileTransfer.file.metadata,
-           let transfer = WatchFileTransfer(dictionary: metadata) {
-            Task { @MainActor in files?.finished(transfer, error: error) }
-        }
-        guard error != nil, session.isReachable,
-              let metadata = fileTransfer.file.metadata,
-              let transfer = WatchFileTransfer(dictionary: metadata)
-        else { return }
-        var message = transfer.encode()
-        message["failed"] = true
-        session.sendMessage(message, replyHandler: nil, errorHandler: { _ in })
+        receiveFileCompletion(metadata: fileTransfer.file.metadata, error: error)
     }
 
     @discardableResult

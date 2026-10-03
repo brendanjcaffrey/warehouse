@@ -1,16 +1,11 @@
 import Foundation
 import WatchConnectivity
 
-/// receives the phone's application context & hands it to the settings
-/// store; also carries queued play reports back to the phone, and the live
-/// remote traffic: what the phone is playing coming in, transport commands
-/// going out
+/// receives the phone-supplied library, returns durable play reports and controls phone playback.
 @MainActor
 final class WatchPhoneSession: NSObject {
     nonisolated let contentActivity = WatchContentActivity()
     var content: WatchContentReceiver?
-    weak var files: WatchFileDownloader?
-    private let settings: WatchSettingsStore
     let library: WatchLibraryReceiver
     let lifetime = WatchLibraryBackgroundLifetime()
     private var contentObservation: NSKeyValueObservation?
@@ -23,7 +18,6 @@ final class WatchPhoneSession: NSObject {
     weak var remote: WatchRemoteStore?
 
     init(
-        settings: WatchSettingsStore,
         library: WatchLibraryReceiver,
         sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void = { data, completion in
             guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
@@ -37,7 +31,6 @@ final class WatchPhoneSession: NSObject {
             })
         }
     ) {
-        self.settings = settings
         self.library = library
         self.sendDiagnosticData = sendDiagnosticData
         super.init()
@@ -116,44 +109,7 @@ final class WatchPhoneSession: NSObject {
             })
     }
 
-    func requestFile(_ transfer: WatchFileTransfer, token: String, reply: @escaping @MainActor (PhoneFileReply) -> Void) {
-        guard canSend, isReachable else { reply(.unavailable); return }
-        var message = transfer.encode()
-        message["token"] = token
-        WCSession.default.sendMessage(message, replyHandler: { response in
-            let result = (response["result"] as? String).flatMap(PhoneFileReply.init(rawValue:)) ?? .unavailable
-            Task { @MainActor in reply(result) }
-        }, errorHandler: { error in
-            Task { @MainActor in
-                WatchDiagnostics.shared.record(.init(kind: .requestRejected, id: transfer.id,
-                                                     source: .phone, reply: .unavailable, error: error))
-                reply(.unavailable)
-            }
-        })
-    }
-
-    func fileSize(_ type: LibraryFileType, filename: String, token: String) async -> Int64? {
-        guard canSend, isReachable else { return nil }
-        return await withCheckedContinuation { continuation in
-            WCSession.default.sendMessage(
-                ["kind": "cachedFileSize", "fileType": type.rawValue, "filename": filename, "token": token],
-                replyHandler: { response in
-                    continuation.resume(returning: (response["bytes"] as? NSNumber)?.int64Value)
-                }, errorHandler: { _ in continuation.resume(returning: nil) })
-        }
-    }
-
-    func cancelFile(_ id: UUID) {
-        guard canSend, isReachable else { return }
-        WCSession.default.sendMessage(
-            ["kind": "cancelCachedFile", "id": id.uuidString], replyHandler: nil, errorHandler: { _ in })
-    }
-
     private func apply(message: [String: Any]) {
-        if message["failed"] as? Bool == true, let transfer = WatchFileTransfer(dictionary: message) {
-            files?.failed(transfer)
-            return
-        }
         guard let message = WatchRemoteMessage(dictionary: message) else { return }
         remote?.apply(message)
     }
@@ -162,22 +118,6 @@ final class WatchPhoneSession: NSObject {
         WatchDiagnostics.shared.record(.init(kind: .reachabilityChanged, id: UUID(), source: .system,
                                              detail: isReachable ? .reachable : .unreachable))
         remote?.setReachable(isReachable)
-        reconcileFiles()
-    }
-
-    private func reconcileFiles() {
-        files?.configurationChanged()
-        guard canSend, isReachable, let token = settings.token, files != nil else { return }
-        let generation = settings.fileGeneration
-        WCSession.default.sendMessage(
-            ["kind": "reconcileCachedFiles", "token": token],
-            replyHandler: { [weak self] message in
-                let progress = (message["transfers"] as? [[String: Any]])?.compactMap(PhoneFileProgress.init(dictionary:))
-                Task { @MainActor in
-                    guard let self, self.settings.fileGeneration == generation, let progress else { return }
-                    self.files?.reconcile(progress)
-                }
-            }, errorHandler: { _ in })
     }
 }
 
@@ -192,15 +132,14 @@ extension WatchPhoneSession: WCSessionDelegate {
                                                  error: error, detail: activationState == .activated ? .activated : .inactive))
         }
         guard activationState == .activated else { return }
-        // the last received context persists across launches, so settings
-        // are available even when the phone isn't reachable
+        // the last received library head persists across launches, even
+        // when the phone is unavailable
         let context = session.receivedApplicationContext
         Task { @MainActor in
             applyContext(context)
             library.resume()
             content?.resume()
             updateBackgroundLifetime()
-            files?.configurationChanged()
             onActivated?()
             requestLibrary()
             updateReachability()
@@ -261,24 +200,7 @@ extension WatchPhoneSession: WCSessionDelegate {
             }
             return
         }
-        let staged: (WatchFileTransfer, URL)
-        do {
-            guard let result = try WatchFileTransfer.stage(file.fileURL, metadata: file.metadata) else { return }
-            staged = result
-        } catch {
-            guard let metadata = file.metadata, let transfer = WatchFileTransfer(dictionary: metadata) else { return }
-            let outOfSpace = BackgroundDownload.isOutOfSpace(error)
-            Task { @MainActor in files?.stagingFailed(transfer, outOfSpace: outOfSpace) }
-            return
-        }
-        let (transfer, temporary) = staged
-        Task { @MainActor in
-            guard library.allowsLegacySync, let files else {
-                try? FileManager.default.removeItem(at: temporary)
-                return
-            }
-            files.receive(transfer, from: temporary)
-        }
+        // obsolete file protocols are ignored; saved local files remain available.
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
@@ -292,21 +214,21 @@ extension WatchPhoneSession: WCSessionDelegate {
         Task { @MainActor in applyContext(context) }
     }
 
-    private func applyContext(_ context: [String: Any]) {
-        if context["watchLibraryHead"] != nil {
-            content?.pause()
-            if let head = WatchLibraryHead(context: context) {
-                library.expect(head)
-            } else {
-                library.rejectContext()
-            }
-            updateBackgroundLifetime()
-            return
+    func applyContext(_ context: [String: Any]) {
+        guard !context.isEmpty else { return }
+        content?.pause()
+        if let head = WatchLibraryHead(context: context) {
+            library.expect(head)
+        } else {
+            library.rejectContext()
         }
-        // after migration an old peer must not reopen direct metadata sync.
-        guard !library.protocolSelected, library.head == nil, let payload = WatchPayload(dictionary: context) else { return }
-        settings.apply(payload)
-        files?.configurationChanged()
-        reconcileFiles()
+        updateBackgroundLifetime()
     }
 }
+
+#if os(iOS)
+extension WatchPhoneSession {
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {}
+}
+#endif

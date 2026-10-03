@@ -22,7 +22,7 @@ struct WatchNowPlayingView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 WatchArtworkThumbnail(
-                    filename: song.artworkFilename, priority: .nowPlaying, maxPixelSize: 132, allowNetwork: false)
+                    filename: song.artworkFilename, maxPixelSize: 132)
                     .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.name)

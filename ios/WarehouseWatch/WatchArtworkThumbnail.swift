@@ -6,17 +6,14 @@ extension EnvironmentValues {
     @Entry var artworkFetcher: WatchArtworkFetcher?
 }
 
-/// small square artwork image with a gray music note placeholder, like the
-/// phone's ArtworkThumbnail but without its ios-only system colors. the watch
-/// holds a bounded cache rather than a mirror, so the file usually isn't on
-/// disk yet and the thumbnail fetches it before loading
+/// reads delivered artwork, keeping a placeholder until local bytes arrive.
 struct WatchArtworkThumbnail: View {
     @Environment(\.artworkFetcher) private var fetcher
 
     let filename: String?
-    var priority: WatchArtworkFetcher.Priority = .list
     var maxPixelSize = 56
-    var allowNetwork = true
+
+    @Environment(WatchLibraryStore.self) private var library
 
     @State private var image: UIImage?
 
@@ -37,11 +34,9 @@ struct WatchArtworkThumbnail: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 4))
-        // cancelled when the row scrolls away, which is what keeps a long list
-        // from queueing a fetch for every song in it
-        .task(id: "\(filename ?? "")-\(allowNetwork)") {
+        .task(id: "\(filename ?? "")-\(library.progress().artwork.downloaded)") {
             image = nil
-            guard let url = await fetcher?.artworkURL(filename, priority: priority, allowNetwork: allowNetwork) else { return }
+            guard let url = fetcher?.artworkURL(filename) else { return }
             image = await ArtworkLoader.thumbnail(for: url, maxPixelSize: maxPixelSize)
         }
     }

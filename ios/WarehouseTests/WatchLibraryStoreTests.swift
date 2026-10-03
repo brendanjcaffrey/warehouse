@@ -227,22 +227,14 @@ struct WatchLibraryStoreTests {
         #expect(env.library.presentation(isConfigured: true) == .empty)
     }
 
-    @Test("saved music remains ready without credentials and through token refresh")
+    @Test("saved music remains ready without credentials")
     func savedMusicWithoutCredentials() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         try await env.save()
         await env.library.load()
-        let settings = WatchSettingsStore(defaults: env.defaults, readToken: { nil }, writeToken: { _ in })
-        #expect(!settings.isConfigured)
-        #expect(env.library.presentation(isConfigured: settings.isConfigured) == .ready)
+        #expect(env.library.presentation(isConfigured: false) == .ready)
         try await assertLocalPlayback(songs: env.songs, files: env.files)
-        settings.apply(WatchPayload(serverURL: "example.com", token: "tok", playlistIds: ["p1"]))
-        #expect(env.library.presentation(isConfigured: settings.isConfigured) == .ready)
-        settings.apply(WatchPayload(serverURL: "example.com", token: "refreshed", playlistIds: ["p1"]))
-        #expect(env.library.presentation(isConfigured: settings.isConfigured) == .ready)
-        settings.apply(WatchPayload(serverURL: "example.com", token: "", playlistIds: ["p1"]))
-        #expect(env.library.presentation(isConfigured: settings.isConfigured) == .ready)
         #expect(env.files.exists(.music, "local.wav"))
     }
 

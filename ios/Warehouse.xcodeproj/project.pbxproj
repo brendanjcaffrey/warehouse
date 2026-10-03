@@ -57,9 +57,21 @@
 		C64A329C2FF853BD008C79D1 /* WarehouseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WarehouseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+		AA0000000000000000000030 = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				SyncStore.swift,
+				WatchSyncSettingsStore.swift,
+				PhoneWatchLibraryPublisher.swift,
+				PhoneWatchContentQueue.swift,
+			);
+			target = AA0000000000000000000022;
+		};
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0000000000000000000010 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (AA0000000000000000000030,);
 			path = Shared;
 			sourceTree = "<group>";
 		};

@@ -2,7 +2,7 @@
 
 Warehouse is a self-hosted player for your iTunes/Music library. A macOS app
 exports the library into a Postgres database and copies out the media files; a
-Sinatra API server streams that library to a web app and an iOS/watchOS app; and
+Sinatra API server supplies that library to a web app and an iOS app; and
 changes made while playing (plays, ratings, metadata edits) can be pushed back
 into the local Music app.
 
@@ -54,7 +54,7 @@ Sinatra serves the built web app and streams the music & artwork files directly
 
 It listens on the port from the `local:` block (20601), so open
 `http://<machine>:20601`. To reach it from other devices, expose it over
-Tailscale (see [The Apple Watch and Tailscale Funnel](#the-apple-watch-and-tailscale-funnel)).
+Tailscale. The Apple Watch receives its library through the paired phone.
 
 ### Remote
 
@@ -198,28 +198,25 @@ rsync --archive --compress --itemize-changes --delete-during --copy-links \
 The remote unfreezes itself: the dump replaces its `library_state` row with the
 local one, and it happens while the remote server is stopped.
 
-## The Apple Watch and Tailscale Funnel
+## The Apple Watch library
 
-The watch app downloads music & artwork straight from the server. watchOS can't
-join a tailnet — there's no third-party NetworkExtension on watchOS, and Go can't
-target it either — so when the server is only reachable over Tailscale the watch
-needs a public ingress. That ingress is
-[Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel).
+In the iPhone app, open **Settings → Apple Watch** and select playlists. The phone
+supplies their metadata, music and artwork automatically whenever the system
+permits. Missing phone files wait for a normal phone sync. Progress shows music
+actually downloaded to the watch; selection and queued transfers do not mean Ready.
 
-- `rake server:funnel` starts it in the background (`tailscale funnel --bg --https=443 20601`)
-  and prints the resulting funnel status; `rake server:unfunnel` takes it back down.
-  Funnel terminates TLS on the public port 443 and forwards plain http to nginx on 20601.
-- The nginx config has a second, plain-http listener on `127.0.0.1:20601` for
-  Funnel to proxy to. Funnel can only target a localhost TCP port — it can't talk
-  to Puma's unix socket, and pointing it at Puma directly would break downloads
-  anyway, since `/music/` & `/artwork/` responses are empty
-  `X-Accel-Redirect` replies that only nginx knows how to fulfill.
-- In the iOS app, set the watch's server URL under Settings → Playlists & Server
-  URL to `https://<machine>.<tailnet>.ts.net`. That connects on the public Funnel
-  port 443 (the https default, so no port suffix) — **not** nginx's internal
-  `20601`, which is never exposed publicly. Leave it blank only if the watch can
-  reach the same server URL the phone uses, which it can't when that's a tailnet
-  address.
+The watch browses its saved library and plays downloaded songs without the phone.
+Missing songs stay dimmed and cannot be played. Missing artwork uses a placeholder
+until it arrives. Playlist edits and deselection mirror automatically, retaining
+shared music and protecting active playback. Storage Full preserves downloaded
+selected songs and retries missing delivery when space permits. Free space or
+deselect playlists on the phone to release storage.
+
+The watch requires no server URL, credentials or direct network connection.
+It can also control phone playback and return play reports through the phone.
+Keep both apps current: unsupported older peers preserve saved local content
+and report a library refresh failure. See [the delivery guide](ios/WatchLibraryDelivery.md)
+and [diagnostic capture instructions](ios/WatchDiagnosticsCapture.md).
 
 ## Development
 
