@@ -10,13 +10,6 @@ struct WatchMenuView: View {
     @State private var showingRemote = false
     @State private var autoOpen = RemoteAutoOpen()
 
-    /// every track the watch already holds, so what plays without the network
-    /// is one tap away. hidden while the cache is empty rather than offering a
-    /// dead end
-    private var downloaded: [Song] {
-        SongListBuilder.downloadedSongs(songs.songs, downloadedMusic: songs.downloadedMusic)
-    }
-
     var body: some View {
         NavigationStack {
             List {
@@ -41,13 +34,6 @@ struct WatchMenuView: View {
                         songs: SongListBuilder.orderedSongs(songs.songs, trackIds: nil, sortedBy: .title))
                 } label: {
                     Label("Songs", systemImage: "music.note")
-                }
-                if !downloaded.isEmpty {
-                    NavigationLink {
-                        WatchTrackListView(title: "Downloaded", songs: downloaded)
-                    } label: {
-                        Label("Downloaded", systemImage: "arrow.down.circle")
-                    }
                 }
                 NavigationLink {
                     WatchDiagnosticView()

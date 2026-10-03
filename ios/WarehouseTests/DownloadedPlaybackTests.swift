@@ -3,6 +3,46 @@ import Testing
 @testable import Warehouse
 
 extension PlayerStoreTests {
+    @Test("watch songs and playlists play only their downloaded tracks", arguments: [false, true])
+    @MainActor
+    func watchListPlayback(isPlaylist: Bool) async throws {
+        let store = FileCacheTests.makeStore()
+        for id in ["1", "3", "5"] { try store.write(.music, "\(id).wav", data: Self.musicBytes) }
+        let player = PlayerStore(fileStore: store, musicPolicy: .downloadedOnly, activateSessionForTests: { true })
+        defer { player.pause() }
+        let library = [
+            Self.song(id: "1", name: "Zebra"), Self.song(id: "2", name: "Apple"),
+            Self.song(id: "3", name: "Mango"), Self.song(id: "4", name: "Berry"),
+            Self.song(id: "5", name: "Lychee")
+        ]
+        let songs = isPlaylist
+            ? SongListBuilder.playlistSongs(library, trackIds: ["4", "1", "2", "3"])
+            : SongListBuilder.orderedSongs(library, trackIds: nil, sortedBy: .title)
+        let expected = isPlaylist ? ["1", "3"] : ["5", "3", "1"]
+        #expect(songs.map(\.id) == (isPlaylist ? ["4", "1", "2", "3"] : ["2", "4", "5", "3", "1"]))
+
+        player.play(songs, token: nil, baseURL: nil, downloadedOnly: true)
+        #expect(player.queue.snapshot.entries.map(\.songID) == expected)
+        try await Self.waitFor { player.hasLoadedTrack }
+        #expect(player.currentItemURL == store.fileURL(.music, "\(expected[0]).wav"))
+
+        player.playShuffled(songs, token: nil, baseURL: nil, downloadedOnly: true)
+        #expect(Set(player.queue.snapshot.entries.map(\.songID)) == Set(expected))
+        #expect(player.queue.count == expected.count)
+        player.setShuffled(false)
+        #expect(player.queue.snapshot.entries.map(\.songID) == expected)
+
+        // a filtered row tap uses its index in the full list, including missing songs.
+        let selected = try #require(SongListBuilder.filtered(songs, matching: "Mango").first)
+        let index = try #require(songs.firstIndex(of: selected))
+        player.playSelected(songs, startingAt: index, token: nil, baseURL: nil, downloadedOnly: true)
+        #expect(player.song?.id == "3")
+        #expect(player.queue.snapshot.entries.map(\.songID) == expected)
+        try await Self.waitFor { player.currentItemURL == store.fileURL(.music, "3.wav") }
+        #expect(!player.isStreamingCurrentTrack)
+        #expect(player.prefetchingFilename == nil)
+    }
+
     @Test("downloaded-only playback skips any number of misses without requesting files")
     @MainActor
     func downloadedOnlyQueue() async throws {
