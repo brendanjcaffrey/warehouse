@@ -12,6 +12,7 @@ final class PhoneWatchContentQueue {
         var cancel: (UUID) -> Void
         var query: (WatchContentFile) -> Void
         var report: (WatchLibraryDeliveryReport) -> Void = { _ in }
+        var inventory: (WatchInventoryRequest) -> Void = { _ in }
     }
 
     struct Job: Codable {
@@ -21,6 +22,7 @@ final class PhoneWatchContentQueue {
         var status: WatchContentStatus = .pending
         var attempts = 0
         var nextAttempt = Date.distantPast
+        var inventoryRequestID: UUID?
     }
 
     private struct Saved: Codable {
@@ -28,6 +30,9 @@ final class PhoneWatchContentQueue {
         var jobs: [Job] = []
         var snapshot: WatchLibrarySnapshot?
         var report: WatchLibraryDeliveryReport?
+        var inventory: WatchInventoryRequest?
+        var inventoryNextAttempt: Date?
+        var inventoryCompletedAt: Date?
     }
 
     static let maximumTransfers = 4
@@ -75,6 +80,7 @@ final class PhoneWatchContentQueue {
                 && (head?.revision ?? 0) >= (saved.head?.revision ?? 0)
             saved = Saved(head: head, jobs: retainsDelivery ? saved.jobs.filter { $0.status == .delivered } : [],
                           snapshot: retainsDelivery ? saved.snapshot : nil)
+            for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = nil }
             try save()
             old.forEach { transport.cancel($0.id) }
         }
@@ -87,6 +93,7 @@ final class PhoneWatchContentQueue {
                 + snapshot.artwork.sorted().map { previous[.artwork]?[$0] ?? Job(type: .artwork, filename: $0) }
             try save()
         }
+        try beginInventory()
         try pump()
     }
 
@@ -105,10 +112,14 @@ final class PhoneWatchContentQueue {
         state.transportAvailable = transport.available()
         state.systemOutstanding = transport.outstanding().count
         state.receiptWait = saved.jobs.count { $0.status == .awaitingReceipt }
+        state.inventoryPending = saved.jobs.count { $0.inventoryRequestID != nil }
+        state.inventoryRequestID = saved.inventory?.id
+        state.inventoryCompletedAt = saved.inventoryCompletedAt
         state.availableBytes = FileStore.deviceStorage()?.availableBytes
-        state.nextAttemptAt = saved.jobs.filter {
+        let jobDeadlines = saved.jobs.filter {
             [.awaitingReceipt, .retrying, .storageFull, .missingOnPhone].contains($0.status)
-        }.map(\.nextAttempt).min()
+        }.map(\.nextAttempt)
+        state.nextAttemptAt = (jobDeadlines + [saved.inventoryNextAttempt].compactMap { $0 }).min()
         let entries = Dictionary(uniqueKeysWithValues: LibraryFileType.allCases.map { type in
             (type, Dictionary(fileStore.entries(type).map { ($0.filename, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first }))
         })
@@ -172,6 +183,62 @@ final class PhoneWatchContentQueue {
         do { try pump(); errorMessage = nil } catch { errorMessage = error.localizedDescription }
     }
 
+    func requestInventory() {
+        do { try beginInventory(); try pump(); errorMessage = nil } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func beginInventory() throws {
+        guard saved.inventory == nil, let head = saved.head, saved.snapshot?.head == head,
+              head.metadataReady, head.failed != true, saved.jobs.contains(where: { $0.status == .delivered }) else { return }
+        let request = WatchInventoryRequest(head: head)
+        for index in saved.jobs.indices where saved.jobs[index].status == .delivered {
+            saved.jobs[index].inventoryRequestID = request.id
+        }
+        saved.inventory = request
+        saved.inventoryNextAttempt = .distantPast
+        try save()
+    }
+
+    func receive(_ report: WatchInventoryReport) throws {
+        guard report.isValid, report.request == saved.inventory, report.request.head == saved.head else {
+            diagnostics.metadata(.inventoryRejected, head: report.request.head)
+            return
+        }
+        let entries = Dictionary(grouping: report.entries, by: \.type).mapValues {
+            Dictionary($0.map { ($0.filename, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+        var events = [(WatchDiagnostic.Kind, WatchContentFile)]()
+        var cancelled = [UUID]()
+        for index in saved.jobs.indices {
+            let job = saved.jobs[index]
+            guard job.inventoryRequestID == report.request.id, let entry = entries[job.type]?[job.filename] else { continue }
+            saved.jobs[index].inventoryRequestID = nil
+            guard job.status == .delivered, let file = job.file else { continue }
+            if entry.bytes == file.bytes {
+                events.append((.inventoryConfirmed, file))
+            } else {
+                // a fresh transfer identity prevents old receipts from resurrecting the missing file.
+                saved.jobs[index] = Job(type: job.type, filename: job.filename)
+                cancelled.append(file.id)
+                events.append((.inventoryMissing, file))
+            }
+        }
+        let complete = !saved.jobs.contains { $0.inventoryRequestID == report.request.id }
+        if complete {
+            saved.inventory = nil
+            saved.inventoryNextAttempt = nil
+            saved.inventoryCompletedAt = now()
+        }
+        try save()
+        cancelled.forEach { transport.cancel($0) }
+        for (kind, file) in events {
+            diagnostics.record(.init(kind: kind, id: file.id, source: .phone, fileType: file.type,
+                                     bytes: file.bytes, identity: WatchDiagnosticIdentity(report.request.head)))
+        }
+        if complete { diagnostics.metadata(.inventoryCompleted, head: report.request.head) }
+        try pump()
+    }
+
     private static func isPermanent(_ error: Error) -> Bool {
         if error is FileStore.FilenameError || error is WatchLibraryError { return true }
         let value = error as NSError
@@ -191,6 +258,13 @@ final class PhoneWatchContentQueue {
                                  identity: saved.head.map(WatchDiagnosticIdentity.init)))
         timer?.cancel()
         guard transport.available() else { try publishReport(); return }
+        if let request = saved.inventory, (saved.inventoryNextAttempt ?? .distantPast) <= now() {
+            saved.inventoryNextAttempt = now().addingTimeInterval(60)
+            try save()
+            diagnostics.record(.init(kind: .inventoryRequested, id: request.id, source: .phone,
+                                     identity: WatchDiagnosticIdentity(request.head)))
+            transport.inventory(request)
+        }
         let outstanding = transport.outstanding()
         let systemIDs = Set(outstanding.map(\.id))
         // source copies may be removed only after the system relinquishes them.
@@ -285,9 +359,10 @@ final class PhoneWatchContentQueue {
     private func schedule() {
         guard schedulesRetries else { return }
         let waiting = saved.jobs.filter { [.awaitingReceipt, .retrying, .missingOnPhone, .storageFull].contains($0.status) }
-        guard !waiting.isEmpty else { return }
+        guard !waiting.isEmpty || saved.inventory != nil else { return }
         // due retries blocked by occupied slots wait for completion or a later wakeup, never a one-second loop.
-        let next = waiting.map(\.nextAttempt).filter { $0 > now() }.min() ?? now().addingTimeInterval(60)
+        let deadlines = waiting.map(\.nextAttempt) + [saved.inventoryNextAttempt].compactMap { $0 }
+        let next = deadlines.filter { $0 > now() }.min() ?? now().addingTimeInterval(60)
         let delay = max(1, next.timeIntervalSince(now()))
         timer = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }

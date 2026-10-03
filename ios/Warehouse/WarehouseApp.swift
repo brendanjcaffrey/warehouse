@@ -111,6 +111,14 @@ struct WarehouseApp: App {
                 if outstanding.contains(where: { WatchLibraryDeliveryReport(dictionary: $0.userInfo) == report }) { return }
                 outstanding.forEach { $0.cancel() }
                 WCSession.default.transferUserInfo(info)
+            }, inventory: { request in
+                guard let info = try? request.encode() else { return }
+                let outstanding = WCSession.default.outstandingUserInfoTransfers.filter {
+                    $0.userInfo["kind"] as? String == "watchInventoryRequest"
+                }
+                if outstanding.contains(where: { WatchInventoryRequest(dictionary: $0.userInfo) == request }) { return }
+                outstanding.forEach { $0.cancel() }
+                WCSession.default.transferUserInfo(info)
             }))
         watchSession.content = content
         watchSettings.content = content

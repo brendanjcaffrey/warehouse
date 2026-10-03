@@ -47,6 +47,7 @@ final class PhoneWatchSession: NSObject {
     }
 
     func push() {
+        content?.requestInventory()
         if let publishLibrary { publishLibrary(); return }
         guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
         // failures are fine: the context is re-pushed on the next change or activation
@@ -95,7 +96,11 @@ extension PhoneWatchSession: WCSessionDelegate {
     // without a real session
     nonisolated func receive(userInfo: [String: Any]) {
         if userInfo["kind"] as? String == "watchLibraryRequest" {
-            Task { @MainActor in publishLibrary?() }
+            Task { @MainActor in push() }
+            return
+        }
+        if let report = WatchInventoryReport(dictionary: userInfo) {
+            Task { @MainActor in try? content?.receive(report) }
             return
         }
         if let receipt = WatchContentReceipt(dictionary: userInfo) {
@@ -246,6 +251,7 @@ extension PhoneWatchSession: WCSessionDelegate {
         // dropped
         Task { @MainActor in
             self.pushNowPlaying()
+            if session.isReachable { self.push() }
         }
     }
 

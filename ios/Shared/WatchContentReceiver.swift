@@ -19,12 +19,18 @@ final class WatchContentReceiver {
     private var reports: [WatchLibraryDeliveryReport]
     private(set) var receipts: [WatchContentReceipt]
     private(set) var errorMessage: String?
+    private let inventory: WatchInventoryResponder
+    var sendInventory: (WatchInventoryReport) -> Bool {
+        get { inventory.send }
+        set { inventory.send = newValue }
+    }
 
     init(fileCache: FileCache, directory: URL = defaultDirectory(),
          availableBytes: @escaping () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
          beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil) throws {
         self.diagnostics = diagnostics ?? .shared
+        inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory, diagnostics: diagnostics ?? .shared)
         self.fileCache = fileCache
         self.directory = directory
         self.availableBytes = availableBytes
@@ -74,6 +80,7 @@ final class WatchContentReceiver {
         }
         self.head = head
         try drain()
+        try inventory.publish(head: head, snapshot: snapshot)
     }
 
     func receive(_ report: WatchLibraryDeliveryReport) throws {
@@ -85,6 +92,11 @@ final class WatchContentReceiver {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(next).write(to: directory.appending(path: "phone-progress.json"), options: .atomic)
         reports = next
+    }
+
+    func query(_ request: WatchInventoryRequest) throws {
+        try inventory.receive(request)
+        try inventory.publish(head: head, snapshot: snapshot)
     }
 
     func progress(playlistID: String? = nil) -> WatchLibraryProgress {
@@ -114,6 +126,8 @@ final class WatchContentReceiver {
         state.head = pendingHead.map(WatchDiagnosticIdentity.init)
         state.inventoryHead = snapshot.map { WatchDiagnosticIdentity($0.head) }
         state.availableBytes = availableBytes()
+        state.inventoryPending = inventory.requests.count
+        state.inventoryRequestID = inventory.requests.first?.id
         let music = fileCache.fileStore.entries(.music)
         let artwork = fileCache.fileStore.entries(.artwork)
         state.localMusic = WatchDeliveryDiagnosticState.local(music)

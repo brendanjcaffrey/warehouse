@@ -202,6 +202,7 @@ extension WatchPhoneSession: WCSessionDelegate {
             updateBackgroundLifetime()
             files?.configurationChanged()
             onActivated?()
+            requestLibrary()
             updateReachability()
         }
     }
@@ -217,6 +218,14 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if let request = WatchInventoryRequest(dictionary: userInfo) {
+            contentActivity.begin()
+            Task { @MainActor in
+                defer { contentActivity.end(); updateBackgroundLifetime() }
+                try? content?.query(request)
+            }
+            return
+        }
         if let report = WatchLibraryDeliveryReport(dictionary: userInfo) {
             Task { @MainActor in try? content?.receive(report) }
             return
@@ -275,6 +284,7 @@ extension WatchPhoneSession: WCSessionDelegate {
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         Task { @MainActor in
             updateReachability()
+            if session.isReachable { requestLibrary() }
         }
     }
 

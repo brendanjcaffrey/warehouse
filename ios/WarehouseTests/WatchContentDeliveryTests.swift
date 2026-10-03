@@ -18,10 +18,13 @@ struct WatchContentDeliveryTests {
         var queries = [WatchContentFile]()
         var receipts = [WatchContentReceipt]()
         var reports = [WatchLibraryDeliveryReport]()
+        var inventoryRequests = [WatchInventoryRequest]()
+        var inventoryReports = [WatchInventoryReport]()
         var now = Date(timeIntervalSince1970: 1000)
         var available: Int64 = 1_000_000_000
         var beforeCommit: () throws -> Void = {}
         var enqueuesEnabled = true
+        var transportAvailable = true
 
         init() throws {
             phoneDiagnostics = WatchDiagnostics(logEvents: false)
@@ -34,22 +37,25 @@ struct WatchContentDeliveryTests {
 
         func queue() throws -> PhoneWatchContentQueue {
             try PhoneWatchContentQueue(fileStore: files, directory: root.appending(path: "queue"), transport: .init(
-                available: { true }, outstanding: { [self] in outstanding },
+                available: { [self] in transportAvailable }, outstanding: { [self] in outstanding },
                 enqueue: { [self] file, url in
                     if enqueuesEnabled { outstanding.append(file); queued.append((file, url)) }
                 },
                 cancel: { [self] id in outstanding.removeAll { $0.id == id } },
-                query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) }),
+                query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) },
+                inventory: { [self] in inventoryRequests.append($0) }),
                 now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics)
         }
 
         func receiver() throws -> WatchContentReceiver {
             let cache = FileCache(fileStore: watchFiles, budget: { _ in .init(music: 1_000_000, artwork: 1_000_000) },
                                   freeSpaceReserve: 0)
-            return try WatchContentReceiver(fileCache: cache, directory: root.appending(path: "receiver"),
+            let receiver = try WatchContentReceiver(fileCache: cache, directory: root.appending(path: "receiver"),
                                             availableBytes: { [self] in available },
                                             send: { [self] in receipts.append($0) }, beforeCommit: { [self] in try beforeCommit() },
                                             now: { [self] in now }, diagnostics: watchDiagnostics)
+            receiver.sendInventory = { [self] in inventoryReports.append($0); return true }
+            return receiver
         }
 
         func snapshot(count: Int = 300, revision: Int64 = 1) throws -> WatchLibrarySnapshot {

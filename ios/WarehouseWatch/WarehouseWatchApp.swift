@@ -45,6 +45,14 @@ struct WarehouseWatchApp: App {
             if !alreadyQueued { WCSession.default.transferUserInfo(info) }
         })
         phone.content = content
+        content?.sendInventory = { report in
+            guard phone.canSend, let info = try? report.encode() else { return false }
+            let alreadyQueued = WCSession.default.outstandingUserInfoTransfers.contains {
+                WatchInventoryReport(dictionary: $0.userInfo) == report
+            }
+            if !alreadyQueued { WCSession.default.transferUserInfo(info) }
+            return true
+        }
         // preparation and browsing keep their legacy transport during migration.
         let files = WatchFileDownloader(
             fileStore: fileStore,
