@@ -35,18 +35,48 @@ final class WarehouseUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Apple Watch"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Server URL"].exists)
         XCTAssertFalse(app.staticTexts["Fill Ahead"].exists)
+        let selection = app.buttons["watch-selected-playlists"]
+        XCTAssertTrue(selection.exists)
+        XCTAssertFalse(app.buttons["watch-playlist-p1"].exists)
+        selection.tap()
+        let editor = app.navigationBars["Selected Playlists"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
         let playlist = app.buttons["watch-playlist-p1"]
-        for _ in 0..<5 where !playlist.isHittable { app.swipeUp() }
         XCTAssertTrue(playlist.waitForExistence(timeout: 5))
-        let initiallySelected = playlist.value as? String == "Selected"
-        playlist.tap()
-        XCTAssertEqual(playlist.value as? String, initiallySelected ? "Not selected" : "Selected")
-        if initiallySelected { playlist.tap() }
-        XCTAssertTrue(app.staticTexts["Set up on iPhone"].firstMatch.exists)
-        XCTAssertFalse(app.buttons["Prepare for Offline"].exists)
-        XCTAssertFalse(app.staticTexts["Ready"].exists)
+        XCTAssertFalse(editor.buttons["Save"].isEnabled)
+        if playlist.value as? String != "Selected" {
+            playlist.tap()
+            editor.buttons["Save"].tap()
+            app.alerts["Apply Playlist Changes?"].buttons["Apply Changes"].tap()
+            selection.tap()
+        }
+
         playlist.tap()
         XCTAssertEqual(playlist.value as? String, "Not selected")
+        editor.buttons["Save"].tap()
+        let confirmation = app.alerts["Apply Playlist Changes?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(confirmation.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "will be removed")).firstMatch.exists)
+        confirmation.buttons["Cancel"].tap()
+        XCTAssertTrue(editor.exists)
+        editor.buttons["Cancel"].tap()
+        selection.tap()
+        XCTAssertEqual(playlist.value as? String, "Selected")
+
+        playlist.tap()
+        editor.swipeDown()
+        XCTAssertTrue(selection.waitForExistence(timeout: 5))
+        selection.tap()
+        XCTAssertEqual(playlist.value as? String, "Selected")
+        playlist.tap()
+        editor.buttons["Save"].tap()
+        confirmation.buttons["Apply Changes"].tap()
+        XCTAssertTrue(selection.waitForExistence(timeout: 5))
+        selection.tap()
+        XCTAssertEqual(playlist.value as? String, "Not selected")
+        XCTAssertFalse(editor.buttons["Save"].isEnabled)
+        editor.buttons["Cancel"].tap()
+        XCTAssertFalse(app.buttons["Prepare for Offline"].exists)
     }
 
     @MainActor
@@ -59,8 +89,8 @@ final class WarehouseUITests: XCTestCase {
         let save = app.buttons["Save iPhone Capture"]
         for _ in 0..<5 where !save.isHittable { app.swipeUp() }
         XCTAssertTrue(waitForVisible(save))
-        let playlist = app.buttons["watch-playlist-p1"]
-        XCTAssertLessThan(playlist.frame.minY, save.frame.minY)
+        let selection = app.buttons["watch-selected-playlists"]
+        XCTAssertLessThan(selection.frame.minY, save.frame.minY)
 
         let reports = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "watch-diagnostic-report-phone-"))
         let originalIDs = Set(reports.allElementsBoundByIndex.map(\.identifier))

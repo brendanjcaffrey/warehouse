@@ -99,6 +99,26 @@ struct WatchSyncSettingsStoreTests {
         #expect(env.queued.filter { $0.0.type == artwork.type && $0.0.filename == artwork.filename }.count == 1)
     }
 
+    @Test("saving a selection publishes the complete persisted selection once")
+    func saveSelection() {
+        let defaults = Self.makeDefaults("save-selection")
+        let store = WatchSyncSettingsStore(defaults: defaults)
+        store.toggle("p1")
+        var published: [[String]] = []
+        store.onChange = {
+            published.append(WatchSyncSettingsStore(defaults: defaults).playlistIds)
+        }
+
+        store.setPlaylistIds(["p2", "p3"])
+        #expect(store.playlistIds == ["p2", "p3"])
+        #expect(published == [["p2", "p3"]])
+        store.setPlaylistIds(["p3", "p2"])
+        #expect(published.count == 1)
+        store.setPlaylistIds([])
+        #expect(published == [["p2", "p3"], []])
+        #expect(WatchSyncSettingsStore(defaults: defaults).playlistIds.isEmpty)
+    }
+
     @Test("toggling selects and deselects playlists")
     func togglingSelectsAndDeselects() {
         let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("toggle"))

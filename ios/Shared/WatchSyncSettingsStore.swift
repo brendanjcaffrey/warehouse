@@ -60,6 +60,13 @@ final class WatchSyncSettingsStore {
         onChange()
     }
 
+    func setPlaylistIds(_ ids: [String]) {
+        guard Set(ids) != Set(playlistIds) else { return }
+        playlistIds = Array(Set(ids)).sorted()
+        defaults.set(playlistIds, forKey: Self.playlistIdsKey)
+        onChange()
+    }
+
     func setServerURLOverride(_ url: String) {
         guard url != serverURLOverride else { return }
         serverURLOverride = url

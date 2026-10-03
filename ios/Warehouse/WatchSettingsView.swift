@@ -11,6 +11,7 @@ struct WatchSettingsView: View {
     @Environment(\.phoneDiagnosticReporter) private var phoneReport
     @Environment(WatchDiagnosticInbox.self) private var diagnosticInbox
     @State private var deletionFailed = false
+    @State private var showingPlaylistSelection = false
 
     var body: some View {
         List {
@@ -20,21 +21,11 @@ struct WatchSettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            let sections = PlaylistListBuilder.watchSections(in: playlists.playlists)
-            if sections.isEmpty {
-                Text("No playlists to choose from yet. Sync your library first.")
-                    .foregroundStyle(.secondary)
-            }
-            Text("Selecting a playlist automatically copies and keeps its music and artwork on the watch. "
-                + "Deselecting removes files no other selected playlist needs.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            ForEach(sections) { section in
-                Section(section.title) {
-                    ForEach(section.playlists) { playlist in
-                        row(playlist)
-                    }
+            Section {
+                Button("Selected Playlists") {
+                    showingPlaylistSelection = true
                 }
+                .accessibilityIdentifier("watch-selected-playlists")
             }
             Section("Diagnostics") {
                 Button("Save iPhone Capture") {
@@ -51,6 +42,9 @@ struct WatchSettingsView: View {
             }
         }
         .navigationTitle("Apple Watch")
+        .sheet(isPresented: $showingPlaylistSelection) {
+            WatchPlaylistSelectionView(playlistIds: settings.playlistIds)
+        }
         .alert("Couldn’t Delete Capture", isPresented: $deletionFailed) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -91,9 +85,69 @@ struct WatchSettingsView: View {
         }
     }
 
+}
+
+private struct WatchPlaylistSelectionView: View {
+    @Environment(PlaylistsStore.self) private var playlists
+    @Environment(WatchSyncSettingsStore.self) private var settings
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedIds: Set<String>
+    @State private var confirmingChanges = false
+
+    init(playlistIds: [String]) {
+        _selectedIds = State(initialValue: Set(playlistIds))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                let sections = PlaylistListBuilder.watchSections(in: playlists.playlists)
+                if sections.isEmpty {
+                    Text("No playlists to choose from yet. Sync your library first.")
+                        .foregroundStyle(.secondary)
+                }
+                Text("Selecting a playlist automatically copies and keeps its music and artwork on the watch. "
+                    + "Changes apply only after you save and confirm.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                ForEach(sections) { section in
+                    Section(section.title) {
+                        ForEach(section.playlists) { playlist in
+                            row(playlist)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Selected Playlists")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { confirmingChanges = true }
+                        .disabled(selectedIds == Set(settings.playlistIds))
+                }
+            }
+            .alert("Apply Playlist Changes?", isPresented: $confirmingChanges) {
+                Button("Cancel", role: .cancel) { }
+                Button("Apply Changes") {
+                    settings.setPlaylistIds(selectedIds.sorted())
+                    dismiss()
+                }
+            } message: {
+                Text("Selected playlists will be copied to the watch. Music and artwork from deselected playlists "
+                    + "will be removed unless another selected playlist needs them.")
+            }
+        }
+    }
+
     private func row(_ playlist: PlaylistItem) -> some View {
         Button {
-            settings.toggle(playlist.id)
+            if selectedIds.contains(playlist.id) {
+                selectedIds.remove(playlist.id)
+            } else {
+                selectedIds.insert(playlist.id)
+            }
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -105,13 +159,13 @@ struct WatchSettingsView: View {
                     }
                 }
                 Spacer()
-                if settings.isSelected(playlist.id) {
+                if selectedIds.contains(playlist.id) {
                     Image(systemName: "checkmark")
                         .foregroundStyle(.tint)
                 }
             }
         }
         .accessibilityIdentifier("watch-playlist-\(playlist.id)")
-        .accessibilityValue(settings.isSelected(playlist.id) ? "Selected" : "Not selected")
+        .accessibilityValue(selectedIds.contains(playlist.id) ? "Selected" : "Not selected")
     }
 }
