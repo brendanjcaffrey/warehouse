@@ -71,7 +71,15 @@ final class PhoneWatchContentQueue {
     /// invalidate immediately on configuration change, before the asynchronous metadata read.
     func invalidate(identity: String?, playlistIDs: [String]) throws {
         guard saved.head?.libraryID != identity || saved.head?.playlistIDs != playlistIDs else { return }
-        try reconcile(head: nil, snapshot: nil)
+        guard let head = saved.head, let identity, identity == head.libraryID, !playlistIDs.isEmpty else {
+            try reconcile(head: nil, snapshot: nil)
+            return
+        }
+        // pause obsolete transfers while preserving receipts until the new selection's inventory arrives.
+        var pending = WatchLibraryHead(publisher: head.publisher, revision: head.revision,
+                                       libraryID: identity, playlistIDs: playlistIDs)
+        pending.version = head.version
+        try reconcile(head: pending, snapshot: nil)
     }
 
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {

@@ -40,6 +40,65 @@ struct WatchSyncSettingsStoreTests {
         #expect(env.outstanding.isEmpty)
     }
 
+    @Test("selecting another playlist preserves downloaded counts on both devices")
+    func progressAfterPlaylistSelection() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let metadata = try WatchLibraryDeliveryTests.Env()
+        defer { metadata.cleanUp() }
+        try await metadata.phone.replaceLibrary(with: WatchLibraryDeliveryTests.library(count: 4), sourceIdentity: "account")
+        let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("additional-playlist"))
+        var queue = try env.queue()
+        store.content = queue
+        let publisher = try metadata.publisher()
+        publisher.onSnapshot = { head, snapshot in queue.update(head: head, snapshot: snapshot) }
+        store.onChange = {
+            try? queue.invalidate(identity: "account", playlistIDs: store.playlistIds)
+            publisher.publish(identity: "account", playlistIDs: store.playlistIds)
+        }
+        store.toggle("p2")
+        await publisher.waitForPublication()
+        let snapshot = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: try #require(metadata.deliveries.last).0))
+        try env.cache(snapshot)
+        env.now += 60
+        queue.resume()
+        let (file, url) = try #require(env.queued.first { $0.0.type == .music })
+        try env.stage(file, url: url)
+        let receiver = try env.receiver()
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        env.outstanding.removeAll { $0.id == file.id }
+        try queue.receive(try #require(env.receipts.last))
+        #expect(store.progress().music.downloaded == 1)
+        #expect(receiver.progress().music.downloaded == 1)
+        let (artwork, artworkURL) = try #require(env.queued.first { $0.0.type == .artwork })
+        try env.stage(artwork, url: artworkURL)
+        receiver.resume()
+        env.outstanding.removeAll { $0.id == artwork.id }
+        try queue.receive(try #require(env.receipts.last))
+        let obsolete = try #require(env.outstanding.first)
+
+        store.toggle("p1")
+        #expect(store.progress().music.downloaded == 1)
+        #expect(store.progress().artwork.downloaded == 1)
+        #expect(store.progress().state == .preparing)
+        #expect(env.outstanding.isEmpty)
+        try queue.receive(.init(file: obsolete, status: .delivered))
+        #expect(store.progress().music.downloaded == 1)
+        queue = try env.queue()
+        store.content = queue
+        #expect(store.progress().music.downloaded == 1)
+        await publisher.waitForPublication()
+        let next = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: try #require(metadata.deliveries.last).0))
+        try receiver.reconcile(head: next.head, snapshot: next)
+        #expect(receiver.progress().music.downloaded == 1)
+        #expect(store.progress().music.downloaded == 1)
+        #expect(store.progress().artwork.downloaded == 1)
+        #expect(store.progress().music.total == 4)
+        #expect(store.progress(playlistID: "p2").music.downloaded == 1)
+        #expect(env.queued.filter { $0.0.type == file.type && $0.0.filename == file.filename }.count == 1)
+        #expect(env.queued.filter { $0.0.type == artwork.type && $0.0.filename == artwork.filename }.count == 1)
+    }
+
     @Test("toggling selects and deselects playlists")
     func togglingSelectsAndDeselects() {
         let store = WatchSyncSettingsStore(defaults: Self.makeDefaults("toggle"))
