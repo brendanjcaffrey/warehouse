@@ -4,19 +4,18 @@ struct WatchMenuView: View {
     @Environment(WatchLibraryStore.self) private var library
     @Environment(SongsStore.self) private var songs
     @Environment(PlaylistsStore.self) private var playlists
-    @Environment(PlayerStore.self) private var player
-    @Environment(WatchRemoteStore.self) private var remote
 
+    let presentation: WatchRootPresentation
     let openRemote: () -> Void
 
     var body: some View {
         List {
-            if remote.isAvailable {
+            if presentation.showsRemoteNowPlaying {
                 Button(action: openRemote) {
                     Label("Playing on iPhone", systemImage: "iphone")
                 }
             }
-            if player.song != nil {
+            if presentation.showsLocalNowPlaying {
                 NavigationLink {
                     WatchNowPlayingView()
                 } label: {

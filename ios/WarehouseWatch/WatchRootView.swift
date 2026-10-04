@@ -19,22 +19,33 @@ struct WatchRootView: View {
         return library.presentation(isConfigured: receiver.head?.libraryID != nil)
     }
 
+    private var presentation: WatchRootPresentation {
+        WatchRootPresentation(libraryState: startup, hasLocalTrack: player.song != nil, isRemoteAvailable: remote.isAvailable)
+    }
+
     var body: some View {
         NavigationStack {
             Group {
-                if startup == .ready {
-                    WatchMenuView(openRemote: { navigation.open() })
+                if presentation.showsLibraryMenu {
+                    WatchMenuView(presentation: presentation, openRemote: { navigation.open() })
                 } else {
                     ScrollView {
                         VStack(spacing: 12) {
                             startupContent
                                 .fixedSize(horizontal: false, vertical: true)
+                            if presentation.showsLocalNowPlaying {
+                                NavigationLink {
+                                    WatchNowPlayingView()
+                                } label: {
+                                    Label("Now Playing", systemImage: "play.circle")
+                                }
+                            }
                             NavigationLink {
                                 WatchDiagnosticView()
                             } label: {
                                 Label("Diagnostics", systemImage: "waveform.path.ecg")
                             }
-                            if remote.isAvailable {
+                            if presentation.showsRemoteNowPlaying {
                                 Button {
                                     navigation.open()
                                 } label: {
@@ -64,7 +75,7 @@ struct WatchRootView: View {
 
     @ViewBuilder
     private var startupContent: some View {
-        switch startup {
+        switch presentation.libraryState {
         case .setup:
             WatchWaitingView()
         case .loading:
@@ -86,7 +97,7 @@ struct WatchRootView: View {
                 refreshButton
             }
         case .ready:
-            WatchMenuView(openRemote: { navigation.open() })
+            WatchMenuView(presentation: presentation, openRemote: { navigation.open() })
         }
     }
 
