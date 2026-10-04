@@ -96,6 +96,15 @@ struct WarehouseApp: App {
                 if outstanding.contains(where: { WatchInventoryRequest(dictionary: $0.userInfo) == request }) { return }
                 outstanding.forEach { $0.cancel() }
                 WCSession.default.transferUserInfo(info)
+            }, inventoryCompletion: { completion in
+                guard WCSession.isSupported(), WCSession.default.activationState == .activated,
+                      let info = try? completion.encode() else { return }
+                let outstanding = WCSession.default.outstandingUserInfoTransfers.filter {
+                    $0.userInfo["kind"] as? String == "watchInventoryCompletion"
+                }
+                if outstanding.contains(where: { WatchInventoryCompletion(dictionary: $0.userInfo) == completion }) { return }
+                outstanding.forEach { $0.cancel() }
+                WCSession.default.transferUserInfo(info)
             })
         let metadataTransport = PhoneWatchLibraryPublisher.Transport(
             context: { head in

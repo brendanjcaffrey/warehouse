@@ -97,6 +97,10 @@ extension PhoneWatchSession: WCSessionDelegate {
             Task { @MainActor in push() }
             return
         }
+        if let request = WatchInventoryRequest(dictionary: userInfo), request.isManual {
+            Task { @MainActor in try? content?.receive(request) }
+            return
+        }
         if let report = WatchInventoryReport(dictionary: userInfo) {
             Task { @MainActor in try? content?.receive(report) }
             return

@@ -27,11 +27,12 @@ final class WatchContentReceiver {
     private var needsDrain = false
     private var queries: [WatchContentFile] = []
     private var stagingErrors: [(WatchContentFile, Error)] = []
-    var pendingOperations: Int { work == nil ? 0 : 1 }
+    var pendingOperations: Int { (work == nil ? 0 : 1) + inventory.pendingOperations }
     var onActivityChanged: () -> Void = {}
 
     func waitForWork() async {
         while let task = work { await task.value }
+        await inventory.waitForWork()
     }
 
     private let inventory: WatchInventoryResponder
@@ -40,13 +41,27 @@ final class WatchContentReceiver {
         set { inventory.send = newValue }
     }
 
+    var inventoryFeedback: String? { inventory.manualFeedback }
+    var inventoryPending: Bool { inventory.manualPending && inventory.errorMessage == nil }
+    var sendInventoryRequest: (WatchInventoryRequest) -> Bool {
+        get { inventory.sendRequest }
+        set { inventory.sendRequest = newValue }
+    }
+
+    func syncDownloadedStatus() {
+        do { try inventory.startManual(head: head) } catch { errorMessage = error.localizedDescription }
+    }
+
+    func receive(_ completion: WatchInventoryCompletion) throws { try inventory.complete(completion) }
+
     init(fileCache: FileCache, directory: URL = defaultDirectory(),
          availableBytes: @escaping () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
          beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil,
          state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker()) throws {
         self.diagnostics = diagnostics ?? .shared
-        inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory, diagnostics: diagnostics ?? .shared, now: now)
+        inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory,
+                                            diagnostics: diagnostics ?? .shared, now: now, worker: worker)
         self.fileCache = fileCache
         self.directory = directory
         self.availableBytes = availableBytes
@@ -63,6 +78,7 @@ final class WatchContentReceiver {
         receipts = loaded.value
         recoveredState = loaded.repaired
         if loaded.repaired { try state.save(receipts, to: url) }
+        inventory.onActivityChanged = { [weak self] in self?.onActivityChanged() }
         fileCache.onFilesReleased = { [weak self] in
             Task { @MainActor [weak self] in self?.resume() }
         }
@@ -178,7 +194,7 @@ final class WatchContentReceiver {
     }
 
     /// stop commits while the database serializes a newly received control message.
-    func pause() { generation = UUID(); head = nil; pendingHead = nil }
+    func pause() { generation = UUID(); head = nil; pendingHead = nil; inventory.pause() }
 
     func resume() {
         do { try reconcile(head: pendingHead, snapshot: snapshot); errorMessage = nil } catch { errorMessage = error.localizedDescription }

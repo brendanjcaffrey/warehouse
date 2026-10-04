@@ -40,6 +40,28 @@ actor WatchContentWorker {
         }
     }
 
+    struct Observation: Sendable {
+        let stamp: Stamp
+        let digest: String
+    }
+
+    func observe(_ url: URL) throws -> Observation? {
+        try Task.checkCancellation()
+        try beforeWork()
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular else { return nil }
+            let stamp = try Stamp(url)
+            guard stamp.size > 0 else { return nil }
+            let value = try WatchContentFile.fingerprint(url)
+            guard value.bytes == stamp.size, stamp.stillMatches(url) else { throw WatchLibraryError.invalid }
+            return Observation(stamp: stamp, digest: value.digest)
+        } catch {
+            if WatchDeliveryState.isMissing(error) { return nil }
+            throw error
+        }
+    }
+
     struct Preparation: Sendable {
         let id: UUID
         let head: WatchLibraryHead

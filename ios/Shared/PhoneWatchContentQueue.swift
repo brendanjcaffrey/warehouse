@@ -13,6 +13,7 @@ final class PhoneWatchContentQueue {
         var query: (WatchContentFile) -> Void
         var report: (WatchLibraryDeliveryReport) -> Void = { _ in }
         var inventory: (WatchInventoryRequest) -> Void = { _ in }
+        var inventoryCompletion: (WatchInventoryCompletion) -> Void = { _ in }
     }
 
     struct Job: Codable {
@@ -34,6 +35,8 @@ final class PhoneWatchContentQueue {
         var inventoryNextAttempt: Date?
         var inventoryCompletedAt: Date?
         var inventoryStartedAt: Date?
+        var manualRequest: WatchInventoryRequest?
+        var manualCompleted: Bool?
         var recoveryFiles: [WatchContentFile]?
         var unidentifiedSources: [UUID]?
     }
@@ -55,8 +58,14 @@ final class PhoneWatchContentQueue {
     private var preparationSources: [UUID: UUID] = [:]
     private var preparingNames: [UUID: String] = [:]
 
+    private var inventoryWork: Task<Void, Never>?
+    private var inventoryReports: [WatchInventoryReport] = []
+
     func waitForWork() async {
-        while let task = preparations.values.first { await task.value }
+        while !preparations.isEmpty || inventoryWork != nil {
+            if let task = preparations.values.first { await task.value }
+            if let task = inventoryWork { await task.value }
+        }
     }
     private(set) var errorMessage: String?
     var jobs: [Job] { saved.jobs }
@@ -87,7 +96,8 @@ final class PhoneWatchContentQueue {
         }
         if saved.inventoryStartedAt == nil {
             // older queues already sent pending challenges; start their daily limit conservatively on upgrade.
-            saved.inventoryStartedAt = saved.inventory != nil && saved.inventoryNextAttempt != .distantPast ? now() : saved.inventoryCompletedAt
+            let startedAutomatic = saved.inventory?.isManual == false && saved.inventoryNextAttempt != .distantPast
+            saved.inventoryStartedAt = startedAutomatic ? now() : (saved.manualRequest == nil ? saved.inventoryCompletedAt : nil)
         }
         // migrate existing private copies to independent descriptors before their central journal can be lost.
         for file in saved.jobs.compactMap(\.file) where FileManager.default.fileExists(atPath: source(file).path) {
@@ -144,6 +154,7 @@ final class PhoneWatchContentQueue {
                 && (head?.revision ?? 0) >= (saved.head?.revision ?? 0)
             saved = Saved(head: head, jobs: retainsDelivery ? saved.jobs.filter { $0.status == .delivered } : [],
                           snapshot: retainsDelivery ? saved.snapshot : nil, inventoryStartedAt: saved.inventoryStartedAt,
+                          manualRequest: saved.manualRequest, manualCompleted: nil,
                           recoveryFiles: saved.recoveryFiles, unidentifiedSources: saved.unidentifiedSources)
             for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = nil }
             try save()
@@ -212,13 +223,16 @@ final class PhoneWatchContentQueue {
               [.delivered, .retrying, .storageFull, .failed].contains(receipt.status) else { return }
         if saved.jobs[index].status == .delivered { return }
         if saved.jobs[index].status == .failed && receipt.status != .delivered { return }
+        let previous = saved
         saved.jobs[index].status = receipt.status
+        if receipt.status == .delivered, saved.inventory?.isManual == true { saved.jobs[index].inventoryRequestID = nil }
         if receipt.status == .retrying || receipt.status == .storageFull {
             saved.jobs[index].nextAttempt = now().addingTimeInterval(backoff(saved.jobs[index].attempts))
         }
-        try save()
+        do { try save() } catch { saved = previous; throw error }
         diagnostics.delivery(receipt.status == .delivered ? .phoneAcknowledged : Self.event(receipt.status),
                              file: receipt.file, source: .phone, status: receipt.status)
+        if let request = saved.inventory, request.isManual { try finishInventoryIfNeeded(request) }
         try pump()
     }
 
@@ -263,6 +277,42 @@ final class PhoneWatchContentQueue {
         do { try beginInventory(); try pump(); errorMessage = nil } catch { errorMessage = error.localizedDescription }
     }
 
+    func receive(_ request: WatchInventoryRequest) throws {
+        guard request.isValid, request.isManual, request.head == saved.head, saved.snapshot?.head == request.head else { return }
+        if request == saved.manualRequest {
+            if saved.manualCompleted == true { transport.inventoryCompletion(.init(request: request)) } else if saved.inventory == request {
+                try finishInventoryIfNeeded(request)
+                try pump()
+            }
+            return
+        }
+        if let previous = saved.manualRequest,
+           (previous.manualSequence ?? 0) >= (request.manualSequence ?? 0) { return }
+        let previous = saved
+        saved.manualRequest = request
+        saved.manualCompleted = false
+        saved.inventory = request
+        saved.inventoryNextAttempt = .distantPast
+        for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = request.id }
+        do { try save() } catch { saved = previous; throw error }
+        generation = UUID()
+        preparations.values.forEach { $0.cancel() }
+        try finishInventoryIfNeeded(request)
+        try pump()
+    }
+
+    private func finishInventoryIfNeeded(_ request: WatchInventoryRequest) throws {
+        guard saved.inventory == request, saved.head == request.head,
+              !saved.jobs.contains(where: { $0.inventoryRequestID == request.id }) else { return }
+        let previous = saved
+        saved.inventory = nil
+        saved.inventoryNextAttempt = nil
+        saved.inventoryCompletedAt = now()
+        if request.isManual { saved.manualCompleted = true }
+        do { try save() } catch { saved = previous; throw error }
+        if request.isManual { transport.inventoryCompletion(.init(request: request)) }
+    }
+
     private func beginInventory() throws {
         guard saved.inventory == nil, let head = saved.head, saved.snapshot?.head == head,
               head.metadataReady, head.failed != true, saved.jobs.contains(where: { $0.status == .delivered }) else { return }
@@ -277,6 +327,33 @@ final class PhoneWatchContentQueue {
     }
 
     func receive(_ report: WatchInventoryReport) throws {
+        if report.request.isManual {
+            guard report.isValid, report.request == saved.inventory else { return }
+            if !saved.jobs.contains(where: { $0.inventoryRequestID == report.request.id }) {
+                try finishInventoryIfNeeded(report.request)
+                try pump()
+                return
+            }
+            guard report.entries.contains(where: { entry in
+                saved.jobs.contains { $0.type == entry.type && $0.filename == entry.filename && $0.inventoryRequestID == report.request.id }
+            }) else { return }
+            // retain the first bounded window; replay skips checked entries and advances to later batches.
+            guard !inventoryReports.contains(report), inventoryReports.count < 8 else { return }
+            inventoryReports.append(report)
+            if inventoryWork == nil {
+                inventoryWork = Task {
+                    defer { inventoryWork = nil }
+                    while !inventoryReports.isEmpty {
+                        let next = inventoryReports.removeFirst()
+                        do { try await receiveVerified(next); errorMessage = nil } catch {
+                            errorMessage = error.localizedDescription
+                            diagnostics.metadata(.inventoryFailed, head: next.request.head, error: error)
+                        }
+                    }
+                }
+            }
+            return
+        }
         guard report.isValid, report.request == saved.inventory, report.request.head == saved.head else {
             diagnostics.metadata(.inventoryRejected, head: report.request.head)
             return
@@ -316,6 +393,49 @@ final class PhoneWatchContentQueue {
         try pump()
     }
 
+    private func receiveVerified(_ report: WatchInventoryReport) async throws {
+        guard report.request == saved.inventory, report.request.head == saved.head else { return }
+        for entry in report.entries {
+            guard let index = saved.jobs.firstIndex(where: {
+                $0.type == entry.type && $0.filename == entry.filename && $0.inventoryRequestID == report.request.id
+            }) else { continue }
+            let job = saved.jobs[index]
+            let file: WatchContentFile?
+            if let known = job.file {
+                file = known
+            } else if let value = try await worker.observe(fileStore.fileURL(entry.type, entry.filename)) {
+                guard value.stamp.stillMatches(fileStore.fileURL(entry.type, entry.filename)) else { throw WatchLibraryError.invalid }
+                file = WatchContentFile(head: report.request.head, type: entry.type, filename: entry.filename,
+                                        bytes: value.stamp.size, digest: value.digest)
+            } else { file = nil }
+            guard report.request == saved.inventory, report.request.head == saved.head,
+                  saved.jobs.indices.contains(index), saved.jobs[index].inventoryRequestID == report.request.id,
+                  saved.jobs[index].file == job.file else { continue }
+            let previous = saved
+            let verified = file.map { entry.bytes == $0.bytes && entry.digest == $0.digest } ?? false
+            if verified, let file {
+                saved.jobs[index].file = file
+                saved.jobs[index].status = .delivered
+                saved.jobs[index].inventoryRequestID = nil
+            } else if job.status == .delivered {
+                saved.jobs[index] = Job(type: job.type, filename: job.filename)
+            } else { saved.jobs[index].inventoryRequestID = nil }
+            do { try save() } catch { saved = previous; throw error }
+            if verified, let file {
+                transport.cancel(file.id)
+                diagnostics.record(.init(kind: .inventoryVerified, id: file.id, source: .phone, fileType: file.type,
+                                         identity: WatchDiagnosticIdentity(report.request.head)))
+            } else if job.status == .delivered, let file {
+                transport.cancel(file.id)
+                diagnostics.record(.init(kind: .inventoryMissing, id: file.id, source: .phone, fileType: file.type,
+                                         identity: WatchDiagnosticIdentity(report.request.head)))
+            }
+        }
+        let previous = saved
+        do { try finishInventoryIfNeeded(report.request) } catch { saved = previous; throw error }
+        try pump()
+    }
+
     private static func isPermanent(_ error: Error) -> Bool {
         if error is FileStore.FilenameError || error is WatchLibraryError { return true }
         let value = error as NSError
@@ -335,10 +455,10 @@ final class PhoneWatchContentQueue {
         timer?.cancel()
         guard transport.available() else { try publishReport(); return }
         if let request = saved.inventory, (saved.inventoryNextAttempt ?? .distantPast) <= now() {
-            if saved.inventoryNextAttempt == .distantPast { saved.inventoryStartedAt = now() }
+            if saved.inventoryNextAttempt == .distantPast, !request.isManual { saved.inventoryStartedAt = now() }
             saved.inventoryNextAttempt = now().addingTimeInterval(60)
             try save()
-            diagnostics.record(.init(kind: .inventoryRequested, id: request.id, source: .phone,
+            diagnostics.record(.init(kind: request.isManual ? .inventoryManualRequested : .inventoryRequested, id: request.id, source: .phone,
                                      identity: WatchDiagnosticIdentity(request.head)))
             transport.inventory(request)
         }
@@ -376,6 +496,7 @@ final class PhoneWatchContentQueue {
                 saved.jobs[index] = job
                 continue
             }
+            if saved.inventory?.isManual == true, job.inventoryRequestID == saved.inventory?.id { continue }
             guard occupied < Self.maximumTransfers, job.nextAttempt <= now(), let head = saved.head,
                   head.metadataReady, head.failed != true, head.libraryID != nil else { continue }
             do {

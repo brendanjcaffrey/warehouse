@@ -20,6 +20,8 @@ struct WatchContentDeliveryTests {
         var reports = [WatchLibraryDeliveryReport]()
         var inventoryRequests = [WatchInventoryRequest]()
         var inventoryReports = [WatchInventoryReport]()
+        var manualRequests = [WatchInventoryRequest]()
+        var inventoryCompletions = [WatchInventoryCompletion]()
         var now = Date(timeIntervalSince1970: 1000)
         var available: Int64 = 1_000_000_000
         var beforeCommit: () throws -> Void = {}
@@ -43,7 +45,8 @@ struct WatchContentDeliveryTests {
                 },
                 cancel: { [self] id in outstanding.removeAll { $0.id == id } },
                 query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) },
-                inventory: { [self] in inventoryRequests.append($0) }),
+                inventory: { [self] in inventoryRequests.append($0) },
+                inventoryCompletion: { [self] in inventoryCompletions.append($0) }),
                 now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics, worker: worker)
         }
 
@@ -54,6 +57,7 @@ struct WatchContentDeliveryTests {
                                             availableBytes: { [self] in available },
                                             send: { [self] in receipts.append($0) }, beforeCommit: { [self] in try beforeCommit() },
                                             now: { [self] in now }, diagnostics: watchDiagnostics, worker: worker)
+            receiver.sendInventoryRequest = { [self] in manualRequests.append($0); return transportAvailable }
             receiver.sendInventory = { [self] in inventoryReports.append($0); return true }
             return receiver
         }

@@ -32,6 +32,16 @@ struct WarehouseWatchApp: App {
         services.onContentChanged = { [weak services, weak phone] in
             guard let services else { return }
             phone?.content = services.content
+            services.content?.sendInventoryRequest = { request in
+                guard phone?.canSend == true, let info = try? request.encode() else { return false }
+                let outstanding = WCSession.default.outstandingUserInfoTransfers.filter {
+                    $0.userInfo["kind"] as? String == "watchInventoryRequest"
+                }
+                if outstanding.contains(where: { WatchInventoryRequest(dictionary: $0.userInfo) == request }) { return true }
+                outstanding.forEach { $0.cancel() }
+                WCSession.default.transferUserInfo(info)
+                return true
+            }
             services.content?.sendInventory = { report in
                 guard phone?.canSend == true, let info = try? report.encode() else { return false }
                 let alreadyQueued = WCSession.default.outstandingUserInfoTransfers.contains {

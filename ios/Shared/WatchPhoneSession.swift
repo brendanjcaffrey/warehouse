@@ -222,6 +222,10 @@ extension WatchPhoneSession: WCSessionDelegate {
             dispatch { [self] in onPlayReceipt?(receipt.play) }
             return
         }
+        if let completion = WatchInventoryCompletion(dictionary: userInfo) {
+            dispatch { [self] in try? content?.receive(completion) }
+            return
+        }
         if let request = WatchInventoryRequest(dictionary: userInfo) {
             dispatch { [self] in
                 try? content?.query(request)

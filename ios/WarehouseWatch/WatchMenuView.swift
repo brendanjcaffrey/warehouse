@@ -47,6 +47,11 @@ struct WatchMenuView: View {
             }
             Section("Downloads") {
                 WatchLibraryProgressView(progress: library.progress())
+                Button("Sync Downloaded Status") { library.content?.syncDownloadedStatus() }
+                    .disabled(library.content == nil || library.content?.inventoryPending == true)
+                if let feedback = library.content?.inventoryFeedback ?? library.content?.errorMessage {
+                    Text(feedback).font(.footnote)
+                }
                 NavigationLink {
                     WatchDiagnosticView()
                 } label: {
