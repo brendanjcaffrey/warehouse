@@ -9,19 +9,29 @@ final class PhoneWatchSession: NSObject {
     var content: PhoneWatchContentQueue?
     var publishLibrary: (() -> Void)?
     private let diagnostics: WatchDiagnostics
-    private let onPlay: @MainActor (String) -> Void
+    private let onPlay: @MainActor (PlayPayload) throws -> Void
+    private let acknowledgePlay: @MainActor (PlayPayload) -> Void
     private let nowPlaying: @MainActor () -> RemotePlaybackPayload?
     private let onCommand: @MainActor (RemoteCommand) -> Void
     private let diagnosticInbox: WatchDiagnosticInbox
 
     init(
-        onPlay: @escaping @MainActor (String) -> Void,
+        onPlay: @escaping @MainActor (PlayPayload) throws -> Void,
+        acknowledgePlay: @escaping @MainActor (PlayPayload) -> Void = { play in
+            guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+            let receipt = PlayReceipt(play)
+            let queued = WCSession.default.outstandingUserInfoTransfers.contains {
+                PlayReceipt(dictionary: $0.userInfo)?.play == play
+            }
+            if !queued { WCSession.default.transferUserInfo(receipt.encode()) }
+        },
         nowPlaying: @escaping @MainActor () -> RemotePlaybackPayload? = { nil },
         onCommand: @escaping @MainActor (RemoteCommand) -> Void = { _ in },
         diagnosticInbox: WatchDiagnosticInbox? = nil, diagnostics: WatchDiagnostics? = nil
     ) {
         self.diagnostics = diagnostics ?? .shared
         self.onPlay = onPlay
+        self.acknowledgePlay = acknowledgePlay
         self.nowPlaying = nowPlaying
         self.onCommand = onCommand
         self.diagnosticInbox = diagnosticInbox ?? WatchDiagnosticInbox()
@@ -99,7 +109,12 @@ extension PhoneWatchSession: WCSessionDelegate {
         }
         guard let payload = PlayPayload(dictionary: userInfo) else { return }
         Task { @MainActor in
-            onPlay(payload.trackId)
+            do {
+                try onPlay(payload)
+                acknowledgePlay(payload)
+            } catch {
+                // no acknowledgment: the watch retains ownership and retries.
+            }
         }
     }
 

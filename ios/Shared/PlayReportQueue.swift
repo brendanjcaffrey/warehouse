@@ -1,10 +1,7 @@
 import Foundation
 
-/// queues plays on the watch until the connectivity session can take them;
-/// every play is written to disk before hand-off so nothing is lost to a
-/// relaunch or the phone being out of range. once handed off the system's
-/// transfer queue owns delivery, so items are removed here right away &
-/// reconciled against the outstanding transfers after a relaunch
+/// retains plays until the phone acknowledges durable ownership; system enqueue
+/// and transfer completion alone do not establish that the phone saved a play.
 @MainActor
 final class PlayReportQueue {
     private(set) var pending: [PlayPayload]
@@ -13,6 +10,9 @@ final class PlayReportQueue {
     private let canSend: @MainActor () -> Bool
     private let outstandingIds: @MainActor () -> Set<String>
     private let send: @MainActor (PlayPayload) -> Void
+    private let write: (Data, URL) throws -> Void
+    private let retryInterval: TimeInterval
+    private var retryTask: Task<Void, Never>?
 
     nonisolated static func defaultFileURL() -> URL {
         URL.applicationSupportDirectory.appending(path: "plays.json")
@@ -22,45 +22,73 @@ final class PlayReportQueue {
         fileURL: URL = PlayReportQueue.defaultFileURL(),
         canSend: @escaping @MainActor () -> Bool,
         outstandingIds: @escaping @MainActor () -> Set<String>,
-        send: @escaping @MainActor (PlayPayload) -> Void
+        send: @escaping @MainActor (PlayPayload) -> Void,
+        retryInterval: TimeInterval = 60,
+        write: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }
     ) {
         self.fileURL = fileURL
         self.canSend = canSend
         self.outstandingIds = outstandingIds
         self.send = send
+        self.retryInterval = retryInterval
+        self.write = write
         pending = Self.load(from: fileURL)
     }
 
-    /// records a play & hands it off right away when the session is up; the
-    /// play is persisted first so a crash can't drop it
     func add(trackId: String) {
         pending.append(PlayPayload(trackId: trackId))
-        persist()
         drain()
     }
 
-    /// hands every pending play to the session in order; skips ones the
-    /// system already took so a crash between hand-off & persist can't
-    /// double-count
+    /// persist before enqueue, retaining the same ids through every retry.
     func drain() {
-        guard canSend() else { return }
+        retryTask?.cancel()
+        retryTask = nil
+        defer { scheduleRetry() }
+        guard persist(), canSend() else { return }
         let outstanding = outstandingIds()
-        while let payload = pending.first {
-            if !outstanding.contains(payload.id) {
-                send(payload)
-            }
-            pending.removeFirst()
-            persist()
+        for payload in pending where !outstanding.contains(payload.id) {
+            send(payload)
         }
     }
 
-    private func persist() {
+    func acknowledge(_ payload: PlayPayload) {
+        let previous = pending
+        pending.removeAll { $0 == payload }
+        if !persist() { pending = previous }
+        if pending.isEmpty {
+            retryTask?.cancel()
+            retryTask = nil
+        } else {
+            scheduleRetry()
+        }
+    }
+
+    /// terminal errors and successful transfers both still need a phone receipt.
+    func finished(_ payload: PlayPayload) {
+        guard pending.contains(payload) else { return }
+        scheduleRetry()
+    }
+
+    private func scheduleRetry() {
+        guard retryTask == nil, !pending.isEmpty else { return }
+        retryTask = Task { [weak self, retryInterval] in
+            try? await Task.sleep(for: .seconds(retryInterval))
+            guard !Task.isCancelled, let self else { return }
+            self.retryTask = nil
+            self.drain()
+        }
+    }
+
+    private func persist() -> Bool {
         do {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(pending).write(to: fileURL, options: .atomic)
+            try write(JSONEncoder().encode(pending), fileURL)
+            return true
         } catch {
-            // the plays are still in memory & the next mutation retries the write
+            // retain in memory and retry persistence before transferring ownership.
+            return false
         }
     }
 

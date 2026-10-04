@@ -44,6 +44,8 @@ struct WarehouseWatchApp: App {
         let plays = PlayReportQueue(canSend: { phone.canSend }, outstandingIds: { phone.outstandingPlayIds }, send: { phone.send($0) })
         reports = plays
         phone.onActivated = { plays.drain() }
+        phone.onPlayReceipt = { plays.acknowledge($0) }
+        phone.onPlayTransferFinished = { plays.finished($0) }
         let remote = WatchRemoteStore(send: { phone.send($0) })
         phone.remote = remote
         _remote = State(initialValue: remote)
@@ -70,6 +72,7 @@ struct WarehouseWatchApp: App {
                 .onChange(of: scenePhase, initial: true) {
                     if scenePhase == .active {
                         Task { await services.refresh() }
+                        plays.drain()
                         remote.requestState()
                     }
                 }

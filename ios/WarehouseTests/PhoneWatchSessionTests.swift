@@ -76,6 +76,47 @@ struct PhoneWatchSessionTests {
         #expect(report.delivery?.music.states["retrying"] == 1)
     }
 
+    @Test("cold background plays are acknowledged only after atomic persistence")
+    func durableBackgroundPlays() async throws {
+        let env = UpdatesStoreTests.makeEnv(host: "phone-watch-background.test")
+        let watchURL = PlayReportQueueTests.tempFileURL()
+        defer { try? FileManager.default.removeItem(at: watchURL.deletingLastPathComponent()) }
+        let transport = PlayReportQueueTests.Transport()
+        let watch = PlayReportQueueTests.makeQueue(fileURL: watchURL, transport: transport)
+        watch.add(trackId: "t1")
+        let play = try #require(transport.sent.first)
+        var receipts = [PlayPayload]()
+        var fails = true
+        let phone = PhoneWatchSession(onPlay: { payload in
+            if fails { throw CocoaError(.fileWriteUnknown) }
+            try env.store.recordWatchPlay(payload)
+        }, acknowledgePlay: { receipts.append($0) })
+        phone.receive(userInfo: play.encode())
+        // the following marker uses the same actor hop to wait for the failed receipt.
+        var marker = false
+        phone.publishLibrary = { marker = true }
+        phone.receive(userInfo: ["kind": "watchLibraryRequest"])
+        try await PlayerStoreTests.waitFor { marker }
+        #expect(receipts.isEmpty && env.store.pending.isEmpty)
+        fails = false
+        phone.receive(userInfo: play.encode())
+        try await PlayerStoreTests.waitFor { receipts.count == 1 }
+        #expect(UpdatesStoreTests.persisted(at: env.fileURL).count == 1)
+        // terminate before the acknowledgment arrives; recreate both peers.
+        let relaunchedWatch = PlayReportQueueTests.makeQueue(fileURL: watchURL, transport: transport)
+        let relaunchedStore = UpdatesStoreTests.relaunch(env)
+        let relaunchedPhone = PhoneWatchSession(onPlay: { try relaunchedStore.recordWatchPlay($0) },
+                                               acknowledgePlay: { receipts.append($0) })
+        relaunchedPhone.receive(userInfo: play.encode())
+        try await PlayerStoreTests.waitFor { receipts.count == 2 }
+        #expect(relaunchedStore.pending.count == 1)
+        relaunchedWatch.acknowledge(receipts[1])
+        #expect(PlayReportQueueTests.makeQueue(fileURL: watchURL, transport: transport).pending.isEmpty)
+        relaunchedPhone.receive(userInfo: play.encode())
+        try await PlayerStoreTests.waitFor { receipts.count == 3 }
+        #expect(relaunchedStore.pending.count == 1)
+    }
+
     @MainActor
     final class PlayedTracks {
         var ids = [String]()
@@ -91,7 +132,7 @@ struct PhoneWatchSessionTests {
         commands: ReceivedCommands
     ) -> PhoneWatchSession {
         PhoneWatchSession(
-            onPlay: { played.ids.append($0) },
+            onPlay: { played.ids.append($0.trackId) },
             onCommand: { commands.commands.append($0) })
     }
 

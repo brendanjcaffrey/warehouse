@@ -13,6 +13,8 @@ final class WatchPhoneSession: NSObject {
     private var contentObservation: NSKeyValueObservation?
     private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void
 
+    var onPlayReceipt: (@MainActor (PlayPayload) -> Void)?
+    var onPlayTransferFinished: (@MainActor (PlayPayload) -> Void)?
     /// fired once the session activates so held plays can be drained
     var onActivated: (@MainActor () -> Void)?
     /// the store showing what the phone is playing; set after init because it
@@ -177,6 +179,10 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if let receipt = PlayReceipt(dictionary: userInfo) {
+            dispatch { [self] in onPlayReceipt?(receipt.play) }
+            return
+        }
         if let request = WatchInventoryRequest(dictionary: userInfo) {
             dispatch { [self] in
                 try? content?.query(request)
@@ -189,6 +195,15 @@ extension WatchPhoneSession: WCSessionDelegate {
         }
         guard userInfo["kind"] as? String == "watchContentQuery", let file = WatchContentFile(dictionary: userInfo) else { return }
         dispatch { [self] in try? content?.query(file) }
+    }
+
+    nonisolated func session(_ session: WCSession, didFinish userInfoTransfer: WCSessionUserInfoTransfer, error: Error?) {
+        receivePlayCompletion(userInfoTransfer.userInfo, error: error)
+    }
+
+    nonisolated func receivePlayCompletion(_ userInfo: [String: Any], error: Error?) {
+        guard let play = PlayPayload(dictionary: userInfo) else { return }
+        dispatch { [self] in onPlayTransferFinished?(play) }
     }
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {

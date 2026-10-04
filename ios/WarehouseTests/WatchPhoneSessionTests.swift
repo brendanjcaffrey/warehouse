@@ -50,6 +50,36 @@ struct WatchPhoneSessionTests {
         func cleanUp() { metadata.cleanUp(); content.cleanUp() }
     }
 
+    @Test("play receipts and transfer completions hold background execution through queue persistence", arguments: [false, true])
+    func playCallbacks(transferFails: Bool) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        await env.library.waitForImport()
+        let fileURL = PlayReportQueueTests.tempFileURL()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        let transport = PlayReportQueueTests.Transport()
+        let queue = PlayReportQueueTests.makeQueue(fileURL: fileURL, transport: transport)
+        queue.add(trackId: "t1")
+        let play = try #require(queue.pending.first)
+        var transferCompleted = false
+        env.session.onPlayTransferFinished = { queue.finished($0); transferCompleted = true }
+        env.session.onPlayReceipt = { queue.acknowledge($0) }
+        var persistedAtCompletion = [PlayPayload]()
+        var transferredAtCompletion = false
+        env.hold {
+            persistedAtCompletion = PlayReportQueueTests.plays(onDiskAt: fileURL)
+            transferredAtCompletion = transferCompleted
+        }
+        env.session.receivePlayCompletion(play.encode(), error: transferFails ? CocoaError(.fileWriteUnknown) : nil)
+        env.session.session(WCSession.default, didReceiveUserInfo: PlayReceipt(play).encode())
+        env.delivered()
+        try await env.waitForCompletion()
+        #expect(transferredAtCompletion)
+        #expect(persistedAtCompletion.isEmpty)
+        #expect(queue.pending.isEmpty)
+        #expect(PlayPayload(dictionary: PlayReceipt(play).encode()) == nil)
+    }
+
     @Test("context dispatch holds completion through its asynchronous save and failure", arguments: [false, true])
     func context(saveFails: Bool) async throws {
         let env = try Env()

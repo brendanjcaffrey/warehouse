@@ -10,6 +10,13 @@ import Observation
 final class UpdatesStore {
     private(set) var pending = [PendingUpdate]()
 
+    private struct State: Codable {
+        var pending: [PendingUpdate]
+        var watchPlays: [String: String]
+    }
+
+    private var watchPlays = [String: String]()
+    private let write: (Data, URL) throws -> Void
     private let client: UpdateClient
     private let fileURL: URL
     private let metadata: LibraryMetadata
@@ -29,13 +36,17 @@ final class UpdatesStore {
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
         retryInterval: TimeInterval = 30,
-        fileStore: FileStore = FileStore(rootURL: FileStore.defaultRootURL())
+        fileStore: FileStore = FileStore(rootURL: FileStore.defaultRootURL()),
+        write: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }
     ) {
         client = UpdateClient(session: session, fileStore: fileStore)
         self.fileURL = fileURL
         metadata = LibraryMetadata(defaults: defaults)
         self.retryInterval = retryInterval
-        pending = Self.load(from: fileURL)
+        self.write = write
+        let state = Self.load(from: fileURL)
+        pending = state.pending
+        watchPlays = state.watchPlays
     }
 
     /// remembers where to send updates; call flush afterwards to push
@@ -50,6 +61,26 @@ final class UpdatesStore {
     func addPlay(trackId: String) async {
         add(PendingUpdate(kind: .play, trackId: trackId))
         await flush()
+    }
+
+    /// ownership transfers only after the event id and update share an atomic save.
+    func recordWatchPlay(_ play: PlayPayload) throws {
+        if let trackId = watchPlays[play.id] {
+            guard trackId == play.trackId else { throw CocoaError(.coderInvalidValue) }
+            return
+        }
+        let previous = pending
+        watchPlays[play.id] = play.trackId
+        if metadata.updateTimeNs == 0 || metadata.trackUserChanges {
+            pending.append(PendingUpdate(kind: .play, trackId: play.trackId))
+        }
+        do {
+            try save()
+        } catch {
+            pending = previous
+            watchPlays.removeValue(forKey: play.id)
+            throw error
+        }
     }
 
     /// records edited track fields & tries to push them right away
@@ -86,7 +117,7 @@ final class UpdatesStore {
         retryTask = nil
         defer { scheduleRetry() }
 
-        guard !flushing, let token, let baseURL, !pending.isEmpty else { return }
+        guard persist(), !flushing, let token, let baseURL, !pending.isEmpty else { return }
         // before the first sync there's no way to know whether the server
         // wants user changes, so hold everything until then
         guard metadata.updateTimeNs != 0 else { return }
@@ -134,18 +165,28 @@ final class UpdatesStore {
         }
     }
 
-    private func persist() {
+    @discardableResult
+    private func persist() -> Bool {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(pending).write(to: fileURL, options: .atomic)
+            try save()
+            return true
         } catch {
-            // the updates are still in memory & the next mutation retries the write
+            // do not send new updates until their durable state can be saved.
+            return false
         }
     }
 
-    private static func load(from fileURL: URL) -> [PendingUpdate] {
-        guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        return (try? JSONDecoder().decode([PendingUpdate].self, from: data)) ?? []
+    private func save() throws {
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try write(JSONEncoder().encode(State(pending: pending, watchPlays: watchPlays)), fileURL)
+    }
+
+    private static func load(from fileURL: URL) -> State {
+        guard let data = try? Data(contentsOf: fileURL) else { return State(pending: [], watchPlays: [:]) }
+        if let state = try? JSONDecoder().decode(State.self, from: data) { return state }
+        // older phone installs persisted just the pending array.
+        let pending = (try? JSONDecoder().decode([PendingUpdate].self, from: data)) ?? []
+        return State(pending: pending, watchPlays: [:])
     }
 }

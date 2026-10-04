@@ -42,8 +42,8 @@ struct PlayReportQueueTests {
         queue.add(trackId: "t1")
 
         #expect(transport.sent.map(\.trackId) == ["t1"])
-        #expect(queue.pending.isEmpty)
-        #expect(Self.plays(onDiskAt: fileURL).isEmpty)
+        #expect(queue.pending.map(\.trackId) == transport.sent.map(\.trackId))
+        #expect(Self.plays(onDiskAt: fileURL) == queue.pending)
     }
 
     @Test("plays are held on disk until the session activates")
@@ -74,8 +74,8 @@ struct PlayReportQueueTests {
         queue.drain()
 
         #expect(transport.sent.map(\.trackId) == ["t1", "t2", "t3"])
-        #expect(queue.pending.isEmpty)
-        #expect(Self.plays(onDiskAt: fileURL).isEmpty)
+        #expect(queue.pending.map(\.trackId) == transport.sent.map(\.trackId))
+        #expect(Self.plays(onDiskAt: fileURL) == queue.pending)
     }
 
     @Test("pending plays survive a relaunch")
@@ -111,7 +111,65 @@ struct PlayReportQueueTests {
         relaunched.drain()
 
         #expect(relaunchTransport.sent.map(\.trackId) == ["t2"])
-        #expect(relaunched.pending.isEmpty)
+        #expect(relaunched.pending.map(\.trackId) == ["t1", "t2"])
+    }
+
+    @Test("only a matching durable phone receipt removes a play")
+    func receiptOwnsRemoval() throws {
+        let fileURL = Self.tempFileURL()
+        let transport = Transport()
+        let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
+        queue.add(trackId: "t1")
+        let play = try #require(queue.pending.first)
+        queue.acknowledge(PlayPayload(id: play.id, trackId: "other"))
+        #expect(queue.pending == [play])
+        queue.acknowledge(play)
+        queue.acknowledge(play)
+        #expect(queue.pending.isEmpty)
+        #expect(Self.makeQueue(fileURL: fileURL, transport: Transport()).pending.isEmpty)
+    }
+
+    @Test("terminal transfers and lost receipts retry the same persisted id")
+    func retriesWithoutReceipt() async throws {
+        let fileURL = Self.tempFileURL()
+        let transport = Transport()
+        let queue = PlayReportQueue(fileURL: fileURL, canSend: { true }, outstandingIds: { transport.outstanding },
+                                    send: { transport.sent.append($0) }, retryInterval: 0.02)
+        queue.add(trackId: "t1")
+        let play = try #require(queue.pending.first)
+        transport.outstanding = [play.id]
+        queue.drain()
+        #expect(transport.sent == [play])
+        transport.outstanding = []
+        queue.finished(play)
+        try await PlayerStoreTests.waitFor { transport.sent.count >= 2 }
+        #expect(transport.sent.allSatisfy { $0 == play })
+        #expect(Self.plays(onDiskAt: fileURL) == [play])
+        queue.acknowledge(play)
+    }
+
+    @Test("failed persistence never enqueues or removes an unacknowledged play")
+    func persistenceFailure() throws {
+        let fileURL = Self.tempFileURL()
+        let transport = Transport()
+        var fails = true
+        let queue = PlayReportQueue(fileURL: fileURL, canSend: { true }, outstandingIds: { [] },
+                                    send: { transport.sent.append($0) }, write: { data, url in
+            if fails { throw CocoaError(.fileWriteUnknown) }
+            try data.write(to: url, options: .atomic)
+        })
+        queue.add(trackId: "t1")
+        #expect(transport.sent.isEmpty)
+        fails = false
+        queue.drain()
+        let play = try #require(queue.pending.first)
+        fails = true
+        queue.acknowledge(play)
+        #expect(queue.pending == [play])
+        #expect(Self.makeQueue(fileURL: fileURL, transport: Transport()).pending == [play])
+        fails = false
+        queue.acknowledge(play)
+        #expect(Self.plays(onDiskAt: fileURL).isEmpty)
     }
 
     @Test("a missing or corrupt file loads as an empty queue")

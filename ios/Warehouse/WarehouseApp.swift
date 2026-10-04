@@ -30,6 +30,7 @@ struct WarehouseApp: App {
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         let authStore = AuthStore()
         let updatesStore = UpdatesStore(fileStore: fileStore)
+        updatesStore.configure(token: authStore.token, baseURL: authStore.baseURL())
         let syncStore = SyncStore(database: database, fileStore: fileStore)
         // artwork queued for upload must survive sync's file cleanup
         syncStore.protectedArtworkFilenames = { updatesStore.pendingArtworkFilenames }
@@ -50,8 +51,9 @@ struct WarehouseApp: App {
         let watchSettings = WatchSyncSettingsStore()
         let diagnosticInbox = WatchDiagnosticInbox()
         let watchSession = PhoneWatchSession(
-            onPlay: { trackId in
-                Task { await updatesStore.addPlay(trackId: trackId) }
+            onPlay: { play in
+                try updatesStore.recordWatchPlay(play)
+                Task { await updatesStore.flush() }
             },
             // the watch app opened while the phone is playing acts as a
             // remote for it rather than starting a second stream

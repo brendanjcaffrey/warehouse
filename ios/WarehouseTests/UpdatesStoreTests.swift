@@ -89,7 +89,9 @@ struct UpdatesStoreTests {
 
     static func persisted(at fileURL: URL) -> [PendingUpdate] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        return (try? JSONDecoder().decode([PendingUpdate].self, from: data)) ?? []
+        struct Saved: Decodable { let pending: [PendingUpdate] }
+        return (try? JSONDecoder().decode(Saved.self, from: data).pending)
+            ?? (try? JSONDecoder().decode([PendingUpdate].self, from: data)) ?? []
     }
 
     @Test("a play posts to the server right away & leaves nothing queued")
@@ -348,6 +350,50 @@ struct UpdatesStoreTests {
         #expect(Self.makeEnv(host: "updates-canedit-tracked.test").store.canEditTracks)
         #expect(!Self.makeEnv(host: "updates-canedit-untracked.test", trackUserChanges: false)
             .store.canEditTracks)
+    }
+
+    @Test("watch ids stay deduplicated after phone recreation and downstream removal")
+    func durableWatchOwnership() async throws {
+        let env = Self.makeEnv(host: "updates-watch-owned.test")
+        let play = PlayPayload(trackId: "t1")
+        try env.store.recordWatchPlay(play)
+        try env.store.recordWatchPlay(play)
+        #expect(Self.persisted(at: env.fileURL).count == 1)
+        let relaunched = Self.relaunch(env)
+        try relaunched.recordWatchPlay(play)
+        #expect(relaunched.pending.count == 1)
+        try Self.installHandler(host: env.host)
+        relaunched.configure(token: "tok", baseURL: env.baseURL)
+        await relaunched.flush()
+        #expect(relaunched.pending.isEmpty)
+        let completed = Self.relaunch(env)
+        try completed.recordWatchPlay(play)
+        #expect(completed.pending.isEmpty)
+        #expect(MockURLProtocol.requests(forHost: env.host).count == 1)
+        let next = PlayPayload(trackId: "t1")
+        try completed.recordWatchPlay(next)
+        #expect(completed.pending.count == 1)
+    }
+
+    @Test("phone ownership rolls back on disk failure and retries once access returns")
+    func watchOwnershipFailure() throws {
+        let env = Self.makeEnv(host: "updates-watch-disk.test")
+        var fails = true
+        let store = UpdatesStore(fileURL: env.fileURL, defaults: env.defaults, write: { data, url in
+            if fails { throw CocoaError(.fileWriteUnknown) }
+            try data.write(to: url, options: .atomic)
+        })
+        let play = PlayPayload(trackId: "t1")
+        #expect(throws: (any Error).self) { try store.recordWatchPlay(play) }
+        #expect(store.pending.isEmpty)
+        #expect(Self.relaunch(env).pending.isEmpty)
+        fails = false
+        try store.recordWatchPlay(play)
+        try Self.relaunch(env).recordWatchPlay(play)
+        #expect(Self.persisted(at: env.fileURL).count == 1)
+        #expect(throws: (any Error).self) {
+            try store.recordWatchPlay(PlayPayload(id: play.id, trackId: "other"))
+        }
     }
 
     @Test("a corrupt updates file loads as empty")
