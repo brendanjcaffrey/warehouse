@@ -117,7 +117,7 @@ extension LibraryDatabase {
     }
 
     /// a read of the current phone database, including local edits, with its source identity.
-    func selectedWatchLibrary(ids: [String], identity: String) async throws -> Library {
+    func selectedWatchLibrary(ids: [String], identity: String) async throws -> (library: Library, playlistIDs: [String]) {
         try await container.performBackgroundTask { context in
             try context.setQueryGenerationFrom(.current)
             guard try Self.document("phoneLibraryIdentity", context: context) == Data(identity.utf8) else {
@@ -161,7 +161,22 @@ extension LibraryDatabase {
                         $0.isLibrary = entity.isLibrary; $0.trackIds = entity.trackIds
                     }
                 }
-            return try WatchLibrarySnapshot.selected(library, ids: ids)
+            // only a complete same-source inventory can establish that a playlist was deleted.
+            let availableTracks = Set(library.tracks.map(\.id))
+            let playlists = Dictionary(library.playlists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            guard availableTracks.count == library.tracks.count, !availableTracks.contains(""),
+                  playlists.count == library.playlists.count, playlists[""] == nil else { throw WatchLibraryError.invalid }
+            for playlist in library.playlists {
+                guard Set(playlist.trackIds).isSubset(of: availableTracks) else { throw WatchLibraryError.invalid }
+                var ancestors = Set([playlist.id])
+                var parent = playlist.parentID
+                while !parent.isEmpty {
+                    guard ancestors.insert(parent).inserted, let folder = playlists[parent] else { throw WatchLibraryError.invalid }
+                    parent = folder.parentID
+                }
+            }
+            let selectedIDs = ids.filter { playlists[$0] != nil }
+            return (try WatchLibrarySnapshot.selected(library, ids: selectedIDs), selectedIDs)
         }
     }
 }

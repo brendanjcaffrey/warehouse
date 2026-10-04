@@ -41,10 +41,19 @@ final class WatchSyncSettingsStore {
     }
 
     func setPlaylistIds(_ ids: [String]) {
+        savePlaylistIds(ids, notify: true)
+    }
+
+    /// publication already owns this update; avoid starting another publication from its callback.
+    func reconcilePlaylistIds(_ ids: [String]) {
+        savePlaylistIds(ids, notify: false)
+    }
+
+    private func savePlaylistIds(_ ids: [String], notify: Bool) {
         guard Set(ids) != Set(playlistIds) else { return }
         playlistIds = Array(Set(ids)).sorted()
         defaults.set(playlistIds, forKey: Self.playlistIdsKey)
-        onChange()
+        if notify { onChange() }
     }
 
 }

@@ -25,6 +25,7 @@ final class PhoneWatchLibraryPublisher {
     private(set) var errorMessage: String?
 
     var onSnapshot: (WatchLibraryHead, WatchLibrarySnapshot?) -> Void = { _, _ in }
+    var onSelectionReconciled: ([String]) -> Void = { _ in }
 
     var head: WatchLibraryHead { saved.head }
 
@@ -64,16 +65,16 @@ final class PhoneWatchLibraryPublisher {
                 }
                 try? transport.context(saved.head)
                 guard let identity else { errorMessage = nil; return }
-                let library = try await database.selectedWatchLibrary(ids: playlistIDs, identity: identity)
+                let selection = try await database.selectedWatchLibrary(ids: playlistIDs, identity: identity)
                 guard generation == request else { return }
                 var options = BinaryEncodingOptions()
                 options.useDeterministicOrdering = true
-                let data = try library.serializedData(options: options)
-                if saved.libraryData != data || !saved.head.metadataReady {
+                let data = try selection.library.serializedData(options: options)
+                if saved.libraryData != data || !saved.head.metadataReady || saved.head.playlistIDs != selection.playlistIDs {
                     var head = saved.head
-                    if head.metadataReady {
+                    if head.metadataReady || head.playlistIDs != selection.playlistIDs {
                         head = .init(publisher: head.publisher, revision: head.revision + 1,
-                                     libraryID: identity, playlistIDs: playlistIDs)
+                                     libraryID: identity, playlistIDs: selection.playlistIDs)
                     }
                     head.metadataReady = true
                     head.failed = nil
@@ -83,6 +84,7 @@ final class PhoneWatchLibraryPublisher {
                 }
                 preparing = false
                 errorMessage = nil
+                onSelectionReconciled(selection.playlistIDs)
                 try deliver()
                 onSnapshot(saved.head, saved.libraryData.map { WatchLibrarySnapshot(head: saved.head, libraryData: $0) })
             } catch {

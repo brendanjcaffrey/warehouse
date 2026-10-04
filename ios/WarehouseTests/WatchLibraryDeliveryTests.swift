@@ -395,7 +395,7 @@ struct WatchLibraryDeliveryTests {
         await #expect(throws: FileStore.FilenameError.self) { _ = try await env.watch.importWatchLibrary(traversal) }
         #expect(try await env.watch.trackCount() == 0)
     }
-    @Test("selection changes and local metadata edits publish new snapshots while missing selections fail safely")
+    @Test("selection changes and local metadata edits publish new snapshots while invalid selections fail safely")
     func updatedContent() async throws {
         let env = try Env()
         defer { env.cleanUp() }
@@ -418,7 +418,7 @@ struct WatchLibraryDeliveryTests {
         #expect(song.name == "Something" && song.artistName == "George Harrison" && song.rating == 80)
         #expect(try receiver.snapshot?.artwork == ["a1.jpg", "updated.jpg"])
         let accepted = receiver.snapshot
-        publisher.publish(identity: "account", playlistIDs: ["deleted-playlist"])
+        publisher.publish(identity: "account", playlistIDs: ["folder"])
         await publisher.waitForPublication()
         #expect(publisher.head.failed == true && env.deliveries.count == 2)
         receiver.expect(publisher.head)

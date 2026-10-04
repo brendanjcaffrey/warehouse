@@ -119,6 +119,9 @@ private struct WatchPlaylistSelectionView: View {
                 }
             }
             .navigationTitle("Selected Playlists")
+            .onChange(of: settings.playlistIds) { old, new in
+                selectedIds.subtract(Set(old).subtracting(new))
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

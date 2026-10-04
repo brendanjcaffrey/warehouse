@@ -108,6 +108,7 @@ struct WarehouseApp: App {
                 WCSession.default.transferFile(url, metadata: ["kind": "watchLibrarySnapshot", "watchLibraryKey": key])
             }))
         publisher?.onSnapshot = { head, snapshot in content?.update(head: head, snapshot: snapshot) }
+        publisher?.onSelectionReconciled = { watchSettings.reconcilePlaylistIds($0) }
         watchSession.publishLibrary = {
             try? content?.invalidate(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
                                      playlistIDs: watchSettings.playlistIds)
