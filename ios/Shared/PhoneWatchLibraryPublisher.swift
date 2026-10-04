@@ -17,6 +17,8 @@ final class PhoneWatchLibraryPublisher {
 
     private let diagnostics: WatchDiagnostics
     private let database: LibraryDatabase
+    private let state: WatchDeliveryState
+    let recoveredState: Bool
     private let directory: URL
     private let transport: Transport
     private var saved: Saved
@@ -29,17 +31,17 @@ final class PhoneWatchLibraryPublisher {
 
     var head: WatchLibraryHead { saved.head }
 
-    init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport, diagnostics: WatchDiagnostics? = nil) throws {
+    init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport, diagnostics: WatchDiagnostics? = nil, state: WatchDeliveryState = .init()) throws {
         self.diagnostics = diagnostics ?? .shared
         self.database = database
+        self.state = state
         self.directory = directory
         self.transport = transport
         let stateURL = directory.appending(path: "state.json")
-        if FileManager.default.fileExists(atPath: stateURL.path) {
-            saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: stateURL))
-        } else {
-            saved = Saved(head: .init(publisher: UUID(), revision: 1, libraryID: nil, playlistIDs: []), libraryData: nil)
-        }
+        let loaded = try state.load(Saved.self, from: stateURL,
+                                    empty: Saved(head: .init(publisher: UUID(), revision: 1, libraryID: nil, playlistIDs: []), libraryData: nil))
+        saved = loaded.value
+        recoveredState = loaded.repaired
         try persist(saved)
     }
 
@@ -105,8 +107,7 @@ final class PhoneWatchLibraryPublisher {
     func waitForPublication() async { await runner?.value }
 
     private func persist(_ next: Saved) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(next).write(to: directory.appending(path: "state.json"), options: .atomic)
+        try state.save(next, to: directory.appending(path: "state.json"))
         saved = next
         // invalidate obsolete content immediately, but queue metadata before starting its files.
         if next.libraryData == nil { onSnapshot(next.head, nil) }
@@ -118,7 +119,7 @@ final class PhoneWatchLibraryPublisher {
         let key = Self.key(saved.head)
         let outstanding = transport.outstanding()
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            where url.lastPathComponent != "state.json" && url.lastPathComponent != "\(key).json"
+            where url.pathExtension == "json" && url.lastPathComponent != "state.json" && url.lastPathComponent != "\(key).json"
                 && !outstanding.contains(url.deletingPathExtension().lastPathComponent) {
             try FileManager.default.removeItem(at: url)
         }

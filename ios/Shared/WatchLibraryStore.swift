@@ -20,6 +20,8 @@ final class WatchLibraryStore {
     private let metadata: LibraryMetadata
     private let receiver: WatchLibraryReceiver?
     var content: WatchContentReceiver?
+    var deliveryStartupError: String?
+    var deliveryRecovered = false
 
     init(songs: SongsStore, playlists: PlaylistsStore, defaults: UserDefaults = .standard, receiver: WatchLibraryReceiver? = nil,
          content: WatchContentReceiver? = nil) {
@@ -34,6 +36,7 @@ final class WatchLibraryStore {
         var progress = content?.progress(playlistID: playlistID) ?? WatchLibraryProgress(state: .setup)
         if receiver?.refreshFailed == true { progress.state = .refreshFailed }
         if receiver?.waitingForUpdate == true && progress.state != .refreshFailed { progress.state = .preparing }
+        if deliveryStartupError != nil { progress.state = .deliveryUnavailable }
         return progress
     }
 

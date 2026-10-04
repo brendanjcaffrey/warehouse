@@ -4,7 +4,7 @@ import SwiftUI
 /// one presentation boundary for phone receipts and the watch's actual stored music.
 struct WatchLibraryProgress: Codable, Equatable {
     enum State: String, Codable, Equatable {
-        case preparing, waiting, needsPhoneSync, storageFull, failed, ready, empty, setup, refreshFailed
+        case preparing, waiting, needsPhoneSync, storageFull, failed, ready, empty, setup, refreshFailed, deliveryUnavailable
     }
 
     struct Counts: Codable, Equatable {
@@ -40,6 +40,7 @@ struct WatchLibraryProgress: Codable, Equatable {
         case .empty: "No songs selected"
         case .setup: "Set up on iPhone"
         case .refreshFailed: "Library refresh failed"
+        case .deliveryUnavailable: "Delivery unavailable"
         }
     }
 
@@ -54,6 +55,7 @@ struct WatchLibraryProgress: Codable, Equatable {
         case .empty: "Choose playlists in the iPhone app's Apple Watch settings."
         case .setup: "Sign in and sync the library on iPhone, then select Apple Watch playlists."
         case .refreshFailed: "Saved music remains available. Sync the library on iPhone to try again."
+        case .deliveryUnavailable: "Delivery could not start. Retry delivery to recover it. Downloaded music remains available."
         }
     }
 

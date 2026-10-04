@@ -23,6 +23,7 @@ struct WarehouseApp: App {
     private let playbackState = PlaybackStateStore()
     private let intents: IntentPlaybackService
     private let watchSession: PhoneWatchSession
+    private let watchServices: PhoneWatchLibraryServices
 
     init() {
         let database = LibraryDatabase(inMemory: UITestSupport.enabled)
@@ -60,7 +61,7 @@ struct WarehouseApp: App {
             nowPlaying: { RemotePlaybackPayload(player: playerStore) },
             onCommand: { playerStore.apply($0) },
             diagnosticInbox: diagnosticInbox)
-        let content = try? PhoneWatchContentQueue(fileStore: fileStore, transport: .init(
+        let contentTransport = PhoneWatchContentQueue.Transport(
             available: { WCSession.isSupported() && WCSession.default.activationState == .activated && WCSession.default.isWatchAppInstalled },
             outstanding: {
                 WCSession.default.outstandingFileTransfers.compactMap {
@@ -95,10 +96,8 @@ struct WarehouseApp: App {
                 if outstanding.contains(where: { WatchInventoryRequest(dictionary: $0.userInfo) == request }) { return }
                 outstanding.forEach { $0.cancel() }
                 WCSession.default.transferUserInfo(info)
-            }))
-        watchSession.content = content
-        watchSettings.content = content
-        let publisher = try? PhoneWatchLibraryPublisher(database: database, transport: .init(
+            })
+        let metadataTransport = PhoneWatchLibraryPublisher.Transport(
             context: { head in
                 guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
                     throw WatchLibraryError.notLoaded
@@ -108,14 +107,19 @@ struct WarehouseApp: App {
                 Set(WCSession.default.outstandingFileTransfers.compactMap { $0.file.metadata?["watchLibraryKey"] as? String })
             }, enqueue: { url, key in
                 WCSession.default.transferFile(url, metadata: ["kind": "watchLibrarySnapshot", "watchLibraryKey": key])
-            }))
-        publisher?.onSnapshot = { head, snapshot in content?.update(head: head, snapshot: snapshot) }
-        publisher?.onSelectionReconciled = { watchSettings.reconcilePlaylistIds($0) }
+            })
+        let watchServices = PhoneWatchLibraryServices(settings: watchSettings, makeContent: { repairs in
+            try PhoneWatchContentQueue(fileStore: fileStore, transport: contentTransport,
+                                       state: .init(repairsDamage: repairs))
+        }, makePublisher: { repairs in
+            try PhoneWatchLibraryPublisher(database: database, transport: metadataTransport,
+                                           state: .init(repairsDamage: repairs))
+        })
+        watchServices.onContentChanged = { [weak watchServices, weak watchSession] in watchSession?.content = watchServices?.content }
+        watchServices.onContentChanged()
+        self.watchServices = watchServices
         watchSession.publishLibrary = {
-            try? content?.invalidate(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
-                                     playlistIDs: watchSettings.playlistIds)
-            publisher?.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
-                               playlistIDs: watchSettings.playlistIds)
+            watchServices.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()))
         }
         syncStore.onLibrarySaved = {
             watchSession.publishLibrary?()

@@ -33,6 +33,10 @@ struct WatchRootView: View {
                         VStack(spacing: 12) {
                             startupContent
                                 .fixedSize(horizontal: false, vertical: true)
+                            if library.deliveryStartupError != nil {
+                                WatchLibraryProgressView(progress: library.progress())
+                                Button("Retry Delivery") { Task { await refresh() } }
+                            }
                             if presentation.showsLocalNowPlaying {
                                 NavigationLink {
                                     WatchNowPlayingView()

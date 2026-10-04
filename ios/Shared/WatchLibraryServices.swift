@@ -18,6 +18,7 @@ final class WatchLibraryServices {
     var now: () -> Date = { Date() }
     private let contentDirectory: URL
     private let sendReceipt: (WatchContentReceipt) -> Void
+    private let contentState: WatchDeliveryState
 
     init(
         database: LibraryDatabase, fileStore: FileStore, defaults: UserDefaults = .standard,
@@ -26,11 +27,13 @@ final class WatchLibraryServices {
         client: LibraryClient = LibraryClient(),
         sendReceipt: @escaping (WatchContentReceipt) -> Void = { _ in },
         onTrackPlayed: @escaping @MainActor (PlayPayload) -> Void = { _ in },
-        onPlaybackRequested: @escaping @MainActor () -> Void = {}
+        onPlaybackRequested: @escaping @MainActor () -> Void = {},
+        contentState: WatchDeliveryState = .init()
     ) {
         // discard old watch credentials without changing saved library metadata or files.
         for key in ["serverURL", "deepPrefetchDepth", "fileGeneration"] { defaults.removeObject(forKey: key) }
         self.contentDirectory = contentDirectory
+        self.contentState = contentState
         self.sendReceipt = sendReceipt
         fileCache = FileCache(fileStore: fileStore)
         migration = OfflineLibrary(fileCache: fileCache)
@@ -55,16 +58,20 @@ final class WatchLibraryServices {
         restoreContent()
     }
 
-    private func restoreContent() {
+    private func restoreContent(repairsDamage: Bool = false) {
         guard content == nil else { return }
         do {
+            var state = contentState
+            state.repairsDamage = repairsDamage
             content = try WatchContentReceiver(fileCache: fileCache, directory: contentDirectory,
                                                 availableBytes: { [weak self] in self?.availableBytes() }, send: sendReceipt,
-                                                now: { [weak self] in self?.now() ?? Date() })
+                                                now: { [weak self] in self?.now() ?? Date() }, state: state)
             library.content = content
+            library.deliveryStartupError = nil
+            if content?.recoveredState == true { library.deliveryRecovered = true }
             onContentChanged()
         } catch {
-            receiver.failed(error)
+            library.deliveryStartupError = error.localizedDescription
         }
     }
 
@@ -79,6 +86,7 @@ final class WatchLibraryServices {
     }
 
     func refresh() async {
+        restoreContent(repairsDamage: true)
         receiver.resume()
         await launch()
         content?.resume()

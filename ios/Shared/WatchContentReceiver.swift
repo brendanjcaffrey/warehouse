@@ -12,6 +12,8 @@ final class WatchContentReceiver {
     private let send: (WatchContentReceipt) -> Void
     private let beforeCommit: () throws -> Void
     private let now: () -> Date
+    private let state: WatchDeliveryState
+    let recoveredState: Bool
     private let beforeReceipt: () throws -> Void
     private var head: WatchLibraryHead?
     private var pendingHead: WatchLibraryHead?
@@ -28,7 +30,8 @@ final class WatchContentReceiver {
     init(fileCache: FileCache, directory: URL = defaultDirectory(),
          availableBytes: @escaping () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
-         beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil) throws {
+         beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil,
+         state: WatchDeliveryState = .init()) throws {
         self.diagnostics = diagnostics ?? .shared
         inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory, diagnostics: diagnostics ?? .shared, now: now)
         self.fileCache = fileCache
@@ -38,11 +41,14 @@ final class WatchContentReceiver {
         self.beforeCommit = beforeCommit
         self.beforeReceipt = beforeReceipt
         self.now = now
+        self.state = state
         let reportsURL = directory.appending(path: "phone-progress.json")
         reports = (try? JSONDecoder().decode([WatchLibraryDeliveryReport].self, from: Data(contentsOf: reportsURL))) ?? []
         let url = directory.appending(path: "receipts.json")
-        receipts = FileManager.default.fileExists(atPath: url.path)
-            ? try JSONDecoder().decode([WatchContentReceipt].self, from: Data(contentsOf: url)) : []
+        let loaded = try state.load([WatchContentReceipt].self, from: url, empty: [])
+        receipts = loaded.value
+        recoveredState = loaded.repaired
+        if loaded.repaired { try state.save(receipts, to: url) }
         fileCache.onFilesReleased = { [weak self] in
             Task { @MainActor [weak self] in self?.resume() }
         }
@@ -254,7 +260,7 @@ final class WatchContentReceiver {
     private func saveReceipts(_ next: [WatchContentReceipt]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try beforeReceipt()
-        try JSONEncoder().encode(next).write(to: directory.appending(path: "receipts.json"), options: .atomic)
+        try state.save(next, to: directory.appending(path: "receipts.json"))
         receipts = next
     }
 

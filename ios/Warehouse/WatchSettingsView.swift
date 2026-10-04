@@ -17,6 +17,15 @@ struct WatchSettingsView: View {
         List {
             Section("Downloads on Apple Watch") {
                 WatchLibraryProgressView(progress: settings.progress())
+                if settings.deliveryStartupError != nil {
+                    Button("Retry Delivery", action: settings.onRetryDelivery)
+                        .accessibilityIdentifier("watch-retry-delivery")
+                }
+                if settings.deliveryRecovered {
+                    Text("Delivery recovered. Saved playlists were preserved; download status will update after verification.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 Text("Counts show the last download status reported by the watch. Updates may be delayed while disconnected.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

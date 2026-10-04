@@ -12,3 +12,5 @@
 - **Watch inventory reconciliation**: A durable exchange, with fresh scans limited to once every 24 hours, that rechecks the presence and size of previously acknowledged selected files on the watch. Missing files revoke the phone's old delivery acknowledgment and request repair; inventory alone cannot establish a new verified delivery.
 - **Watch play receipt**: A phone acknowledgment sent after a watch play event and its pending update are saved atomically. The watch retains the event until this receipt arrives; system transfer completion does not establish phone ownership.
 - **Play source identity**: The opaque server-and-account identity stored with committed song metadata and copied into its playback queue row and completed play event. It survives credential, control-head and metadata replacement. Only matching credentials and saved export policy authorize sending an update. _Avoid_: current account, latest watch head.
+
+- **Delivery unavailable**: A phone or watch delivery service could not initialize its saved state. Retry Delivery retries access and can recover a damaged delivery journal; downloaded music remains usable.

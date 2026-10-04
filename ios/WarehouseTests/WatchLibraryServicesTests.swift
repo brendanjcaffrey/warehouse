@@ -168,11 +168,20 @@ struct WatchLibraryServicesTests {
                                            metadataDirectory: env.root.appending(path: "metadata"), contentDirectory: inbox)
         await services.launch()
         #expect(services.content == nil)
+        #expect(services.library.progress().state == .deliveryUnavailable)
         #expect(services.library.state == .ready)
         #expect(env.files.exists(.music, "local.wav"))
-        try FileManager.default.removeItem(at: ledger)
+        services.player.play(services.songs.songs, token: "", baseURL: nil)
+        defer { services.player.pause() }
+        try await PlayerStoreTests.waitFor { services.player.hasLoadedTrack }
+        #expect(services.player.currentItemURL?.isFileURL == true)
         await services.refresh()
         #expect(services.content != nil)
+        #expect(services.library.deliveryStartupError == nil && services.library.deliveryRecovered)
+        #expect(services.library.progress().state != .deliveryUnavailable)
         #expect(services.library.state == .ready)
+        #expect(services.player.hasLoadedTrack && env.files.exists(.music, "local.wav"))
+        let archives = try FileManager.default.contentsOfDirectory(at: inbox.appending(path: "recovery"), includingPropertiesForKeys: nil)
+        #expect(try Data(contentsOf: #require(archives.first)) == Data("broken".utf8))
     }
 }

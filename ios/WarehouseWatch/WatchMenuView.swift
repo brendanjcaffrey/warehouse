@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WatchMenuView: View {
+    @Environment(\.watchLibraryRefresh) private var refresh
     @Environment(WatchLibraryStore.self) private var library
     @Environment(SongsStore.self) private var songs
     @Environment(PlaylistsStore.self) private var playlists
@@ -53,6 +54,13 @@ struct WatchMenuView: View {
             }
             Section("Downloads") {
                 WatchLibraryProgressView(progress: library.progress())
+                if library.deliveryStartupError != nil {
+                    Button("Retry Delivery") { Task { await refresh() } }
+                }
+                if library.deliveryRecovered {
+                    Text("Delivery recovered. Saved music remains available.")
+                        .font(.footnote)
+                }
             }
         }
     }

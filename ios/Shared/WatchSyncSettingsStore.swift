@@ -6,8 +6,12 @@ import Observation
 @Observable
 final class WatchSyncSettingsStore {
     var content: PhoneWatchContentQueue?
+    var deliveryStartupError: String?
+    var deliveryRecovered = false
+    @ObservationIgnored var onRetryDelivery: () -> Void = {}
 
     func progress(playlistID: String? = nil) -> WatchLibraryProgress {
+        if deliveryStartupError != nil { return WatchLibraryProgress(state: .deliveryUnavailable) }
         guard !playlistIds.isEmpty else { return WatchLibraryProgress(state: .empty) }
         return content?.progress(playlistID: playlistID) ?? WatchLibraryProgress(state: .preparing)
     }
