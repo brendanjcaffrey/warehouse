@@ -764,7 +764,8 @@ final class PlayerStore {
     /// rather than off the front of the reach, since refreshInUse asks for it
     /// on every change to the fetch in flight & the reach can be long
     private var prefetchWindow: [String] {
-        prefetchNames(depth: min(deepPrefetchDepth, Self.protectionDepth - 1))
+        guard !downloadedOnly else { return [] }
+        return prefetchNames(depth: min(deepPrefetchDepth, Self.protectionDepth - 1))
     }
 
     private func prefetchNames(depth: Int) -> [String] {
@@ -1353,6 +1354,9 @@ final class PlayerStore {
     /// play queue says comes next. this is the only kind of pulling ahead that
     /// works mid-workout: the loading is the daemon's, not ours
     private func reconcileNextItem() {
+        // release obsolete files even when no replacement can be enqueued.
+        // cache callbacks must see the final slot, including any replacement.
+        defer { refreshInUse() }
         let target = nextEnqueueEntry
         // a stream in the slot is only what there was to point it at when it
         // was filled. the prefetch running behind it lands the file part way
@@ -1375,8 +1379,6 @@ final class PlayerStore {
             entryID: target.id, songID: target.song.id, filename: target.song.musicFilename,
             item: item, streaming: streaming)
         observeNextItemStatus(of: item)
-        // an enqueued file is a file that is queued to play
-        refreshInUse()
     }
 
     /// the queue row the slot behind the current track should be holding, or
@@ -1440,6 +1442,7 @@ final class PlayerStore {
                     "enqueued item failed for \(next.filename, privacy: .public): \(reason, privacy: .public)")
                 self.failedNextEntryID = next.entryID
                 self.removeNextItem()
+                self.refreshInUse()
             }
         }
     }

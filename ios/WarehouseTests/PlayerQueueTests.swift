@@ -316,4 +316,104 @@ struct PlayerQueueTests {
         #expect(cache.evict().map(\.filename) == ["4.wav"])
         #expect(store.exists(.music, "2.wav"))
     }
+
+    @Test("repeat one releases deselected next music while preserving the current song and cover", arguments: [false, true])
+    @MainActor
+    func repeatOneReleasesDeselectedNextItem(paused: Bool) async throws {
+        let store = FileCacheTests.makeStore()
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        try Self.cacheSongs(store, ["1", "2"])
+        try store.write(.artwork, "cover.jpg", data: Data("cover".utf8))
+        let cache = FileCache(fileStore: store)
+        let player = PlayerStore(fileStore: store, fileCache: cache, musicPolicy: .downloadedOnly,
+                                 activateSessionForTests: { true })
+        defer { player.pause() }
+        cache.onMusicChanged = { [weak player] in player?.downloadsChanged() }
+        player.play([Helpers.song(id: "1", artwork: "cover.jpg"), Helpers.song(id: "2")], token: nil, baseURL: nil)
+        try await Helpers.waitFor { player.nextItemURL != nil }
+        if paused { player.pause() }
+        try cache.adoptWatchSelection(music: ["1.wav"], artwork: [])
+        #expect(cache.isMusicInUse("2.wav"))
+        #expect(store.exists(.music, "2.wav"))
+
+        player.setRepeatMode(.one)
+
+        #expect(player.nextItemURL == nil)
+        #expect(!cache.isMusicInUse("2.wav"))
+        #expect(!store.exists(.music, "2.wav"))
+        #expect(player.currentItemURL == store.fileURL(.music, "1.wav"))
+        #expect(player.isPlaying == !paused)
+        #expect(cache.isMusicInUse("1.wav"))
+        #expect(cache.isInUse(.artwork, "cover.jpg"))
+        #expect(store.exists(.music, "1.wav"))
+        #expect(store.exists(.artwork, "cover.jpg"))
+    }
+
+    @Test("reordering to a missing file releases the old next item without a replacement")
+    @MainActor
+    func missingReplacementReleasesNextItem() async throws {
+        let store = FileCacheTests.makeStore()
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        try Self.cacheSongs(store, ["1", "2", "3"])
+        let cache = FileCache(fileStore: store)
+        let player = PlayerStore(fileStore: store, fileCache: cache, musicPolicy: .downloadedOnly,
+                                 activateSessionForTests: { true })
+        defer { player.pause() }
+        player.play(Helpers.songs(3), token: nil, baseURL: nil)
+        try await Helpers.waitFor { player.nextItemURL != nil }
+        player.pause()
+        try store.delete(.music, "3.wav")
+
+        player.moveUpcoming(fromOffsets: IndexSet(integer: 1), toOffset: 0)
+
+        #expect(player.nextItemURL == nil)
+        #expect(!cache.isMusicInUse("2.wav"))
+        #expect(cache.isMusicInUse("1.wav"))
+        #expect(player.currentItemURL == store.fileURL(.music, "1.wav"))
+        #expect(!player.isPlaying)
+    }
+
+    @Test("a failed cached next item releases its file without interrupting the current track")
+    @MainActor
+    func failedCachedNextItemReleasesProtection() async throws {
+        let store = FileCacheTests.makeStore()
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        try Self.cacheSongs(store, ["1"])
+        try store.write(.music, "2.wav", data: Data("not audio".utf8))
+        let cache = FileCache(fileStore: store)
+        let player = PlayerStore(fileStore: store, fileCache: cache, musicPolicy: .downloadedOnly,
+                                 activateSessionForTests: { true })
+        defer { player.pause() }
+        player.play(Helpers.songs(2), token: nil, baseURL: nil)
+        try await Helpers.waitFor { player.hasLoadedTrack && player.nextItemURL == nil }
+
+        #expect(!cache.isMusicInUse("2.wav"))
+        #expect(cache.isMusicInUse("1.wav"))
+        #expect(player.currentItemURL == store.fileURL(.music, "1.wav"))
+        #expect(player.isPlaying)
+        #expect(player.status == .ready)
+    }
+
+    @Test("removing a next item sharing the current file keeps that file protected")
+    @MainActor
+    func sharedCurrentFileStaysProtected() async throws {
+        let store = FileCacheTests.makeStore()
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        try Self.cacheSongs(store, ["1"])
+        let cache = FileCache(fileStore: store)
+        let player = PlayerStore(fileStore: store, fileCache: cache, musicPolicy: .downloadedOnly,
+                                 activateSessionForTests: { true })
+        defer { player.pause() }
+        player.play([Helpers.song(id: "1"), Helpers.song(id: "1")], token: nil, baseURL: nil)
+        try await Helpers.waitFor { player.nextItemURL != nil }
+        player.pause()
+        try cache.adoptWatchSelection(music: [], artwork: [])
+
+        player.setRepeatMode(.one)
+
+        #expect(player.nextItemURL == nil)
+        #expect(cache.isMusicInUse("1.wav"))
+        #expect(store.exists(.music, "1.wav"))
+        #expect(player.currentItemURL == store.fileURL(.music, "1.wav"))
+    }
 }
