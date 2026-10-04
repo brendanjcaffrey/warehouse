@@ -408,9 +408,12 @@ namespace :ios do
   desc 'run the iOS unit tests (override the sim with SIMULATOR=...)'
   task :test do
     simulator = ENV.fetch('SIMULATOR', SIMULATOR)
+    # unrelated suites share the main actor; keep the playback latency gate
+    # free of contention from other test fixtures.
     sh "xcodebuild test -project #{ROOT}/ios/Warehouse.xcodeproj " \
        '-scheme Warehouse ' \
        "-destination 'platform=iOS Simulator,name=#{simulator}' " \
+       '-parallel-testing-enabled NO ' \
        '-only-testing:WarehouseTests'
   end
 

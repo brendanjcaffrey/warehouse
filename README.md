@@ -230,7 +230,9 @@ Useful tasks:
   playwright chromium).
 - `rake ios:build` — build the iOS app for the simulator.
 - `rake ios:test` / `rake ios:uitest` — run the iOS unit and UI tests (override
-  the simulator with `SIMULATOR=...`).
+  the simulator with `SIMULATOR=...`). Unit tests run serially so unrelated
+  fixtures do not interfere with the 100 ms playback command latency gate.
+  Tests still exercise concurrent content workers and playback commands.
 - `rake ios:testflight` — archive the iOS app and upload it to TestFlight (see
   the task's comments in the `Rakefile` for the required App Store Connect key).
 - `rake checks` — run the Ruby and web linting and formatting checks.
