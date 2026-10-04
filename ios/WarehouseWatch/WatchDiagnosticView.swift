@@ -58,10 +58,14 @@ struct WatchDiagnosticView: View {
         guard let report else { return }
         sending = true
         result = nil
-        sender?.sendDiagnostics(report) { saved in
+        sender?.sendDiagnostics(report) { outcome in
             sending = false
-            result = saved ? "Saved on iPhone. Open Settings → Apple Watch to share."
-                           : "Couldn’t send. The capture remains here; try again near your iPhone."
+            switch outcome {
+            case .success:
+                result = "Saved on iPhone. Open Settings → Apple Watch to share."
+            case .failure(let error):
+                result = "\(error.message) The capture remains here."
+            }
         }
         if sender == nil {
             sending = false

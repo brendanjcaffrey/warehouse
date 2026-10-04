@@ -4,7 +4,7 @@ The iPhone app embeds WarehouseWatch. Install the same TestFlight build on the p
 
 1. Save previous captures, then on the watch open **Diagnostics → Start New Capture**. The watch clears its events, cumulative totals and capture identity. Phone totals use their own capture window; save a baseline with **Settings → Apple Watch → Diagnostics → Save iPhone Capture**.
 2. Select playlists on the phone and observe automatic delivery. Normal phone sync supplies missing phone music/artwork. Delivery remains eligible with apps closed or devices off charger, subject to system scheduling. Playback uses downloaded watch music.
-3. On the watch refresh Diagnostics and tap **Send to iPhone**. The live message requires a reachable phone. Success means the phone saved paired watch and phone JSON reports with a shared `pairID`; failed sends leave the watch capture intact.
+3. On the watch refresh Diagnostics and tap **Send to iPhone**. Live messages require an active connection to the phone. Large captures travel in small acknowledged pieces; the phone saves only the complete report. Success means the phone saved paired watch and phone JSON reports with a shared `pairID`; failed sends leave the watch capture intact. Failures distinguish report preparation, phone saving and Watch Connectivity error codes. Update both apps before sending a large capture.
 4. On the iPhone open the Apple Watch playlist/download settings and share both files in **Diagnostics**. Each send creates separate files; **Save iPhone Capture** also works without a reachable watch.
 5. Record elapsed time, device state and count/byte deltas. Follow [the paired capture guide](WatchDiagnosticsCapture.md) for interpreting phases, unknown sizes, ring truncation and storage/retry state.
 

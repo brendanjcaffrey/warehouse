@@ -17,7 +17,7 @@ final class WatchPhoneSession: NSObject {
     private nonisolated let metadataDirectory: URL
     private let sessionState: @MainActor () -> (activated: Bool, contentPending: Bool)
     private var contentObservation: NSKeyValueObservation?
-    private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void
+    private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Result<Data, Error>) -> Void) -> Void
     private let remoteReachable: @MainActor () -> Bool
     private let sendRemoteMessage: ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void
 
@@ -40,15 +40,15 @@ final class WatchPhoneSession: NSObject {
         sendRemoteMessage: @escaping ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void = { message, reply, failure in
             WCSession.default.sendMessage(message, replyHandler: reply, errorHandler: { _ in failure() })
         },
-        sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void = { data, completion in
+        sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Result<Data, Error>) -> Void) -> Void = { data, completion in
             guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
-                completion(false)
+                completion(.failure(NSError(domain: WCErrorDomain, code: WCError.Code.sessionNotActivated.rawValue)))
                 return
             }
             WCSession.default.sendMessageData(data, replyHandler: { reply in
-                Task { @MainActor in completion(reply == Data("saved".utf8)) }
-            }, errorHandler: { _ in
-                Task { @MainActor in completion(false) }
+                Task { @MainActor in completion(.success(reply)) }
+            }, errorHandler: { error in
+                Task { @MainActor in completion(.failure(error)) }
             })
         }
     ) {
@@ -66,9 +66,29 @@ final class WatchPhoneSession: NSObject {
         WatchDiagnostics.shared.report(deviceModel: deviceModel, systemVersion: systemVersion, delivery: content?.diagnosticState())
     }
 
-    func sendDiagnostics(_ report: WatchDiagnosticReport, completion: @escaping @MainActor (Bool) -> Void) {
-        guard let data = report.encoded() else { completion(false); return }
-        sendDiagnosticData(data, completion)
+    func sendDiagnostics(_ report: WatchDiagnosticReport, completion: @escaping @MainActor (Result<Void, WatchDiagnosticSendError>) -> Void) {
+        guard let data = report.encoded() else { completion(.failure(.encoding)); return }
+        do {
+            let messages = try WatchDiagnosticMessage.messages(data)
+            sendDiagnosticMessages(messages[...], completion: completion)
+        } catch {
+            completion(.failure(.reportTooLarge))
+        }
+    }
+
+    private func sendDiagnosticMessages(_ messages: ArraySlice<Data>, completion: @escaping @MainActor (Result<Void, WatchDiagnosticSendError>) -> Void) {
+        guard let data = messages.first else { completion(.success(())); return }
+        sendDiagnosticData(data) { [self] result in
+            switch result {
+            case .failure(let error):
+                let error = error as NSError
+                completion(.failure(.connectivity(code: error.domain == WCErrorDomain ? error.code : nil)))
+            case .success(let reply):
+                let expected = messages.count == 1 ? WatchDiagnosticMessage.saved : WatchDiagnosticMessage.more
+                guard reply == expected else { completion(.failure(.phoneRejected)); return }
+                sendDiagnosticMessages(messages.dropFirst(), completion: completion)
+            }
+        }
     }
 
     func activate() {

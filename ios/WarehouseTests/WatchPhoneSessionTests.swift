@@ -6,6 +6,71 @@ import WatchConnectivity
 @Suite("watch connectivity background dispatch", .serialized)
 @MainActor
 struct WatchPhoneSessionTests {
+    @Test("empty and full delivery captures reach the phone within the live message budget", arguments: [0, 512])
+    func sendsFullDiagnosticCapture(eventCount: Int) async throws {
+        let env = try WatchLibraryDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let library = env.receiver()
+        await library.waitForImport()
+        let inbox = WatchDiagnosticInbox(directory: env.root.appending(path: "reports"))
+        let phone = PhoneWatchSession(onPlay: { _ in }, diagnosticInbox: inbox)
+        let capture = WatchDiagnostics(logEvents: false)
+        let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "account", playlistIDs: [])
+        for index in 0..<eventCount {
+            let file = WatchContentFile(head: head, type: .music, filename: "m\(index).mp3", bytes: 42, digest: "digest")
+            capture.delivery(.contentCommitted, file: file, source: .cache)
+        }
+        let report = capture.report(deviceModel: "watch", systemVersion: "26")
+        let session = WatchPhoneSession(library: library, sendDiagnosticData: { data, completion in
+            #expect(data.count <= 65_536, "live diagnostic message has \(data.count) bytes")
+            guard data.count <= 65_536 else {
+                completion(.failure(NSError(domain: WCErrorDomain, code: WCError.Code.payloadTooLarge.rawValue)))
+                return
+            }
+            phone.receive(data: data) { reply in
+                Task { @MainActor in completion(.success(reply)) }
+            }
+        })
+        let result = await withCheckedContinuation { continuation in
+            session.sendDiagnostics(report) { continuation.resume(returning: $0) }
+        }
+        if case .failure(let error) = result { Issue.record("send failed: \(error)") }
+        #expect(inbox.reports.count == 2)
+        if let watch = inbox.reports.first(where: { $0.lastPathComponent.hasPrefix("watch-") }) {
+            let restored = try #require(WatchDiagnosticReport.decode(Data(contentsOf: watch)))
+            #expect(restored.events.map(\.id) == report.events.map(\.id))
+            #expect(restored.totals?.mapValues(\.count) == report.totals?.mapValues(\.count))
+            #expect(restored.totals?.mapValues(\.bytes) == report.totals?.mapValues(\.bytes))
+            #expect(restored.capture?.id == report.capture?.id)
+        }
+    }
+
+    @Test("failed diagnostic messages stop the send and retain the full capture", arguments: [true, false])
+    func diagnosticSendFailure(connectionFails: Bool) async throws {
+        let env = try WatchLibraryDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let library = env.receiver()
+        await library.waitForImport()
+        let capture = WatchDiagnostics(logEvents: false)
+        for _ in 0..<512 { capture.record(.init(kind: .playbackStalled, id: UUID(), source: .system)) }
+        let report = capture.report(deviceModel: "watch", systemVersion: "26")
+        var sent = 0
+        let session = WatchPhoneSession(library: library, sendDiagnosticData: { _, completion in
+            sent += 1
+            if sent == 1 { completion(.success(WatchDiagnosticMessage.more)) } else if connectionFails {
+                completion(.failure(NSError(domain: WCErrorDomain, code: WCError.Code.notReachable.rawValue)))
+            } else { completion(.success(Data())) }
+        })
+        var failure: WatchDiagnosticSendError?
+        session.sendDiagnostics(report) {
+            if case .failure(let error) = $0 { failure = error }
+        }
+        #expect(sent == 2)
+        #expect(failure == (connectionFails ? .connectivity(code: WCError.Code.notReachable.rawValue) : .phoneRejected))
+        #expect(capture.events.count == 512)
+        #expect(capture.report(deviceModel: "", systemVersion: "").capture?.id == report.capture?.id)
+    }
+
     @MainActor
     final class RemoteEnv {
         struct Request {

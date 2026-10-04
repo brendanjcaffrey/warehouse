@@ -132,8 +132,8 @@ extension PhoneWatchSession: WCSessionDelegate {
     nonisolated func receive(data: Data, replyHandler: @escaping (Data) -> Void) {
         Task { @MainActor in
             let device = UIDevice.current
-            let phone = diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)
-            replyHandler(diagnosticInbox.receive(data, phone: phone) ? Data("saved".utf8) : Data())
+            replyHandler(diagnosticInbox.receiveMessage(data,
+                phone: diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)))
         }
     }
 

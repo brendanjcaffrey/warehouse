@@ -85,9 +85,80 @@ struct WatchDiagnosticsTests {
         #expect(WatchDiagnosticReport.decode(saved)?.count(.phoneMiss) == 1)
         #expect(!(String(data: saved, encoding: .utf8) ?? "").contains("secret-token"))
         #expect(!inbox.receive(Data("invalid".utf8)))
-        #expect(!inbox.receive(Data(count: 256_001)))
+        #expect(!inbox.receive(Data(count: WatchDiagnosticMessage.maximumReportBytes + 1)))
         #expect(inbox.reports.count == 2)
         #expect(WatchDiagnosticInbox(directory: root).reports.count == 2)
+    }
+
+    @Test("chunked reports save only after completion and preserve reports above the old inbox limit")
+    func chunkedReports() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let capture = WatchDiagnostics(logEvents: false)
+        let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "account", playlistIDs: [])
+        for _ in 0..<512 {
+            capture.record(.init(kind: .contentFailed, id: UUID(), source: .system, fileType: .music,
+                                 bytes: 42, throughput: 3, bufferSeconds: 1, elapsed: 2,
+                                 error: CocoaError(.fileWriteOutOfSpace), detail: .speaker,
+                                 waitingReason: .evaluatingBufferingRate, identity: WatchDiagnosticIdentity(head), status: .retrying))
+        }
+        let watch = capture.report(deviceModel: "watch", systemVersion: "26")
+        let phone = capture.report(deviceModel: "phone", systemVersion: "26")
+        let data = try #require(watch.encoded())
+        #expect(data.count > 256_000)
+        let messages = try WatchDiagnosticMessage.messages(data)
+        for message in messages.dropLast() {
+            #expect(inbox.receiveMessage(message, phone: phone) == WatchDiagnosticMessage.more)
+            #expect(inbox.reports.isEmpty)
+        }
+        #expect(inbox.receiveMessage(try #require(messages.last), phone: phone) == WatchDiagnosticMessage.saved)
+        #expect(inbox.reports.count == 2)
+        let saved = try inbox.reports.map { try #require(WatchDiagnosticReport.decode(Data(contentsOf: $0))) }
+        #expect(saved[0].pairID != nil && saved[0].pairID == saved[1].pairID)
+        #expect(saved.allSatisfy { $0.events.map(\.id) == watch.events.map(\.id) })
+    }
+
+    @Test("missing, out-of-order and malformed chunks never save a partial capture")
+    func rejectsIncompleteChunks() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let report = WatchDiagnostics(logEvents: false).report(deviceModel: "phone", systemVersion: "26")
+        let messages = try WatchDiagnosticMessage.messages(Data(count: 60_000))
+        #expect(inbox.receiveMessage(messages[1], phone: report).isEmpty)
+        #expect(inbox.receiveMessage(messages[0], phone: report) == WatchDiagnosticMessage.more)
+        #expect(inbox.receiveMessage(messages[2], phone: report).isEmpty)
+        #expect(inbox.receiveMessage(messages[1], phone: report).isEmpty)
+        for message in messages { _ = inbox.receiveMessage(message, phone: report) }
+        #expect(inbox.reports.isEmpty)
+        let bad = WatchDiagnosticMessage(kind: "watchDiagnosticsChunk", id: UUID(), index: 0, count: Int.max, payload: Data([1]))
+        #expect(inbox.receiveMessage(try JSONEncoder().encode(bad), phone: report).isEmpty)
+        #expect(throws: WatchDiagnosticSendError.reportTooLarge) {
+            try WatchDiagnosticMessage.messages(Data(count: WatchDiagnosticMessage.maximumReportBytes + 1))
+        }
+    }
+
+    @Test("a chunked capture gets no success acknowledgment when the phone cannot persist it")
+    func chunkedSaveFailure() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data([1]).write(to: root)
+        let inbox = WatchDiagnosticInbox(directory: root)
+        let capture = WatchDiagnostics(logEvents: false)
+        for _ in 0..<512 { capture.record(.init(kind: .playbackStalled, id: UUID(), source: .system)) }
+        let report = capture.report(deviceModel: "watch", systemVersion: "26")
+        let messages = try WatchDiagnosticMessage.messages(#require(report.encoded()))
+        var phoneCaptures = 0
+        func phone() -> WatchDiagnosticReport { phoneCaptures += 1; return report }
+        for message in messages.dropLast() {
+            #expect(inbox.receiveMessage(message, phone: phone()) == WatchDiagnosticMessage.more)
+        }
+        #expect(phoneCaptures == 0)
+        #expect(inbox.receiveMessage(try #require(messages.last), phone: phone()).isEmpty)
+        #expect(phoneCaptures == 1)
+        #expect(inbox.reports.isEmpty)
+        #expect(capture.events.count == 512)
     }
 
     @Test("report subtitles use the capture date rather than the phone receipt date")
