@@ -30,30 +30,28 @@ struct WatchMenuView: View {
             } label: {
                 Label("Songs", systemImage: "music.note")
             }
-            NavigationLink {
-                WatchDiagnosticView()
-            } label: {
-                Label("Diagnostics", systemImage: "waveform.path.ecg")
-            }
             ForEach(PlaylistListBuilder.watchSections(in: playlists.playlists)) { section in
-                Section(section.title) {
-                    ForEach(section.playlists) { playlist in
-                        NavigationLink {
-                            WatchTrackListView(
-                                title: playlist.name,
-                                songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds),
-                                playlist: playlist)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label(playlist.name, systemImage: "music.note.list")
-                                WatchLibraryProgressView(progress: library.progress(playlistID: playlist.id), compact: true)
-                            }
+                ForEach(section.playlists) { playlist in
+                    NavigationLink {
+                        WatchTrackListView(
+                            title: playlist.name,
+                            songs: SongListBuilder.playlistSongs(songs.songs, trackIds: playlist.trackIds),
+                            playlist: playlist)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(playlist.name, systemImage: "music.note.list")
+                            WatchLibraryProgressView(progress: library.progress(playlistID: playlist.id), compact: true)
                         }
                     }
                 }
             }
             Section("Downloads") {
                 WatchLibraryProgressView(progress: library.progress())
+                NavigationLink {
+                    WatchDiagnosticView()
+                } label: {
+                    Label("Diagnostics", systemImage: "waveform.path.ecg")
+                }
                 if library.deliveryStartupError != nil {
                     Button("Retry Delivery") { Task { await refresh() } }
                 }
