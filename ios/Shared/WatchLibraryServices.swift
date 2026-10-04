@@ -25,7 +25,8 @@ final class WatchLibraryServices {
         contentDirectory: URL = WatchContentReceiver.defaultDirectory(),
         client: LibraryClient = LibraryClient(),
         sendReceipt: @escaping (WatchContentReceipt) -> Void = { _ in },
-        onTrackPlayed: @escaping @MainActor (PlayPayload) -> Void = { _ in }
+        onTrackPlayed: @escaping @MainActor (PlayPayload) -> Void = { _ in },
+        onPlaybackRequested: @escaping @MainActor () -> Void = {}
     ) {
         // discard old watch credentials without changing saved library metadata or files.
         for key in ["serverURL", "deepPrefetchDepth", "fileGeneration"] { defaults.removeObject(forKey: key) }
@@ -38,7 +39,7 @@ final class WatchLibraryServices {
         receiver = WatchLibraryReceiver(database: database, directory: metadataDirectory)
         library = WatchLibraryStore(songs: songs, playlists: playlists, defaults: defaults, receiver: receiver)
         player = PlayerStore(fileStore: fileStore, client: client, fileCache: fileCache,
-                             onTrackPlayed: onTrackPlayed, musicPolicy: .downloadedOnly)
+                             onTrackPlayed: onTrackPlayed, onPlaybackRequested: onPlaybackRequested, musicPolicy: .downloadedOnly)
         artwork = WatchArtworkFetcher(fileStore: fileStore)
         receiver.onChanged = { [weak self] in
             guard let self else { return }

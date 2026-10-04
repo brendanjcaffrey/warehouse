@@ -88,7 +88,7 @@ final class WatchRemoteStore {
     /// tells the phone to stop because the watch is about to make sound of its
     /// own; two players over one pair of headphones is never what was meant
     func pausePhone() {
-        guard nowPlaying?.isPlaying == true else { return }
+        guard isReachable, nowPlaying?.isPlaying == true else { return }
         command(.pause)
     }
 

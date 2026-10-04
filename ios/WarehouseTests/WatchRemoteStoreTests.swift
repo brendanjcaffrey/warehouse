@@ -120,6 +120,8 @@ struct WatchRemoteStoreTests {
     func pausesPhoneWhenPlaying() {
         let sent = SentCommands()
         let store = Self.makeStore(sent: sent)
+        store.setReachable(true)
+        sent.commands.removeAll()
         store.apply(.nowPlaying(Self.song))
 
         store.pausePhone()
@@ -128,10 +130,22 @@ struct WatchRemoteStoreTests {
         #expect(store.nowPlaying?.isPlaying == false)
     }
 
+    @Test("an unreachable phone's last playing state cannot request a pause")
+    func unreachablePhone() {
+        let sent = SentCommands()
+        let store = Self.makeStore(sent: sent)
+        store.apply(.nowPlaying(Self.song))
+        store.pausePhone()
+        #expect(sent.commands.isEmpty)
+        #expect(store.nowPlaying?.isPlaying == true)
+    }
+
     @Test("a phone that is already paused or idle is left alone")
     func doesNotPauseAnIdlePhone() {
         let sent = SentCommands()
         let store = Self.makeStore(sent: sent)
+        store.setReachable(true)
+        sent.commands.removeAll()
 
         store.pausePhone()
         #expect(sent.commands.isEmpty)

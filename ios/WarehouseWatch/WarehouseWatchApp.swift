@@ -17,13 +17,14 @@ struct WarehouseWatchApp: App {
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
         var session: WatchPhoneSession?
         var reports: PlayReportQueue?
+        let remote = WatchRemoteStore(send: { command, completion in session?.send(command, completion: completion) })
         services = WatchLibraryServices(database: database, fileStore: fileStore, sendReceipt: { receipt in
             guard session?.canSend == true, let info = try? receipt.encode() else { return }
             let alreadyQueued = WCSession.default.outstandingUserInfoTransfers.contains {
                 WatchContentReceipt(dictionary: $0.userInfo) == receipt
             }
             if !alreadyQueued { WCSession.default.transferUserInfo(info) }
-        }, onTrackPlayed: { reports?.add($0) })
+        }, onTrackPlayed: { reports?.add($0) }, onPlaybackRequested: { remote.pausePhone() })
         let phone = WatchPhoneSession(library: services.receiver)
         session = phone
         phone.content = services.content
@@ -46,7 +47,6 @@ struct WarehouseWatchApp: App {
         phone.onActivated = { plays.drain() }
         phone.onPlayReceipt = { plays.acknowledge($0) }
         phone.onPlayTransferFinished = { plays.finished($0) }
-        let remote = WatchRemoteStore(send: { phone.send($0, completion: $1) })
         phone.remote = remote
         _remote = State(initialValue: remote)
         self.phone = phone

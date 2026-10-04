@@ -66,6 +66,8 @@ final class PlayerStore {
     let fetchArtwork: (@MainActor (String) async -> Bool)?
     /// reports the finished queue row with its original library ownership.
     private let onTrackPlayed: (@MainActor (PlayPayload) -> Void)?
+    /// coordinates another playback source when a playable local start is requested.
+    private let onPlaybackRequested: (@MainActor () -> Void)?
     private let prefetchDownloader: SingleFileDownloading
     private let downloader: FileDownloader
     /// a queue player so the track after this one can be handed over before it
@@ -242,6 +244,7 @@ final class PlayerStore {
         prefetchDownloader: SingleFileDownloading? = nil,
         fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
         onTrackPlayed: (@MainActor (PlayPayload) -> Void)? = nil,
+        onPlaybackRequested: (@MainActor () -> Void)? = nil,
         streams: Bool = false,
         musicPolicy: MusicPolicy = .platformDefault,
         retryDelay: TimeInterval = 1,
@@ -254,6 +257,7 @@ final class PlayerStore {
         self.fileCache = fileCache
         self.fetchArtwork = fetchArtwork
         self.onTrackPlayed = onTrackPlayed
+        self.onPlaybackRequested = onPlaybackRequested
         self.streams = streams
         self.musicPolicy = musicPolicy
         self.downloadedOnly = musicPolicy == .downloadedOnly
@@ -446,7 +450,7 @@ final class PlayerStore {
         pendingStartTime = resume ?? window.start
         currentTime = resume ?? window.start
         ignoresFinish = false
-        isPlaying = true
+        requestPlayback()
         // play intent goes up before sound starts; distinguish the two kinds of waiting.
         status = isDownloaded ? .ready : (streams ? .buffering : .fetching)
         setNowPlayingInfo(for: song)
@@ -868,12 +872,17 @@ final class PlayerStore {
         updateNowPlayingPlaybackState()
     }
 
+    private func requestPlayback() {
+        isPlaying = true
+        onPlaybackRequested?()
+    }
+
     func resume() {
         guard song != nil, !isPlaying else { return }
         // activation or a file fetch still owns the pending start. a stream
         // already handed to the player instead needs a real transport resume.
         if pendingStartTime != nil {
-            isPlaying = true
+            requestPlayback()
             updateNowPlayingPlaybackState()
             return
         }
@@ -888,7 +897,7 @@ final class PlayerStore {
         if effectiveEnd > 0 && currentTime >= effectiveEnd {
             seek(to: window.start)
         }
-        isPlaying = true
+        requestPlayback()
         updateNowPlayingPlaybackState()
         let generation = startGeneration
         Task { @MainActor in
@@ -1285,7 +1294,7 @@ final class PlayerStore {
         window = PlaybackWindow(duration: song.duration, start: song.start, finish: song.finish)
         currentTime = window.start
         ignoresFinish = false
-        isPlaying = true
+        requestPlayback()
         // an item that has been enqueued for a while may already be holding, in
         // which case the status observer clears this on its first callback
         status = next.streaming ? .buffering : .ready
