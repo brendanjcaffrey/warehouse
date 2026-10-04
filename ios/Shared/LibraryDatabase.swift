@@ -172,9 +172,11 @@ final class LibraryDatabase {
     /// lightweight copies of every track for the songs list
     func allSongs() async throws -> [Song] {
         if let loadError { throw loadError }
-        return try await container.performBackgroundTask { context in
+        // serialize these reads with imports so rows and ownership come from one commit.
+        return try await performLibraryWrite { context in
+            let identity = try Self.songLibraryIdentity(context: context)
             let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
-            return try context.fetch(request).map(Self.song)
+            return try context.fetch(request).map { Self.song($0, libraryID: identity) }
         }
     }
 
@@ -183,15 +185,23 @@ final class LibraryDatabase {
     func songs(ids: [String]) async throws -> [String: Song] {
         if let loadError { throw loadError }
         guard !ids.isEmpty else { return [:] }
-        return try await container.performBackgroundTask { context in
+        return try await performLibraryWrite { context in
+            let identity = try Self.songLibraryIdentity(context: context)
             let request = NSFetchRequest<TrackEntity>(entityName: "TrackEntity")
             request.predicate = NSPredicate(format: "id IN %@", ids)
-            let songs = try context.fetch(request).map { ($0.id, Self.song($0)) }
+            let songs = try context.fetch(request).map { ($0.id, Self.song($0, libraryID: identity)) }
             return Dictionary(songs, uniquingKeysWith: { first, _ in first })
         }
     }
 
-    private static func song(_ track: TrackEntity) -> Song {
+    private static func songLibraryIdentity(context: NSManagedObjectContext) throws -> String? {
+        if let data = try document("watchSnapshot", context: context) {
+            return try JSONDecoder().decode(WatchLibrarySnapshot.self, from: data).head.libraryID
+        }
+        return try document("phoneLibraryIdentity", context: context).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    private static func song(_ track: TrackEntity, libraryID: String?) -> Song {
         Song(
             id: track.id,
             name: track.name,
@@ -213,7 +223,8 @@ final class LibraryDatabase {
             rating: Int(track.rating),
             musicFilename: track.musicFilename,
             artworkFilename: track.artworkFilename,
-            addedDate: track.addedDate)
+            addedDate: track.addedDate,
+            libraryID: libraryID)
     }
 
     /// lightweight copies of every playlist for the playlists list

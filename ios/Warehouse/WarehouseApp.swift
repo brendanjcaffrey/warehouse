@@ -36,8 +36,8 @@ struct WarehouseApp: App {
         syncStore.protectedArtworkFilenames = { updatesStore.pendingArtworkFilenames }
         let songsStore = SongsStore(database: database, fileStore: fileStore)
         let playlistsStore = PlaylistsStore(database: database)
-        let playerStore = PlayerStore(fileStore: fileStore, onTrackPlayed: { trackId in
-            Task { await updatesStore.addPlay(trackId: trackId) }
+        let playerStore = PlayerStore(fileStore: fileStore, onTrackPlayed: { play in
+            Task { await updatesStore.addPlay(trackId: play.trackId, libraryID: play.libraryID) }
         })
         let routerStore = NavigationRouter()
         _auth = State(initialValue: authStore)
@@ -117,7 +117,10 @@ struct WarehouseApp: App {
             publisher?.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()),
                                playlistIDs: watchSettings.playlistIds)
         }
-        syncStore.onLibrarySaved = { watchSession.publishLibrary?() }
+        syncStore.onLibrarySaved = {
+            watchSession.publishLibrary?()
+            Task { await updatesStore.flush() }
+        }
         songsStore.onLibraryChanged = { watchSession.publishLibrary?() }
         watchSettings.onChange = { watchSession.push() }
         _watchSettings = State(initialValue: watchSettings)
@@ -166,13 +169,17 @@ struct WarehouseApp: App {
                     return watchSession.diagnosticReport(deviceModel: device.model, systemVersion: device.systemVersion)
                 })
                 .onChange(of: auth.token) {
+                    updates.configure(token: auth.token, baseURL: auth.baseURL())
                     // publish account changes while ordinary token refresh preserves library identity
                     watchSession.push()
                     // & the restored queue's, which was put back holding
                     // whatever token was around before the refresh
                     player.setCredentials(token: auth.token, baseURL: auth.baseURL())
                 }
-                .onChange(of: auth.serverURL) { watchSession.push() }
+                .onChange(of: auth.serverURL) {
+                    updates.configure(token: auth.token, baseURL: auth.baseURL())
+                    watchSession.push()
+                }
                 .onChange(of: player.song?.id) {
                     watchSession.pushNowPlaying()
                     savePlayback()

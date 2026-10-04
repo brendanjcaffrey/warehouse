@@ -83,7 +83,7 @@ struct PhoneWatchSessionTests {
         defer { try? FileManager.default.removeItem(at: watchURL.deletingLastPathComponent()) }
         let transport = PlayReportQueueTests.Transport()
         let watch = PlayReportQueueTests.makeQueue(fileURL: watchURL, transport: transport)
-        watch.add(trackId: "t1")
+        watch.add(PlayPayload(trackId: "t1"))
         let play = try #require(transport.sent.first)
         var receipts = [PlayPayload]()
         var fails = true

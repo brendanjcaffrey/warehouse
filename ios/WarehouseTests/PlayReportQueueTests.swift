@@ -39,7 +39,7 @@ struct PlayReportQueueTests {
         let transport = Transport()
         let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
 
-        queue.add(trackId: "t1")
+        queue.add(PlayPayload(trackId: "t1"))
 
         #expect(transport.sent.map(\.trackId) == ["t1"])
         #expect(queue.pending.map(\.trackId) == transport.sent.map(\.trackId))
@@ -53,7 +53,7 @@ struct PlayReportQueueTests {
         transport.activated = false
         let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
 
-        queue.add(trackId: "t1")
+        queue.add(PlayPayload(trackId: "t1"))
 
         #expect(transport.sent.isEmpty)
         #expect(queue.pending.map(\.trackId) == ["t1"])
@@ -66,9 +66,9 @@ struct PlayReportQueueTests {
         let transport = Transport()
         transport.activated = false
         let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
-        queue.add(trackId: "t1")
-        queue.add(trackId: "t2")
-        queue.add(trackId: "t3")
+        queue.add(PlayPayload(trackId: "t1"))
+        queue.add(PlayPayload(trackId: "t2"))
+        queue.add(PlayPayload(trackId: "t3"))
 
         transport.activated = true
         queue.drain()
@@ -84,8 +84,8 @@ struct PlayReportQueueTests {
         let transport = Transport()
         transport.activated = false
         let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
-        queue.add(trackId: "t1")
-        queue.add(trackId: "t2")
+        queue.add(PlayPayload(trackId: "t1"))
+        queue.add(PlayPayload(trackId: "t2"))
 
         let relaunchTransport = Transport()
         let relaunched = Self.makeQueue(fileURL: fileURL, transport: relaunchTransport)
@@ -101,8 +101,8 @@ struct PlayReportQueueTests {
         let transport = Transport()
         transport.activated = false
         let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
-        queue.add(trackId: "t1")
-        queue.add(trackId: "t2")
+        queue.add(PlayPayload(trackId: "t1"))
+        queue.add(PlayPayload(trackId: "t2"))
         let handedOffId = queue.pending[0].id
 
         let relaunchTransport = Transport()
@@ -119,7 +119,7 @@ struct PlayReportQueueTests {
         let fileURL = Self.tempFileURL()
         let transport = Transport()
         let queue = Self.makeQueue(fileURL: fileURL, transport: transport)
-        queue.add(trackId: "t1")
+        queue.add(PlayPayload(trackId: "t1"))
         let play = try #require(queue.pending.first)
         queue.acknowledge(PlayPayload(id: play.id, trackId: "other"))
         #expect(queue.pending == [play])
@@ -135,7 +135,7 @@ struct PlayReportQueueTests {
         let transport = Transport()
         let queue = PlayReportQueue(fileURL: fileURL, canSend: { true }, outstandingIds: { transport.outstanding },
                                     send: { transport.sent.append($0) }, retryInterval: 0.02)
-        queue.add(trackId: "t1")
+        queue.add(PlayPayload(trackId: "t1"))
         let play = try #require(queue.pending.first)
         transport.outstanding = [play.id]
         queue.drain()
@@ -158,7 +158,7 @@ struct PlayReportQueueTests {
             if fails { throw CocoaError(.fileWriteUnknown) }
             try data.write(to: url, options: .atomic)
         })
-        queue.add(trackId: "t1")
+        queue.add(PlayPayload(trackId: "t1"))
         #expect(transport.sent.isEmpty)
         fails = false
         queue.drain()

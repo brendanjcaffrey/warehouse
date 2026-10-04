@@ -9,6 +9,7 @@ struct LibraryMetadata {
     private static let totalFileSizeKey = "libraryTotalFileSize"
     private static let trackUserChangesKey = "libraryTrackUserChanges"
     private static let hasSavedLibraryKey = "libraryHasSavedLibrary"
+    private static let libraryIDKey = "libraryMetadataIdentity"
 
     // the parameter is here for tests
     init(defaults: UserDefaults = .standard) {
@@ -42,11 +43,20 @@ struct LibraryMetadata {
         nonmutating set { defaults.set(newValue, forKey: Self.trackUserChangesKey) }
     }
 
-    func update(from library: Library) {
+    /// namespaces the saved export timestamp and user-change policy.
+    var libraryID: String? {
+        get { defaults.string(forKey: Self.libraryIDKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.libraryIDKey) }
+    }
+
+    func update(from library: Library, libraryID: String? = nil) {
+        // invalidate ownership before replacing fields from another export.
+        self.libraryID = nil
         defaults.set(true, forKey: Self.hasSavedLibraryKey)
         updateTimeNs = library.updateTimeNs
         totalFileSize = library.totalFileSize
         trackUserChanges = library.trackUserChanges
+        self.libraryID = libraryID
     }
 
     func clear() {
@@ -54,5 +64,6 @@ struct LibraryMetadata {
         defaults.removeObject(forKey: Self.updateTimeNsKey)
         defaults.removeObject(forKey: Self.totalFileSizeKey)
         defaults.removeObject(forKey: Self.trackUserChangesKey)
+        defaults.removeObject(forKey: Self.libraryIDKey)
     }
 }

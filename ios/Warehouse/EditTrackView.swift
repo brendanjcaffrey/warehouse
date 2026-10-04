@@ -236,11 +236,12 @@ struct EditTrackView: View {
         // the pushes go through the network, so don't hold the sheet open
         let updates = updates
         let trackId = song.id
+        let libraryID = song.libraryID
         Task {
             if let uploadFilename {
-                await updates.addArtworkUpload(filename: uploadFilename)
+                await updates.addArtworkUpload(filename: uploadFilename, libraryID: libraryID)
             }
-            await updates.addTrackUpdate(trackId: trackId, update: update)
+            await updates.addTrackUpdate(trackId: trackId, update: update, libraryID: libraryID)
         }
         dismiss()
     }

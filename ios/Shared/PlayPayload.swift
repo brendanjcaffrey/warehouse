@@ -6,30 +6,36 @@ struct PlayPayload: Codable, Equatable, Sendable {
     /// handed to the system after a relaunch
     let id: String
     let trackId: String
+    /// the source of the played queue row, independent of the latest control head.
+    let libraryID: String?
 
     private static let idKey = "id"
     private static let trackIdKey = "trackId"
 
-    init(id: String = UUID().uuidString, trackId: String) {
+    init(id: String = UUID().uuidString, trackId: String, libraryID: String? = nil) {
         self.id = id
         self.trackId = trackId
+        self.libraryID = libraryID
     }
 
     init?(dictionary: [String: Any]) {
         guard dictionary["kind"] == nil,
               let id = dictionary[Self.idKey] as? String,
-              let trackId = dictionary[Self.trackIdKey] as? String
+              let trackId = dictionary[Self.trackIdKey] as? String,
+              dictionary["libraryID"] == nil || dictionary["libraryID"] is String
         else {
             return nil
         }
-        self.init(id: id, trackId: trackId)
+        self.init(id: id, trackId: trackId, libraryID: dictionary["libraryID"] as? String)
     }
 
     func encode() -> [String: Any] {
-        [
+        var value: [String: Any] = [
             Self.idKey: id,
             Self.trackIdKey: trackId
         ]
+        if let libraryID { value["libraryID"] = libraryID }
+        return value
     }
 }
 

@@ -12,10 +12,29 @@ final class UpdatesStore {
 
     private struct State: Codable {
         var pending: [PendingUpdate]
-        var watchPlays: [String: String]
+        var watchPlays: [String: PlayPayload]
+
+        enum CodingKeys: String, CodingKey { case pending, watchPlays }
+
+        init(pending: [PendingUpdate], watchPlays: [String: PlayPayload]) {
+            self.pending = pending
+            self.watchPlays = watchPlays
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            pending = try container.decode([PendingUpdate].self, forKey: .pending)
+            if let owned = try? container.decode([String: PlayPayload].self, forKey: .watchPlays) {
+                watchPlays = owned
+            } else {
+                let legacy = try container.decode([String: String].self, forKey: .watchPlays)
+                watchPlays = [:]
+                for (id, trackId) in legacy { watchPlays[id] = PlayPayload(id: id, trackId: trackId) }
+            }
+        }
     }
 
-    private var watchPlays = [String: String]()
+    private var watchPlays = [String: PlayPayload]()
     private let write: (Data, URL) throws -> Void
     private let client: UpdateClient
     private let fileURL: URL
@@ -23,6 +42,7 @@ final class UpdatesStore {
     private let retryInterval: TimeInterval
     private var token: String?
     private var baseURL: URL?
+    private var libraryID: String? { LibraryIdentity.make(token: token, baseURL: baseURL) }
     private var flushing = false
     private var retryTask: Task<Void, Never>?
 
@@ -52,28 +72,33 @@ final class UpdatesStore {
     /// remembers where to send updates; call flush afterwards to push
     /// anything queued from a previous launch
     func configure(token: String?, baseURL: URL?) {
+        let previousIdentity = libraryID
         self.token = token
         self.baseURL = baseURL
+        if previousIdentity != libraryID {
+            retryTask?.cancel()
+            retryTask = nil
+        }
+        scheduleRetry()
     }
 
     /// records a play for the track and tries to push it right away; the
     /// update is persisted first so a failure can't drop it
-    func addPlay(trackId: String) async {
-        add(PendingUpdate(kind: .play, trackId: trackId))
+    func addPlay(trackId: String, libraryID: String?) async {
+        add(PendingUpdate(kind: .play, trackId: trackId, libraryID: libraryID))
         await flush()
     }
 
     /// ownership transfers only after the event id and update share an atomic save.
     func recordWatchPlay(_ play: PlayPayload) throws {
-        if let trackId = watchPlays[play.id] {
-            guard trackId == play.trackId else { throw CocoaError(.coderInvalidValue) }
+        if let owned = watchPlays[play.id] {
+            guard owned == play else { throw CocoaError(.coderInvalidValue) }
             return
         }
         let previous = pending
-        watchPlays[play.id] = play.trackId
-        if metadata.updateTimeNs == 0 || metadata.trackUserChanges {
-            pending.append(PendingUpdate(kind: .play, trackId: play.trackId))
-        }
+        watchPlays[play.id] = play
+        // tracking policy belongs to the active library, not an old watch report.
+        pending.append(PendingUpdate(kind: .play, trackId: play.trackId, libraryID: play.libraryID))
         do {
             try save()
         } catch {
@@ -84,15 +109,15 @@ final class UpdatesStore {
     }
 
     /// records edited track fields & tries to push them right away
-    func addTrackUpdate(trackId: String, update: TrackUpdate) async {
-        add(PendingUpdate(kind: .track, trackId: trackId, trackUpdate: update))
+    func addTrackUpdate(trackId: String, update: TrackUpdate, libraryID: String?) async {
+        add(PendingUpdate(kind: .track, trackId: trackId, trackUpdate: update, libraryID: libraryID))
         await flush()
     }
 
     /// queues an artwork upload; must be queued before the track update that
     /// references the filename so the server has the file when it's set
-    func addArtworkUpload(filename: String) async {
-        let update = PendingUpdate(kind: .artworkUpload, trackId: "", params: ["filename": filename])
+    func addArtworkUpload(filename: String, libraryID: String?) async {
+        let update = PendingUpdate(kind: .artworkUpload, trackId: "", params: ["filename": filename], libraryID: libraryID)
         // the same file may back multiple edits, one upload covers them all
         guard !pending.contains(update) else { return }
         add(update)
@@ -117,22 +142,25 @@ final class UpdatesStore {
         retryTask = nil
         defer { scheduleRetry() }
 
-        guard persist(), !flushing, let token, let baseURL, !pending.isEmpty else { return }
+        guard persist(), !flushing, libraryID != nil, !pending.isEmpty else { return }
         // before the first sync there's no way to know whether the server
         // wants user changes, so hold everything until then
-        guard metadata.updateTimeNs != 0 else { return }
-        guard metadata.trackUserChanges else {
-            pending = []
-            persist()
-            return
-        }
-
+        guard metadata.updateTimeNs != 0, metadata.libraryID == libraryID else { return }
         flushing = true
         defer { flushing = false }
         var index = 0
         while index < pending.count {
+            // recheck after every await: configuration may change during a request.
+            let update = pending[index]
+            guard let identity = libraryID, metadata.libraryID == identity, let token, let baseURL else { break }
+            guard update.libraryID == identity else { index += 1; continue }
+            if !metadata.trackUserChanges {
+                pending.remove(at: index)
+                persist()
+                continue
+            }
             do {
-                try await client.send(pending[index], token: token, baseURL: baseURL)
+                try await client.send(update, token: token, baseURL: baseURL)
                 pending.remove(at: index)
             } catch UpdateClient.UpdateError.missingFile {
                 // the file is gone from disk so this can never succeed
@@ -148,13 +176,16 @@ final class UpdatesStore {
     private func add(_ update: PendingUpdate) {
         // when the server isn't tracking user changes there's no reason to
         // queue; before the first sync we can't know, so queue to be safe
-        if metadata.updateTimeNs != 0 && !metadata.trackUserChanges { return }
+        if update.libraryID != nil && update.libraryID == libraryID,
+           metadata.libraryID == libraryID,
+           metadata.updateTimeNs != 0 && !metadata.trackUserChanges { return }
         pending.append(update)
         persist()
     }
 
     private func scheduleRetry() {
-        guard retryTask == nil, !pending.isEmpty, token != nil else { return }
+        guard retryTask == nil, let identity = libraryID, metadata.libraryID == identity,
+              pending.contains(where: { $0.libraryID == identity }) else { return }
         retryTask = Task { [weak self, retryInterval] in
             try? await Task.sleep(for: .seconds(retryInterval))
             guard !Task.isCancelled, let self else { return }

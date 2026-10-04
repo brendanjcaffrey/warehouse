@@ -25,7 +25,7 @@ final class WatchLibraryServices {
         contentDirectory: URL = WatchContentReceiver.defaultDirectory(),
         client: LibraryClient = LibraryClient(),
         sendReceipt: @escaping (WatchContentReceipt) -> Void = { _ in },
-        onTrackPlayed: @escaping (String) -> Void = { _ in }
+        onTrackPlayed: @escaping @MainActor (PlayPayload) -> Void = { _ in }
     ) {
         // discard old watch credentials without changing saved library metadata or files.
         for key in ["serverURL", "deepPrefetchDepth", "fileGeneration"] { defaults.removeObject(forKey: key) }

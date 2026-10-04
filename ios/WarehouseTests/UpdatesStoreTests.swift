@@ -6,6 +6,29 @@ import Testing
 @Suite("UpdatesStore")
 @MainActor
 struct UpdatesStoreTests {
+    nonisolated static func token(_ signature: String = "one", username: String = "user") -> String {
+        let claims = Data("{\"username\":\"\(username)\"}".utf8).base64EncodedString()
+        return "header.\(claims).\(signature)"
+    }
+
+    @Test("queued plays never follow credentials to a different server or account")
+    func isolatesQueuedPlays() async throws {
+        let env = Self.makeEnv(host: "updates-library-a.test")
+        let otherHost = "updates-library-b.test"
+        MockURLProtocol.setHandler(forHost: env.host) { _ in throw URLError(.notConnectedToInternet) }
+        try Self.installHandler(host: otherHost)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
+        await env.store.addPlay(trackId: "same-id", libraryID: env.identity)
+        #expect(env.store.pending.count == 1)
+
+        let otherURL = URL(string: "https://\(otherHost)")!
+        LibraryMetadata(defaults: env.defaults).libraryID = LibraryIdentity.make(token: Self.token(), baseURL: otherURL)
+        env.store.configure(token: Self.token(), baseURL: otherURL)
+        await env.store.flush()
+        #expect(MockURLProtocol.requests(forHost: otherHost).isEmpty)
+        #expect(env.store.pending.count == 1)
+    }
+
     struct Env {
         let store: UpdatesStore
         let fileURL: URL
@@ -13,6 +36,7 @@ struct UpdatesStoreTests {
         let baseURL: URL
         let host: String
         let fileStore: FileStore
+        var identity: String { LibraryIdentity.make(token: UpdatesStoreTests.token(), baseURL: baseURL)! }
     }
 
     /// tracks whether the first request already failed, shared with the
@@ -44,6 +68,7 @@ struct UpdatesStoreTests {
         if synced {
             metadata.updateTimeNs = 42
             metadata.trackUserChanges = trackUserChanges
+            metadata.libraryID = LibraryIdentity.make(token: Self.token(), baseURL: URL(string: "https://\(host)")!)
         }
 
         let root = FileManager.default.temporaryDirectory
@@ -98,16 +123,16 @@ struct UpdatesStoreTests {
     func playSendsImmediately() async throws {
         let env = Self.makeEnv(host: "updates-play.test")
         try Self.installHandler(host: env.host)
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
 
         #expect(env.store.pending.isEmpty)
         #expect(Self.persisted(at: env.fileURL).isEmpty)
         let request = try #require(MockURLProtocol.requests(forHost: env.host).first)
         #expect(request.httpMethod == "POST")
         #expect(request.url?.path == "/api/play/t1")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(Self.token())")
     }
 
     @Test("a failed play stays queued, survives a relaunch & sends later")
@@ -116,17 +141,17 @@ struct UpdatesStoreTests {
         MockURLProtocol.setHandler(forHost: env.host) { _ in
             throw URLError(.notConnectedToInternet)
         }
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
-        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1")])
-        #expect(Self.persisted(at: env.fileURL) == [PendingUpdate(kind: .play, trackId: "t1")])
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
+        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
+        #expect(Self.persisted(at: env.fileURL) == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
 
         let relaunched = Self.relaunch(env)
-        #expect(relaunched.pending == [PendingUpdate(kind: .play, trackId: "t1")])
+        #expect(relaunched.pending == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
 
         try Self.installHandler(host: env.host)
-        relaunched.configure(token: "tok", baseURL: env.baseURL)
+        relaunched.configure(token: Self.token(), baseURL: env.baseURL)
         await relaunched.flush()
         #expect(relaunched.pending.isEmpty)
         #expect(Self.persisted(at: env.fileURL).isEmpty)
@@ -136,12 +161,12 @@ struct UpdatesStoreTests {
     func rejectionQueues() async throws {
         let env = Self.makeEnv(host: "updates-rejected.test")
         try Self.installHandler(host: env.host, success: false)
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
 
-        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1")])
-        #expect(Self.persisted(at: env.fileURL) == [PendingUpdate(kind: .play, trackId: "t1")])
+        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
+        #expect(Self.persisted(at: env.fileURL) == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
     }
 
     @Test("plays queue without sending when logged out")
@@ -149,9 +174,9 @@ struct UpdatesStoreTests {
         let env = Self.makeEnv(host: "updates-notoken.test")
         try Self.installHandler(host: env.host)
 
-        await env.store.addPlay(trackId: "t1")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
 
-        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1")])
+        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
         #expect(MockURLProtocol.requests(forHost: env.host).isEmpty)
     }
 
@@ -159,11 +184,11 @@ struct UpdatesStoreTests {
     func unsyncedQueues() async throws {
         let env = Self.makeEnv(host: "updates-unsynced.test", synced: false)
         try Self.installHandler(host: env.host)
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
 
-        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1")])
+        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
         #expect(MockURLProtocol.requests(forHost: env.host).isEmpty)
     }
 
@@ -171,9 +196,9 @@ struct UpdatesStoreTests {
     func untrackedDrops() async throws {
         let env = Self.makeEnv(host: "updates-untracked.test", trackUserChanges: false)
         try Self.installHandler(host: env.host)
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
 
         #expect(env.store.pending.isEmpty)
         #expect(MockURLProtocol.requests(forHost: env.host).isEmpty)
@@ -185,12 +210,12 @@ struct UpdatesStoreTests {
         try Self.installHandler(host: env.host, failingPaths: ["/api/play/t1"])
 
         // queue both before configuring so the flush sees them together
-        await env.store.addPlay(trackId: "t1")
-        await env.store.addPlay(trackId: "t2")
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
+        await env.store.addPlay(trackId: "t2", libraryID: env.identity)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
         await env.store.flush()
 
-        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1")])
+        #expect(env.store.pending == [PendingUpdate(kind: .play, trackId: "t1", libraryID: env.identity)])
         let paths = MockURLProtocol.requests(forHost: env.host).map { $0.url?.path ?? "" }
         #expect(paths == ["/api/play/t1", "/api/play/t2"])
     }
@@ -209,9 +234,9 @@ struct UpdatesStoreTests {
                 headerFields: ["Content-Type": "application/octet-stream"])!
             return (response, body)
         }
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
         #expect(env.store.pending.count == 1)
 
         for _ in 0..<100 where !env.store.pending.isEmpty {
@@ -225,9 +250,9 @@ struct UpdatesStoreTests {
     func trackUpdateSendsImmediately() async throws {
         let env = Self.makeEnv(host: "updates-track.test")
         try Self.installHandler(host: env.host)
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addTrackUpdate(trackId: "t1", update: .with { $0.name = "Strong Enough" })
+        await env.store.addTrackUpdate(trackId: "t1", update: .with { $0.name = "Strong Enough" }, libraryID: env.identity)
 
         #expect(env.store.pending.isEmpty)
         let request = try #require(MockURLProtocol.requests(forHost: env.host).first)
@@ -241,9 +266,9 @@ struct UpdatesStoreTests {
         let env = Self.makeEnv(host: "updates-artwork.test")
         try Self.installHandler(host: env.host)
         try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addArtworkUpload(filename: "abc.jpg")
+        await env.store.addArtworkUpload(filename: "abc.jpg", libraryID: env.identity)
 
         #expect(env.store.pending.isEmpty)
         let request = try #require(MockURLProtocol.requests(forHost: env.host).first)
@@ -257,10 +282,10 @@ struct UpdatesStoreTests {
             throw URLError(.notConnectedToInternet)
         }
         try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addArtworkUpload(filename: "abc.jpg")
-        await env.store.addArtworkUpload(filename: "abc.jpg")
+        await env.store.addArtworkUpload(filename: "abc.jpg", libraryID: env.identity)
+        await env.store.addArtworkUpload(filename: "abc.jpg", libraryID: env.identity)
 
         #expect(env.store.pending.count == 1)
         #expect(env.store.pendingArtworkFilenames == ["abc.jpg"])
@@ -273,10 +298,10 @@ struct UpdatesStoreTests {
             throw URLError(.notConnectedToInternet)
         }
         try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addArtworkUpload(filename: "abc.jpg")
-        await env.store.addTrackUpdate(trackId: "t1", update: .with { $0.artwork = "abc.jpg" })
+        await env.store.addArtworkUpload(filename: "abc.jpg", libraryID: env.identity)
+        await env.store.addTrackUpdate(trackId: "t1", update: .with { $0.artwork = "abc.jpg" }, libraryID: env.identity)
         #expect(env.store.pending.map(\.kind) == [.artworkUpload, .track])
 
         // installing a fresh handler also clears the recorded requests
@@ -292,9 +317,9 @@ struct UpdatesStoreTests {
     func missingArtworkFileDrops() async throws {
         let env = Self.makeEnv(host: "updates-artwork-gone.test")
         try Self.installHandler(host: env.host)
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addArtworkUpload(filename: "never-written.jpg")
+        await env.store.addArtworkUpload(filename: "never-written.jpg", libraryID: env.identity)
 
         #expect(env.store.pending.isEmpty)
         #expect(MockURLProtocol.requests(forHost: env.host).isEmpty)
@@ -307,17 +332,17 @@ struct UpdatesStoreTests {
             throw URLError(.notConnectedToInternet)
         }
         try env.fileStore.write(.artwork, "abc.jpg", data: Data([0xff, 0xd8]))
-        env.store.configure(token: "tok", baseURL: env.baseURL)
+        env.store.configure(token: Self.token(), baseURL: env.baseURL)
 
-        await env.store.addPlay(trackId: "t1")
-        await env.store.addArtworkUpload(filename: "abc.jpg")
+        await env.store.addPlay(trackId: "t1", libraryID: env.identity)
+        await env.store.addArtworkUpload(filename: "abc.jpg", libraryID: env.identity)
         // the empty album artist checks field presence survives the disk round trip
         await env.store.addTrackUpdate(
             trackId: "t1",
             update: .with {
                 $0.artwork = "abc.jpg"
                 $0.albumArtist = ""
-            })
+            }, libraryID: env.identity)
 
         let relaunched = Self.relaunch(env)
         #expect(relaunched.pending == env.store.pending)
@@ -355,7 +380,7 @@ struct UpdatesStoreTests {
     @Test("watch ids stay deduplicated after phone recreation and downstream removal")
     func durableWatchOwnership() async throws {
         let env = Self.makeEnv(host: "updates-watch-owned.test")
-        let play = PlayPayload(trackId: "t1")
+        let play = PlayPayload(trackId: "t1", libraryID: env.identity)
         try env.store.recordWatchPlay(play)
         try env.store.recordWatchPlay(play)
         #expect(Self.persisted(at: env.fileURL).count == 1)
@@ -363,14 +388,14 @@ struct UpdatesStoreTests {
         try relaunched.recordWatchPlay(play)
         #expect(relaunched.pending.count == 1)
         try Self.installHandler(host: env.host)
-        relaunched.configure(token: "tok", baseURL: env.baseURL)
+        relaunched.configure(token: Self.token(), baseURL: env.baseURL)
         await relaunched.flush()
         #expect(relaunched.pending.isEmpty)
         let completed = Self.relaunch(env)
         try completed.recordWatchPlay(play)
         #expect(completed.pending.isEmpty)
         #expect(MockURLProtocol.requests(forHost: env.host).count == 1)
-        let next = PlayPayload(trackId: "t1")
+        let next = PlayPayload(trackId: "t1", libraryID: env.identity)
         try completed.recordWatchPlay(next)
         #expect(completed.pending.count == 1)
     }
@@ -383,7 +408,7 @@ struct UpdatesStoreTests {
             if fails { throw CocoaError(.fileWriteUnknown) }
             try data.write(to: url, options: .atomic)
         })
-        let play = PlayPayload(trackId: "t1")
+        let play = PlayPayload(trackId: "t1", libraryID: env.identity)
         #expect(throws: (any Error).self) { try store.recordWatchPlay(play) }
         #expect(store.pending.isEmpty)
         #expect(Self.relaunch(env).pending.isEmpty)

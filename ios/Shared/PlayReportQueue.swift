@@ -35,8 +35,8 @@ final class PlayReportQueue {
         pending = Self.load(from: fileURL)
     }
 
-    func add(trackId: String) {
-        pending.append(PlayPayload(trackId: trackId))
+    func add(_ play: PlayPayload) {
+        pending.append(play)
         drain()
     }
 

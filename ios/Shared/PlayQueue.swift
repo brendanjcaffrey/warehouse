@@ -179,7 +179,7 @@ struct PlayQueue: Sendable {
     /// each row's identity so lists don't churn
     mutating func updateSong(_ song: Song) {
         func refresh(_ entry: QueueEntry) -> QueueEntry {
-            entry.song.id == song.id ? entry.with(song) : entry
+            entry.song.id == song.id && entry.song.libraryID == song.libraryID ? entry.with(song) : entry
         }
         entries = entries.map(refresh)
         context = context.map(refresh)
@@ -193,10 +193,10 @@ struct PlayQueue: Sendable {
 
     var snapshot: PlayQueueSnapshot {
         PlayQueueSnapshot(
-            entries: entries.map { PlayQueueSnapshot.Row(id: $0.id, songID: $0.song.id) },
+            entries: entries.map { PlayQueueSnapshot.Row(id: $0.id, songID: $0.song.id, libraryID: $0.song.libraryID) },
             index: index,
             contextIDs: context.map(\.id),
-            history: history.map { PlayQueueSnapshot.Row(id: $0.id, songID: $0.song.id) },
+            history: history.map { PlayQueueSnapshot.Row(id: $0.id, songID: $0.song.id, libraryID: $0.song.libraryID) },
             isShuffled: isShuffled)
     }
 
@@ -216,7 +216,10 @@ struct PlayQueue: Sendable {
     /// one of them isn't worth putting back at all
     init?(snapshot: PlayQueueSnapshot, songs: [String: Song]) {
         func rebuild(_ rows: [PlayQueueSnapshot.Row]) -> [QueueEntry] {
-            rows.compactMap { row in songs[row.songID].map { QueueEntry(id: row.id, song: $0) } }
+            rows.compactMap { row in
+                guard let song = songs[row.songID], song.libraryID == row.libraryID else { return nil }
+                return QueueEntry(id: row.id, song: song)
+            }
         }
         guard snapshot.entries.indices.contains(snapshot.index) else { return nil }
         let currentID = snapshot.entries[snapshot.index].id
@@ -242,6 +245,7 @@ struct PlayQueueSnapshot: Codable, Equatable, Sendable {
     struct Row: Codable, Equatable, Sendable {
         let id: UUID
         let songID: String
+        var libraryID: String?
     }
 
     let entries: [Row]

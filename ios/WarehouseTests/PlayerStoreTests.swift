@@ -41,7 +41,7 @@ struct PlayerStoreTests {
     /// a player backed by throwaway temp files; nothing actually plays since
     /// no music files exist, but the queue & modes work normally
     @MainActor
-    static func makePlayer(onTrackPlayed: (@MainActor (String) -> Void)? = nil) -> PlayerStore {
+    static func makePlayer(onTrackPlayed: (@MainActor (PlayPayload) -> Void)? = nil) -> PlayerStore {
         let fileStore = FileStore(
             rootURL: FileManager.default.temporaryDirectory
                 .appending(path: "player-tests-files-\(UUID().uuidString)"))
@@ -78,7 +78,7 @@ struct PlayerStoreTests {
         host: String,
         retryDelay: TimeInterval = 0.01,
         prefetchRetryDelay: TimeInterval = 30,
-        onTrackPlayed: (@MainActor (String) -> Void)? = nil,
+        onTrackPlayed: (@MainActor (PlayPayload) -> Void)? = nil,
         handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> (PlayerStore, FileStore, URL) {
         let baseURL = URL(string: "https://\(host)")!
@@ -181,7 +181,7 @@ struct PlayerStoreTests {
     static func makeStreamingPlayer(
         host: String, baseURL: URL? = nil, budget: FileCacheBudget? = nil,
         deepPrefetchDepth: Int = 0,
-        onTrackPlayed: (@MainActor (String) -> Void)? = nil,
+        onTrackPlayed: (@MainActor (PlayPayload) -> Void)? = nil,
         handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil
     ) -> (PlayerStore, FileStore, URL) {
         let serverURL = baseURL ?? URL(string: "https://\(host)")!
@@ -512,7 +512,7 @@ struct PlayerStoreTests {
     @MainActor
     func trackEndReportsPlay() {
         let played = PlayedTracks()
-        let player = Self.makePlayer(onTrackPlayed: { played.ids.append($0) })
+        let player = Self.makePlayer(onTrackPlayed: { played.ids.append($0.trackId) })
         player.play(Self.songs(2), token: nil, baseURL: nil)
 
         player.handleTrackEnd()

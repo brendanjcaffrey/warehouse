@@ -14,6 +14,7 @@ struct PendingUpdate: Codable, Equatable, Sendable {
 
     let kind: Kind
     let trackId: String
+    let libraryID: String?
     /// the filename for artwork uploads; empty for the other kinds
     var params: [String: String] = [:]
     /// the edited fields for track updates; empty for the other kinds
@@ -22,16 +23,18 @@ struct PendingUpdate: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case kind = "type"
         case trackId
+        case libraryID
         case params
         case trackUpdate
     }
 
     init(
         kind: Kind, trackId: String,
-        params: [String: String] = [:], trackUpdate: TrackUpdate = TrackUpdate()
+        params: [String: String] = [:], trackUpdate: TrackUpdate = TrackUpdate(), libraryID: String? = nil
     ) {
         self.kind = kind
         self.trackId = trackId
+        self.libraryID = libraryID
         self.params = params
         self.trackUpdate = trackUpdate
     }
@@ -42,6 +45,7 @@ struct PendingUpdate: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         kind = try container.decode(Kind.self, forKey: .kind)
         trackId = try container.decode(String.self, forKey: .trackId)
+        libraryID = try container.decodeIfPresent(String.self, forKey: .libraryID)
         params = try container.decodeIfPresent([String: String].self, forKey: .params) ?? [:]
         if let data = try container.decodeIfPresent(Data.self, forKey: .trackUpdate) {
             trackUpdate = try TrackUpdate(serializedBytes: data)
@@ -52,6 +56,7 @@ struct PendingUpdate: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(kind, forKey: .kind)
         try container.encode(trackId, forKey: .trackId)
+        try container.encodeIfPresent(libraryID, forKey: .libraryID)
         try container.encode(params, forKey: .params)
         let data = try trackUpdate.serializedData()
         if !data.isEmpty {

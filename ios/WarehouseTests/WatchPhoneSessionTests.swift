@@ -59,7 +59,7 @@ struct WatchPhoneSessionTests {
         defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
         let transport = PlayReportQueueTests.Transport()
         let queue = PlayReportQueueTests.makeQueue(fileURL: fileURL, transport: transport)
-        queue.add(trackId: "t1")
+        queue.add(PlayPayload(trackId: "t1"))
         let play = try #require(queue.pending.first)
         var transferCompleted = false
         env.session.onPlayTransferFinished = { queue.finished($0); transferCompleted = true }

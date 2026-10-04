@@ -23,7 +23,7 @@ struct WarehouseWatchApp: App {
                 WatchContentReceipt(dictionary: $0.userInfo) == receipt
             }
             if !alreadyQueued { WCSession.default.transferUserInfo(info) }
-        }, onTrackPlayed: { reports?.add(trackId: $0) })
+        }, onTrackPlayed: { reports?.add($0) })
         let phone = WatchPhoneSession(library: services.receiver)
         session = phone
         phone.content = services.content

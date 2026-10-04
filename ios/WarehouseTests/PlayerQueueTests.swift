@@ -151,7 +151,7 @@ struct PlayerQueueTests {
         let host = "player-\(UUID().uuidString).example.com"
         let played = PlayedTracks()
         let (player, fileStore, _) = Helpers.makeStreamingPlayer(
-            host: host, onTrackPlayed: { played.ids.append($0) })
+            host: host, onTrackPlayed: { played.ids.append($0.trackId) })
         try Self.cacheSongs(fileStore, ["1"])
 
         // backgrounded, which is both where this matters & what keeps the
@@ -186,7 +186,7 @@ struct PlayerQueueTests {
         let host = "player-\(UUID().uuidString).example.com"
         let played = PlayedTracks()
         let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(
-            host: host, onTrackPlayed: { played.ids.append($0) })
+            host: host, onTrackPlayed: { played.ids.append($0.trackId) })
         try Self.cacheSongs(fileStore, ["1", "2"])
 
         player.play(Helpers.songs(2), token: "tok", baseURL: baseURL)
@@ -213,7 +213,7 @@ struct PlayerQueueTests {
         let host = "player-\(UUID().uuidString).example.com"
         let played = PlayedTracks()
         let (player, fileStore, _) = Helpers.makeStreamingPlayer(
-            host: host, onTrackPlayed: { played.ids.append($0) })
+            host: host, onTrackPlayed: { played.ids.append($0.trackId) })
         try Self.cacheSongs(fileStore, ["3"])
         player.setForeground(false)
 
@@ -241,7 +241,7 @@ struct PlayerQueueTests {
         // item that is playing fails
         let (player, fileStore, baseURL) = Helpers.makePlayer(
             host: host,
-            onTrackPlayed: { played.ids.append($0) },
+            onTrackPlayed: { played.ids.append($0.trackId) },
             handler: { request in
                 let data = request.url?.lastPathComponent == "1.wav"
                     ? Data("not-audio".utf8) : Helpers.musicBytes
@@ -266,7 +266,7 @@ struct PlayerQueueTests {
         let host = "player-\(UUID().uuidString).example.com"
         let played = PlayedTracks()
         let (player, fileStore, baseURL) = Helpers.makeStreamingPlayer(
-            host: host, onTrackPlayed: { played.ids.append($0) })
+            host: host, onTrackPlayed: { played.ids.append($0.trackId) })
         try Self.cacheSongs(fileStore, ["1", "2", "3"])
 
         // 1 & 2 stop half a second in; the files behind them are four

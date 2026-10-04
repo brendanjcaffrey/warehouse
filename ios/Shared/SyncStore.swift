@@ -172,7 +172,7 @@ final class SyncStore {
                 state = .savingLibrary
                 try await database.replaceLibrary(with: library, sourceIdentity: LibraryIdentity.make(token: token, baseURL: baseURL))
                 guard isCurrent() else { return }
-                metadata.update(from: library)
+                metadata.update(from: library, libraryID: LibraryIdentity.make(token: token, baseURL: baseURL))
                 onLibrarySaved()
             }
 
@@ -197,6 +197,9 @@ final class SyncStore {
     }
 
     private func fetchLibraryStatus(token: String, baseURL: URL) async throws -> LibraryStatus {
+        if let identity = LibraryIdentity.make(token: token, baseURL: baseURL), metadata.libraryID != identity {
+            return .needsUpdate
+        }
         if let identity = LibraryIdentity.make(token: token, baseURL: baseURL),
            try await !database.hasPhoneLibrary(identity: identity) {
             return .needsUpdate

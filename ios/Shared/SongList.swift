@@ -24,6 +24,8 @@ struct Song: Identifiable, Hashable, Sendable {
     let artworkFilename: String?
     /// wall-clock instant the track entered the library; nil when the source had none
     var addedDate: Date?
+    /// committed metadata ownership, retained by queue copies through account changes.
+    var libraryID: String?
 
     var titleSortKey: String { sortName.isEmpty ? name : sortName }
     var artistSortKey: String { artistSortName.isEmpty ? artistName : artistSortName }

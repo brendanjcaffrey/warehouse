@@ -64,9 +64,8 @@ final class PlayerStore {
     /// downloaded-only playback never calls this; the phone mirrors the
     /// library and leaves it nil
     let fetchArtwork: (@MainActor (String) async -> Bool)?
-    /// called with the track id when a track plays through to its finish; the
-    /// phone records a play to push back into itunes, the watch leaves it nil
-    private let onTrackPlayed: (@MainActor (String) -> Void)?
+    /// reports the finished queue row with its original library ownership.
+    private let onTrackPlayed: (@MainActor (PlayPayload) -> Void)?
     private let prefetchDownloader: SingleFileDownloading
     private let downloader: FileDownloader
     /// a queue player so the track after this one can be handed over before it
@@ -242,7 +241,7 @@ final class PlayerStore {
         fileCache: FileCache? = nil,
         prefetchDownloader: SingleFileDownloading? = nil,
         fetchArtwork: (@MainActor (String) async -> Bool)? = nil,
-        onTrackPlayed: (@MainActor (String) -> Void)? = nil,
+        onTrackPlayed: (@MainActor (PlayPayload) -> Void)? = nil,
         streams: Bool = false,
         musicPolicy: MusicPolicy = .platformDefault,
         retryDelay: TimeInterval = 1,
@@ -972,10 +971,11 @@ final class PlayerStore {
         queue.updateSong(song)
         // an edit to the track queued behind this one moves the marker the
         // daemon advances at, which was armed when the item was enqueued
-        if let nextItem, nextItem.songID == song.id {
+        if let nextItem, nextItem.songID == song.id,
+           queue.next(wrapping: repeatMode == .all)?.song.libraryID == song.libraryID {
             nextItem.item.forwardPlaybackEndTime = Self.stopTime(for: song)
         }
-        guard let current, current.id == song.id else { return }
+        guard let current, current.id == song.id, current.libraryID == song.libraryID else { return }
 
         // only rebuild the window when the edit moved the markers, so a name
         // edit can't re-arm a stop time the user scrubbed past
@@ -1262,7 +1262,7 @@ final class PlayerStore {
         // doesn't count toward giving up on the queue
         consecutiveFailures = 0
         if reason == .trackEnded {
-            onTrackPlayed?(finished.id)
+            onTrackPlayed?(PlayPayload(trackId: finished.id, libraryID: finished.libraryID))
         }
         queue.advance(wrapping: repeatMode == .all)
         guard let song else { return true }
@@ -1452,7 +1452,7 @@ final class PlayerStore {
         // than building a second item for a track that is already playing
         if advanceOntoNextItem(.trackEnded) { return }
         if let song {
-            onTrackPlayed?(song.id)
+            onTrackPlayed?(PlayPayload(trackId: song.id, libraryID: song.libraryID))
         }
         let continues: Bool
         switch repeatMode {
