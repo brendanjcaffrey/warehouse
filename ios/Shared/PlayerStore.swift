@@ -120,6 +120,8 @@ final class PlayerStore {
     /// sign that a track started when we weren't the ones to start it
     private var currentItemObserver: NSKeyValueObservation?
     var interruptionObserver: NSObjectProtocol?
+    /// an ignored pending-start interruption cannot later resume an explicit pause.
+    var ignoresInterruptionEnd = false
     var routeChangeObserver: NSObjectProtocol?
     var remoteCommandsConfigured = false
     /// on watchos the session activates asynchronously (it can prompt for a

@@ -134,11 +134,16 @@ extension PlayerStore {
             // a track that hasn't started yet has no audio to interrupt, and
             // watchos raises one of these as the audio session activates for a
             // bluetooth output; taking the pending start down with it is what
-            // left a finished download sitting at a play button
-            guard status != .fetching else { break }
-            guard status != .buffering || pendingStartTime == nil else { break }
+            // left a downloaded track sitting at a play button. pending start
+            // ownership also covers cached tracks whose status is already ready.
+            ignoresInterruptionEnd = pendingStartTime != nil
+            guard !ignoresInterruptionEnd else { break }
             pause()
         case .ended:
+            // activation never paused our intent, so its end cannot undo a user pause.
+            let ignored = ignoresInterruptionEnd
+            ignoresInterruptionEnd = false
+            guard !ignored else { break }
             let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:))
             if options?.contains(.shouldResume) == true {
