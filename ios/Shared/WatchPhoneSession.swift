@@ -12,6 +12,8 @@ final class WatchPhoneSession: NSObject {
     private let sessionState: @MainActor () -> (activated: Bool, contentPending: Bool)
     private var contentObservation: NSKeyValueObservation?
     private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void
+    private let remoteReachable: @MainActor () -> Bool
+    private let sendRemoteMessage: ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void
 
     var onPlayReceipt: (@MainActor (PlayPayload) -> Void)?
     var onPlayTransferFinished: (@MainActor (PlayPayload) -> Void)?
@@ -25,6 +27,12 @@ final class WatchPhoneSession: NSObject {
         library: WatchLibraryReceiver,
         sessionState: @escaping @MainActor () -> (activated: Bool, contentPending: Bool) = {
             (WCSession.default.activationState == .activated, WCSession.default.hasContentPending)
+        },
+        remoteReachable: @escaping @MainActor () -> Bool = {
+            WCSession.isSupported() && WCSession.default.isReachable
+        },
+        sendRemoteMessage: @escaping ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void = { message, reply, failure in
+            WCSession.default.sendMessage(message, replyHandler: reply, errorHandler: { _ in failure() })
         },
         sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void = { data, completion in
             guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
@@ -41,6 +49,8 @@ final class WatchPhoneSession: NSObject {
         self.library = library
         metadataDirectory = library.directory
         self.sessionState = sessionState
+        self.remoteReachable = remoteReachable
+        self.sendRemoteMessage = sendRemoteMessage
         self.sendDiagnosticData = sendDiagnosticData
         super.init()
         library.onIdle = { [weak self] in self?.updateBackgroundLifetime() }
@@ -82,7 +92,7 @@ final class WatchPhoneSession: NSObject {
 
     /// whether the phone app is up & close enough to take a command
     var isReachable: Bool {
-        WCSession.isSupported() && WCSession.default.isReachable
+        remoteReachable()
     }
 
     /// plays already handed to the system's transfer queue, which persists
@@ -101,20 +111,23 @@ final class WatchPhoneSession: NSObject {
 
     /// sends a transport command & takes the phone's resulting state from the
     /// reply, which arrives whether or not the phone finds us reachable back
-    func send(_ command: RemoteCommand) {
-        guard isReachable else { return }
-        WCSession.default.sendMessage(
+    func send(_ command: RemoteCommand, completion: @escaping @MainActor (WatchRemoteMessage?) -> Void) {
+        guard isReachable else {
+            updateReachability()
+            completion(nil)
+            return
+        }
+        sendRemoteMessage(
             WatchRemoteMessage.command(command).encode(),
-            replyHandler: { [weak self] reply in
-                self?.dispatch { [self] in
-                    self?.apply(message: reply)
+            { [weak self] reply in
+                self?.dispatch {
+                    completion(WatchRemoteMessage(dictionary: reply))
                 }
             },
-            // the phone went away mid-tap; the screen is corrected when it
-            // comes back & reachability flips
-            errorHandler: { [weak self] _ in
+            { [weak self] in
                 self?.dispatch { [self] in
                     self?.updateReachability()
+                    completion(nil)
                 }
             })
     }

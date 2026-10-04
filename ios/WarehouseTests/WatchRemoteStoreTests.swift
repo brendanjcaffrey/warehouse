@@ -10,7 +10,7 @@ struct WatchRemoteStoreTests {
     }
 
     static func makeStore(sent: SentCommands) -> WatchRemoteStore {
-        WatchRemoteStore(send: { sent.commands.append($0) })
+        WatchRemoteStore(send: { command, _ in sent.commands.append(command) })
     }
 
     static let song = RemotePlaybackPayload(

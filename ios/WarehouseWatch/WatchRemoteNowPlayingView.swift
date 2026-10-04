@@ -7,13 +7,25 @@ struct WatchRemoteNowPlayingView: View {
     @Environment(WatchRemoteStore.self) private var remote
 
     var body: some View {
-        Group {
+        VStack {
             if let song = remote.nowPlaying {
                 content(song)
             } else if remote.isReachable {
                 ContentUnavailableView("Nothing Playing on iPhone", systemImage: "iphone")
             } else {
                 ContentUnavailableView("iPhone Not Reachable", systemImage: "iphone.slash")
+            }
+            if remote.isReachable {
+                if remote.isReconciling {
+                    Text("Refreshing iPhone…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if remote.reconciliationFailed {
+                    Button("Retry iPhone State") { remote.requestState() }
+                        .buttonStyle(.plain)
+                        .font(.caption2)
+                        .accessibilityHint("The last command could not be confirmed")
+                }
             }
         }
         // the badge in the header carries the device identity now, so the

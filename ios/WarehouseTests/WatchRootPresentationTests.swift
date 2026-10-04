@@ -110,7 +110,7 @@ struct WatchRootPresentationTests {
         let library = WatchLibraryStore(songs: SongsStore(database: database, fileStore: env.files),
                                         playlists: PlaylistsStore(database: database), defaults: env.defaults)
         await library.load()
-        let remote = WatchRemoteStore(send: { _ in })
+        let remote = WatchRemoteStore(send: { _, _ in })
         remote.setReachable(true)
         remote.apply(.nowPlaying(.init(trackId: "phone", name: "phone song", artistName: "", artworkFilename: nil,
                                        isPlaying: true, isActuallyPlaying: true)))

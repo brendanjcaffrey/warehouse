@@ -7,6 +7,243 @@ import WatchConnectivity
 @MainActor
 struct WatchPhoneSessionTests {
     @MainActor
+    final class RemoteEnv {
+        struct Request {
+            let command: RemoteCommand
+            let reply: ([String: Any]) -> Void
+            let fail: () -> Void
+        }
+
+        let metadata: WatchLibraryDeliveryTests.Env
+        var session: WatchPhoneSession!
+        var remote: WatchRemoteStore!
+        var requests = [Request]()
+        var reachable = true
+        var delayed: CheckedContinuation<Void, Never>?
+        var delays = [Int]()
+        var resumedDelays = 0
+
+        init() throws {
+            metadata = try WatchLibraryDeliveryTests.Env()
+            session = WatchPhoneSession(library: metadata.receiver(), sessionState: { (true, false) },
+                                        remoteReachable: { [unowned self] in reachable },
+                                        sendRemoteMessage: { [unowned self] message, reply, fail in
+                guard case .command(let command) = WatchRemoteMessage(dictionary: message) else { return }
+                requests.append(.init(command: command, reply: reply, fail: fail))
+            })
+            remote = WatchRemoteStore(send: { [unowned self] in session.send($0, completion: $1) }, retryDelay: { [weak self] attempt in
+                guard let self else { return }
+                delays.append(attempt)
+                await withCheckedContinuation { self.delayed = $0 }
+                resumedDelays += 1
+            })
+            session.remote = remote
+        }
+
+        func start() async throws {
+            await session.library.waitForImport()
+            remote.setReachable(true)
+            reply(0, WatchRemoteStoreTests.song)
+            try await PlayerStoreTests.waitFor { !self.remote.isReconciling }
+        }
+
+        func reply(_ index: Int, _ payload: RemotePlaybackPayload?) {
+            requests[index].reply(WatchRemoteMessage.nowPlaying(payload).encode())
+        }
+
+        func releaseDelay() {
+            delayed?.resume()
+            delayed = nil
+        }
+
+        func cleanUp() {
+            remote.setReachable(false)
+            releaseDelay()
+            metadata.cleanUp()
+        }
+    }
+
+    @Test("a failed remote command reconciles while the phone remains reachable")
+    func failedRemoteCommand() async throws {
+        let metadata = try WatchLibraryDeliveryTests.Env()
+        defer { metadata.cleanUp() }
+        let library = metadata.receiver()
+        await library.waitForImport()
+        var commands = [RemoteCommand]()
+        var fail: (() -> Void)?
+        let session = WatchPhoneSession(library: library, remoteReachable: { true }, sendRemoteMessage: { message, _, failure in
+            if case .command(let command) = WatchRemoteMessage(dictionary: message) {
+                commands.append(command)
+                fail = failure
+            }
+        })
+        let remote = WatchRemoteStore(send: { session.send($0, completion: $1) })
+        session.remote = remote
+        remote.setReachable(true)
+        remote.apply(.nowPlaying(WatchRemoteStoreTests.song))
+        remote.command(.playPause)
+        let failure = try #require(fail)
+        failure()
+        try await PlayerStoreTests.waitFor { session.contentActivity.count < 1 }
+        #expect(remote.isReachable)
+        #expect(commands == [.requestState, .playPause, .requestState])
+    }
+
+    @Test("delivery failures, lost replies and malformed replies reconcile controls without resending toggles",
+          arguments: [RemoteCommand.playPause, .pause, .toggleShuffle, .cycleRepeat], ["delivery", "lostReply", "malformed"])
+    func reconcileRemoteCommand(command: RemoteCommand, outcome: String) async throws {
+        let env = try RemoteEnv()
+        defer { env.cleanUp() }
+        try await env.start()
+        env.remote.command(command)
+        let optimistic = env.remote.nowPlaying
+        let actual = outcome == "delivery" ? WatchRemoteStoreTests.song : optimistic
+        #expect(optimistic != WatchRemoteStoreTests.song)
+        if outcome == "malformed" {
+            env.requests[1].reply(["invalid": true])
+        } else {
+            env.requests[1].fail()
+        }
+        #expect(env.session.contentActivity.count == 1)
+        try await PlayerStoreTests.waitFor { env.requests.count == 3 }
+        #expect(env.remote.isReachable)
+        #expect(env.remote.isReconciling)
+        #expect(env.requests.map(\.command) == [.requestState, command, .requestState])
+        env.reply(2, actual)
+        try await PlayerStoreTests.waitFor { !env.remote.isReconciling }
+        #expect(env.remote.nowPlaying == actual)
+        #expect(!env.remote.reconciliationFailed)
+        #expect(env.delays.isEmpty)
+        #expect(env.session.contentActivity.count < 1)
+    }
+
+    @Test("persistent query errors stop after three attempts and an explicit retry recovers")
+    func boundedRemoteReconciliation() async throws {
+        let env = try RemoteEnv()
+        defer { env.cleanUp() }
+        try await env.start()
+        env.remote.command(.toggleShuffle)
+        env.requests[1].fail()
+        try await PlayerStoreTests.waitFor { env.requests.count == 3 }
+        for index in 2...3 {
+            env.requests[index].fail()
+            try await PlayerStoreTests.waitFor { env.delayed != nil }
+            #expect(env.requests.count == index + 1)
+            #expect(env.remote.isReconciling)
+            env.releaseDelay()
+            try await PlayerStoreTests.waitFor { env.requests.count == index + 2 }
+        }
+        env.requests[4].fail()
+        try await PlayerStoreTests.waitFor { env.remote.reconciliationFailed }
+        #expect(!env.remote.isReconciling)
+        #expect(env.requests.map(\.command) == [.requestState, .toggleShuffle, .requestState, .requestState, .requestState])
+        #expect(env.delays == [1, 2])
+        #expect(env.delayed == nil)
+        env.remote.setReachable(true)
+        try await PlayerStoreTests.waitFor { env.session.contentActivity.count < 1 }
+        #expect(env.requests.count == 5)
+        env.remote.requestState()
+        #expect(env.remote.isReconciling && !env.remote.reconciliationFailed)
+        env.reply(5, nil)
+        try await PlayerStoreTests.waitFor { !env.remote.isReconciling }
+        #expect(env.remote.nowPlaying == nil)
+        #expect(!env.remote.reconciliationFailed)
+    }
+
+    @Test("a lost reply after the phone applies a toggle does not apply it twice",
+          arguments: [RemoteCommand.toggleShuffle, .cycleRepeat])
+    func appliedPhoneCommandReplyLost(command: RemoteCommand) async throws {
+        let env = try RemoteEnv()
+        defer { env.cleanUp() }
+        try await env.start()
+        let phone = PlayerStoreTests.makePlayer()
+        phone.play(PlayerStoreTests.songs(3), token: nil, baseURL: nil)
+        env.remote.apply(.nowPlaying(RemotePlaybackPayload(player: phone)))
+        env.remote.command(command)
+        phone.apply(env.requests[1].command)
+        let applied = try #require(RemotePlaybackPayload(player: phone))
+        #expect(applied.isShuffled == (command == .toggleShuffle))
+        #expect(applied.repeatMode == (command == .cycleRepeat ? .all : .off))
+        env.requests[1].fail()
+        try await PlayerStoreTests.waitFor { env.requests.count == 3 }
+        phone.apply(env.requests[2].command)
+        env.reply(2, RemotePlaybackPayload(player: phone))
+        try await PlayerStoreTests.waitFor { !env.remote.isReconciling }
+        #expect(env.remote.nowPlaying == applied)
+        #expect(RemotePlaybackPayload(player: phone) == applied)
+        #expect(env.requests.map(\.command) == [.requestState, command, .requestState])
+    }
+
+    @Test("an older reconciliation cannot replace a newer pending command", arguments: [false, true])
+    func newerRemoteCommand(oldQueryFails: Bool) async throws {
+        let env = try RemoteEnv()
+        defer { env.cleanUp() }
+        try await env.start()
+        env.remote.command(.playPause)
+        env.requests[1].fail()
+        try await PlayerStoreTests.waitFor { env.requests.count == 3 }
+        env.remote.command(.toggleShuffle)
+        let newer = env.remote.nowPlaying
+        if oldQueryFails { env.requests[2].fail() } else { env.reply(2, WatchRemoteStoreTests.song) }
+        try await PlayerStoreTests.waitFor { env.session.contentActivity.count < 1 }
+        #expect(env.remote.nowPlaying == newer)
+        #expect(env.requests.count == 4)
+        #expect(env.delays.isEmpty)
+        env.reply(3, WatchRemoteStoreTests.song.with(isShuffled: true))
+        try await PlayerStoreTests.waitFor { env.remote.nowPlaying == WatchRemoteStoreTests.song.with(isShuffled: true) }
+        #expect(!env.remote.isReconciling && !env.remote.reconciliationFailed)
+        // a duplicated old callback has no authority to trigger another query.
+        env.requests[1].fail()
+        try await PlayerStoreTests.waitFor { env.session.contentActivity.count < 1 }
+        #expect(env.requests.count == 4)
+    }
+
+    @Test("new commands, phone pushes and disconnection cancel a delayed query", arguments: ["command", "push", "disconnect"])
+    func cancelDelayedRemoteQuery(event: String) async throws {
+        let env = try RemoteEnv()
+        defer { env.cleanUp() }
+        try await env.start()
+        env.remote.command(.cycleRepeat)
+        env.requests[1].fail()
+        try await PlayerStoreTests.waitFor { env.requests.count == 3 }
+        env.requests[2].fail()
+        try await PlayerStoreTests.waitFor { env.delayed != nil }
+        switch event {
+        case "command": env.remote.command(.playPause)
+        case "push":
+            env.session.session(WCSession.default, didReceiveMessage: WatchRemoteMessage.nowPlaying(WatchRemoteStoreTests.song).encode())
+            try await PlayerStoreTests.waitFor { !env.remote.isReconciling }
+        default:
+            env.reachable = false
+            env.session.sessionReachabilityDidChange(WCSession.default)
+            try await PlayerStoreTests.waitFor { !env.remote.isReachable }
+        }
+        env.releaseDelay()
+        try await PlayerStoreTests.waitFor { env.resumedDelays == 1 }
+        #expect(env.requests.count == (event == "command" ? 4 : 3))
+        #expect(!env.remote.isReconciling && !env.remote.reconciliationFailed)
+    }
+
+    @Test("a phone disappearing during a command does not spin and reconnection refreshes state")
+    func remoteCommandDisconnect() async throws {
+        let env = try RemoteEnv()
+        defer { env.cleanUp() }
+        try await env.start()
+        env.remote.command(.next)
+        env.reachable = false
+        env.requests[1].fail()
+        try await PlayerStoreTests.waitFor { !env.remote.isReachable }
+        #expect(env.requests.count == 2)
+        #expect(!env.remote.isReconciling)
+        env.reachable = true
+        env.session.sessionReachabilityDidChange(WCSession.default)
+        try await PlayerStoreTests.waitFor { env.requests.count == 3 }
+        env.reply(2, nil)
+        try await PlayerStoreTests.waitFor { !env.remote.isReconciling }
+        #expect(env.remote.nowPlaying == nil)
+    }
+
+    @MainActor
     final class Env {
         let metadata: WatchLibraryDeliveryTests.Env
         let content: WatchContentDeliveryTests.Env
@@ -236,7 +473,7 @@ struct WatchPhoneSessionTests {
         let env = try Env()
         defer { env.cleanUp() }
         await env.library.waitForImport()
-        let remote = WatchRemoteStore(send: { _ in })
+        let remote = WatchRemoteStore(send: { _, _ in })
         env.session.remote = remote
         let payload = RemotePlaybackPayload(trackId: "t0", name: "track", artistName: "artist", artworkFilename: nil, isPlaying: true)
         var stateAtCompletion: RemotePlaybackPayload?

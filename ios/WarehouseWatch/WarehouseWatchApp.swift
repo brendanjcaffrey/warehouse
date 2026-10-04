@@ -46,7 +46,7 @@ struct WarehouseWatchApp: App {
         phone.onActivated = { plays.drain() }
         phone.onPlayReceipt = { plays.acknowledge($0) }
         phone.onPlayTransferFinished = { plays.finished($0) }
-        let remote = WatchRemoteStore(send: { phone.send($0) })
+        let remote = WatchRemoteStore(send: { phone.send($0, completion: $1) })
         phone.remote = remote
         _remote = State(initialValue: remote)
         self.phone = phone
