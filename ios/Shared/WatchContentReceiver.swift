@@ -79,6 +79,7 @@ final class WatchContentReceiver {
             try fileCache.adoptWatchSelection(music: snapshot.music, artwork: snapshot.artwork)
         }
         self.head = head
+        try compactReceipts()
         try drain()
         try inventory.publish(head: head, snapshot: snapshot)
     }
@@ -183,9 +184,14 @@ final class WatchContentReceiver {
             return
         }
         let url = fileCache.fileStore.fileURL(file.type, file.filename)
-        if receipts.contains(where: { $0.file == file && $0.status == .delivered }), file.matches(url) {
-            diagnostics.delivery(.receiptSent, file: file, source: .phone, status: .delivered)
-            send(.init(file: file, status: .delivered))
+        if file.matches(url) {
+            if receipts.contains(where: { $0.file == file && $0.status == .delivered }) {
+                diagnostics.delivery(.receiptSent, file: file, source: .phone, status: .delivered)
+                send(.init(file: file, status: .delivered))
+            } else {
+                // superseded receipts can be reconstructed only from current authority and verified bytes.
+                try acknowledge(file, status: .delivered)
+            }
         } else if let receipt = receipts.first(where: { $0.file == file && $0.status == .retrying }),
                   let retryAt = receipt.retryAt, retryAt > now() {
             send(receipt)
@@ -217,13 +223,39 @@ final class WatchContentReceiver {
         receipt.retryAt = retryAt
         receipt.attempts = attempts
         next.append(receipt)
+        try saveReceipts(retainedReceipts(next))
+        diagnostics.delivery(.receiptPersisted, file: file, source: .cache, status: status)
+        diagnostics.delivery(.receiptSent, file: file, source: .phone, status: status)
+        send(receipt)
+    }
+
+    private func retainedReceipts(_ candidates: [WatchContentReceipt]) throws -> [WatchContentReceipt] {
+        // pending or failed metadata must not revoke recovery evidence from the saved selection.
+        guard let head, let snapshot, snapshot.head == head else { return candidates }
+        let names: [LibraryFileType: Set<String>] = [.music: try snapshot.music, .artwork: try snapshot.artwork]
+        let staged = FileManager.default.fileExists(atPath: directory.path)
+            ? Set(try FileManager.default.contentsOfDirectory(atPath: directory.path).compactMap(UUID.init(uuidString:))) : []
+        var seen = [LibraryFileType: Set<String>]()
+        return candidates.reversed().filter { receipt in
+            let file = receipt.file
+            guard file.head == head, names[file.type]?.contains(file.filename) == true else { return false }
+            let latest = seen[file.type, default: []].insert(file.filename).inserted
+            // one latest result per selected file, plus exact backoff for manifests still in the inbox.
+            return latest || staged.contains(file.id)
+        }.reversed()
+    }
+
+    private func compactReceipts() throws {
+        guard !receipts.isEmpty else { return }
+        let next = try retainedReceipts(receipts)
+        if next != receipts { try saveReceipts(next) }
+    }
+
+    private func saveReceipts(_ next: [WatchContentReceipt]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try beforeReceipt()
         try JSONEncoder().encode(next).write(to: directory.appending(path: "receipts.json"), options: .atomic)
         receipts = next
-        diagnostics.delivery(.receiptPersisted, file: file, source: .cache, status: status)
-        diagnostics.delivery(.receiptSent, file: file, source: .phone, status: status)
-        send(receipt)
     }
 
     private func drain() throws {
@@ -261,6 +293,8 @@ final class WatchContentReceiver {
                 errorMessage = error.localizedDescription
             }
         }
+        // successful commits have released their manifests, so their superseded results can now leave the ledger.
+        try compactReceipts()
     }
 
     private func commit(_ file: WatchContentFile, from url: URL) throws {

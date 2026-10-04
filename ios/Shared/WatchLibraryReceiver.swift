@@ -100,6 +100,7 @@ final class WatchLibraryReceiver {
     private func drain() async throws {
         snapshot = try await database.watchSnapshot()
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        let retired = try await database.watchRetiredPublishers()
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             let incoming: WatchLibrarySnapshot
             let incomingBytes: Int64
@@ -113,11 +114,15 @@ final class WatchLibraryReceiver {
                 try FileManager.default.removeItem(at: url)
                 continue
             }
+            if retired.contains(incoming.head.publisher) {
+                try FileManager.default.removeItem(at: url)
+                continue
+            }
             guard let head else { continue }
             guard incoming.head.publisher == head.publisher,
                   incoming.head.revision == head.revision, incoming.head.libraryID == head.libraryID else {
                 // a file can precede its context. retain future revisions for the next wakeup.
-                if incoming.head.publisher == head.publisher && incoming.head.revision < head.revision {
+                if incoming.head.publisher == head.publisher && incoming.head.revision <= head.revision {
                     try FileManager.default.removeItem(at: url)
                 }
                 continue

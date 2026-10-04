@@ -55,6 +55,10 @@ extension LibraryDatabase {
         try await readDocument("watchSnapshot", as: WatchLibrarySnapshot.self)
     }
 
+    func watchRetiredPublishers() async throws -> Set<UUID> {
+        Set(try await readDocument("watchRetiredPublishers", as: [UUID].self) ?? [])
+    }
+
     private func readDocument<T: Decodable>(_ id: String, as type: T.Type) async throws -> T? {
         try await container.performBackgroundTask { context in
             try Self.document(id, context: context).map { try JSONDecoder().decode(type, from: $0) }
