@@ -9,6 +9,8 @@ struct WatchRootView: View {
     @Environment(WatchLibraryReceiver.self) private var receiver
     @Environment(WatchLibraryStore.self) private var library
     @Environment(WatchRemoteStore.self) private var remote
+    @Environment(PlayerStore.self) private var player
+    @State private var navigation = RemoteNavigation()
 
     private var startup: WatchLibraryStore.State {
         if receiver.protocolSelected, receiver.refreshFailed, library.state != .ready, library.state != .empty {
@@ -18,18 +20,11 @@ struct WatchRootView: View {
     }
 
     var body: some View {
-        Group {
-            if startup == .ready {
-                WatchMenuView()
-            } else if remote.isPhonePlaying {
-                // nothing of our own to browse yet, but the phone is playing:
-                // the remote is the whole app in that case, so skip the
-                // waiting screens rather than hiding the one useful thing
-                NavigationStack {
-                    WatchRemoteNowPlayingView()
-                }
-            } else {
-                NavigationStack {
+        NavigationStack {
+            Group {
+                if startup == .ready {
+                    WatchMenuView(openRemote: { navigation.open() })
+                } else {
                     ScrollView {
                         VStack(spacing: 12) {
                             startupContent
@@ -40,8 +35,8 @@ struct WatchRootView: View {
                                 Label("Diagnostics", systemImage: "waveform.path.ecg")
                             }
                             if remote.isAvailable {
-                                NavigationLink {
-                                    WatchRemoteNowPlayingView()
+                                Button {
+                                    navigation.open()
                                 } label: {
                                     Label("Open iPhone Now Playing", systemImage: "iphone")
                                 }
@@ -51,7 +46,20 @@ struct WatchRootView: View {
                     }
                 }
             }
+            .navigationTitle("Warehouse")
+            .navigationDestination(isPresented: $navigation.isPresented) {
+                WatchRemoteNowPlayingView()
+            }
+            .onChange(of: remote.isAvailable, initial: true) { updateRemoteOpen() }
+            .onChange(of: remote.isPhonePlaying) { updateRemoteOpen() }
         }
+    }
+
+    private func updateRemoteOpen() {
+        navigation.update(
+            isRemoteAvailable: remote.isAvailable,
+            isRemotePlaying: remote.isPhonePlaying,
+            isPlayingLocally: player.isPlaying)
     }
 
     @ViewBuilder
@@ -78,7 +86,7 @@ struct WatchRootView: View {
                 refreshButton
             }
         case .ready:
-            WatchMenuView()
+            WatchMenuView(openRemote: { navigation.open() })
         }
     }
 

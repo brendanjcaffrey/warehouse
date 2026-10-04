@@ -27,3 +27,21 @@ struct RemoteAutoOpen {
         hasOpened = true
     }
 }
+
+/// remote playback can offer navigation, but only the user dismisses it.
+struct RemoteNavigation {
+    var isPresented = false
+    private var autoOpen = RemoteAutoOpen()
+
+    mutating func open() {
+        autoOpen.noteOpened()
+        isPresented = true
+    }
+
+    mutating func update(isRemoteAvailable: Bool, isRemotePlaying: Bool, isPlayingLocally: Bool) {
+        if autoOpen.shouldOpen(
+            isRemoteAvailable: isRemoteAvailable, isRemotePlaying: isRemotePlaying, isPlayingLocally: isPlayingLocally) {
+            isPresented = true
+        }
+    }
+}
