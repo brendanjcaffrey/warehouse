@@ -23,7 +23,7 @@ final class WatchLibraryReceiver {
 
     private let diagnostics: WatchDiagnostics
     private let database: LibraryDatabase
-    private let directory: URL
+    nonisolated let directory: URL
     private var runner: Task<Void, Never>?
 
     init(database: LibraryDatabase, directory: URL = defaultDirectory(), diagnostics: WatchDiagnostics? = nil) {

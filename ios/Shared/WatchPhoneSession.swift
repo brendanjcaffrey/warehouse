@@ -8,6 +8,8 @@ final class WatchPhoneSession: NSObject {
     var content: WatchContentReceiver?
     let library: WatchLibraryReceiver
     let lifetime = WatchLibraryBackgroundLifetime()
+    private nonisolated let metadataDirectory: URL
+    private let sessionState: @MainActor () -> (activated: Bool, contentPending: Bool)
     private var contentObservation: NSKeyValueObservation?
     private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void
 
@@ -19,6 +21,9 @@ final class WatchPhoneSession: NSObject {
 
     init(
         library: WatchLibraryReceiver,
+        sessionState: @escaping @MainActor () -> (activated: Bool, contentPending: Bool) = {
+            (WCSession.default.activationState == .activated, WCSession.default.hasContentPending)
+        },
         sendDiagnosticData: @escaping @MainActor (Data, @escaping @MainActor (Bool) -> Void) -> Void = { data, completion in
             guard WCSession.isSupported(), WCSession.default.activationState == .activated else {
                 completion(false)
@@ -32,6 +37,8 @@ final class WatchPhoneSession: NSObject {
         }
     ) {
         self.library = library
+        metadataDirectory = library.directory
+        self.sessionState = sessionState
         self.sendDiagnosticData = sendDiagnosticData
         super.init()
         library.onIdle = { [weak self] in self?.updateBackgroundLifetime() }
@@ -50,15 +57,16 @@ final class WatchPhoneSession: NSObject {
         guard WCSession.isSupported() else { return }
         contentObservation = WCSession.default.observe(\.hasContentPending, options: [.initial, .new]) { [weak self] _, _ in
             guard let self else { return }
-            Task { @MainActor in self.updateBackgroundLifetime() }
+            self.dispatch { [self] in self.updateBackgroundLifetime() }
         }
         WCSession.default.delegate = self
         WCSession.default.activate()
     }
 
     func updateBackgroundLifetime() {
-        lifetime.update(activated: WCSession.default.activationState == .activated,
-                        contentPending: WCSession.default.hasContentPending, importsPending: library.pendingOperations + contentActivity.count)
+        let state = sessionState()
+        lifetime.update(activated: state.activated, contentPending: state.contentPending,
+                        importsPending: library.pendingOperations + contentActivity.count)
     }
 
     func requestLibrary() {
@@ -96,14 +104,14 @@ final class WatchPhoneSession: NSObject {
         WCSession.default.sendMessage(
             WatchRemoteMessage.command(command).encode(),
             replyHandler: { [weak self] reply in
-                Task { @MainActor in
+                self?.dispatch { [self] in
                     self?.apply(message: reply)
                 }
             },
             // the phone went away mid-tap; the screen is corrected when it
             // comes back & reachability flips
             errorHandler: { [weak self] _ in
-                Task { @MainActor in
+                self?.dispatch { [self] in
                     self?.updateReachability()
                 }
             })
@@ -119,6 +127,20 @@ final class WatchPhoneSession: NSObject {
                                              detail: isReachable ? .reachable : .unreachable))
         remote?.setReachable(isReachable)
     }
+
+    /// register delegate work before yielding, since system delivery can already be idle.
+    private nonisolated func dispatch(_ operation: @escaping @MainActor () -> Void) {
+        contentActivity.begin()
+        dispatchHeld(operation)
+    }
+
+    /// file callbacks acquire their hold before staging and keep it through this actor hop.
+    private nonisolated func dispatchHeld(_ operation: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            defer { contentActivity.end(); updateBackgroundLifetime() }
+            operation()
+        }
+    }
 }
 
 extension WatchPhoneSession: WCSessionDelegate {
@@ -127,15 +149,13 @@ extension WatchPhoneSession: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
-        Task { @MainActor in
+        let context = session.receivedApplicationContext
+        dispatch { [self] in
             WatchDiagnostics.shared.record(.init(kind: .activationChanged, id: UUID(), source: .system,
                                                  error: error, detail: activationState == .activated ? .activated : .inactive))
-        }
-        guard activationState == .activated else { return }
-        // the last received library head persists across launches, even
-        // when the phone is unavailable
-        let context = session.receivedApplicationContext
-        Task { @MainActor in
+            guard activationState == .activated else { return }
+            // the last received library head persists across launches, even
+            // when the phone is unavailable
             applyContext(context)
             library.resume()
             content?.resume()
@@ -151,52 +171,53 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        Task { @MainActor in
+        dispatch { [self] in
             apply(message: message)
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         if let request = WatchInventoryRequest(dictionary: userInfo) {
-            contentActivity.begin()
-            Task { @MainActor in
-                defer { contentActivity.end(); updateBackgroundLifetime() }
+            dispatch { [self] in
                 try? content?.query(request)
             }
             return
         }
         if let report = WatchLibraryDeliveryReport(dictionary: userInfo) {
-            Task { @MainActor in try? content?.receive(report) }
+            dispatch { [self] in try? content?.receive(report) }
             return
         }
         guard userInfo["kind"] as? String == "watchContentQuery", let file = WatchContentFile(dictionary: userInfo) else { return }
-        Task { @MainActor in try? content?.query(file) }
+        dispatch { [self] in try? content?.query(file) }
     }
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
-        if file.metadata?["kind"] as? String == "watchContentFile",
-           let metadata = file.metadata, let contentFile = WatchContentFile(dictionary: metadata) {
+        receiveFile(file.fileURL, metadata: file.metadata)
+    }
+
+    nonisolated func receiveFile(_ source: URL, metadata: [String: Any]?) {
+        if metadata?["kind"] as? String == "watchContentFile",
+           let metadata, let contentFile = WatchContentFile(dictionary: metadata) {
             contentActivity.begin()
             do {
-                try WatchContentReceiver.stage(file.fileURL, file: contentFile)
-                Task { @MainActor in
-                    defer { contentActivity.end(); updateBackgroundLifetime() }
+                try WatchContentReceiver.stage(source, file: contentFile)
+                dispatchHeld { [self] in
                     content?.staged(contentFile)
                 }
             } catch {
-                Task { @MainActor in
-                    defer { contentActivity.end(); updateBackgroundLifetime() }
+                dispatchHeld { [self] in
                     content?.stagingFailed(contentFile, error: error)
                 }
             }
             return
         }
-        if file.metadata?["kind"] as? String == "watchLibrarySnapshot" {
+        if metadata?["kind"] as? String == "watchLibrarySnapshot" {
+            contentActivity.begin()
             do {
-                _ = try WatchLibraryReceiver.stage(file.fileURL)
-                Task { @MainActor in library.received(); updateBackgroundLifetime() }
+                _ = try WatchLibraryReceiver.stage(source, directory: metadataDirectory)
+                dispatchHeld { [self] in library.received() }
             } catch {
-                Task { @MainActor in library.failed(error); updateBackgroundLifetime() }
+                dispatchHeld { [self] in library.failed(error) }
             }
             return
         }
@@ -204,14 +225,14 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
-        Task { @MainActor in
+        dispatch { [self] in
             updateReachability()
             if session.isReachable { requestLibrary() }
         }
     }
 
     private nonisolated func apply(_ context: [String: Any]) {
-        Task { @MainActor in applyContext(context) }
+        dispatch { [self] in applyContext(context) }
     }
 
     func applyContext(_ context: [String: Any]) {
