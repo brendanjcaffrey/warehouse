@@ -76,7 +76,7 @@ struct WatchLibraryServicesTests {
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, source) = try #require(env.queued.first { $0.0.type == .music })
         var receipts: [WatchContentReceipt] = []
         let inbox = env.root.appending(path: "production-content")
@@ -96,17 +96,18 @@ struct WatchLibraryServicesTests {
         await services.receiver.waitForImport()
         #expect(services.library.state == .ready)
         try WatchContentReceiver.stage(source, file: file, directory: inbox)
-        services.content?.staged(file)
+        await services.content?.settledStaged(file)
         #expect(receipts.last?.status == .storageFull)
         #expect(!env.watchFiles.exists(file.type, file.filename))
         #expect(services.artwork.artworkURL("a1.jpg") == nil)
         capacity = 1_000_000_000
         env.now += 3_600
         // storage-full admission asks for redelivery; the phone retains the desired job.
-        try queue.receive(try #require(receipts.last))
-        queue.resume()
+        try await queue.settledReceive(try #require(receipts.last))
+        await queue.settledResume()
         try WatchContentReceiver.stage(source, file: file, directory: inbox)
         await services.refresh()
+        await services.content?.waitForWork()
         #expect(env.watchFiles.exists(file.type, file.filename))
         #expect(receipts.last?.status == .delivered)
         #expect(services.library.progress().music.downloaded == 1)

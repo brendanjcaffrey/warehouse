@@ -410,9 +410,9 @@ struct WatchPhoneSessionTests {
         let snapshot = try env.content.snapshot(count: 4)
         try env.content.cache(snapshot)
         let queue = try env.content.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let file = try #require(env.content.queued.first?.0)
-        try env.receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await env.receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let inbox = env.content.root.appending(path: "receiver")
         if writeFails { try Data("blocks directory creation".utf8).write(to: inbox) }
         var responsesAtCompletion = 0
@@ -493,9 +493,9 @@ struct WatchPhoneSessionTests {
         let snapshot = try env.content.snapshot(count: 4)
         try env.content.cache(snapshot)
         let queue = try env.content.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let file = try #require(env.content.queued.first?.0)
-        try env.receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await env.receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         var receiptAtCompletion: WatchContentReceipt?
         env.hold { receiptAtCompletion = env.receiver.receipts.last }
         env.session.receiveFile(env.content.root.appending(path: "missing"), metadata: try file.encode())

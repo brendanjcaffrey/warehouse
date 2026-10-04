@@ -49,18 +49,28 @@ final class PhoneWatchContentQueue {
     private let schedulesRetries: Bool
     private var saved: Saved
     private var timer: Task<Void, Never>?
+    private let worker: WatchContentWorker
+    private var generation = UUID()
+    private var preparations: [UUID: Task<Void, Never>] = [:]
+    private var preparationSources: [UUID: UUID] = [:]
+    private var preparingNames: [UUID: String] = [:]
+
+    func waitForWork() async {
+        while let task = preparations.values.first { await task.value }
+    }
     private(set) var errorMessage: String?
     var jobs: [Job] { saved.jobs }
 
     init(fileStore: FileStore, directory: URL = defaultDirectory(), transport: Transport,
          now: @escaping () -> Date = { Date() }, schedulesRetries: Bool = true, diagnostics: WatchDiagnostics? = nil,
-         state: WatchDeliveryState = .init()) throws {
+         state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker()) throws {
         self.diagnostics = diagnostics ?? .shared
         self.fileStore = fileStore
         self.directory = directory
         self.transport = transport
         self.now = now
         self.state = state
+        self.worker = worker
         self.schedulesRetries = schedulesRetries
         let url = directory.appending(path: "state.json")
         let loaded = try state.load(Saved.self, from: url, empty: Saved())
@@ -98,16 +108,9 @@ final class PhoneWatchContentQueue {
             }
             return try? JSONDecoder().decode(WatchContentFile.self, from: data)
         }
-        let verified = try (outstanding + descriptors).compactMap { file -> WatchContentFile? in
-            guard (try? file.validate()) != nil else { return nil }
-            let fingerprint: (bytes: Int64, digest: String)
-            do { fingerprint = try WatchContentFile.fingerprint(directory.appending(path: file.id.uuidString)) } catch {
-                if WatchDeliveryState.isMissing(error) { return nil }
-                throw error
-            }
-            return fingerprint.bytes == file.bytes && fingerprint.digest == file.digest ? file : nil
-        }
-        return Array(Dictionary(verified.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values)
+        // descriptors are candidates; verification runs on the worker before their bytes are reused.
+        let candidates = (outstanding + descriptors).filter { (try? $0.validate()) != nil }
+        return Array(Dictionary(candidates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values)
     }
 
     nonisolated static func defaultDirectory() -> URL { URL.applicationSupportDirectory.appending(path: "watch-content-queue") }
@@ -129,6 +132,10 @@ final class PhoneWatchContentQueue {
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
         let snapshot = snapshot?.head == head ? snapshot : nil
         if let snapshot { _ = try snapshot.validatedLibrary() }
+        if saved.head != head || (snapshot != nil && snapshot != saved.snapshot) {
+            generation = UUID()
+            preparations.values.forEach { $0.cancel() }
+        }
         if saved.head != head {
             let old = saved.jobs.compactMap(\.file)
             // exported filenames identify content; a metadata revision does not revoke verified watch storage.
@@ -149,15 +156,6 @@ final class PhoneWatchContentQueue {
             saved.snapshot = snapshot
             saved.jobs = try snapshot.music.sorted().map { previous[.music]?[$0] ?? Job(type: .music, filename: $0) }
                 + snapshot.artwork.sorted().map { previous[.artwork]?[$0] ?? Job(type: .artwork, filename: $0) }
-            for index in saved.jobs.indices where saved.jobs[index].file == nil {
-                let job = saved.jobs[index]
-                if let file = saved.recoveryFiles?.first(where: {
-                    $0.head == head && $0.type == job.type && $0.filename == job.filename
-                }) {
-                    saved.jobs[index].file = file
-                    saved.jobs[index].status = .awaitingReceipt
-                }
-            }
             let desired = Dictionary(grouping: saved.jobs, by: \.type).mapValues { Set($0.map(\.filename)) }
             saved.recoveryFiles = saved.recoveryFiles?.filter {
                 $0.head.libraryID == head?.libraryID && desired[$0.type]?.contains($0.filename) == true
@@ -349,12 +347,13 @@ final class PhoneWatchContentQueue {
         // source copies may be removed only after the system relinquishes them.
         let needed = Set(saved.jobs.filter { $0.status != .delivered && $0.status != .failed }.compactMap { $0.file?.id })
             .union(systemIDs).union(saved.recoveryFiles?.map(\.id) ?? []).union(saved.unidentifiedSources ?? [])
+            .union(preparations.keys).union(preparationSources.values)
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             if let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent), !needed.contains(id) {
                 try FileManager.default.removeItem(at: url)
             }
         }
-        var occupied = outstanding.count + saved.jobs.filter {
+        var occupied = preparations.count + outstanding.count + saved.jobs.filter {
             [.transferring, .awaitingReceipt].contains($0.status) && $0.file.map { !systemIDs.contains($0.id) } == true
         }.count
         for index in saved.jobs.indices {
@@ -381,24 +380,20 @@ final class PhoneWatchContentQueue {
                   head.metadataReady, head.failed != true, head.libraryID != nil else { continue }
             do {
                 if job.file == nil {
+                    let key = "\(head.publisher)/\(head.revision)/\(job.type)/\(job.filename)"
+                    guard !preparingNames.values.contains(key) else { continue }
                     let recovered = saved.recoveryFiles?.first {
-                        $0.head.libraryID == head.libraryID && $0.type == job.type && $0.filename == job.filename && $0.matches(source($0))
+                        $0.head.libraryID == head.libraryID && $0.type == job.type && $0.filename == job.filename
                     }
-                    let original = recovered.map { source($0) } ?? fileStore.fileURL(job.type, job.filename)
                     guard recovered != nil || fileStore.exists(job.type, job.filename) else {
                         job.status = .missingOnPhone
                         job.nextAttempt = now().addingTimeInterval(60)
                         saved.jobs[index] = job
                         continue
                     }
-                    let id = UUID()
-                    let copy = directory.appending(path: id.uuidString)
-                    try FileManager.default.copyItem(at: original, to: copy)
-                    let fingerprint = try WatchContentFile.fingerprint(copy)
-                    let file = WatchContentFile(id: id, head: head, type: job.type, filename: job.filename,
-                                                bytes: fingerprint.bytes, digest: fingerprint.digest)
-                    try file.validate()
-                    job.file = file
+                    prepare(job, head: head, recovered: recovered, key: key)
+                    occupied += 1
+                    continue
                 }
                 guard let file = job.file else { continue }
                 job.attempts += 1
@@ -433,6 +428,64 @@ final class PhoneWatchContentQueue {
         try save()
         try publishReport()
         schedule()
+    }
+
+    private func prepare(_ job: Job, head: WatchLibraryHead, recovered: WatchContentFile?, key: String) {
+        let id = UUID()
+        let epoch = generation
+        let original = fileStore.fileURL(job.type, job.filename)
+        let copy = directory.appending(path: id.uuidString)
+        let recoveryURL = recovered.map { source($0) }
+        preparingNames[id] = key
+        preparationSources[id] = recovered?.id
+        preparations[id] = Task {
+            do {
+                let file = try await worker.prepare(.init(id: id, head: head, type: job.type, filename: job.filename,
+                                                           original: original, recovered: recovered, recoveryURL: recoveryURL, copy: copy))
+                try Task.checkCancellation()
+                guard generation == epoch, saved.head == head, transport.available(),
+                      let index = saved.jobs.firstIndex(where: { $0.type == job.type && $0.filename == job.filename && $0.file == nil })
+                else { throw CancellationError() }
+                // no suspension between authority validation, durable ownership and enqueue.
+                saved.jobs[index].file = file
+                let queriesRecovery = file.id != id
+                saved.jobs[index].status = queriesRecovery ? .awaitingReceipt : .transferring
+                saved.jobs[index].nextAttempt = queriesRecovery ? now().addingTimeInterval(60) : .distantPast
+                saved.jobs[index].attempts += 1
+                try state.save(file, to: directory.appending(path: "\(file.id.uuidString).json"))
+                try save()
+                if queriesRecovery {
+                    transport.query(file)
+                    diagnostics.delivery(.receiptQuery, file: file, source: .phone)
+                } else {
+                    transport.enqueue(file, copy)
+                    diagnostics.delivery(.contentEnqueued, file: file, source: .phone, status: .transferring)
+                }
+            } catch {
+                if generation == epoch, !(error is CancellationError),
+                   let index = saved.jobs.firstIndex(where: { $0.type == job.type && $0.filename == job.filename }) {
+                    let missing = WatchDeliveryState.isMissing(error) && saved.jobs[index].file == nil
+                    saved.jobs[index].status = missing ? .missingOnPhone : Self.isPermanent(error) ? .failed : .retrying
+                    if missing { saved.recoveryFiles?.removeAll { $0.id == recovered?.id } }
+                    saved.jobs[index].attempts += 1
+                    saved.jobs[index].nextAttempt = now().addingTimeInterval(missing ? 60 : backoff(saved.jobs[index].attempts))
+                    errorMessage = error.localizedDescription
+                    try? save()
+                }
+                // failed persistence may already own this copy; preserve it for receipt-query recovery.
+                if !saved.jobs.contains(where: { $0.file?.id == id }) {
+                    try? FileManager.default.removeItem(at: copy)
+                    try? FileManager.default.removeItem(at: directory.appending(path: "\(id.uuidString).json"))
+                }
+            }
+            preparations[id] = nil
+            preparationSources[id] = nil
+            preparingNames[id] = nil
+            // a new selection can replenish slots; unavailable transport waits for a lifecycle wakeup.
+            if generation != epoch || transport.available() {
+                do { try pump() } catch { errorMessage = error.localizedDescription }
+            }
+        }
     }
 
     private func publishReport() throws {

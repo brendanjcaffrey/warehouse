@@ -5,7 +5,13 @@ import WatchConnectivity
 @MainActor
 final class WatchPhoneSession: NSObject {
     nonisolated let contentActivity = WatchContentActivity()
-    var content: WatchContentReceiver?
+    var content: WatchContentReceiver? {
+        didSet {
+            oldValue?.onActivityChanged = {}
+            content?.onActivityChanged = { [weak self] in self?.updateBackgroundLifetime() }
+            updateBackgroundLifetime()
+        }
+    }
     let library: WatchLibraryReceiver
     let lifetime = WatchLibraryBackgroundLifetime()
     private nonisolated let metadataDirectory: URL
@@ -78,7 +84,7 @@ final class WatchPhoneSession: NSObject {
     func updateBackgroundLifetime() {
         let state = sessionState()
         lifetime.update(activated: state.activated, contentPending: state.contentPending,
-                        importsPending: library.pendingOperations + contentActivity.count)
+                        importsPending: library.pendingOperations + contentActivity.count + (content?.pendingOperations ?? 0))
     }
 
     func requestLibrary() {

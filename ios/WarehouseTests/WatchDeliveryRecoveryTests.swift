@@ -70,6 +70,7 @@ struct WatchDeliveryRecoveryTests {
             let services = services()
             services.publish(identity: "account")
             await services.waitForPublication()
+            await services.content?.waitForWork()
             #expect(services.publisher?.errorMessage == nil)
             return services
         }
@@ -114,6 +115,7 @@ struct WatchDeliveryRecoveryTests {
         env.writeFails = false
         services.publish(identity: "account")
         await services.waitForPublication()
+        await services.content?.waitForWork()
         #expect(services.content != nil && services.publisher?.head == head)
         #expect(env.settings.deliveryStartupError == nil && !env.settings.deliveryRecovered)
         #expect(env.files.outstanding == files && env.files.queued.count == files.count)
@@ -148,6 +150,7 @@ struct WatchDeliveryRecoveryTests {
         #expect(services.content == nil && services.publisher == nil)
         env.settings.onRetryDelivery()
         await services.waitForPublication()
+        await services.content?.waitForWork()
         let head = try #require(services.publisher?.head)
         let queue = try #require(services.content)
         #expect(head.publisher != oldHead.publisher && head.metadataReady)
@@ -171,23 +174,23 @@ struct WatchDeliveryRecoveryTests {
         #expect(metadataReceiver.head == head && metadataReceiver.snapshot?.head == head)
         let snapshot = try #require(metadataReceiver.snapshot)
         let receiver = try env.files.receiver()
-        try receiver.reconcile(head: head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: head, snapshot: snapshot)
         let oldFile = try #require(oldFiles.first)
         try env.files.stage(oldFile, url: env.queueDirectory.appending(path: oldFile.id.uuidString))
-        receiver.resume()
+        await receiver.settledResume()
         #expect(!env.files.watchFiles.exists(oldFile.type, oldFile.filename))
-        try queue.receive(.init(file: oldFile, status: .delivered))
+        try await queue.settledReceive(.init(file: oldFile, status: .delivered))
         #expect(queue.progress().music.downloaded == 0)
         env.files.outstanding.removeAll()
-        queue.resume()
+        await queue.settledResume()
         var delivered = Set<UUID>()
         while let file = env.files.outstanding.first {
             #expect(file.head == head && !oldFiles.contains(file))
             let url = try #require(env.files.queued.first { $0.0 == file }?.1)
             try env.files.stage(file, url: url)
-            receiver.resume()
+            await receiver.settledResume()
             env.files.outstanding.removeAll { $0.id == file.id }
-            try queue.receive(try #require(env.files.receipts.last { $0.file == file }))
+            try await queue.settledReceive(try #require(env.files.receipts.last { $0.file == file }))
             delivered.insert(file.id)
         }
         #expect(delivered.count == 5)
@@ -204,10 +207,10 @@ struct WatchDeliveryRecoveryTests {
         let head = try #require(original.publisher?.head)
         let snapshot = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: env.metadata.deliveries[0].0))
         let receiver = try env.files.receiver()
-        try receiver.reconcile(head: head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: head, snapshot: snapshot)
         let (file, source) = try #require(env.files.queued.first)
         try env.files.stage(file, url: source)
-        receiver.resume()
+        await receiver.settledResume()
         env.files.outstanding.removeAll { $0.id == file.id }
         try env.files.files.delete(file.type, file.filename)
         let descriptor = env.queueDirectory.appending(path: "\(file.id.uuidString).json")
@@ -221,21 +224,24 @@ struct WatchDeliveryRecoveryTests {
         services.publish(identity: "account")
         env.settings.onRetryDelivery()
         await services.waitForPublication()
+        await services.content?.waitForWork()
         let queue = try #require(services.content)
         #expect(services.publisher?.head == head)
         #expect(queue.progress().music.downloaded == 0)
         #expect(env.files.queries.contains(file))
-        try receiver.query(file)
-        try queue.receive(try #require(env.files.receipts.last { $0.file == file }))
+        try await receiver.settledQuery(file)
+        try await queue.settledReceive(try #require(env.files.receipts.last { $0.file == file }))
         #expect(queue.progress().music.downloaded == 1)
         #expect(env.files.queued.filter { $0.0.id == file.id }.count == 1)
         env.settings.setPlaylistIds([])
         services.publish(identity: "account")
         await services.waitForPublication()
+        await services.content?.waitForWork()
         #expect(try Data(contentsOf: unidentified) == Data("unidentified bytes".utf8))
         let restored = env.services()
         restored.publish(identity: "account")
         await restored.waitForPublication()
+        await restored.content?.waitForWork()
         #expect(try Data(contentsOf: unidentified) == Data("unidentified bytes".utf8))
     }
 
@@ -252,6 +258,7 @@ struct WatchDeliveryRecoveryTests {
         services.publish(identity: "new-account")
         env.settings.onRetryDelivery()
         await services.waitForPublication()
+        await services.content?.waitForWork()
         let queue = try #require(services.content)
         #expect(services.publisher?.head.libraryID == "new-account")
         #expect(queue.jobs.filter { $0.type == .music }.allSatisfy { $0.file == nil })
@@ -275,6 +282,7 @@ struct WatchDeliveryRecoveryTests {
         env.descriptorReadFails = false
         env.settings.onRetryDelivery()
         await services.waitForPublication()
+        await services.content?.waitForWork()
         #expect(services.content != nil && env.settings.deliveryStartupError == nil)
         #expect(env.files.queued.count == 4)
     }
@@ -299,6 +307,7 @@ struct WatchDeliveryRecoveryTests {
         env.replacementFails = false
         env.settings.onRetryDelivery()
         await services.waitForPublication()
+        await services.content?.waitForWork()
         #expect(services.content != nil && services.publisher?.head.metadataReady == true)
         #expect(env.settings.deliveryStartupError == nil)
     }
@@ -312,7 +321,7 @@ struct WatchDeliveryRecoveryTests {
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let first = env.queued[0]
         let second = env.queued[1]
         try env.watchFiles.write(first.0.type, first.0.filename, data: Data(contentsOf: first.1))
@@ -347,6 +356,7 @@ struct WatchDeliveryRecoveryTests {
         failWrites = false
         await services.refresh()
         let content = try #require(services.content)
+        await content.waitForWork()
         #expect(services.library.deliveryStartupError == nil && services.library.deliveryRecovered)
         #expect(services.library.state == .ready)
         #expect(services.library.progress().music.downloaded == 2)
@@ -354,13 +364,14 @@ struct WatchDeliveryRecoveryTests {
         #expect(first.0.matches(env.watchFiles.fileURL(first.0.type, first.0.filename)))
         #expect(second.0.matches(env.watchFiles.fileURL(second.0.type, second.0.filename)))
         // presence can support local playback, but an acknowledgment still requires a matching query and verified bytes.
-        try content.query(first.0)
+        try await content.settledQuery(first.0)
         #expect(env.receipts.last == .init(file: first.0, status: .delivered))
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.progress().music.downloaded == 1)
         let restored = WatchLibraryServices(database: metadata.watch, fileStore: env.watchFiles, defaults: defaults,
                                             metadataDirectory: metadata.inbox, contentDirectory: inbox)
         await restored.launch()
+        await restored.content?.waitForWork()
         #expect(restored.library.deliveryStartupError == nil && restored.content?.receipts.count == 2)
         #expect(restored.library.progress().music.downloaded == 2)
     }

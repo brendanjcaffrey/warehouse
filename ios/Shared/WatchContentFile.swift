@@ -43,6 +43,7 @@ struct WatchContentFile: Codable, Equatable, Sendable {
         var hash = SHA256()
         var bytes: Int64 = 0
         while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
+            try Task.checkCancellation()
             bytes += Int64(data.count)
             hash.update(data: data)
         }

@@ -7,42 +7,42 @@ import Testing
 @MainActor
 struct WatchJournalRetentionTests {
     @Test("receipt history is bounded by selected files and staged retries, with verified query recovery")
-    func receiptChurn() throws {
+    func receiptChurn() async throws {
         let env = try WatchContentDeliveryTests.Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for _ in 0..<50 {
             let duplicate = WatchContentFile(head: file.head, type: file.type, filename: file.filename,
                                              bytes: file.bytes, digest: file.digest)
             try env.stage(duplicate, url: url)
-            receiver.resume()
+            await receiver.settledResume()
         }
         #expect(receiver.receipts.count == 1)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(receiver.receipts.count == 1)
         let count = env.queued.count
-        try receiver.query(file)
+        try await receiver.settledQuery(file)
         #expect(env.receipts.last?.file == file && env.receipts.last?.status == .delivered)
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
         #expect(env.queued.filter { $0.0.id == file.id }.count == 1)
         #expect(env.queued.count <= count + 1)
         #expect(receiver.receipts.count == 1)
 
         let next = try env.snapshot(count: 4, revision: 2)
-        try receiver.reconcile(head: next.head, snapshot: nil)
+        try await receiver.settledReconcile(head: next.head, snapshot: nil)
         #expect(receiver.receipts.count == 1)
-        try receiver.reconcile(head: next.head, snapshot: next)
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
         #expect(receiver.receipts.isEmpty)
-        try receiver.query(file)
+        try await receiver.settledQuery(file)
         #expect(env.receipts.last?.status == .failed)
         #expect(receiver.receipts.isEmpty)
 
@@ -52,39 +52,39 @@ struct WatchJournalRetentionTests {
                                         playlistIDs: selected, metadataReady: true)
             let replacement = WatchLibrarySnapshot(head: head, libraryData: selected.isEmpty
                                                    ? try Library().serializedData() : snapshot.libraryData)
-            try receiver.reconcile(head: head, snapshot: replacement)
+            try await receiver.settledReconcile(head: head, snapshot: replacement)
             if !selected.isEmpty {
                 let current = WatchContentFile(head: head, type: file.type, filename: file.filename, bytes: file.bytes, digest: file.digest)
                 try env.stage(current, url: url)
-                receiver.resume()
+                await receiver.settledResume()
                 #expect(env.receipts.last?.file == current && env.receipts.last?.status == .delivered)
             }
             #expect(receiver.receipts.count == (selected.isEmpty ? 0 : 1))
             let count = env.receipts.count
-            try receiver.query(file)
+            try await receiver.settledQuery(file)
             #expect(env.receipts.count == count)
             receiver = try env.receiver()
-            try receiver.reconcile(head: head, snapshot: replacement)
+            try await receiver.settledReconcile(head: head, snapshot: replacement)
             #expect(receiver.receipts.count == (selected.isEmpty ? 0 : 1))
         }
     }
 
     @Test("pruned receipt queries cannot promote missing or same-size corrupt bytes", arguments: [false, true])
-    func unverifiedQuery(_ corrupt: Bool) throws {
+    func unverifiedQuery(_ corrupt: Bool) async throws {
         let env = try WatchContentDeliveryTests.Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try env.stage(file, url: url)
-        receiver.resume()
+        await receiver.settledResume()
         let duplicate = WatchContentFile(head: file.head, type: file.type, filename: file.filename, bytes: file.bytes, digest: file.digest)
         try env.stage(duplicate, url: url)
-        receiver.resume()
+        await receiver.settledResume()
         #expect(!receiver.receipts.contains { $0.file == file })
         if corrupt {
             try env.watchFiles.write(file.type, file.filename, data: Data(repeating: 0, count: Int(file.bytes)))
@@ -92,20 +92,20 @@ struct WatchJournalRetentionTests {
             try env.watchFiles.delete(file.type, file.filename)
         }
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
-        try receiver.query(file)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledQuery(file)
         #expect(env.receipts.last?.file == file && env.receipts.last?.status == .retrying)
         #expect(receiver.receipts.count == 1)
     }
 
     @Test("large legacy history compacts durably without losing staged backoff or recovery evidence")
-    func largeHistory() throws {
+    func largeHistory() async throws {
         let env = try WatchContentDeliveryTests.Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4, revision: 2)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         let directory = env.root.appending(path: "receiver")
@@ -128,7 +128,7 @@ struct WatchJournalRetentionTests {
         var receiver = try env.receiver()
         let startup = Date().timeIntervalSince(started)
         let compactStarted = Date()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let compact = Date().timeIntervalSince(compactStarted)
         #expect(receiver.receipts.count == 2)
         #expect(receiver.receipts.contains(retry))
@@ -136,15 +136,15 @@ struct WatchJournalRetentionTests {
         let bytes = try Data(contentsOf: ledger)
         #expect(bytes.count < 2_000)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(receiver.receipts.contains(retry))
         env.now += 61
-        receiver.resume()
+        await receiver.settledResume()
         #expect(env.watchFiles.exists(file.type, file.filename))
-        receiver.resume()
+        await receiver.settledResume()
         #expect(receiver.receipts.count == 1)
         let writeStarted = Date()
-        try receiver.query(duplicate)
+        try await receiver.settledQuery(duplicate)
         let write = Date().timeIntervalSince(writeStarted)
         #expect(env.receipts.last?.file == duplicate && env.receipts.last?.status == .delivered)
         #expect(receiver.receipts.count == 1)
@@ -152,13 +152,13 @@ struct WatchJournalRetentionTests {
     }
 
     @Test("failed compaction preserves the old ledger and staged bytes until restart repairs the commit")
-    func interruptedCompaction() throws {
+    func interruptedCompaction() async throws {
         let env = try WatchContentDeliveryTests.Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         var oldHead = file.head
@@ -177,7 +177,7 @@ struct WatchJournalRetentionTests {
         #expect(receiver.receipts == [old])
         #expect(FileManager.default.fileExists(atPath: directory.appending(path: file.id.uuidString).path))
         let restored = try env.receiver()
-        try restored.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await restored.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(restored.receipts.count == 1 && restored.receipts.first?.file == file)
         #expect(env.receipts.last?.status == .delivered)
     }

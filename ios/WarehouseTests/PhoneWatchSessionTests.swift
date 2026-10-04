@@ -37,7 +37,7 @@ struct PhoneWatchSessionTests {
         let snapshot = try env.snapshot(count: 5)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         let session = PhoneWatchSession(onPlay: { _ in }, diagnostics: env.phoneDiagnostics)
         session.content = queue
@@ -49,9 +49,9 @@ struct PhoneWatchSessionTests {
         #expect(report.delivery?.receiptWait == 1)
         #expect(report.count(.contentCompleted) == 1)
         let receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try env.stage(file, url: url)
-        receiver.staged(file)
+        await receiver.settledStaged(file)
         session.receive(userInfo: try #require(env.receipts.last).encode())
         while queue.jobs.first?.status != .delivered { await Task.yield() }
         report = session.diagnosticReport(deviceModel: "phone", systemVersion: "26")

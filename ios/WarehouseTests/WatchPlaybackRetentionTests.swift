@@ -19,12 +19,12 @@ extension WatchContentDeliveryTests {
             try env.files.write(.music, song.musicFilename, data: Data("replacement \(song.id)".utf8))
         }
         let queue = try env.queue()
-        try queue.reconcile(head: head, snapshot: snapshot)
+        try await queue.settledReconcile(head: head, snapshot: snapshot)
         let (file, url) = try #require(env.queued.first { $0.0.filename == "2.wav" })
         let cache = FileCache(fileStore: env.watchFiles)
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
                                                 send: { env.receipts.append($0) })
-        try receiver.reconcile(head: head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: head, snapshot: snapshot)
         let player = PlayerStore(fileStore: env.watchFiles, fileCache: cache, musicPolicy: .downloadedOnly,
                                  activateSessionForTests: { true })
         defer { player.pause() }
@@ -33,7 +33,7 @@ extension WatchContentDeliveryTests {
         try await PlayerStoreTests.waitFor { player.nextItemURL != nil }
         player.pause()
         try env.stage(file, url: url)
-        receiver.resume()
+        await receiver.settledResume()
         #expect(cache.isMusicInUse("2.wav"))
         #expect(try Data(contentsOf: env.watchFiles.fileURL(.music, "2.wav")) == PlayerStoreTests.musicBytes)
         #expect(env.receipts.isEmpty)

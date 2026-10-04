@@ -35,7 +35,7 @@ struct WatchContentDeliveryTests {
             try watchFiles.prepare()
         }
 
-        func queue() throws -> PhoneWatchContentQueue {
+        func queue(worker: WatchContentWorker = WatchContentWorker()) throws -> PhoneWatchContentQueue {
             try PhoneWatchContentQueue(fileStore: files, directory: root.appending(path: "queue"), transport: .init(
                 available: { [self] in transportAvailable }, outstanding: { [self] in outstanding },
                 enqueue: { [self] file, url in
@@ -44,16 +44,16 @@ struct WatchContentDeliveryTests {
                 cancel: { [self] id in outstanding.removeAll { $0.id == id } },
                 query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) },
                 inventory: { [self] in inventoryRequests.append($0) }),
-                now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics)
+                now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics, worker: worker)
         }
 
-        func receiver() throws -> WatchContentReceiver {
+        func receiver(worker: WatchContentWorker = WatchContentWorker()) throws -> WatchContentReceiver {
             let cache = FileCache(fileStore: watchFiles, budget: { _ in .init(music: 1_000_000, artwork: 1_000_000) },
                                   freeSpaceReserve: 0)
             let receiver = try WatchContentReceiver(fileCache: cache, directory: root.appending(path: "receiver"),
                                             availableBytes: { [self] in available },
                                             send: { [self] in receipts.append($0) }, beforeCommit: { [self] in try beforeCommit() },
-                                            now: { [self] in now }, diagnostics: watchDiagnostics)
+                                            now: { [self] in now }, diagnostics: watchDiagnostics, worker: worker)
             receiver.sendInventory = { [self] in inventoryReports.append($0); return true }
             return receiver
         }
@@ -78,32 +78,32 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("progress counts watch commits rather than phone files or system completion, and survives restart")
-    func deliveredProgress() throws {
+    func deliveredProgress() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         var queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(queue.progress().music.downloaded == 0)
         #expect(queue.progress().music.total == 4)
         #expect(queue.progress(playlistID: "p2").music.total == 2)
         let (file, url) = env.queued[0]
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.finished(file, error: nil)
+        try await queue.settledFinished(file, error: nil)
         #expect(queue.progress().music.downloaded == 0)
         try env.stage(file, url: url)
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(receiver.progress(playlistID: "p2").music.downloaded == 1)
         #expect(queue.progress().music.downloaded == 0)
         let receipt = try #require(env.receipts.last)
-        try queue.receive(receipt)
-        try queue.receive(receipt)
+        try await queue.settledReceive(receipt)
+        try await queue.settledReceive(receipt)
         queue = try env.queue()
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(queue.progress().music.downloaded == 1)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(queue.progress().state == .waiting)
@@ -123,32 +123,34 @@ struct WatchContentDeliveryTests {
         publisher.onSnapshot = { head, snapshot in queue.update(head: head, snapshot: snapshot) }
         publisher.publish(identity: "account", playlistIDs: ["p1", "p2"])
         await publisher.waitForPublication()
+        await queue.waitForWork()
         let snapshot = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: metadata.deliveries[0].0))
         try env.cache(snapshot)
         env.now += 60
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         let receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.progress().music.downloaded == 1)
         let (artwork, artworkURL) = try #require(env.queued.first { $0.0.type == .artwork })
         try env.stage(artwork, url: artworkURL)
-        receiver.resume()
+        await receiver.settledResume()
         env.outstanding.removeAll { $0.id == artwork.id }
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.progress().artwork.downloaded == 1)
 
         library.tracks[0].playCount += 1
         try await metadata.phone.replaceLibrary(with: library, sourceIdentity: "account")
         publisher.publish(identity: "account", playlistIDs: ["p1", "p2"])
         await publisher.waitForPublication()
+        await queue.waitForWork()
         #expect(publisher.head.revision > snapshot.head.revision)
         #expect(queue.errorMessage == nil)
         let next = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: try #require(metadata.deliveries.last).0))
-        try receiver.reconcile(head: next.head, snapshot: next)
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(queue.progress().music.downloaded == 1)
         #expect(queue.progress().artwork.downloaded == 1)
@@ -157,7 +159,7 @@ struct WatchContentDeliveryTests {
         #expect(env.queued.filter { $0.0.type == file.type && $0.0.filename == file.filename }.count == 1)
         #expect(env.queued.filter { $0.0.type == artwork.type && $0.0.filename == artwork.filename }.count == 1)
         let obsolete = try #require(env.queued.first { $0.0.type == .music && $0.0.id != file.id }).0
-        try queue.receive(.init(file: obsolete, status: .delivered))
+        try await queue.settledReceive(.init(file: obsolete, status: .delivered))
         #expect(queue.progress().music.downloaded == 1)
         queue = try env.queue()
         #expect(queue.progress().music.downloaded == 1)
@@ -166,18 +168,18 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("acknowledged files survive a pending refresh but leave progress when removed from the inventory")
-    func progressDuringRefresh() throws {
+    func progressDuringRefresh() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         var queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let file = env.queued[0].0
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
                                     playlistIDs: snapshot.head.playlistIDs, metadataReady: true)
-        try queue.reconcile(head: head, snapshot: nil)
+        try await queue.settledReconcile(head: head, snapshot: nil)
         queue = try env.queue()
         #expect(queue.progress().music.downloaded == 1)
         #expect(queue.progress().state == .preparing)
@@ -186,58 +188,58 @@ struct WatchContentDeliveryTests {
         let index = try #require(library.tracks.firstIndex { $0.musicFilename == file.filename })
         library.tracks[index].musicFilename = "replacement.mp3"
         let next = WatchLibrarySnapshot(head: head, libraryData: try library.serializedData())
-        try queue.reconcile(head: head, snapshot: next)
+        try await queue.settledReconcile(head: head, snapshot: next)
         #expect(queue.progress().music.downloaded == 0)
         #expect(queue.progress().music.total == 4)
         #expect(!queue.jobs.contains { $0.filename == file.filename })
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         #expect(queue.progress().music.downloaded == 0)
     }
 
     @Test("delivery evidence cannot cross account, publisher or backwards revision boundaries", arguments: ["account", "publisher", "revision"])
-    func progressIdentityBoundary(_ change: String) throws {
+    func progressIdentityBoundary(_ change: String) async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4, revision: 2)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let file = env.queued[0].0
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         #expect(queue.progress().music.downloaded == 1)
         let head = WatchLibraryHead(publisher: change == "publisher" ? UUID() : snapshot.head.publisher,
                                     revision: change == "revision" ? 1 : 3,
                                     libraryID: change == "account" ? "other-account" : "account",
                                     playlistIDs: snapshot.head.playlistIDs, metadataReady: true)
         let next = WatchLibrarySnapshot(head: head, libraryData: snapshot.libraryData)
-        try queue.reconcile(head: head, snapshot: next)
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReconcile(head: head, snapshot: next)
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         #expect(queue.progress().music.downloaded == 0)
     }
 
     @Test("storage and permanent failures are visible without marking partial playlists ready")
-    func progressFailures() throws {
+    func progressFailures() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let file = env.queued[0].0
         // the receiver's receipt can arrive before the system completion callback.
-        try queue.receive(.init(file: file, status: .storageFull))
+        try await queue.settledReceive(.init(file: file, status: .storageFull))
         #expect(queue.progress().state == .storageFull)
         #expect(queue.progress().music.downloaded == 0)
         #expect(queue.progress(playlistID: "p2").state == .storageFull)
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.receive(.init(file: file, status: .failed))
+        try await queue.settledReceive(.init(file: file, status: .failed))
         #expect(queue.progress().state == .failed)
         #expect(queue.progress().music.failed == 1)
         #expect(queue.progress().music.downloaded == 0)
     }
 
     @Test("missing phone files request normal sync even when delivery is unavailable")
-    func missingProgress() throws {
+    func missingProgress() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
@@ -245,7 +247,7 @@ struct WatchContentDeliveryTests {
                                              transport: .init(available: { false }, outstanding: { [] },
                                                               enqueue: { _, _ in }, cancel: { _ in }, query: { _ in }),
                                              schedulesRetries: false)
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(queue.progress().state == .needsPhoneSync)
         #expect(queue.progress().music.total == 4)
         #expect(queue.progress().music.downloaded == 0)
@@ -255,20 +257,20 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("empty selection and artwork failures have independent music readiness")
-    func emptyAndArtworkProgress() throws {
+    func emptyAndArtworkProgress() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for index in 0..<4 {
             let file = env.queued[index].0
             env.outstanding.removeAll { $0.id == file.id }
-            try queue.receive(.init(file: file, status: .delivered))
+            try await queue.settledReceive(.init(file: file, status: .delivered))
         }
         for (file, _) in env.queued where file.type == .artwork {
-            try queue.receive(.init(file: file, status: .failed))
+            try await queue.settledReceive(.init(file: file, status: .failed))
         }
         #expect(queue.progress().state == .ready)
         #expect(queue.progress().music.downloaded == 4)
@@ -276,20 +278,20 @@ struct WatchContentDeliveryTests {
         let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
                                     playlistIDs: [], metadataReady: true)
         let empty = WatchLibrarySnapshot(head: head, libraryData: try Library().serializedData())
-        try queue.reconcile(head: head, snapshot: empty)
+        try await queue.settledReconcile(head: head, snapshot: empty)
         #expect(queue.progress().state == .empty)
         #expect(queue.progress().music.total == 0)
-        try queue.receive(.init(file: env.queued[0].0, status: .delivered))
+        try await queue.settledReceive(.init(file: env.queued[0].0, status: .delivered))
         #expect(queue.progress().music.downloaded == 0)
     }
 
     @Test("phone preparation reports survive out-of-order delivery and restart without inventing watch downloads")
-    func preparationReports() throws {
+    func preparationReports() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let missing = try #require(env.reports.last)
         #expect(missing.overall.state == .needsPhoneSync)
         #expect(WatchLibraryDeliveryReport(dictionary: try missing.encode()) == missing)
@@ -297,56 +299,56 @@ struct WatchContentDeliveryTests {
         // user-info can arrive before its matching metadata snapshot.
         try receiver.receive(missing)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(receiver.progress().state == .needsPhoneSync)
         #expect(receiver.progress(playlistID: "p2").state == .needsPhoneSync)
         #expect(receiver.progress().music.downloaded == 0)
         try env.cache(snapshot)
         env.now += 60
-        queue.resume()
+        await queue.settledResume()
         let waiting = try #require(env.reports.last)
         try receiver.receive(waiting)
         try receiver.receive(missing)
         #expect(receiver.progress().state == .waiting)
         let file = env.queued[0].0
-        try queue.receive(.init(file: file, status: .failed))
+        try await queue.settledReceive(.init(file: file, status: .failed))
         try receiver.receive(try #require(env.reports.last))
         #expect(receiver.progress().state == .failed)
         #expect(receiver.progress(playlistID: "p2").state == .failed)
         #expect(receiver.progress().music.downloaded == 0)
         // even a phone report of delivered work cannot advance the local count.
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         try receiver.receive(try #require(env.reports.last))
         #expect(receiver.progress().music.downloaded == 0)
         try env.stage(file, url: env.files.fileURL(file.type, file.filename))
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
         let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
                                     playlistIDs: [], metadataReady: true)
         let empty = WatchLibrarySnapshot(head: head, libraryData: try Library().serializedData())
-        try receiver.reconcile(head: head, snapshot: empty)
+        try await receiver.settledReconcile(head: head, snapshot: empty)
         try receiver.receive(missing)
         #expect(receiver.progress().state == .empty)
         #expect(receiver.progress().music.downloaded == 0)
     }
 
     @Test("saved library progress stays available during a pending or failed refresh")
-    func refreshProgress() throws {
+    func refreshProgress() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.watchFiles.write(.music, "m0.mp3", data: Data("existing".utf8))
         let receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         var pending = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
                                        playlistIDs: snapshot.head.playlistIDs)
-        try receiver.reconcile(head: pending, snapshot: snapshot)
+        try await receiver.settledReconcile(head: pending, snapshot: snapshot)
         #expect(receiver.progress().state == .preparing)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(receiver.progress().music.total == 4)
         pending.failed = true
-        try receiver.reconcile(head: pending, snapshot: snapshot)
+        try await receiver.settledReconcile(head: pending, snapshot: snapshot)
         #expect(receiver.progress().state == .refreshFailed)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(env.watchFiles.exists(.music, "m0.mp3"))
@@ -364,8 +366,8 @@ struct WatchContentDeliveryTests {
         try env.cache(snapshot)
         var queue = try env.queue()
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let total = try snapshot.music.count + snapshot.artwork.count
         #expect(queue.jobs.count == total && env.outstanding.count == 4)
         var index = 0
@@ -379,12 +381,12 @@ struct WatchContentDeliveryTests {
             env.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: watchCapture)
             env.phoneDiagnostics = WatchDiagnostics(logEvents: false, storeURL: phoneCapture)
             receiver = try env.receiver()
-            receiver.staged(file)
-            try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+            await receiver.settledStaged(file)
+            try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
             queue = try env.queue()
-            try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+            try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
             #expect(queue.jobs.filter { $0.status == .delivered }.count == index)
-            try queue.receive(try #require(env.receipts.last))
+            try await queue.settledReceive(try #require(env.receipts.last))
             index += 1
             await Task.yield()
         }
@@ -413,16 +415,16 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("lost acknowledgments query verified storage without retransferring, and source copies survive phone cleanup")
-    func lostReceiptAndCleanup() throws {
+    func lostReceiptAndCleanup() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         var queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         env.now += 120
-        queue.resume()
+        await queue.settledResume()
         #expect(env.outstanding.count == 4 && env.queued.count == 4)
         let original = try Data(contentsOf: url)
         env.files.deleteFiles(.music, keeping: [])
@@ -430,21 +432,21 @@ struct WatchContentDeliveryTests {
         #expect(try Data(contentsOf: url) == original)
         try env.stage(file, url: url)
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.finished(file, error: nil)
+        try await queue.settledFinished(file, error: nil)
         #expect(queue.jobs.first { $0.file == file }?.status == .awaitingReceipt)
         #expect(queue.diagnosticState().receiptWait == 1)
         #expect(env.phoneDiagnostics.report(deviceModel: "", systemVersion: "").totals?["contentCompleted:music"]?.count == 1)
         #expect(env.queries.contains(file))
         queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let queuedCount = env.queued.count
-        try receiver.query(file)
-        try queue.receive(try #require(env.receipts.last))
-        try queue.receive(try #require(env.receipts.last))
+        try await receiver.settledQuery(file)
+        try await queue.settledReceive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
         #expect(env.queued.count <= queuedCount + 1)
         #expect(env.queued.filter { $0.0.id == file.id }.count == 1)
@@ -457,22 +459,22 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("file before context and snapshot survives recreation; a deselection rejects delayed bytes and receipts")
-    func orderingAndDeselection() throws {
+    func orderingAndDeselection() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         var receiver = try env.receiver()
-        receiver.resume()
+        await receiver.settledResume()
         #expect(env.watchFiles.list(.music).isEmpty && env.receipts.isEmpty)
-        try receiver.reconcile(head: snapshot.head, snapshot: nil)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: nil)
         #expect(env.receipts.isEmpty)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.watchFiles.exists(file.type, file.filename))
         let receipt = try #require(env.receipts.last)
         var emptyHead = snapshot.head
@@ -480,27 +482,27 @@ struct WatchContentDeliveryTests {
         let empty = WatchLibrarySnapshot(head: emptyHead, libraryData: try Library().serializedData())
         let delayed = env.root.appending(path: "delayed")
         try Data(contentsOf: url).write(to: delayed)
-        try queue.reconcile(head: emptyHead, snapshot: empty)
-        try queue.receive(receipt)
+        try await queue.settledReconcile(head: emptyHead, snapshot: empty)
+        try await queue.settledReceive(receipt)
         #expect(queue.jobs.isEmpty)
         try env.watchFiles.delete(file.type, file.filename)
         try env.stage(file, url: delayed)
-        try receiver.reconcile(head: emptyHead, snapshot: empty)
+        try await receiver.settledReconcile(head: emptyHead, snapshot: empty)
         #expect(!env.watchFiles.exists(file.type, file.filename))
         #expect(queue.jobs.isEmpty)
     }
 
     @Test("storage admission pauses without evicting selected downloads, then automatically retries")
-    func storageRetry() throws {
+    func storageRetry() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try env.watchFiles.write(.music, "m3.mp3", data: Data("retained".utf8))
         try env.stage(file, url: url)
         env.available = 0
@@ -509,64 +511,64 @@ struct WatchContentDeliveryTests {
             fileCache: FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) }),
             directory: env.root.appending(path: "receiver"), availableBytes: { env.available },
             send: { env.receipts.append($0) }, diagnostics: env.watchDiagnostics)
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .storageFull)
         #expect(receiver.diagnosticState().music.states["storageFull"] == 1)
         #expect(env.watchDiagnostics.events.contains { $0.kind == .contentStorageFull && $0.id == file.id })
         #expect(env.watchFiles.exists(.music, "m3.mp3"))
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         let count = env.queued.count
-        queue.resume()
+        await queue.settledResume()
         #expect(env.queued.count == count)
         for other in Array(env.outstanding) {
             env.outstanding.removeAll { $0.id == other.id }
-            try queue.receive(.init(file: other, status: .delivered))
+            try await queue.settledReceive(.init(file: other, status: .delivered))
         }
         env.now += 60
         env.available = 1_000_000_000
-        queue.resume()
+        await queue.settledResume()
         #expect(env.queued.filter { $0.0.id == file.id }.count == 2)
         try env.stage(file, url: url)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
-        try queue.receive(try #require(env.receipts.last))
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
     }
 
     @Test("corrupt and unsolicited files fail safely; interrupted commits retry from the durable inbox")
-    func integrityAndInterruption() throws {
+    func integrityAndInterruption() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         let receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try env.stage(file, url: url)
         env.beforeCommit = { throw CocoaError(.fileWriteUnknown) }
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .retrying && !env.watchFiles.exists(file.type, file.filename))
         env.beforeCommit = {}
         env.now += 60
         let restored = try env.receiver()
-        try restored.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await restored.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .delivered)
         let (bad, badURL) = env.queued[1]
         try env.stage(bad, url: badURL)
         try Data("corrupt".utf8).write(to: env.root.appending(path: "receiver/\(bad.id.uuidString)/bytes"))
-        restored.resume()
+        await restored.settledResume()
         #expect(env.receipts.last?.status == .failed)
         #expect(!env.watchFiles.exists(bad.type, bad.filename))
         let unsolicited = WatchContentFile(head: snapshot.head, type: .music, filename: "removed.mp3", bytes: file.bytes, digest: file.digest)
         try env.stage(unsolicited, url: url)
-        restored.resume()
+        await restored.settledResume()
         #expect(!env.watchFiles.exists(.music, "removed.mp3"))
         let wrongType = WatchContentFile(head: snapshot.head, type: .artwork, filename: file.filename, bytes: file.bytes, digest: file.digest)
         try env.stage(wrongType, url: url)
-        restored.resume()
+        await restored.settledResume()
         #expect(!env.watchFiles.exists(.artwork, file.filename))
         let traversal = WatchContentFile(head: snapshot.head, type: .music, filename: "../escape", bytes: file.bytes, digest: file.digest)
         #expect(throws: FileStore.FilenameError.self) { try env.stage(traversal, url: url) }
@@ -576,66 +578,66 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("transient errors back off, permanent failures free a slot, and cache misses stay pending")
-    func errorIsolation() throws {
+    func errorIsolation() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 6)
         try env.cache(snapshot)
         try env.files.delete(.music, "m5.mp3")
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let transient = env.queued[0].0
         env.outstanding.removeAll { $0.id == transient.id }
-        try queue.finished(transient, error: URLError(.networkConnectionLost))
+        try await queue.settledFinished(transient, error: URLError(.networkConnectionLost))
         let count = env.queued.count
-        queue.resume()
+        await queue.settledResume()
         #expect(env.queued.count == count)
         let permanent = env.queued[1].0
         env.outstanding.removeAll { $0.id == permanent.id }
-        try queue.finished(permanent, error: CocoaError(.fileReadNoPermission))
+        try await queue.settledFinished(permanent, error: CocoaError(.fileReadNoPermission))
         #expect(queue.jobs.first { $0.file == permanent }?.status == .failed)
         #expect(env.queued.count > count)
         for file in Array(env.outstanding) {
             env.outstanding.removeAll { $0.id == file.id }
-            try queue.receive(.init(file: file, status: .delivered))
+            try await queue.settledReceive(.init(file: file, status: .delivered))
         }
         env.now += 60
-        queue.resume()
+        await queue.settledResume()
         #expect(env.queued.filter { $0.0.id == transient.id }.count == 2)
         #expect(queue.jobs.first { $0.filename == "m5.mp3" }?.status == .missingOnPhone)
         #expect(env.outstanding.count <= 4)
     }
 
     @Test("same library names from a prior account cannot establish current delivery")
-    func changedIdentity() throws {
+    func changedIdentity() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "other-account",
                                     playlistIDs: snapshot.head.playlistIDs, metadataReady: true)
         let next = WatchLibrarySnapshot(head: head, libraryData: snapshot.libraryData)
         let receiver = try env.receiver()
-        try receiver.reconcile(head: head, snapshot: next)
+        try await receiver.settledReconcile(head: head, snapshot: next)
         #expect(env.watchFiles.list(.music).isEmpty)
-        try queue.reconcile(head: head, snapshot: next)
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReconcile(head: head, snapshot: next)
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         #expect(!queue.jobs.contains { $0.status == .delivered })
         #expect(env.outstanding.allSatisfy { $0.head == head })
     }
 
     @Test("a commit followed by failed receipt persistence is recovered without moving the file again")
-    func interruptedAcknowledgment() throws {
+    func interruptedAcknowledgment() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         let cache = FileCache(fileStore: env.watchFiles)
@@ -645,19 +647,20 @@ struct WatchContentDeliveryTests {
             fileCache: cache, directory: env.root.appending(path: "receiver"),
             availableBytes: { env.available }, send: { env.receipts.append($0) },
             beforeReceipt: { throw CocoaError(.fileWriteUnknown) }, diagnostics: env.watchDiagnostics)
-        #expect(throws: CocoaError.self) { try receiver.reconcile(head: snapshot.head, snapshot: snapshot) }
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(receiver.errorMessage != nil)
         #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
         #expect(env.receipts.isEmpty)
         let restored = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
                                                  availableBytes: { env.available }, send: { env.receipts.append($0) },
                                                  diagnostics: env.watchDiagnostics)
-        try restored.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await restored.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .delivered)
         #expect(refreshed == 1)
         let capture = env.watchDiagnostics.report(deviceModel: "", systemVersion: "")
         #expect(capture.totals?["contentCommitted:music"]?.count == 1)
         #expect(capture.totals?["contentReused:music"] == nil)
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
     }
 
@@ -674,6 +677,7 @@ struct WatchContentDeliveryTests {
         for index in 0..<300 { try env.files.write(.music, "m\(index).mp3", data: Data("music".utf8)) }
         publisher.publish(identity: "account", playlistIDs: ["p1", "p2"])
         await publisher.waitForPublication()
+        await queue.waitForWork()
         #expect(queue.jobs.filter { $0.type == .music }.count == 300)
         let incoming = metadata.receiver()
         incoming.expect(publisher.head)
@@ -681,32 +685,32 @@ struct WatchContentDeliveryTests {
         incoming.received()
         await incoming.waitForImport()
         let receiver = try env.receiver()
-        try receiver.reconcile(head: incoming.head, snapshot: incoming.snapshot)
+        try await receiver.settledReconcile(head: incoming.head, snapshot: incoming.snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
-        receiver.resume()
+        await receiver.settledResume()
         let session = PhoneWatchSession(onPlay: { _ in })
         session.content = queue
         session.receive(userInfo: try #require(env.receipts.last).encode())
         await Task.yield()
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
-        try queue.invalidate(identity: nil, playlistIDs: [])
+        try await queue.settledInvalidate(identity: nil, playlistIDs: [])
         #expect(queue.jobs.isEmpty)
         #expect(env.outstanding.isEmpty)
     }
 
     @Test("selected music and artwork survive eviction, and already verified bytes need no staging space")
-    func retainedFilesAndStagingPressure() throws {
+    func retainedFilesAndStagingPressure() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let cache = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) })
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
                                                 send: { env.receipts.append($0) })
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for type in LibraryFileType.allCases {
             for name in env.files.list(type) {
                 try env.watchFiles.write(type, name, data: Data(contentsOf: env.files.fileURL(type, name)))
@@ -715,71 +719,71 @@ struct WatchContentDeliveryTests {
         #expect(cache.evict().isEmpty)
         #expect(env.watchFiles.list(.artwork) == (try snapshot.artwork))
         let file = env.queued[0].0
-        receiver.stagingFailed(file, error: CocoaError(.fileWriteOutOfSpace))
+        await receiver.settledStagingFailed(file, error: CocoaError(.fileWriteOutOfSpace))
         #expect(env.receipts.last?.status == .delivered)
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
     }
 
     @Test("recreation between queue persistence and enqueue repairs intent through receipts before retrying")
-    func interruptedEnqueue() throws {
+    func interruptedEnqueue() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         env.enqueuesEnabled = false
         var queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let file = try #require(queue.jobs.first?.file)
         #expect(env.outstanding.isEmpty && env.queued.isEmpty)
         env.enqueuesEnabled = true
         queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(queue.jobs.first?.status == .awaitingReceipt)
         #expect(env.queries.contains(file))
         let receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for query in env.queries {
-            try receiver.query(query)
-            try queue.receive(try #require(env.receipts.last))
+            try await receiver.settledQuery(query)
+            try await queue.settledReceive(try #require(env.receipts.last))
         }
         #expect(queue.jobs.first?.status == .retrying)
         env.now += 60
-        queue.resume()
+        await queue.settledResume()
         #expect(env.queued.contains { $0.0 == file })
         #expect(env.outstanding.count <= 4)
         #expect(!queue.jobs.contains { $0.status == .delivered })
     }
 
     @Test("watch commit backoff survives recreation and permanent commit failure does not halt other files")
-    func watchCommitRetries() throws {
+    func watchCommitRetries() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for (file, url) in env.queued.prefix(2) { try env.stage(file, url: url) }
         var calls = 0
         env.beforeCommit = { calls += 1; throw CocoaError(.fileWriteUnknown) }
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(calls == 2 && env.receipts.allSatisfy { $0.status == .retrying })
         #expect(env.watchDiagnostics.events.contains { $0.kind == .contentRetry && $0.errorCode == NSFileWriteUnknownError })
         #expect(receiver.diagnosticState().music.states["retrying"] == 2)
         receiver = try env.receiver()
         env.beforeCommit = { calls += 1 }
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
-        receiver.resume()
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        await receiver.settledResume()
         #expect(calls == 2 && env.watchFiles.list(.music).isEmpty)
         env.now += 60
-        receiver.resume()
+        await receiver.settledResume()
         #expect(calls == 4 && env.watchFiles.list(.music).count == 2)
         env.receipts.removeAll()
         for (file, url) in env.queued.suffix(2) { try env.stage(file, url: url) }
         calls = 0
         env.beforeCommit = { calls += 1; if calls == 1 { throw CocoaError(.fileWriteNoPermission) } }
-        receiver.resume()
+        await receiver.settledResume()
         #expect(calls == 2)
         #expect(env.receipts.contains { $0.status == .failed })
         #expect(env.receipts.contains { $0.status == .delivered })
@@ -800,35 +804,35 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("an unreceived snapshot preserves selected files; authoritative empty selection removes them")
-    func authoritativeCleanup() throws {
+    func authoritativeCleanup() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         let cache = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) })
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
         for name in try snapshot.music { try env.watchFiles.write(.music, name, data: Data("selected".utf8)) }
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
                                     playlistIDs: [], metadataReady: true)
-        try receiver.reconcile(head: head, snapshot: nil)
+        try await receiver.settledReconcile(head: head, snapshot: nil)
         cache.evict()
         #expect(env.watchFiles.list(.music) == (try snapshot.music))
-        try receiver.reconcile(head: head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: head, snapshot: snapshot)
         cache.evict()
         #expect(env.watchFiles.list(.music) == (try snapshot.music))
         let empty = WatchLibrarySnapshot(head: head, libraryData: try Library().serializedData())
-        try receiver.reconcile(head: head, snapshot: empty)
+        try await receiver.settledReconcile(head: head, snapshot: empty)
         #expect(env.watchFiles.list(.music).isEmpty)
     }
 
     @Test("relaunch restores phone retention before eviction and legacy offline selection cannot replace it")
-    func authoritativeRestart() throws {
+    func authoritativeRestart() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         let cache = FileCache(fileStore: env.watchFiles)
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for name in try snapshot.music { try env.watchFiles.write(.music, name, data: Data("selected".utf8)) }
         for name in try snapshot.artwork { try env.watchFiles.write(.artwork, name, data: Data("selected".utf8)) }
         let restored = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) })
@@ -840,7 +844,7 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("membership edits, shared files, deleted playlists and changed names follow phone inventory")
-    func mirroredMembership() throws {
+    func mirroredMembership() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let original = try env.snapshot(count: 4)
@@ -848,13 +852,13 @@ struct WatchContentDeliveryTests {
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
         for name in try original.music { try env.watchFiles.write(.music, name, data: Data("valid".utf8)) }
         for name in try original.artwork { try env.watchFiles.write(.artwork, name, data: Data("valid".utf8)) }
-        try receiver.reconcile(head: original.head, snapshot: original)
+        try await receiver.settledReconcile(head: original.head, snapshot: original)
         let head = WatchLibraryHead(publisher: original.head.publisher, revision: 2, libraryID: "account",
                                     playlistIDs: ["p2"], metadataReady: true)
         var library = try original.library
         library = try WatchLibrarySnapshot.selected(library, ids: ["p2"])
         let subset = WatchLibrarySnapshot(head: head, libraryData: try library.serializedData())
-        try receiver.reconcile(head: head, snapshot: subset)
+        try await receiver.settledReconcile(head: head, snapshot: subset)
         #expect(env.watchFiles.list(.music) == ["m0.mp3", "m1.mp3"])
         #expect(env.watchFiles.list(.artwork) == (try subset.artwork))
         library.tracks[0].musicFilename = "replacement.mp3"
@@ -864,15 +868,15 @@ struct WatchContentDeliveryTests {
         let changedHead = WatchLibraryHead(publisher: head.publisher, revision: 3, libraryID: "account",
                                            playlistIDs: ["p2"], metadataReady: true)
         let changed = WatchLibrarySnapshot(head: changedHead, libraryData: try library.serializedData())
-        try receiver.reconcile(head: changedHead, snapshot: changed)
+        try await receiver.settledReconcile(head: changedHead, snapshot: changed)
         #expect(env.watchFiles.list(.music).isEmpty)
         #expect(env.watchFiles.list(.artwork).isEmpty)
         // additions remain desired, and arriving bytes enter the new inventory.
         try env.cache(changed)
         let queue = try env.queue()
-        try queue.reconcile(head: changedHead, snapshot: changed)
+        try await queue.settledReconcile(head: changedHead, snapshot: changed)
         for (file, url) in env.queued { try env.stage(file, url: url) }
-        receiver.resume()
+        await receiver.settledResume()
         #expect(env.watchFiles.list(.music) == ["replacement.mp3"])
         #expect(env.watchFiles.list(.artwork) == ["replacement.jpg"])
     }
@@ -890,7 +894,7 @@ struct WatchContentDeliveryTests {
         let cache = FileCache(fileStore: env.watchFiles)
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
         for song in songs { try env.watchFiles.write(.music, song.musicFilename, data: PlayerStoreTests.musicBytes) }
-        try receiver.reconcile(head: head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: head, snapshot: snapshot)
         let player = PlayerStore(fileStore: env.watchFiles, fileCache: cache, musicPolicy: .downloadedOnly,
                                  activateSessionForTests: { true })
         cache.onMusicChanged = { [weak player] in player?.downloadsChanged() }
@@ -899,7 +903,7 @@ struct WatchContentDeliveryTests {
         let emptyHead = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "replacement",
                                          playlistIDs: [], metadataReady: true)
         let empty = WatchLibrarySnapshot(head: emptyHead, libraryData: try Library().serializedData())
-        try receiver.reconcile(head: emptyHead, snapshot: empty)
+        try await receiver.settledReconcile(head: emptyHead, snapshot: empty)
         #expect(player.song?.id == "1" && player.hasLoadedTrack)
         #expect(env.watchFiles.exists(.music, "1.wav"))
         player.playSelected([songs[1]], startingAt: 0, token: nil, baseURL: nil)
@@ -910,7 +914,7 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("migration persistence failure preserves legacy state and retries without accepting premature content")
-    func migrationFailure() throws {
+    func migrationFailure() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         var fails = true
@@ -923,19 +927,19 @@ struct WatchContentDeliveryTests {
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
         #expect(throws: CocoaError.self) { try receiver.reconcile(head: snapshot.head, snapshot: snapshot) }
-        receiver.resume()
+        await receiver.settledResume()
         offline.retireForPhoneSelection()
         #expect(offline.selectedPlaylistIds == ["p"])
         #expect(env.watchFiles.exists(.music, "1.wav"))
         #expect(!env.watchFiles.exists(file.type, file.filename))
         #expect(FileManager.default.fileExists(atPath: env.watchFiles.rootURL.appending(path: "offline-playlists.json").path))
         fails = false
-        receiver.resume()
+        await receiver.settledResume()
         offline.retireForPhoneSelection()
         #expect(offline.selectedPlaylistIds.isEmpty)
         #expect(env.watchFiles.exists(file.type, file.filename))
@@ -944,13 +948,13 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("selected files survive unknown capacity and concurrent reservations; restart drops stale reservations")
-    func capacityAndReservations() throws {
+    func capacityAndReservations() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         let cache = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) }, freeSpaceReserve: 10)
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try env.watchFiles.write(.music, "m0.mp3", data: Data(count: 40))
         #expect(!cache.reserve(.music, "m1.mp3", bytes: 30, availableBytes: nil, allowOversized: true))
         #expect(!cache.reserve(.music, "m1.mp3", bytes: 300, availableBytes: 100, allowOversized: true))
@@ -965,57 +969,57 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("first migration waits for a valid snapshot before collecting existing downloads")
-    func firstSnapshotPending() throws {
+    func firstSnapshotPending() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         for name in ["old.mp3", "m0.mp3", "m1.mp3"] { try env.watchFiles.write(.music, name, data: Data("existing".utf8)) }
         let cache = FileCache(fileStore: env.watchFiles, budget: { _ in .init(music: 0, artwork: 0) })
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
-        try receiver.reconcile(head: snapshot.head, snapshot: nil)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: nil)
         cache.evict()
         #expect(env.watchFiles.list(.music) == ["old.mp3", "m0.mp3", "m1.mp3"])
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.watchFiles.list(.music) == ["m0.mp3", "m1.mp3"])
     }
 
     @Test("disk-full commit keeps selected downloads and pending intent, and verified migration reuses existing bytes")
-    func commitFullAndReuse() throws {
+    func commitFullAndReuse() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         try env.stage(file, url: url)
         env.beforeCommit = { throw CocoaError(.fileWriteOutOfSpace) }
         var receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(env.receipts.last?.status == .storageFull)
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .storageFull)
         env.now += 60
         env.beforeCommit = {}
-        queue.resume()
+        await queue.settledResume()
         try env.stage(file, url: url)
         receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
-        try queue.receive(try #require(env.receipts.last))
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
         let destination = env.watchFiles.fileURL(file.type, file.filename)
         let oldDate = Date(timeIntervalSince1970: 100)
         try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: destination.path)
         try env.stage(file, url: env.files.fileURL(file.type, file.filename))
         env.beforeCommit = { Issue.record("valid existing downloads should not be rewritten") }
-        receiver.resume()
+        await receiver.settledResume()
         #expect(file.matches(destination))
         #expect(try FileManager.default.attributesOfItem(atPath: destination.path)[.modificationDate] as? Date == oldDate)
     }
 
     @Test("unreadable retention preserves downloads and the legacy manifest until valid intent repairs it")
-    func damagedRetention() throws {
+    func damagedRetention() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         try env.watchFiles.write(.music, "m0.mp3", data: Data("valid".utf8))
@@ -1030,7 +1034,7 @@ struct WatchContentDeliveryTests {
         #expect(FileManager.default.fileExists(atPath: manifest.path))
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
         let snapshot = try env.snapshot(count: 4)
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         offline.retireForPhoneSelection()
         #expect(env.watchFiles.list(.music) == ["m0.mp3"])
         #expect(!FileManager.default.fileExists(atPath: manifest.path))
@@ -1040,7 +1044,7 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("failed replacement persistence preserves the durable selection across recreation")
-    func failedReplacement() throws {
+    func failedReplacement() async throws {
         let env = try Env()
         defer { env.cleanUp() }
         var fails = false
@@ -1048,7 +1052,7 @@ struct WatchContentDeliveryTests {
                               beforeWatchSelectionSave: { if fails { throw CocoaError(.fileWriteUnknown) } })
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"), send: { _ in })
         let snapshot = try env.snapshot(count: 4)
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         for name in try snapshot.music { try env.watchFiles.write(.music, name, data: Data("selected".utf8)) }
         let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
                                     playlistIDs: [], metadataReady: true)
@@ -1070,7 +1074,7 @@ struct WatchContentDeliveryTests {
         let snapshot = try env.snapshot(count: 4)
         try env.cache(snapshot)
         let queue = try env.queue()
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let (file, url) = env.queued[0]
         let cache = FileCache(fileStore: env.watchFiles)
         let oldBytes = Data("playing bytes".utf8)
@@ -1079,7 +1083,7 @@ struct WatchContentDeliveryTests {
         try env.stage(file, url: url)
         let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
                                                 send: { env.receipts.append($0) })
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(try Data(contentsOf: env.watchFiles.fileURL(file.type, file.filename)) == oldBytes)
         #expect(env.receipts.isEmpty)
         cache.setInUse(file.type, [])

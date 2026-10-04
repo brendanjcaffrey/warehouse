@@ -29,15 +29,15 @@ struct WatchSyncSettingsStoreTests {
         })
         let initial = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: metadata.deliveries[0].0))
         try content.cache(initial)
-        try queue.reconcile(head: initial.head, snapshot: initial)
-        try receiver.reconcile(head: initial.head, snapshot: initial)
+        try await queue.settledReconcile(head: initial.head, snapshot: initial)
+        try await receiver.settledReconcile(head: initial.head, snapshot: initial)
         while !content.outstanding.isEmpty {
             let file = content.outstanding[0]
             let (_, url) = try #require(content.queued.first { $0.0.id == file.id })
             try content.stage(file, url: url)
-            receiver.resume()
+            await receiver.settledResume()
             content.outstanding.removeAll { $0.id == file.id }
-            try queue.receive(try #require(content.receipts.last))
+            try await queue.settledReceive(try #require(content.receipts.last))
         }
         #expect(queue.progress().music.downloaded == 4)
         #expect(receiver.progress().music.downloaded == 4)
@@ -62,7 +62,7 @@ struct WatchSyncSettingsStoreTests {
         #expect(WatchSyncSettingsStore(defaults: defaults).playlistIds == store.playlistIds)
         #expect(changes == 0)
         let next = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: metadata.deliveries[1].0))
-        try receiver.reconcile(head: next.head, snapshot: next)
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
         #expect(content.watchFiles.list(.music) == (deleteAll ? ["m2.mp3"] : ["m0.mp3", "m1.mp3", "m2.mp3"]))
         #expect(content.watchFiles.list(.artwork) == (try next.artwork))
         cache.setInUse(.music, [])
@@ -178,7 +178,7 @@ struct WatchSyncSettingsStoreTests {
     }
 
     @Test("selected playlist presentation observes the production queue's acknowledged counts")
-    func deliveredPresentation() throws {
+    func deliveredPresentation() async throws {
         let env = try WatchContentDeliveryTests.Env()
         defer { env.cleanUp() }
         let defaults = Self.makeDefaults("delivery")
@@ -191,11 +191,11 @@ struct WatchSyncSettingsStoreTests {
         #expect(store.progress().state == .empty)
         store.toggle("p1")
         store.toggle("p2")
-        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(store.progress().music.downloaded == 0)
         #expect(store.progress(playlistID: "p2").music.total == 2)
         let file = env.queued[0].0
-        try queue.receive(.init(file: file, status: .delivered))
+        try await queue.settledReceive(.init(file: file, status: .delivered))
         #expect(store.progress().music.downloaded == 1)
         #expect(store.progress(playlistID: "p2").music.downloaded == 1)
         store.toggle("p1")
@@ -226,20 +226,20 @@ struct WatchSyncSettingsStoreTests {
         let snapshot = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: try #require(metadata.deliveries.last).0))
         try env.cache(snapshot)
         env.now += 60
-        queue.resume()
+        await queue.settledResume()
         let (file, url) = try #require(env.queued.first { $0.0.type == .music })
         try env.stage(file, url: url)
         let receiver = try env.receiver()
-        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         env.outstanding.removeAll { $0.id == file.id }
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         #expect(store.progress().music.downloaded == 1)
         #expect(receiver.progress().music.downloaded == 1)
         let (artwork, artworkURL) = try #require(env.queued.first { $0.0.type == .artwork })
         try env.stage(artwork, url: artworkURL)
-        receiver.resume()
+        await receiver.settledResume()
         env.outstanding.removeAll { $0.id == artwork.id }
-        try queue.receive(try #require(env.receipts.last))
+        try await queue.settledReceive(try #require(env.receipts.last))
         let obsolete = try #require(env.outstanding.first)
 
         store.toggle("p1")
@@ -247,14 +247,14 @@ struct WatchSyncSettingsStoreTests {
         #expect(store.progress().artwork.downloaded == 1)
         #expect(store.progress().state == .preparing)
         #expect(env.outstanding.isEmpty)
-        try queue.receive(.init(file: obsolete, status: .delivered))
+        try await queue.settledReceive(.init(file: obsolete, status: .delivered))
         #expect(store.progress().music.downloaded == 1)
         queue = try env.queue()
         store.content = queue
         #expect(store.progress().music.downloaded == 1)
         await publisher.waitForPublication()
         let next = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: Data(contentsOf: try #require(metadata.deliveries.last).0))
-        try receiver.reconcile(head: next.head, snapshot: next)
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
         #expect(receiver.progress().music.downloaded == 1)
         #expect(store.progress().music.downloaded == 1)
         #expect(store.progress().artwork.downloaded == 1)

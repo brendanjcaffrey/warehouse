@@ -21,6 +21,19 @@ final class WatchContentReceiver {
     private var reports: [WatchLibraryDeliveryReport]
     private(set) var receipts: [WatchContentReceipt]
     private(set) var errorMessage: String?
+    private let worker: WatchContentWorker
+    private var generation = UUID()
+    private var work: Task<Void, Never>?
+    private var needsDrain = false
+    private var queries: [WatchContentFile] = []
+    private var stagingErrors: [(WatchContentFile, Error)] = []
+    var pendingOperations: Int { work == nil ? 0 : 1 }
+    var onActivityChanged: () -> Void = {}
+
+    func waitForWork() async {
+        while let task = work { await task.value }
+    }
+
     private let inventory: WatchInventoryResponder
     var sendInventory: (WatchInventoryReport) -> Bool {
         get { inventory.send }
@@ -31,7 +44,7 @@ final class WatchContentReceiver {
          availableBytes: @escaping () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
          beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil,
-         state: WatchDeliveryState = .init()) throws {
+         state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker()) throws {
         self.diagnostics = diagnostics ?? .shared
         inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory, diagnostics: diagnostics ?? .shared, now: now)
         self.fileCache = fileCache
@@ -42,6 +55,7 @@ final class WatchContentReceiver {
         self.beforeReceipt = beforeReceipt
         self.now = now
         self.state = state
+        self.worker = worker
         let reportsURL = directory.appending(path: "phone-progress.json")
         reports = (try? JSONDecoder().decode([WatchLibraryDeliveryReport].self, from: Data(contentsOf: reportsURL))) ?? []
         let url = directory.appending(path: "receipts.json")
@@ -75,6 +89,7 @@ final class WatchContentReceiver {
     }
 
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
+        if pendingHead != head || self.snapshot != snapshot { generation = UUID() }
         pendingHead = head
         self.head = nil
         self.snapshot = snapshot
@@ -86,7 +101,7 @@ final class WatchContentReceiver {
         }
         self.head = head
         try compactReceipts()
-        try drain()
+        scheduleWork()
         try inventory.publish(head: head, snapshot: snapshot)
     }
 
@@ -163,7 +178,7 @@ final class WatchContentReceiver {
     }
 
     /// stop commits while the database serializes a newly received control message.
-    func pause() { head = nil; pendingHead = nil }
+    func pause() { generation = UUID(); head = nil; pendingHead = nil }
 
     func resume() {
         do { try reconcile(head: pendingHead, snapshot: snapshot); errorMessage = nil } catch { errorMessage = error.localizedDescription }
@@ -184,13 +199,21 @@ final class WatchContentReceiver {
             }
             return
         }
-        try drain()
+        if !queries.contains(file) { queries.append(file) }
+        scheduleWork()
+    }
+
+    private func answer(_ file: WatchContentFile) async throws {
+        guard isDesired(file) else { return }
+        let epoch = generation
         if receipts.contains(where: { $0.file == file && $0.status == .failed }) {
             send(.init(file: file, status: .failed))
             return
         }
         let url = fileCache.fileStore.fileURL(file.type, file.filename)
-        if file.matches(url) {
+        let verified = try await worker.verify(file, at: url)
+        guard generation == epoch, isDesired(file) else { return }
+        if verified?.stillMatches(url) == true {
             if receipts.contains(where: { $0.file == file && $0.status == .delivered }) {
                 diagnostics.delivery(.receiptSent, file: file, source: .phone, status: .delivered)
                 send(.init(file: file, status: .delivered))
@@ -210,16 +233,24 @@ final class WatchContentReceiver {
         diagnostics.delivery(BackgroundDownload.isOutOfSpace(error) ? .contentStorageFull : .contentFailed,
                              file: file, source: .phone, error: error)
         guard isDesired(file) else { return }
-        do {
-            if file.matches(fileCache.fileStore.fileURL(file.type, file.filename)) {
-                diagnostics.delivery(.contentReused, file: file, source: .cache)
-                try acknowledge(file, status: .delivered)
-                if file.type == .music { fileCache.noteMusicStored() }
-                return
-            }
-            let permanent = error is WatchLibraryError || error is FileStore.FilenameError
-            try acknowledge(file, status: permanent ? .failed : BackgroundDownload.isOutOfSpace(error) ? .storageFull : .retrying)
-        } catch { errorMessage = error.localizedDescription }
+        stagingErrors.append((file, error))
+        scheduleWork()
+    }
+
+    private func answerStagingFailure(_ file: WatchContentFile, error: Error) async throws {
+        guard isDesired(file) else { return }
+        let epoch = generation
+        let destination = fileCache.fileStore.fileURL(file.type, file.filename)
+        let verified = try await worker.verify(file, at: destination)
+        guard generation == epoch, isDesired(file) else { return }
+        if verified?.stillMatches(destination) == true {
+            diagnostics.delivery(.contentReused, file: file, source: .cache)
+            try acknowledge(file, status: .delivered)
+            if file.type == .music { fileCache.noteMusicStored() }
+            return
+        }
+        let permanent = error is WatchLibraryError || error is FileStore.FilenameError
+        try acknowledge(file, status: permanent ? .failed : BackgroundDownload.isOutOfSpace(error) ? .storageFull : .retrying)
     }
 
     private func acknowledge(_ file: WatchContentFile, status: WatchContentStatus,
@@ -264,7 +295,30 @@ final class WatchContentReceiver {
         receipts = next
     }
 
-    private func drain() throws {
+    private func scheduleWork() {
+        needsDrain = true
+        guard work == nil else { return }
+        work = Task {
+            while needsDrain || !queries.isEmpty || !stagingErrors.isEmpty {
+                needsDrain = false
+                do { try await drain() } catch { errorMessage = error.localizedDescription }
+                while !queries.isEmpty {
+                    let file = queries.removeFirst()
+                    do { try await answer(file) } catch { errorMessage = error.localizedDescription }
+                }
+                while !stagingErrors.isEmpty {
+                    let (file, error) = stagingErrors.removeFirst()
+                    do { try await answerStagingFailure(file, error: error) } catch { errorMessage = error.localizedDescription }
+                }
+            }
+            work = nil
+            onActivityChanged()
+        }
+        // register the hold synchronously, before the delegate's dispatch hold ends.
+        onActivityChanged()
+    }
+
+    private func drain() async throws {
         diagnostics.record(.init(kind: .queueWakeup, id: pendingHead?.publisher ?? UUID(), source: .system,
                                  identity: pendingHead.map(WatchDiagnosticIdentity.init)))
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
@@ -285,8 +339,9 @@ final class WatchContentReceiver {
             }
             if let receipt = receipts.first(where: { $0.file == file }), let retryAt = receipt.retryAt, retryAt > now() { continue }
             do {
-                try commit(file, from: url)
+                try await commit(file, from: url)
             } catch {
+                guard isDesired(file), !(error is CancellationError) else { continue }
                 let permanent = (error as NSError).domain == NSCocoaErrorDomain
                     && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains((error as NSError).code)
                 let status: WatchContentStatus = permanent ? .failed : BackgroundDownload.isOutOfSpace(error) ? .storageFull : .retrying
@@ -303,9 +358,12 @@ final class WatchContentReceiver {
         try compactReceipts()
     }
 
-    private func commit(_ file: WatchContentFile, from url: URL) throws {
+    private func commit(_ file: WatchContentFile, from url: URL) async throws {
+        let epoch = generation
         let destination = fileCache.fileStore.fileURL(file.type, file.filename)
-        if file.matches(destination) {
+        let existing = try await worker.verify(file, at: destination)
+        guard generation == epoch, isDesired(file) else { return }
+        if existing?.stillMatches(destination) == true {
             diagnostics.delivery(.contentReused, file: file, source: .cache)
             try acknowledge(file, status: .delivered)
             try FileManager.default.removeItem(at: url)
@@ -313,7 +371,9 @@ final class WatchContentReceiver {
             return
         }
         let staged = url.appending(path: "bytes")
-        guard file.matches(staged) else {
+        let incoming = try await worker.verify(file, at: staged)
+        guard generation == epoch, isDesired(file) else { return }
+        guard incoming?.stillMatches(staged) == true else {
             diagnostics.delivery(.contentFailed, file: file, source: .cache, status: .failed, error: WatchLibraryError.invalid)
             try acknowledge(file, status: .failed)
             try FileManager.default.removeItem(at: url)
