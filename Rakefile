@@ -414,6 +414,7 @@ namespace :ios do
        '-scheme Warehouse ' \
        "-destination 'platform=iOS Simulator,name=#{simulator}' " \
        '-parallel-testing-enabled NO ' \
+       '-collect-test-diagnostics never ' \
        '-only-testing:WarehouseTests'
   end
 

@@ -233,6 +233,13 @@ Useful tasks:
   the simulator with `SIMULATOR=...`). Unit tests run serially so unrelated
   fixtures do not interfere with the 100 ms playback command latency gate.
   Tests still exercise concurrent content workers and playback commands.
+  The unit task disables optional verbose diagnostic collection with
+  `-collect-test-diagnostics never`: on this host, Xcode 27 can stall in
+  `collectSimulatorDiagnostics` after all tests pass. Assertion failures,
+  nonzero failure exits and the normal `.xcresult` bundle remain available.
+  To collect verbose diagnostics for an investigation, rerun the printed
+  `xcodebuild` command with `-collect-test-diagnostics on-failure`.
+  See [Apple's explanation of the option](https://developer.apple.com/forums/thread/698054).
 - `rake ios:testflight` — archive the iOS app and upload it to TestFlight (see
   the task's comments in the `Rakefile` for the required App Store Connect key).
 - `rake checks` — run the Ruby and web linting and formatting checks.
