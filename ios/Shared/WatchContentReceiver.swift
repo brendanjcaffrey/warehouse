@@ -136,6 +136,8 @@ final class WatchContentReceiver {
 
     func query(_ request: WatchInventoryRequest) throws {
         try inventory.receive(request)
+        // metadata restoration will answer persisted requests once it authorizes the receiver.
+        guard let head else { return }
         try inventory.publish(head: head, snapshot: snapshot)
     }
 

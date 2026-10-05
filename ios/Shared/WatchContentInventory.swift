@@ -193,7 +193,7 @@ final class WatchInventoryResponder {
 
     func publish(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
         currentHead = head
-        if manualPending, manual.request?.head != head {
+        if let head, manualPending, manual.request?.head != head {
             var next = manual
             next.request = nil
             try saveManual(next)

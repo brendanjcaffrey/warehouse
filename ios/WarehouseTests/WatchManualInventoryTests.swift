@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import SwiftProtobuf
+import WatchConnectivity
 @testable import Warehouse
 
 @Suite("WatchManualInventory", .serialized)
@@ -161,6 +162,66 @@ struct WatchManualInventoryTests {
         try receiver.receive(try #require(env.inventoryCompletions.last))
         #expect(!receiver.inventoryPending)
         #expect(env.watchDiagnostics.events.count { $0.kind == .inventoryManualScanned } == 1)
+    }
+
+    @Test("pending manual sync survives startup resumes and echoed requests during unchanged context import",
+          arguments: [false, true])
+    func pendingDuringMetadataRestore(reconcileBeforeContext: Bool) async throws {
+        let env = try Env()
+        let metadata = try WatchLibraryDeliveryTests.Env()
+        defer { env.cleanUp(); metadata.cleanUp() }
+        let (snapshot, queue, initialReceiver) = try await WatchInventoryTests().prepared(env)
+        env.transportAvailable = false
+        initialReceiver.syncDownloadedStatus()
+        let request = try #require(env.manualRequests.last)
+        let restored = try env.receiver()
+        let library = metadata.receiver()
+        await library.waitForImport()
+        _ = try await metadata.watch.expectWatchLibrary(snapshot.head)
+        _ = try await metadata.watch.importWatchLibrary(snapshot)
+        let session = WatchPhoneSession(library: library, sessionState: { (true, false) })
+        session.content = restored
+
+        if !reconcileBeforeContext { restored.resume() }
+        #expect(restored.inventoryPending)
+        #expect(restored.inventoryFeedback == "Sync pending. Waiting for iPhone confirmation.")
+        if reconcileBeforeContext { try await restored.settledReconcile(head: snapshot.head, snapshot: snapshot) }
+
+        var importGate: CheckedContinuation<Void, Never>?
+        defer { importGate?.resume() }
+        library.onChanged = {
+            await withCheckedContinuation { importGate = $0 }
+            try? restored.reconcile(head: library.head, snapshot: library.snapshot)
+        }
+        session.applyContext(try snapshot.head.encode())
+        try await PlayerStoreTests.waitFor { importGate != nil }
+        env.transportAvailable = true
+        try queue.receive(request)
+        session.session(WCSession.default, didReceiveUserInfo: try request.encode())
+        try await PlayerStoreTests.waitFor { session.contentActivity.count < 1 }
+        restored.resume()
+        #expect(restored.inventoryPending)
+        #expect(restored.inventoryFeedback == "Sync pending. Waiting for iPhone confirmation.")
+        #expect(env.inventoryReports.isEmpty)
+        // the echoed request must survive another restart while metadata is still unavailable.
+        #expect(try env.receiver().inventoryPending)
+        let savedRequests = try JSONDecoder().decode([WatchInventoryRequest].self,
+            from: Data(contentsOf: env.root.appending(path: "receiver/inventory-requests.json")))
+        #expect(savedRequests.contains(request))
+
+        importGate?.resume()
+        importGate = nil
+        await library.waitForImport()
+        await restored.waitForWork()
+        #expect(restored.inventoryPending)
+        #expect(!env.inventoryReports.isEmpty)
+        for report in env.inventoryReports { try await queue.settledReceive(report) }
+        let completion = try #require(env.inventoryCompletions.last)
+        session.session(WCSession.default, didReceiveUserInfo: try completion.encode())
+        try await PlayerStoreTests.waitFor { session.contentActivity.count < 1 }
+        #expect(!restored.inventoryPending)
+        #expect(restored.inventoryFeedback == "Downloaded status synced to iPhone.")
+        #expect(env.watchFiles.exists(.music, "m0.mp3"))
     }
 
     @Test("new receipts, completed transfers and stale requests cannot undo current delivery")
