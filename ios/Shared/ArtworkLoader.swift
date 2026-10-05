@@ -4,10 +4,10 @@ import UIKit
 enum ArtworkLoader {
     private static let cache = NSCache<NSString, UIImage>()
 
-    static func thumbnail(for url: URL?, maxPixelSize: Int = 132) async -> UIImage? {
+    static func thumbnail(for url: URL?, maxPixelSize: Int = 132, contentIdentity: UUID? = nil) async -> UIImage? {
         guard let url else { return nil }
         // the size is part of the key so big & small requests don't collide
-        let key = "\(url.path)#\(maxPixelSize)" as NSString
+        let key = "\(url.path)#\(maxPixelSize)#\(contentIdentity?.uuidString ?? "")" as NSString
         if let cached = cache.object(forKey: key) {
             return cached
         }

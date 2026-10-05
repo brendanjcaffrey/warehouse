@@ -13,15 +13,15 @@ struct WatchArtworkThumbnail: View {
     let filename: String?
     var maxPixelSize = 56
 
-    @Environment(WatchLibraryStore.self) private var library
-
-    @State private var image: UIImage?
+    @State private var thumbnail = WatchArtworkThumbnailState()
 
     var body: some View {
+        let request = fetcher?.request(filename, maxPixelSize: maxPixelSize)
+            ?? WatchArtworkRequest(filename: filename, maxPixelSize: maxPixelSize)
         ZStack {
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color.gray.opacity(0.3))
-            if let image {
+            if let image = thumbnail.image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -34,10 +34,8 @@ struct WatchArtworkThumbnail: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 4))
-        .task(id: "\(filename ?? "")-\(library.progress().artwork.downloaded)") {
-            image = nil
-            guard let url = fetcher?.artworkURL(filename) else { return }
-            image = await ArtworkLoader.thumbnail(for: url, maxPixelSize: maxPixelSize)
+        .task(id: request) {
+            await thumbnail.load(request)
         }
     }
 }

@@ -81,7 +81,7 @@ struct WatchProgressCacheTests {
         }
         let artwork = try #require(snapshot.artwork.first)
         try files.write(.artwork, artwork, data: Data("artwork".utf8))
-        cache.noteFileStored(.artwork)
+        cache.noteFileStored(.artwork, artwork)
         await receiver.waitForWork()
         #expect(probes.count - before == 5)
         #expect(changes.count == 1)

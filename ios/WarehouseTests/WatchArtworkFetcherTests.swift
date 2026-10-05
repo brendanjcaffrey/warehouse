@@ -9,7 +9,7 @@ struct WatchArtworkFetcherTests {
     func localArtwork() throws {
         let files = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
         defer { try? FileManager.default.removeItem(at: files.rootURL) }
-        let artwork = WatchArtworkFetcher(fileStore: files)
+        let artwork = WatchArtworkFetcher(fileCache: FileCache(fileStore: files))
         #expect(artwork.artworkURL(nil) == nil)
         #expect(artwork.artworkURL("cover.jpg") == nil)
         try files.write(.artwork, "cover.jpg", data: Data("delivered".utf8))

@@ -296,7 +296,7 @@ struct WatchLibraryDeliveryTests {
         try await env.watch.replaceLibrary(with: Library())
         #expect(try await env.watch.trackCount() == 500)
         let localFiles = FileStore(rootURL: env.root.appending(path: "artwork-policy"))
-        let fetcher = WatchArtworkFetcher(fileStore: localFiles)
+        let fetcher = WatchArtworkFetcher(fileCache: FileCache(fileStore: localFiles))
         #expect(fetcher.artworkURL("a1.jpg") == nil)
         let data = try Data(contentsOf: env.deliveries[0].0)
         #expect(String(data: data, encoding: .utf8)?.contains("token") == false)

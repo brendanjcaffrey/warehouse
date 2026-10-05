@@ -335,7 +335,7 @@ final class WatchContentReceiver {
             diagnostics.delivery(.contentReused, file: file, source: .cache)
             refreshLocalProgress()
             try acknowledge(file, status: .delivered)
-            fileCache.noteFileStored(file.type)
+            fileCache.noteFileStored(file.type, file.filename)
             return
         }
         let permanent = error is WatchLibraryError || error is FileStore.FilenameError
@@ -472,7 +472,7 @@ final class WatchContentReceiver {
             refreshLocalProgress()
             try acknowledge(file, status: .delivered)
             try FileManager.default.removeItem(at: url)
-            fileCache.noteFileStored(file.type)
+            fileCache.noteFileStored(file.type, file.filename)
             return
         }
         let staged = url.appending(path: "bytes")
@@ -505,10 +505,11 @@ final class WatchContentReceiver {
             try FileManager.default.moveItem(at: staged, to: destination)
         }
         diagnostics.delivery(.contentCommitted, file: file, source: .cache)
+        if file.type == .artwork { fileCache.noteFileStored(file.type, file.filename) }
         refreshLocalProgress()
         try acknowledge(file, status: .delivered)
         try FileManager.default.removeItem(at: url)
-        fileCache.noteFileStored(file.type)
+        if file.type == .music { fileCache.noteFileStored(file.type, file.filename) }
     }
 }
 

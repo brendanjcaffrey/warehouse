@@ -1,5 +1,7 @@
 import CoreGraphics
+import Foundation
 import Testing
+import UIKit
 @testable import Warehouse
 
 @Suite("ArtworkThumbnail")
@@ -36,5 +38,29 @@ struct ArtworkThumbnailTests {
         let cropped = ArtworkLoader.cropToCenterSquare(Self.makeImage(width: 500, height: 500))
         #expect(cropped.width == 500)
         #expect(cropped.height == 500)
+    }
+
+    @Test("replaced artwork at the same path loads the new image")
+    @MainActor
+    func replacedArtwork() async throws {
+        let files = FileCacheTests.makeStore()
+        defer { try? FileManager.default.removeItem(at: files.rootURL) }
+        func bytes(_ color: UIColor) -> Data {
+            UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).pngData { context in
+                color.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+            }
+        }
+        let url = files.fileURL(.artwork, "cover.png")
+        let cache = FileCache(fileStore: files)
+        let fetcher = WatchArtworkFetcher(fileCache: cache)
+        try files.write(.artwork, "cover.png", data: bytes(.red))
+        let request = fetcher.request("cover.png", maxPixelSize: 132)
+        let first = try #require(await ArtworkLoader.thumbnail(for: url, contentIdentity: request.contentIdentity))
+        try files.write(.artwork, "cover.png", data: bytes(.blue))
+        cache.noteFileStored(.artwork, "cover.png")
+        let next = fetcher.request("cover.png", maxPixelSize: 132)
+        let replacement = try #require(await ArtworkLoader.thumbnail(for: url, contentIdentity: next.contentIdentity))
+        #expect(first.pngData() != replacement.pngData())
     }
 }

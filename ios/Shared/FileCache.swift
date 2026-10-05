@@ -50,6 +50,7 @@ final class FileCache {
     /// the phone mirrors the library & has no cache to leave a listener on
     var onMusicChanged: (@MainActor () -> Void)?
     var onFilesChanged: (@MainActor () -> Void)?
+    var onArtworkChanged: (@MainActor (String) -> Void)?
     var onFilesReleased: (@MainActor () -> Void)?
 
     private let budget: @MainActor (Int64) -> FileCacheBudget
@@ -120,7 +121,8 @@ final class FileCache {
         onFilesChanged?()
     }
 
-    func noteFileStored(_ type: LibraryFileType) {
+    func noteFileStored(_ type: LibraryFileType, _ filename: String) {
+        if type == .artwork { onArtworkChanged?(filename) }
         if type == .music { noteMusicStored() } else { onFilesChanged?() }
     }
 
@@ -182,6 +184,7 @@ final class FileCache {
         for name in fileStore.list(type).subtracting(protected) {
             guard (try? fileStore.delete(type, name)) != nil else { continue }
             recency[type.directory]?[name] = nil
+            if type == .artwork { onArtworkChanged?(name) }
             removed = true
         }
         if removed {
@@ -235,6 +238,7 @@ final class FileCache {
             reclaimed += entry.sizeBytes
             musicRemoved = musicRemoved || type == .music
             recency[type.directory]?[entry.filename] = nil
+            if type == .artwork { onArtworkChanged?(entry.filename) }
         }
         if typeHeld + reserved + bytes <= target,
            availableBytes + reclaimed - allReserved - bytes < freeSpaceReserve {
@@ -249,6 +253,7 @@ final class FileCache {
                                              fileType: other, bytes: entry.sizeBytes))
                     musicRemoved = musicRemoved || other == .music
                     recency[other.directory]?[entry.filename] = nil
+                    if other == .artwork { onArtworkChanged?(entry.filename) }
                 }
             }
         }
@@ -342,6 +347,7 @@ final class FileCache {
             diagnostics.record(.init(kind: .evicted, id: UUID(), source: .cache,
                                      fileType: type, bytes: entry.sizeBytes))
             recency[type.directory]?[entry.filename] = nil
+            if type == .artwork { onArtworkChanged?(entry.filename) }
             removed.append(FileToDownload(type: type, filename: entry.filename))
         }
         return removed

@@ -43,7 +43,7 @@ final class WatchLibraryServices {
         library = WatchLibraryStore(songs: songs, playlists: playlists, defaults: defaults, receiver: receiver)
         player = PlayerStore(fileStore: fileStore, client: client, fileCache: fileCache,
                              onTrackPlayed: onTrackPlayed, onPlaybackRequested: onPlaybackRequested, musicPolicy: .downloadedOnly)
-        artwork = WatchArtworkFetcher(fileStore: fileStore)
+        artwork = WatchArtworkFetcher(fileCache: fileCache)
         receiver.onChanged = { [weak self] in
             guard let self else { return }
             restoreContent()
