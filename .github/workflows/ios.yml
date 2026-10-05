@@ -25,7 +25,7 @@ env:
 jobs:
   ios:
     runs-on: xcode-27
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
     - uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
