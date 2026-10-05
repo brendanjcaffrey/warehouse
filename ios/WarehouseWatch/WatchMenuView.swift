@@ -40,7 +40,10 @@ struct WatchMenuView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Label(playlist.name, systemImage: "music.note.list")
-                            WatchLibraryProgressView(progress: library.progress(playlistID: playlist.id), compact: true)
+                            let progress = library.progress(playlistID: playlist.id)
+                            if progress.showsPlaylistDownloadStatus {
+                                WatchLibraryProgressView(progress: progress, compact: true)
+                            }
                         }
                     }
                 }

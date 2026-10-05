@@ -56,10 +56,13 @@ struct WatchTrackListView: View {
                     .id(Anchor.buttons)
                 }
                 if let playlist, !playlist.isFolder {
-                    Section {
-                        WatchLibraryProgressView(progress: library.progress(playlistID: playlist.id))
-                    } footer: {
-                        Text("Only downloaded tracks will play.")
+                    let progress = library.progress(playlistID: playlist.id)
+                    if progress.showsPlaylistDownloadStatus {
+                        Section {
+                            WatchLibraryProgressView(progress: progress)
+                        } footer: {
+                            Text("Only downloaded tracks will play.")
+                        }
                     }
                 }
                 if filtered.isEmpty {

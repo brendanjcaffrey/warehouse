@@ -29,6 +29,8 @@ struct WatchLibraryProgress: Codable, Equatable {
     var music = Counts()
     var artwork = Counts()
 
+    var showsPlaylistDownloadStatus: Bool { music.total == 0 || music.downloaded < music.total }
+
     var title: String {
         switch state {
         case .preparing: "Preparing"

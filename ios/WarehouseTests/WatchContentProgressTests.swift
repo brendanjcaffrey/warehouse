@@ -4,6 +4,35 @@ import SwiftProtobuf
 @testable import Warehouse
 
 extension WatchContentDeliveryTests {
+    @Test("playlist download status follows local music completion independently of artwork")
+    func playlistDownloadStatus() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
+        try env.watchFiles.write(.music, "m0.mp3", data: Data("downloaded".utf8))
+        #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
+        try env.watchFiles.write(.music, "m1.mp3", data: Data("downloaded".utf8))
+        let completed = receiver.progress(playlistID: "p2")
+        #expect(completed.music.downloaded == 2)
+        #expect(completed.artwork.downloaded < completed.artwork.total)
+        #expect(!completed.showsPlaylistDownloadStatus)
+        #expect(receiver.progress().showsPlaylistDownloadStatus)
+        try env.watchFiles.delete(.music, "m1.mp3")
+        #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
+
+        var emptyLibrary = try snapshot.library
+        emptyLibrary.tracks = []
+        for index in emptyLibrary.playlists.indices { emptyLibrary.playlists[index].trackIds = [] }
+        let emptyHead = try env.snapshot(count: 4, revision: 2).head
+        let empty = WatchLibrarySnapshot(head: emptyHead, libraryData: try emptyLibrary.serializedData())
+        try await receiver.settledReconcile(head: empty.head, snapshot: empty)
+        #expect(receiver.progress(playlistID: "p2").music.total == 0)
+        #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
+    }
+
     @Test("forward revisions preserve transfers, staged files and lost receipt recovery across restart")
     func inFlightRevision() async throws {
         let env = try Env()
