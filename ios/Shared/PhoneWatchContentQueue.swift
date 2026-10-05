@@ -158,26 +158,25 @@ final class PhoneWatchContentQueue {
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
         let snapshot = snapshot?.head == head ? snapshot : nil
         if let snapshot { _ = try snapshot.validatedLibrary() }
-        if saved.head != head || (snapshot != nil && snapshot != saved.snapshot) {
+        let retainsContent = saved.head.map { head?.retainsContent(from: $0) == true } ?? false
+        if saved.head != head && !retainsContent {
             generation = UUID()
             preparations.values.forEach { $0.cancel() }
         }
         if saved.head != head {
             let old = saved.jobs.compactMap(\.file)
-            // exported filenames identify content; a metadata revision does not revoke verified watch storage.
-            let retainsDelivery = head?.libraryID != nil && head?.libraryID == saved.head?.libraryID
-                && head?.publisher == saved.head?.publisher && head?.version == saved.head?.version
-                && (head?.revision ?? 0) >= (saved.head?.revision ?? 0)
-            saved = Saved(head: head, jobs: retainsDelivery ? saved.jobs.filter { $0.status == .delivered } : [],
-                          snapshot: retainsDelivery ? saved.snapshot : nil, inventoryStartedAt: saved.inventoryStartedAt,
+            // keep immutable descriptors until a validated inventory actually removes their names.
+            saved = Saved(head: head, jobs: retainsContent ? saved.jobs : [],
+                          snapshot: retainsContent ? saved.snapshot : nil, inventoryStartedAt: saved.inventoryStartedAt,
                           manualRequest: saved.manualRequest, manualCompleted: nil,
                           recoveryFiles: saved.recoveryFiles, unidentifiedSources: saved.unidentifiedSources,
-                          storagePause: retainsDelivery ? saved.storagePause.map { StoragePause(nextAttempt: $0.nextAttempt) } : nil)
+                          storagePause: retainsContent ? saved.storagePause : nil)
             for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = nil }
             try save()
-            old.forEach { transport.cancel($0.id) }
+            if !retainsContent { old.forEach { transport.cancel($0.id) } }
         }
         if let snapshot {
+            let old = saved.jobs
             let previous = Dictionary(grouping: saved.jobs, by: \.type).mapValues {
                 Dictionary($0.map { ($0.filename, $0) }, uniquingKeysWith: { first, _ in first })
             }
@@ -192,6 +191,10 @@ final class PhoneWatchContentQueue {
                 saved.storagePause = nil
             }
             try save()
+            for job in old where desired[job.type]?.contains(job.filename) != true {
+                if let file = job.file { transport.cancel(file.id) }
+                for (id, key) in preparingJobs where key == job.key { preparations[id]?.cancel() }
+            }
         }
         try beginInventory()
         try pump()
@@ -237,7 +240,8 @@ final class PhoneWatchContentQueue {
     }
 
     func receive(_ receipt: WatchContentReceipt) throws {
-        guard let index = saved.jobs.firstIndex(where: { $0.file == receipt.file }), saved.head == receipt.file.head,
+        guard let index = saved.jobs.firstIndex(where: { $0.file == receipt.file }),
+              saved.snapshot?.head == saved.head, saved.head?.retainsContent(from: receipt.file.head) == true,
               [.delivered, .retrying, .storageFull, .failed].contains(receipt.status) else { return }
         if saved.jobs[index].status == .delivered { return }
         if saved.jobs[index].status == .failed && receipt.status != .delivered { return }
@@ -528,6 +532,8 @@ final class PhoneWatchContentQueue {
             try save()
         }
         guard transport.available() else { try publishReport(); return }
+        // pending metadata preserves jobs and copies, but cannot authorize new sends or receipt queries.
+        guard saved.head != nil, saved.snapshot?.head == saved.head else { return }
         if let request = saved.inventory, (saved.inventoryNextAttempt ?? .distantPast) <= now() {
             if saved.inventoryNextAttempt == .distantPast, !request.isManual { saved.inventoryStartedAt = now() }
             saved.inventoryNextAttempt = now().addingTimeInterval(60)
@@ -632,10 +638,10 @@ final class PhoneWatchContentQueue {
         preparationSources[id] = recovered?.id
         preparations[id] = Task {
             do {
-                let file = try await worker.prepare(.init(id: id, head: head, type: job.type, filename: job.filename,
+                let file = try await worker.prepare(.init(id: id, head: job.file?.head ?? head, type: job.type, filename: job.filename,
                                                            original: original, recovered: recovered, recoveryURL: recoveryURL, copy: copy))
                 try Task.checkCancellation()
-                guard generation == epoch, saved.head == head, transport.available(),
+                guard generation == epoch, saved.head?.retainsContent(from: head) == true, transport.available(),
                       saved.storagePause == nil || saved.storagePause?.probe == job.key,
                       let index = saved.jobs.firstIndex(where: {
                           $0.key == job.key && $0.file == job.file && ![.delivered, .failed].contains($0.status)
@@ -646,17 +652,20 @@ final class PhoneWatchContentQueue {
                 // no suspension between authority validation, durable ownership and enqueue.
                 saved.jobs[index].file = file
                 let queriesRecovery = file.id != id
-                saved.jobs[index].status = queriesRecovery ? .awaitingReceipt : .transferring
-                saved.jobs[index].nextAttempt = queriesRecovery ? now().addingTimeInterval(60) : .distantPast
+                let metadataReady = saved.snapshot?.head == saved.head
+                saved.jobs[index].status = queriesRecovery ? .awaitingReceipt : metadataReady ? .transferring : .pending
+                saved.jobs[index].nextAttempt = queriesRecovery && metadataReady ? now().addingTimeInterval(60) : .distantPast
                 saved.jobs[index].attempts += 1
                 try state.save(file, to: directory.appending(path: "\(file.id.uuidString).json"))
                 try save()
-                if queriesRecovery {
-                    transport.query(file)
-                    diagnostics.delivery(.receiptQuery, file: file, source: .phone)
-                } else {
-                    transport.enqueue(file, copy)
-                    diagnostics.delivery(.contentEnqueued, file: file, source: .phone, status: .transferring)
+                if metadataReady {
+                    if queriesRecovery {
+                        transport.query(file)
+                        diagnostics.delivery(.receiptQuery, file: file, source: .phone)
+                    } else {
+                        transport.enqueue(file, copy)
+                        diagnostics.delivery(.contentEnqueued, file: file, source: .phone, status: .transferring)
+                    }
                 }
             } catch {
                 if generation == epoch, !(error is CancellationError),

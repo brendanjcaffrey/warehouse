@@ -242,13 +242,95 @@ struct WatchContentWorkerTests {
         if query { try receiver.query(file) }
         #expect(await gate.waitForEntry())
         receiver.pause()
-        let next = try env.snapshot(count: 4, revision: 2)
+        let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "replacement",
+                                    playlistIDs: snapshot.head.playlistIDs, metadataReady: true)
+        let next = WatchLibrarySnapshot(head: head, libraryData: snapshot.libraryData)
         try receiver.reconcile(head: next.head, snapshot: next)
         gate.release()
         await receiver.waitForWork()
         #expect(env.receipts.isEmpty)
         #expect(receiver.receipts.isEmpty)
         #expect(env.watchFiles.exists(file.type, file.filename) == query)
+    }
+
+    @Test("forward publication preserves worker copies while its inventory is pending")
+    func preparingRevision() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 8)
+        try env.cache(original)
+        let gate = Gate()
+        defer { gate.release() }
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        try queue.reconcile(head: original.head, snapshot: original)
+        #expect(await gate.waitForEntry())
+        let next = try env.snapshot(count: 8, revision: 2)
+        try queue.reconcile(head: next.head, snapshot: nil)
+        gate.release()
+        await queue.waitForWork()
+        #expect(env.queued.isEmpty)
+        let files = queue.jobs.compactMap(\.file)
+        #expect(files.count == 4)
+        #expect(files.allSatisfy { $0.head == original.head })
+        for file in files { try env.files.delete(file.type, file.filename) }
+        try await queue.settledReconcile(head: next.head, snapshot: next)
+        #expect(env.queued.map(\.0) == files)
+        #expect(env.outstanding.count == 4)
+        #expect(env.queued.allSatisfy { $0.0.matches($0.1) })
+    }
+
+    @Test("forward publication reauthorizes staged bytes after suspended watch verification")
+    func verifyingRevision() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let (file, url) = env.queued[0]
+        try env.stage(file, url: url)
+        let gate = Gate()
+        defer { gate.release() }
+        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        try receiver.reconcile(head: original.head, snapshot: original)
+        #expect(await gate.waitForEntry())
+        receiver.pause()
+        let next = try env.snapshot(count: 4, revision: 2)
+        try receiver.reconcile(head: next.head, snapshot: next)
+        gate.release()
+        await receiver.waitForWork()
+        #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
+        #expect(env.receipts.last?.file == file && env.receipts.last?.status == .delivered)
+    }
+
+    @Test("damaged queue recovery queries verified original descriptors across forward revisions")
+    func recoveryRevision() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let transfers = env.queued
+        for (file, _) in transfers { try env.files.delete(file.type, file.filename) }
+        env.outstanding.removeAll()
+        let directory = env.root.appending(path: "queue")
+        try Data("broken".utf8).write(to: directory.appending(path: "state.json"))
+        let restored = try PhoneWatchContentQueue(fileStore: env.files, directory: directory, transport: .init(
+            available: { true }, outstanding: { env.outstanding },
+            enqueue: { env.outstanding.append($0); env.queued.append(($0, $1)) },
+            cancel: { _ in }, query: { env.queries.append($0) }),
+            schedulesRetries: false, state: .init(repairsDamage: true))
+        let next = try env.snapshot(count: 4, revision: 2)
+        try await restored.settledReconcile(head: next.head, snapshot: next)
+        #expect(Set(env.queries.map(\.id)) == Set(transfers.map { $0.0.id }))
+        #expect(env.queued.count == transfers.count)
+        let (file, url) = transfers[0]
+        try env.stage(file, url: url)
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
+        try await restored.settledReceive(try #require(env.receipts.last))
+        #expect(restored.jobs.first { $0.file == file }?.status == .delivered)
     }
 
     @Test("paused delivery keeps progress while fencing commits and incidental resumes")

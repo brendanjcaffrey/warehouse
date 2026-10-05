@@ -80,8 +80,8 @@ actor WatchContentWorker {
         try beforeWork()
         let source: URL
         if let recovered, let recoveryURL, try verify(recovered, at: recoveryURL) != nil {
-            // an exact-head recovery queries its original transfer identity before any resend.
-            if recovered.head == head { return recovered }
+            // compatible recovery queries its original transfer identity before any resend.
+            if head.retainsContent(from: recovered.head) { return recovered }
             source = recoveryURL
         } else {
             source = original

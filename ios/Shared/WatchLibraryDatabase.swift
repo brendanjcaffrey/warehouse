@@ -129,7 +129,18 @@ extension LibraryDatabase {
             }
             var library = Library()
             let tracks = try context.fetch(NSFetchRequest<TrackEntity>(entityName: "TrackEntity"))
-            for (index, entity) in tracks.sorted(by: { $0.id < $1.id }).enumerated() {
+            library.playlists = try context.fetch(NSFetchRequest<PlaylistEntity>(entityName: "PlaylistEntity"))
+                .sorted(by: { $0.id < $1.id }).map { entity in
+                    Playlist.with {
+                        $0.id = entity.id; $0.name = entity.name; $0.parentID = entity.parentId
+                        $0.isLibrary = entity.isLibrary; $0.trackIds = entity.trackIds
+                    }
+                }
+            let playlists = Dictionary(library.playlists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let selectedIDs = ids.filter { playlists[$0] != nil }
+            let selectedTracks = Set(selectedIDs.flatMap { playlists[$0]?.trackIds ?? [] })
+            // synthetic metadata ids depend only on selected tracks, never unrelated library additions.
+            for (index, entity) in tracks.filter({ selectedTracks.contains($0.id) }).sorted(by: { $0.id < $1.id }).enumerated() {
                 var track = Track()
                 track.id = entity.id
                 track.name = entity.name
@@ -158,17 +169,9 @@ extension LibraryDatabase {
                 track.playlistIds = entity.playlistIds
                 library.tracks.append(track)
             }
-            library.playlists = try context.fetch(NSFetchRequest<PlaylistEntity>(entityName: "PlaylistEntity"))
-                .sorted(by: { $0.id < $1.id }).map { entity in
-                    Playlist.with {
-                        $0.id = entity.id; $0.name = entity.name; $0.parentID = entity.parentId
-                        $0.isLibrary = entity.isLibrary; $0.trackIds = entity.trackIds
-                    }
-                }
             // only a complete same-source inventory can establish that a playlist was deleted.
-            let availableTracks = Set(library.tracks.map(\.id))
-            let playlists = Dictionary(library.playlists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            guard availableTracks.count == library.tracks.count, !availableTracks.contains(""),
+            let availableTracks = Set(tracks.map(\.id))
+            guard availableTracks.count == tracks.count, !availableTracks.contains(""),
                   playlists.count == library.playlists.count, playlists[""] == nil else { throw WatchLibraryError.invalid }
             for playlist in library.playlists {
                 guard Set(playlist.trackIds).isSubset(of: availableTracks) else { throw WatchLibraryError.invalid }
@@ -179,7 +182,11 @@ extension LibraryDatabase {
                     parent = folder.parentID
                 }
             }
-            let selectedIDs = ids.filter { playlists[$0] != nil }
+            library.playlists = library.playlists.map {
+                var playlist = $0
+                playlist.trackIds = playlist.trackIds.filter { selectedTracks.contains($0) }
+                return playlist
+            }
             return (try WatchLibrarySnapshot.selected(library, ids: selectedIDs), selectedIDs)
         }
     }

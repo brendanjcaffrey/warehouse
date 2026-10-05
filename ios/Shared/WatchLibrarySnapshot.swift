@@ -12,6 +12,12 @@ struct WatchLibraryHead: Codable, Equatable, Sendable {
     var metadataReady: Bool
     var failed: Bool?
 
+    /// content identity survives forward metadata revisions within the same publisher and library.
+    func retainsContent(from previous: WatchLibraryHead) -> Bool {
+        version == previous.version && publisher == previous.publisher && libraryID?.isEmpty == false
+            && libraryID == previous.libraryID && revision >= previous.revision
+    }
+
     func encode() throws -> [String: Any] {
         ["watchLibraryHead": try JSONEncoder().encode(self)]
     }

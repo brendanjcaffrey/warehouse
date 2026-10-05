@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// immutable bytes bound to one desired revision, without server credentials.
+/// immutable bytes retain their originating head across compatible metadata revisions.
 struct WatchContentFile: Codable, Equatable, Sendable {
     var version = 1
     let id: UUID

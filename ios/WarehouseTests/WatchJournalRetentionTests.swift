@@ -41,10 +41,10 @@ struct WatchJournalRetentionTests {
         try await receiver.settledReconcile(head: next.head, snapshot: nil)
         #expect(receiver.receipts.count == 1)
         try await receiver.settledReconcile(head: next.head, snapshot: next)
-        #expect(receiver.receipts.isEmpty)
+        #expect(receiver.receipts.count == 1)
         try await receiver.settledQuery(file)
-        #expect(env.receipts.last?.status == .failed)
-        #expect(receiver.receipts.isEmpty)
+        #expect(env.receipts.last?.file == file && env.receipts.last?.status == .delivered)
+        #expect(receiver.receipts.count == 1)
 
         for revision in 3...30 {
             let selected = revision.isMultiple(of: 3) ? [] : snapshot.head.playlistIDs

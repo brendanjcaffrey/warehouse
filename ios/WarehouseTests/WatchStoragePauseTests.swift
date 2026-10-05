@@ -149,16 +149,27 @@ struct WatchStoragePauseTests {
         let queue = try env.queue()
         try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try await queue.settledReceive(.init(file: env.queued[0].0, status: .storageFull))
+        let outstanding = env.outstanding
         let next = try env.snapshot(count: 12, revision: 2)
         try await queue.settledReconcile(head: next.head, snapshot: next)
-        #expect(env.outstanding.isEmpty)
+        #expect(env.outstanding == outstanding)
         #expect(env.queued.count == 4)
+        for file in outstanding {
+            env.outstanding.removeAll { $0.id == file.id }
+            try await queue.settledFinished(file, error: nil)
+            try await queue.settledReceive(.init(file: file, status: .storageFull))
+        }
         #expect(try copies(env).isEmpty)
         #expect(queue.progress().state == .storageFull)
         env.now += 3601
         await queue.settledResume()
         #expect(env.outstanding.count == 1)
-        #expect(env.outstanding.first?.head == next.head)
+        #expect(env.outstanding.first?.head == snapshot.head)
+        let probe = try #require(env.outstanding.first)
+        let forward = try env.snapshot(count: 12, revision: 3)
+        try await queue.settledReconcile(head: forward.head, snapshot: forward)
+        #expect(env.outstanding == [probe])
+        #expect(queue.progress().state == .storageFull)
         let newHead = WatchLibraryHead(publisher: next.head.publisher, revision: next.head.revision,
                                        libraryID: "another account", playlistIDs: next.head.playlistIDs, metadataReady: true)
         let replacement = WatchLibrarySnapshot(head: newHead, libraryData: next.libraryData)

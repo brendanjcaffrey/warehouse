@@ -240,14 +240,14 @@ struct WatchSyncSettingsStoreTests {
         await receiver.settledResume()
         env.outstanding.removeAll { $0.id == artwork.id }
         try await queue.settledReceive(try #require(env.receipts.last))
-        let obsolete = try #require(env.outstanding.first)
+        let outstanding = try #require(env.outstanding.first)
 
         store.toggle("p1")
         #expect(store.progress().music.downloaded == 1)
         #expect(store.progress().artwork.downloaded == 1)
         #expect(store.progress().state == .preparing)
-        #expect(env.outstanding.isEmpty)
-        try await queue.settledReceive(.init(file: obsolete, status: .delivered))
+        #expect(env.outstanding.contains(outstanding))
+        try await queue.settledReceive(.init(file: outstanding, status: .delivered))
         #expect(store.progress().music.downloaded == 1)
         queue = try env.queue()
         store.content = queue
@@ -262,6 +262,12 @@ struct WatchSyncSettingsStoreTests {
         #expect(store.progress(playlistID: "p2").music.downloaded == 1)
         #expect(env.queued.filter { $0.0.type == file.type && $0.0.filename == file.filename }.count == 1)
         #expect(env.queued.filter { $0.0.type == artwork.type && $0.0.filename == artwork.filename }.count == 1)
+        let outstandingURL = try #require(env.queued.first { $0.0 == outstanding }).1
+        try env.stage(outstanding, url: outstandingURL)
+        await receiver.settledResume()
+        try await queue.settledReceive(try #require(env.receipts.last))
+        #expect(store.progress().music.downloaded == 2)
+        #expect(env.queued.filter { $0.0.filename == outstanding.filename && $0.0.type == outstanding.type }.count == 1)
     }
 
     @Test("saving a selection publishes the complete persisted selection once")

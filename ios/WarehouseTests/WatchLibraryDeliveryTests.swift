@@ -7,6 +7,35 @@ import Testing
 @Suite("WatchLibraryDelivery", .serialized)
 @MainActor
 struct WatchLibraryDeliveryTests {
+    @Test("unselected track additions and removals leave published snapshot bytes and revision unchanged")
+    func unselectedTracks() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        var library = Self.library(count: 4)
+        try await env.phone.replaceLibrary(with: library, sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let original = publisher.head
+        var options = BinaryEncodingOptions()
+        options.useDeterministicOrdering = true
+        let bytes = try await env.phone.selectedWatchLibrary(ids: ["p2"], identity: "account").library.serializedData(options: options)
+        var unselected = library.tracks[0]
+        unselected.id = "a-unselected"
+        unselected.playlistIds = []
+        library.tracks.append(unselected)
+        try await env.phone.replaceLibrary(with: library, sourceIdentity: "account")
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.head == original)
+        #expect(try await env.phone.selectedWatchLibrary(ids: ["p2"], identity: "account").library.serializedData(options: options) == bytes)
+        library.tracks.removeAll { $0.id == unselected.id }
+        try await env.phone.replaceLibrary(with: library, sourceIdentity: "account")
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.head == original)
+    }
+
     @Test("a failed replacement preserves the last committed library")
     func failedReplacement() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

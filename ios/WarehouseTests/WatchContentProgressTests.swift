@@ -4,6 +4,97 @@ import SwiftProtobuf
 @testable import Warehouse
 
 extension WatchContentDeliveryTests {
+    @Test("forward revisions preserve transfers, staged files and lost receipt recovery across restart")
+    func inFlightRevision() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        var queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let transfers = env.queued
+        let (staged, stagedURL) = transfers[0]
+        try env.stage(staged, url: stagedURL)
+        let next = try env.snapshot(count: 4, revision: 2)
+        try await queue.settledReconcile(head: next.head, snapshot: nil)
+        #expect(env.outstanding == transfers.map(\.0))
+        queue = try env.queue()
+        try await queue.settledReconcile(head: next.head, snapshot: next)
+        #expect(env.queued.count == transfers.count)
+        #expect(env.outstanding == transfers.map(\.0))
+        var receiver = try env.receiver()
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
+        #expect(staged.matches(env.watchFiles.fileURL(staged.type, staged.filename)))
+        env.outstanding.removeAll { $0.id == staged.id }
+        try await queue.settledFinished(staged, error: nil)
+        // recover a lost acknowledgment using the original descriptor under the new head.
+        receiver = try env.receiver()
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
+        try await receiver.settledQuery(staged)
+        let receipt = try #require(env.receipts.last)
+        #expect(receipt.file == staged && receipt.status == .delivered)
+        try await queue.settledReceive(receipt)
+        #expect(queue.jobs.first { $0.file == staged }?.status == .delivered)
+        let (late, lateURL) = transfers[1]
+        try env.stage(late, url: lateURL)
+        await receiver.settledResume()
+        try await queue.settledReceive(try #require(env.receipts.last))
+        #expect(queue.jobs.first { $0.file == late }?.status == .delivered)
+        #expect(env.queued.filter { $0.0.id == staged.id || $0.0.id == late.id }.count == 2)
+    }
+
+    @Test("new inventory cancels removed transfers and rejects their late files and receipts")
+    func removedTransferRevision() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let (removed, url) = env.queued[0]
+        var library = try original.library
+        let index = try #require(library.tracks.firstIndex { $0.musicFilename == removed.filename })
+        library.tracks[index].musicFilename = "replacement.mp3"
+        let head = try env.snapshot(count: 4, revision: 2).head
+        let next = WatchLibrarySnapshot(head: head, libraryData: try library.serializedData())
+        // stage before cancellation can collect the phone's private copy.
+        try env.stage(removed, url: url)
+        try await queue.settledReconcile(head: head, snapshot: next)
+        #expect(!env.outstanding.contains(removed))
+        try await queue.settledReceive(.init(file: removed, status: .delivered))
+        #expect(!queue.jobs.contains { $0.file == removed })
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: head, snapshot: next)
+        #expect(!env.watchFiles.exists(removed.type, removed.filename))
+        #expect(receiver.receipts.isEmpty)
+    }
+
+    @Test("content cannot cross publishers, accounts or future revision authority", arguments: ["publisher", "account", "future"])
+    func contentRevisionBoundary(_ boundary: String) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4, revision: 2)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let (file, url) = env.queued[0]
+        try env.stage(file, url: url)
+        let head = WatchLibraryHead(publisher: boundary == "publisher" ? UUID() : original.head.publisher,
+                                    revision: boundary == "future" ? 1 : 3,
+                                    libraryID: boundary == "account" ? "other-account" : "account",
+                                    playlistIDs: original.head.playlistIDs, metadataReady: true)
+        let snapshot = WatchLibrarySnapshot(head: head, libraryData: original.libraryData)
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: head, snapshot: snapshot)
+        #expect(!env.watchFiles.exists(file.type, file.filename))
+        #expect(receiver.receipts.isEmpty)
+        if boundary == "future" {
+            try await receiver.settledReconcile(head: original.head, snapshot: original)
+            #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
+            #expect(env.receipts.last?.file == file && env.receipts.last?.status == .delivered)
+        }
+    }
+
     @Test("progress counts watch commits rather than phone files or system completion, and survives restart")
     func deliveredProgress() async throws {
         let env = try Env()
@@ -85,13 +176,13 @@ extension WatchContentDeliveryTests {
         #expect(queue.progress().state == .waiting)
         #expect(env.queued.filter { $0.0.type == file.type && $0.0.filename == file.filename }.count == 1)
         #expect(env.queued.filter { $0.0.type == artwork.type && $0.0.filename == artwork.filename }.count == 1)
-        let obsolete = try #require(env.queued.first { $0.0.type == .music && $0.0.id != file.id }).0
-        try await queue.settledReceive(.init(file: obsolete, status: .delivered))
-        #expect(queue.progress().music.downloaded == 1)
+        let outstanding = try #require(env.queued.first { $0.0.type == .music && $0.0.id != file.id }).0
+        try await queue.settledReceive(.init(file: outstanding, status: .delivered))
+        #expect(queue.progress().music.downloaded == 2)
         queue = try env.queue()
-        #expect(queue.progress().music.downloaded == 1)
+        #expect(queue.progress().music.downloaded == 2)
         #expect(queue.progress().artwork.downloaded == 1)
-        #expect(queue.jobs.filter { $0.status != .delivered }.allSatisfy { $0.file?.head == next.head })
+        #expect(queue.jobs.compactMap(\.file).allSatisfy { next.head.retainsContent(from: $0.head) })
     }
 
     @Test("acknowledged files survive a pending refresh but leave progress when removed from the inventory")

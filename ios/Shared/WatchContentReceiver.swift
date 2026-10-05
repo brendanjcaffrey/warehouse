@@ -146,7 +146,7 @@ final class WatchContentReceiver {
             // restored and retained local files are playable before a new acknowledgment arrives.
             if fileCache.fileStore.exists(type, name) { return .delivered }
             return receipts.last(where: {
-                $0.file.head == snapshot?.head && $0.file.type == type && $0.file.filename == name
+                $0.file.type == type && $0.file.filename == name && snapshot?.head.retainsContent(from: $0.file.head) == true
             }).map { $0.status == .delivered ? .pending : $0.status } ?? .pending
         }
         if let report = reports.last(where: { $0.head == snapshot?.head && $0.head == pendingHead }) {
@@ -182,7 +182,9 @@ final class WatchContentReceiver {
             let names = type == .music ? try? snapshot?.music : try? snapshot?.artwork
             for name in names ?? [] {
                 let entry = (type == .music ? music : artwork).first { $0.filename == name }
-                let receipt = receipts.last { $0.file.head == snapshot?.head && $0.file.type == type && $0.file.filename == name }
+                let receipt = receipts.last {
+                    $0.file.type == type && $0.file.filename == name && snapshot?.head.retainsContent(from: $0.file.head) == true
+                }
                 let status: WatchContentStatus = entry != nil ? .delivered : receipt.map {
                     $0.status == .delivered ? .pending : $0.status
                 } ?? .pending
@@ -212,7 +214,7 @@ final class WatchContentReceiver {
     }
 
     private func isDesired(_ file: WatchContentFile) -> Bool {
-        guard file.head == head, let snapshot, snapshot.head == head else { return false }
+        guard head?.retainsContent(from: file.head) == true, let snapshot, snapshot.head == head else { return false }
         let names = file.type == .music ? try? snapshot.music : try? snapshot.artwork
         return names?.contains(file.filename) == true
     }
@@ -302,7 +304,7 @@ final class WatchContentReceiver {
         var seen = [LibraryFileType: Set<String>]()
         return candidates.reversed().filter { receipt in
             let file = receipt.file
-            guard file.head == head, names[file.type]?.contains(file.filename) == true else { return false }
+            guard head.retainsContent(from: file.head), names[file.type]?.contains(file.filename) == true else { return false }
             let latest = seen[file.type, default: []].insert(file.filename).inserted
             // one latest result per selected file, plus exact backoff for manifests still in the inbox.
             return latest || staged.contains(file.id)
