@@ -727,8 +727,16 @@ struct WatchContentDeliveryTests {
         env.outstanding.removeAll { $0.id == file.id }
         try await queue.settledReceive(try #require(env.receipts.last))
         #expect(queue.jobs.first { $0.file == file }?.status == .storageFull)
-        env.now += 60
         env.beforeCommit = {}
+        // a full queue waits for already submitted transfers and their receipts before probing.
+        for (pending, source) in env.queued.dropFirst() {
+            try env.stage(pending, url: source)
+            await receiver.settledStaged(pending)
+            env.outstanding.removeAll { $0.id == pending.id }
+            try await queue.settledFinished(pending, error: nil)
+            try await queue.settledReceive(try #require(env.receipts.last))
+        }
+        env.now += 60
         await queue.settledResume()
         try env.stage(file, url: url)
         receiver = try env.receiver()

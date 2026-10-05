@@ -160,7 +160,8 @@ extension WatchContentDeliveryTests {
         #expect(queue.progress(playlistID: "p2").state == .storageFull)
         env.outstanding.removeAll { $0.id == file.id }
         try await queue.settledReceive(.init(file: file, status: .failed))
-        #expect(queue.progress().state == .failed)
+        // a permanent file failure does not establish that the watch has space for the remaining selection.
+        #expect(queue.progress().state == .storageFull)
         #expect(queue.progress().music.failed == 1)
         #expect(queue.progress().music.downloaded == 0)
     }
