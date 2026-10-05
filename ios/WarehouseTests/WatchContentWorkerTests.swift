@@ -251,6 +251,39 @@ struct WatchContentWorkerTests {
         #expect(env.watchFiles.exists(file.type, file.filename) == query)
     }
 
+    @Test("paused delivery keeps progress while fencing commits and incidental resumes")
+    func pausedWatchProgress() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let (file, url) = try #require(env.queued.first { $0.0.type == .music })
+        try env.stage(file, url: url)
+        let gate = Gate()
+        defer { gate.release() }
+        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(await gate.waitForEntry())
+        let expected = receiver.progress()
+        receiver.pause()
+        #expect(receiver.progress() == expected)
+        receiver.resume()
+        #expect(receiver.progress() == expected)
+        gate.release()
+        await receiver.waitForWork()
+        #expect(env.receipts.isEmpty)
+        #expect(!env.watchFiles.exists(file.type, file.filename))
+        await receiver.settledResume()
+        #expect(receiver.progress() == expected)
+        #expect(env.receipts.isEmpty)
+        #expect(!env.watchFiles.exists(file.type, file.filename))
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(env.receipts.last?.status == .delivered)
+        #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
+    }
+
     @Test("damaged queue recovery verifies private bytes before adopting exact-head receipt queries", arguments: [false, true])
     func verifyRecovery(corrupt: Bool) async throws {
         let env = try WatchContentDeliveryTests.Env()

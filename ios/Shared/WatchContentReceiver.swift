@@ -17,6 +17,7 @@ final class WatchContentReceiver {
     private let beforeReceipt: () throws -> Void
     private var head: WatchLibraryHead?
     private var pendingHead: WatchLibraryHead?
+    private var isPaused = false
     private var snapshot: WatchLibrarySnapshot?
     private var reports: [WatchLibraryDeliveryReport]
     private(set) var receipts: [WatchContentReceipt]
@@ -116,6 +117,7 @@ final class WatchContentReceiver {
             try fileCache.adoptWatchSelection(music: snapshot.music, artwork: snapshot.artwork)
         }
         self.head = head
+        isPaused = false
         try compactReceipts()
         scheduleWork()
         try inventory.publish(head: head, snapshot: snapshot)
@@ -194,9 +196,16 @@ final class WatchContentReceiver {
     }
 
     /// stop commits while the database serializes a newly received control message.
-    func pause() { generation = UUID(); head = nil; pendingHead = nil; inventory.pause() }
+    func pause() {
+        generation = UUID()
+        head = nil
+        isPaused = true
+        inventory.pause()
+    }
 
     func resume() {
+        // only metadata reconciliation can authorize commits after a control message.
+        guard !isPaused else { return }
         do { try reconcile(head: pendingHead, snapshot: snapshot); errorMessage = nil } catch { errorMessage = error.localizedDescription }
     }
 

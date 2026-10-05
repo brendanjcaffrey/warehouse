@@ -34,6 +34,9 @@ final class WatchLibraryStore {
 
     func progress(playlistID: String? = nil) -> WatchLibraryProgress {
         var progress = content?.progress(playlistID: playlistID) ?? WatchLibraryProgress(state: .setup)
+        if let receiver, !receiver.initialized || (progress.state == .setup && receiver.head?.libraryID != nil) {
+            progress.state = .preparing
+        }
         if receiver?.refreshFailed == true { progress.state = .refreshFailed }
         if receiver?.waitingForUpdate == true && progress.state != .refreshFailed { progress.state = .preparing }
         if deliveryStartupError != nil { progress.state = .deliveryUnavailable }
@@ -43,6 +46,7 @@ final class WatchLibraryStore {
     func presentation(isConfigured: Bool) -> State {
         // saved content does not need server credentials to browse or play.
         if state == .ready || state == .empty { return state }
+        if receiver?.initialized == false && receiver?.refreshFailed != true { return .loading }
         return isConfigured ? state : .setup
     }
 

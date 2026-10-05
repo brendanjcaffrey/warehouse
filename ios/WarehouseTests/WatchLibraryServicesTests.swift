@@ -1,10 +1,103 @@
 import Foundation
+import SwiftProtobuf
 import Testing
 @testable import Warehouse
 
 @Suite("watch production composition", .serialized)
 @MainActor
 struct WatchLibraryServicesTests {
+    @MainActor
+    struct StatusEnv {
+        let metadata: WatchLibraryDeliveryTests.Env
+        let defaults: UserDefaults
+        let services: WatchLibraryServices
+        let session: WatchPhoneSession
+
+        init(saved: Bool = true) async throws {
+            metadata = try WatchLibraryDeliveryTests.Env()
+            defaults = UserDefaults(suiteName: metadata.root.lastPathComponent)!
+            let files = FileStore(rootURL: metadata.root.appending(path: "files"))
+            if saved {
+                let head = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "account",
+                                           playlistIDs: ["p2"], metadataReady: true)
+                let library = try WatchLibrarySnapshot.selected(WatchLibraryDeliveryTests.library(count: 2), ids: ["p2"])
+                let snapshot = WatchLibrarySnapshot(head: head, libraryData: try library.serializedData())
+                _ = try await metadata.watch.expectWatchLibrary(head)
+                _ = try await metadata.watch.importWatchLibrary(snapshot)
+                try files.write(.music, "m0.mp3", data: PlayerStoreTests.musicBytes)
+            }
+            services = WatchLibraryServices(database: metadata.watch, fileStore: files, defaults: defaults,
+                                           metadataDirectory: metadata.inbox, contentDirectory: metadata.root.appending(path: "content"))
+            session = WatchPhoneSession(library: services.receiver)
+            session.content = services.content
+        }
+
+        func cleanUp() {
+            defaults.removePersistentDomain(forName: metadata.root.lastPathComponent)
+            metadata.cleanUp()
+        }
+    }
+
+    @Test("startup restores configuration before offering setup", arguments: [false, true])
+    func downloadStatusStartup(saved: Bool) async throws {
+        let env = try await StatusEnv(saved: saved)
+        defer { env.cleanUp() }
+        #expect(env.services.library.presentation(isConfigured: false) == .loading)
+        #expect(env.services.library.progress().state == .preparing)
+        await env.services.launch()
+        #expect(env.services.library.presentation(isConfigured: false) == (saved ? .ready : .setup))
+        #expect(env.services.library.progress().state == (saved ? .waiting : .setup))
+        #expect(env.services.library.progress().music.downloaded == (saved ? 1 : 0))
+        #expect(env.services.library.progress().music.total == (saved ? 2 : 0))
+    }
+
+    @Test("unchanged contexts preserve download counts and phone status during refresh",
+          arguments: [WatchLibraryProgress.State.waiting, .needsPhoneSync, .storageFull, .failed, .ready])
+    func unchangedContextProgress(state: WatchLibraryProgress.State) async throws {
+        let env = try await StatusEnv()
+        defer { env.cleanUp() }
+        if state == .ready {
+            try env.services.fileCache.fileStore.write(.music, "m1.mp3", data: PlayerStoreTests.musicBytes)
+        }
+        await env.services.launch()
+        let head = try #require(env.services.receiver.head)
+        var reported = env.services.library.progress()
+        reported.state = state
+        let content = try #require(env.services.content)
+        try content.receive(.init(head: head, sequence: 1, overall: reported, playlists: ["p2": reported]))
+        let expected = env.services.library.progress()
+        #expect(expected.state == state)
+        for _ in 0..<2 {
+            env.session.applyContext(try head.encode())
+            #expect(env.services.library.progress() == expected)
+            #expect(env.services.library.progress(playlistID: "p2") == expected)
+            // activation and file release callbacks may resume content before metadata finishes.
+            content.resume()
+            #expect(env.services.library.progress() == expected)
+            await env.services.receiver.waitForImport()
+            #expect(env.services.library.progress() == expected)
+            #expect(env.services.library.presentation(isConfigured: false) == .ready)
+        }
+        await env.services.refresh()
+        #expect(env.services.library.progress() == expected)
+    }
+
+    @Test("an accepted unconfigured phone head still offers setup and preserves saved music")
+    func unconfiguredContextProgress() async throws {
+        let env = try await StatusEnv()
+        defer { env.cleanUp() }
+        await env.services.launch()
+        let old = try #require(env.services.receiver.head)
+        let head = WatchLibraryHead(publisher: old.publisher, revision: old.revision + 1, libraryID: nil, playlistIDs: [])
+        env.session.applyContext(try head.encode())
+        #expect(env.services.library.progress().state == .waiting)
+        await env.services.receiver.waitForImport()
+        #expect(env.services.library.progress().state == .setup)
+        #expect(env.services.library.progress().music.downloaded == 1)
+        #expect(env.services.library.presentation(isConfigured: false) == .ready)
+        #expect(env.services.fileCache.fileStore.exists(.music, "m0.mp3"))
+    }
+
     @Test("launch, browse, playback, missing artwork, refresh, retry and recovery issue no server requests")
     func localLifecycle() async throws {
         let env = try WatchLibraryStoreTests.Env()
