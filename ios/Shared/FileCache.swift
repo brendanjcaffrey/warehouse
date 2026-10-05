@@ -49,6 +49,7 @@ final class FileCache {
     /// takes one — so the watch's rows can refresh which tracks are cached.
     /// the phone mirrors the library & has no cache to leave a listener on
     var onMusicChanged: (@MainActor () -> Void)?
+    var onFilesChanged: (@MainActor () -> Void)?
     var onFilesReleased: (@MainActor () -> Void)?
 
     private let budget: @MainActor (Int64) -> FileCacheBudget
@@ -116,6 +117,11 @@ final class FileCache {
     /// actually starts itself
     func noteMusicStored() {
         onMusicChanged?()
+        onFilesChanged?()
+    }
+
+    func noteFileStored(_ type: LibraryFileType) {
+        if type == .music { noteMusicStored() } else { onFilesChanged?() }
     }
 
     /// replaces the set of files of one type that eviction may not touch,
@@ -181,6 +187,7 @@ final class FileCache {
         if removed {
             save()
             if type == .music { onMusicChanged?() }
+            onFilesChanged?()
         }
     }
 
@@ -248,6 +255,7 @@ final class FileCache {
         if reclaimed > 0 {
             save()
             if musicRemoved { onMusicChanged?() }
+            onFilesChanged?()
         }
         guard typeHeld + reserved + bytes <= target,
               availableBytes + reclaimed - allReserved - bytes >= freeSpaceReserve else { return false }
@@ -306,6 +314,7 @@ final class FileCache {
         if removed.contains(where: { $0.type == .music }) {
             onMusicChanged?()
         }
+        if !removed.isEmpty { onFilesChanged?() }
         return removed
     }
 

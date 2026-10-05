@@ -13,14 +13,17 @@ extension WatchContentDeliveryTests {
         try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
         try env.watchFiles.write(.music, "m0.mp3", data: Data("downloaded".utf8))
+        await receiver.settledResume()
         #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
         try env.watchFiles.write(.music, "m1.mp3", data: Data("downloaded".utf8))
+        await receiver.settledResume()
         let completed = receiver.progress(playlistID: "p2")
         #expect(completed.music.downloaded == 2)
         #expect(completed.artwork.downloaded < completed.artwork.total)
         #expect(!completed.showsPlaylistDownloadStatus)
         #expect(receiver.progress().showsPlaylistDownloadStatus)
         try env.watchFiles.delete(.music, "m1.mp3")
+        await receiver.settledResume()
         #expect(receiver.progress(playlistID: "p2").showsPlaylistDownloadStatus)
 
         var emptyLibrary = try snapshot.library

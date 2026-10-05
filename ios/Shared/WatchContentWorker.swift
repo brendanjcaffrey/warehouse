@@ -25,6 +25,10 @@ actor WatchContentWorker {
 
     init(beforeWork: @escaping @Sendable () throws -> Void = {}) { self.beforeWork = beforeWork }
 
+    func inventory(_ files: Set<FileToDownload>, exists: @Sendable (LibraryFileType, String) -> Bool) -> Set<FileToDownload> {
+        Set(files.filter { exists($0.type, $0.filename) })
+    }
+
     func verify(_ file: WatchContentFile, at url: URL) throws -> Stamp? {
         try Task.checkCancellation()
         try beforeWork()

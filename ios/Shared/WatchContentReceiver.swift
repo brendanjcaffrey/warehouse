@@ -5,6 +5,17 @@ import Observation
 @MainActor
 @Observable
 final class WatchContentReceiver {
+    struct ProgressSource {
+        var validate: (WatchLibrarySnapshot) throws -> Library = { try $0.validatedLibrary() }
+        var exists: @Sendable (LibraryFileType, String) -> Bool
+    }
+
+    @ObservationIgnored var progressSource: ProgressSource
+    @ObservationIgnored private var progressIndex: WatchProgressIndex?
+    @ObservationIgnored private var localProgressFiles = Set<FileToDownload>()
+    @ObservationIgnored private var needsProgressScan = false
+    private var overallProgress = WatchLibraryProgress(state: .setup)
+    private var playlistProgress: [String: WatchLibraryProgress] = [:]
     private let diagnostics: WatchDiagnostics
     private let fileCache: FileCache
     private let directory: URL
@@ -32,8 +43,10 @@ final class WatchContentReceiver {
     var onActivityChanged: () -> Void = {}
 
     func waitForWork() async {
-        while let task = work { await task.value }
-        await inventory.waitForWork()
+        repeat {
+            while let task = work { await task.value }
+            await inventory.waitForWork()
+        } while work != nil
     }
 
     private let inventory: WatchInventoryResponder
@@ -64,6 +77,7 @@ final class WatchContentReceiver {
         inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory,
                                             diagnostics: diagnostics ?? .shared, now: now, worker: worker)
         self.fileCache = fileCache
+        progressSource = ProgressSource(exists: fileCache.fileStore.exists)
         self.directory = directory
         self.availableBytes = availableBytes
         self.send = send
@@ -79,7 +93,12 @@ final class WatchContentReceiver {
         receipts = loaded.value
         recoveredState = loaded.repaired
         if loaded.repaired { try state.save(receipts, to: url) }
-        inventory.onActivityChanged = { [weak self] in self?.onActivityChanged() }
+        inventory.onActivityChanged = { [weak self] in
+            guard let self else { return }
+            if inventory.pendingOperations == 0 { refreshLocalProgress() }
+            onActivityChanged()
+        }
+        fileCache.onFilesChanged = { [weak self] in self?.refreshLocalProgress() }
         fileCache.onFilesReleased = { [weak self] in
             Task { @MainActor [weak self] in self?.resume() }
         }
@@ -110,15 +129,24 @@ final class WatchContentReceiver {
         pendingHead = head
         self.head = nil
         self.snapshot = snapshot
+        defer { updateProgress() }
         // an absent or pending snapshot cannot revoke the last durable selection.
         if head != nil { fileCache.awaitWatchSelection() }
-        if let snapshot, snapshot.head == head {
-            _ = try snapshot.validatedLibrary()
-            try fileCache.adoptWatchSelection(music: snapshot.music, artwork: snapshot.artwork)
+        let nextIndex: WatchProgressIndex?
+        if let snapshot, snapshot != progressIndex?.snapshot, snapshot.head == head || progressIndex == nil {
+            nextIndex = WatchProgressIndex(snapshot: snapshot, library: try progressSource.validate(snapshot))
+        } else {
+            nextIndex = progressIndex
         }
+        if let snapshot, snapshot.head == head {
+            guard let nextIndex, nextIndex.snapshot == snapshot else { throw WatchLibraryError.invalid }
+            try fileCache.adoptWatchSelection(music: Set(nextIndex.overall.music), artwork: nextIndex.overall.artwork)
+        }
+        progressIndex = nextIndex
         self.head = head
         isPaused = false
         try compactReceipts()
+        needsProgressScan = true
         scheduleWork()
         try inventory.publish(head: head, snapshot: snapshot)
     }
@@ -132,25 +160,54 @@ final class WatchContentReceiver {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(next).write(to: directory.appending(path: "phone-progress.json"), options: .atomic)
         reports = next
+        updateProgress()
     }
 
     func query(_ request: WatchInventoryRequest) throws {
         try inventory.receive(request)
         // metadata restoration will answer persisted requests once it authorizes the receiver.
         guard let head else { return }
+        refreshLocalProgress()
         try inventory.publish(head: head, snapshot: snapshot)
     }
 
     func progress(playlistID: String? = nil) -> WatchLibraryProgress {
-        var progress = WatchLibraryProgress.make(head: pendingHead, snapshot: snapshot, playlistID: playlistID) { type, name in
-            // restored and retained local files are playable before a new acknowledgment arrives.
-            if fileCache.fileStore.exists(type, name) { return .delivered }
-            return receipts.last(where: {
-                $0.file.type == type && $0.file.filename == name && snapshot?.head.retainsContent(from: $0.file.head) == true
-            }).map { $0.status == .delivered ? .pending : $0.status } ?? .pending
+        guard let playlistID else { return overallProgress }
+        return playlistProgress[playlistID] ?? (progressIndex == nil ? overallProgress : WatchLibraryProgress(state: .preparing))
+    }
+
+    private func refreshLocalProgress() {
+        needsProgressScan = true
+        scheduleWork(drain: false)
+    }
+
+    private func updateProgress() {
+        guard let index = progressIndex else {
+            overallProgress = WatchLibraryProgress.make(head: pendingHead, snapshotHead: nil)
+            playlistProgress = [:]
+            return
         }
-        if let report = reports.last(where: { $0.head == snapshot?.head && $0.head == pendingHead }) {
-            let reported = playlistID.flatMap { report.playlists[$0] } ?? report.overall
+        var statuses: [FileToDownload: WatchContentStatus] = [:]
+        for receipt in receipts where index.head.retainsContent(from: receipt.file.head) {
+            let file = FileToDownload(type: receipt.file.type, filename: receipt.file.filename)
+            statuses[file] = receipt.status == .delivered ? .pending : receipt.status
+        }
+        // local inventory is authoritative, including files restored without a receipt.
+        for file in localProgressFiles { statuses[file] = .delivered }
+        let report = reports.last { $0.head == index.head && $0.head == pendingHead }
+        let overall = supplement(index.overall.progress(head: pendingHead, snapshotHead: index.head, statuses: statuses),
+                                 reported: report?.overall)
+        let playlists = index.playlists.mapValues { selection in
+            selection.progress(head: pendingHead, snapshotHead: index.head, statuses: statuses)
+        }.map { id, value in (id, supplement(value, reported: report?.playlists[id] ?? report?.overall)) }
+        if overallProgress != overall { overallProgress = overall }
+        let next = Dictionary(uniqueKeysWithValues: playlists)
+        if playlistProgress != next { playlistProgress = next }
+    }
+
+    private func supplement(_ value: WatchLibraryProgress, reported: WatchLibraryProgress?) -> WatchLibraryProgress {
+        var progress = value
+        if let reported {
             if progress.state == .waiting && [.needsPhoneSync, .storageFull, .failed].contains(reported.state) {
                 progress.state = reported.state
                 progress.music.failed = min(reported.music.failed, progress.music.total - progress.music.downloaded)
@@ -214,9 +271,9 @@ final class WatchContentReceiver {
     }
 
     private func isDesired(_ file: WatchContentFile) -> Bool {
-        guard head?.retainsContent(from: file.head) == true, let snapshot, snapshot.head == head else { return false }
-        let names = file.type == .music ? try? snapshot.music : try? snapshot.artwork
-        return names?.contains(file.filename) == true
+        guard head?.retainsContent(from: file.head) == true, let index = progressIndex,
+              index.head == head, snapshot?.head == head else { return false }
+        return index.files.contains(.init(type: file.type, filename: file.filename))
     }
 
     /// a lost receipt is repaired from durable identity plus actual verified bytes, never system completion.
@@ -229,6 +286,7 @@ final class WatchContentReceiver {
             return
         }
         if !queries.contains(file) { queries.append(file) }
+        needsProgressScan = true
         scheduleWork()
     }
 
@@ -263,6 +321,7 @@ final class WatchContentReceiver {
                              file: file, source: .phone, error: error)
         guard isDesired(file) else { return }
         stagingErrors.append((file, error))
+        needsProgressScan = true
         scheduleWork()
     }
 
@@ -274,8 +333,9 @@ final class WatchContentReceiver {
         guard generation == epoch, isDesired(file) else { return }
         if verified?.stillMatches(destination) == true {
             diagnostics.delivery(.contentReused, file: file, source: .cache)
+            refreshLocalProgress()
             try acknowledge(file, status: .delivered)
-            if file.type == .music { fileCache.noteMusicStored() }
+            fileCache.noteFileStored(file.type)
             return
         }
         let permanent = error is WatchLibraryError || error is FileStore.FilenameError
@@ -297,14 +357,15 @@ final class WatchContentReceiver {
 
     private func retainedReceipts(_ candidates: [WatchContentReceipt]) throws -> [WatchContentReceipt] {
         // pending or failed metadata must not revoke recovery evidence from the saved selection.
-        guard let head, let snapshot, snapshot.head == head else { return candidates }
-        let names: [LibraryFileType: Set<String>] = [.music: try snapshot.music, .artwork: try snapshot.artwork]
+        guard let head, let index = progressIndex, index.head == head, snapshot?.head == head else { return candidates }
         let staged = FileManager.default.fileExists(atPath: directory.path)
             ? Set(try FileManager.default.contentsOfDirectory(atPath: directory.path).compactMap(UUID.init(uuidString:))) : []
         var seen = [LibraryFileType: Set<String>]()
         return candidates.reversed().filter { receipt in
             let file = receipt.file
-            guard head.retainsContent(from: file.head), names[file.type]?.contains(file.filename) == true else { return false }
+            guard head.retainsContent(from: file.head), index.files.contains(.init(type: file.type, filename: file.filename)) else {
+                return false
+            }
             let latest = seen[file.type, default: []].insert(file.filename).inserted
             // one latest result per selected file, plus exact backoff for manifests still in the inbox.
             return latest || staged.contains(file.id)
@@ -324,13 +385,15 @@ final class WatchContentReceiver {
         receipts = next
     }
 
-    private func scheduleWork() {
-        needsDrain = true
+    private func scheduleWork(drain: Bool = true) {
+        needsDrain = needsDrain || drain
         guard work == nil else { return }
         work = Task {
-            while needsDrain || !queries.isEmpty || !stagingErrors.isEmpty {
-                needsDrain = false
-                do { try await drain() } catch { errorMessage = error.localizedDescription }
+            while needsDrain || !queries.isEmpty || !stagingErrors.isEmpty || needsProgressScan {
+                if needsDrain {
+                    needsDrain = false
+                    do { try await self.drain() } catch { errorMessage = error.localizedDescription }
+                }
                 while !queries.isEmpty {
                     let file = queries.removeFirst()
                     do { try await answer(file) } catch { errorMessage = error.localizedDescription }
@@ -339,6 +402,18 @@ final class WatchContentReceiver {
                     let (file, error) = stagingErrors.removeFirst()
                     do { try await answerStagingFailure(file, error: error) } catch { errorMessage = error.localizedDescription }
                 }
+                if needsProgressScan {
+                    needsProgressScan = false
+                    let epoch = generation
+                    let files = progressIndex?.files ?? []
+                    let local = await worker.inventory(files, exists: progressSource.exists)
+                    if generation == epoch && !needsProgressScan {
+                        localProgressFiles = local
+                    } else {
+                        needsProgressScan = true
+                    }
+                }
+                updateProgress()
             }
             work = nil
             onActivityChanged()
@@ -394,9 +469,10 @@ final class WatchContentReceiver {
         guard generation == epoch, isDesired(file) else { return }
         if existing?.stillMatches(destination) == true {
             diagnostics.delivery(.contentReused, file: file, source: .cache)
+            refreshLocalProgress()
             try acknowledge(file, status: .delivered)
             try FileManager.default.removeItem(at: url)
-            if file.type == .music { fileCache.noteMusicStored() }
+            fileCache.noteFileStored(file.type)
             return
         }
         let staged = url.appending(path: "bytes")
@@ -429,9 +505,10 @@ final class WatchContentReceiver {
             try FileManager.default.moveItem(at: staged, to: destination)
         }
         diagnostics.delivery(.contentCommitted, file: file, source: .cache)
+        refreshLocalProgress()
         try acknowledge(file, status: .delivered)
         try FileManager.default.removeItem(at: url)
-        if file.type == .music { fileCache.noteMusicStored() }
+        fileCache.noteFileStored(file.type)
     }
 }
 

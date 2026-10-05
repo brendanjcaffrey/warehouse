@@ -378,6 +378,7 @@ struct WatchContentDeliveryTests {
         #expect(receiver.errorMessage != nil)
         #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
         #expect(env.receipts.isEmpty)
+        #expect(receiver.progress().music.downloaded == 1)
         let restored = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
                                                  availableBytes: { env.available }, send: { env.receipts.append($0) },
                                                  diagnostics: env.watchDiagnostics)

@@ -76,10 +76,15 @@ struct WatchLibraryProgress: Codable, Equatable {
         }
         let music = Counts(statuses: tracks.map { status(.music, $0.musicFilename) })
         let artwork = Counts(statuses: Set(tracks.map(\.artworkFilename).filter { !$0.isEmpty }).sorted().map { status(.artwork, $0) })
+        return make(head: head, snapshotHead: snapshot.head, music: music, artwork: artwork)
+    }
+
+    static func make(head: WatchLibraryHead?, snapshotHead: WatchLibraryHead?, music: Counts = Counts(),
+                     artwork: Counts = Counts()) -> Self {
         let state: State
         if head?.failed == true { state = .refreshFailed
         } else if head?.libraryID == nil { state = .setup
-        } else if head != snapshot.head { state = .preparing
+        } else if snapshotHead == nil || head != snapshotHead { state = .preparing
         } else if music.total == 0 { state = .empty
         } else if music.downloaded == music.total { state = .ready
         } else if music.storageFull > 0 { state = .storageFull
