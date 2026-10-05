@@ -41,10 +41,10 @@ final class PhoneWatchLibraryServices {
         settings.deliveryStartupError = failures.isEmpty ? nil : failures.joined(separator: "\n")
     }
 
-    func publish(identity: String?) {
+    func publish(identity: String?, libraryRequest: WatchLibraryRequest? = nil) {
         self.identity = identity
         start(repairsDamage: false)
-        publish()
+        publish(libraryRequest: libraryRequest)
     }
 
     func retry() {
@@ -52,11 +52,17 @@ final class PhoneWatchLibraryServices {
         publish()
     }
 
-    private func publish() {
+    func metadataFinished(key: String, error: Error?) {
+        do {
+            try publisher?.finished(key: key, error: error)
+        } catch { settings.deliveryStartupError = error.localizedDescription }
+    }
+
+    private func publish(libraryRequest: WatchLibraryRequest? = nil) {
         guard settings.deliveryStartupError == nil else { return }
         do {
             try content?.invalidate(identity: identity, playlistIDs: settings.playlistIds)
-            publisher?.publish(identity: identity, playlistIDs: settings.playlistIds)
+            publisher?.publish(identity: identity, playlistIDs: settings.playlistIds, libraryRequest: libraryRequest)
         } catch {
             settings.deliveryStartupError = error.localizedDescription
         }

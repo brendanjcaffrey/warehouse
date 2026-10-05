@@ -130,6 +130,10 @@ struct WarehouseApp: App {
         watchSession.publishLibrary = {
             watchServices.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()))
         }
+        watchSession.onLibraryRequest = { request in
+            watchServices.publish(identity: LibraryIdentity.make(token: authStore.token, baseURL: authStore.baseURL()), libraryRequest: request)
+        }
+        watchSession.onMetadataFinished = { watchServices.metadataFinished(key: $0, error: $1) }
         syncStore.onLibrarySaved = {
             watchSession.publishLibrary?()
             Task { await updatesStore.flush() }

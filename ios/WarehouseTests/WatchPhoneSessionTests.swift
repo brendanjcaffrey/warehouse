@@ -1,4 +1,5 @@
 import Foundation
+import SwiftProtobuf
 import Testing
 import WatchConnectivity
 @testable import Warehouse
@@ -6,6 +7,59 @@ import WatchConnectivity
 @Suite("watch connectivity background dispatch", .serialized)
 @MainActor
 struct WatchPhoneSessionTests {
+    @Test("library requests wait for restoration, report accepted metadata and deduplicate outstanding user info")
+    func libraryRequests() async throws {
+        let env = try WatchLibraryDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "account", playlistIDs: [], metadataReady: true)
+        #expect(try await env.watch.expectWatchLibrary(head))
+        #expect(try await env.watch.importWatchLibrary(.init(head: head, libraryData: Library().serializedData())))
+        let receiver = env.receiver()
+        var queued = [[String: Any]]()
+        var available = true
+        let transport = WatchPhoneSession.LibraryTransport(available: { available }, outstanding: { queued }, enqueue: { queued.append($0) })
+        let session = WatchPhoneSession(library: receiver, libraryTransport: transport, sessionState: { (true, false) })
+        var completed = 0
+        session.requestLibrary()
+        session.lifetime.hold { completed += 1 }
+        #expect(completed == 0)
+        session.requestLibrary()
+        await session.waitForLibraryRequest()
+        let pendingActivity = session.contentActivity.count
+        #expect(completed == 1 && pendingActivity == 0)
+        #expect(queued.count == 1 && WatchLibraryRequest(dictionary: queued[0])?.acceptedHead == head)
+        session.requestLibrary()
+        await session.waitForLibraryRequest()
+        #expect(queued.count == 1)
+        let next = WatchLibraryHead(publisher: head.publisher, revision: 8, libraryID: "account", playlistIDs: [], metadataReady: true)
+        receiver.expect(next)
+        await receiver.waitForImport()
+        queued.removeAll()
+        session.requestLibrary()
+        await session.waitForLibraryRequest()
+        // the pending context is not evidence of an imported snapshot.
+        #expect(WatchLibraryRequest(dictionary: queued[0])?.acceptedHead == head)
+        #expect(try await env.watch.importWatchLibrary(.init(head: next, libraryData: Library().serializedData())))
+        receiver.resume()
+        session.requestLibrary()
+        await session.waitForLibraryRequest()
+        #expect(queued.count == 2 && WatchLibraryRequest(dictionary: queued[1])?.acceptedHead == next)
+        available = false
+        queued.removeAll()
+        session.requestLibrary()
+        await session.waitForLibraryRequest()
+        #expect(queued.isEmpty)
+        let empty = WatchPhoneSession(library: WatchLibraryReceiver(database: LibraryDatabase(inMemory: true),
+                                                                   directory: env.root.appending(path: "empty")), libraryTransport: transport)
+        available = true
+        empty.requestLibrary()
+        await empty.waitForLibraryRequest()
+        #expect(queued.count == 1 && WatchLibraryRequest(dictionary: queued[0])?.acceptedHead == nil)
+        empty.requestLibrary()
+        await empty.waitForLibraryRequest()
+        #expect(queued.count == 1)
+    }
+
     @Test("empty and full delivery captures reach the phone within the live message budget", arguments: [0, 512])
     func sendsFullDiagnosticCapture(eventCount: Int) async throws {
         let env = try WatchLibraryDeliveryTests.Env()

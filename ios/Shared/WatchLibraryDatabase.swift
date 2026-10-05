@@ -121,8 +121,9 @@ extension LibraryDatabase {
     }
 
     /// a read of the current phone database, including local edits, with its source identity.
-    func selectedWatchLibrary(ids: [String], identity: String) async throws -> (library: Library, playlistIDs: [String]) {
-        try await container.performBackgroundTask { context in
+    func selectedWatchLibrary(ids: [String], identity: String) async throws -> (library: Library, playlistIDs: [String], revision: Data?) {
+        try beforeWatchLibraryRead()
+        return try await container.performBackgroundTask { context in
             try context.setQueryGenerationFrom(.current)
             guard try Self.document("phoneLibraryIdentity", context: context) == Data(identity.utf8) else {
                 throw WatchLibraryError.notLoaded
@@ -187,7 +188,19 @@ extension LibraryDatabase {
                 playlist.trackIds = playlist.trackIds.filter { selectedTracks.contains($0) }
                 return playlist
             }
-            return (try WatchLibrarySnapshot.selected(library, ids: selectedIDs), selectedIDs)
+            return (try WatchLibrarySnapshot.selected(library, ids: selectedIDs), selectedIDs,
+                    try Self.document("phoneLibraryRevision", context: context))
+        }
+    }
+
+    /// the revision is committed with metadata, including edits, so it survives either service restarting.
+    func phoneLibraryRevision(identity: String) async throws -> Data? {
+        try await container.performBackgroundTask { context in
+            try context.setQueryGenerationFrom(.current)
+            guard try Self.document("phoneLibraryIdentity", context: context) == Data(identity.utf8) else {
+                throw WatchLibraryError.notLoaded
+            }
+            return try Self.document("phoneLibraryRevision", context: context)
         }
     }
 }

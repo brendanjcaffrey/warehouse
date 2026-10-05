@@ -46,6 +46,7 @@ final class LibraryDatabase {
 
     private var loadError: Error?
     var beforeLibrarySave: () throws -> Void = {}
+    var beforeWatchLibraryRead: () throws -> Void = {}
 
     init(inMemory: Bool = false, storeURL: URL? = nil) {
         container = NSPersistentContainer(name: "Library", managedObjectModel: Self.model)
@@ -71,6 +72,7 @@ final class LibraryDatabase {
             guard try Self.document("watchProtocolSelected", context: context) == nil else { return }
             try Self.importLibrary(library, context: context)
             try Self.setDocument("phoneLibraryIdentity", data: sourceIdentity.map { Data($0.utf8) }, context: context)
+            try Self.setDocument("phoneLibraryRevision", data: Data(UUID().uuidString.utf8), context: context)
             try beforeSave()
             try context.save()
         }
@@ -155,6 +157,7 @@ final class LibraryDatabase {
             entity.finish = song.finish
             entity.rating = Int32(song.rating)
             entity.artworkFilename = song.artworkFilename
+            try Self.setDocument("phoneLibraryRevision", data: Data(UUID().uuidString.utf8), context: context)
             try context.save()
         }
     }

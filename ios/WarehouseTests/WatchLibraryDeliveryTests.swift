@@ -7,6 +7,140 @@ import Testing
 @Suite("WatchLibraryDelivery", .serialized)
 @MainActor
 struct WatchLibraryDeliveryTests {
+    @Test("completed unchanged snapshots are not transferred again on repeated phone pushes")
+    func completedSnapshot() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        let publisher = try env.publisher()
+        let session = PhoneWatchSession(onPlay: { _ in }, diagnostics: env.phoneDiagnostics)
+        session.publishLibrary = { publisher.publish(identity: "account", playlistIDs: ["p2"]) }
+        session.onMetadataFinished = { try? publisher.finished(key: $0, error: $1) }
+        session.push()
+        await publisher.waitForPublication()
+        let key = try #require(env.deliveries.first?.1)
+        env.outstanding.remove(key)
+        #expect(session.receiveFileCompletion(metadata: ["kind": "watchLibrarySnapshot", "watchLibraryKey": key], error: nil))
+        try await PlayerStoreTests.waitFor { env.phoneDiagnostics.events.contains { $0.kind == .metadataCompleted } }
+        session.push()
+        await publisher.waitForPublication()
+        #expect(env.deliveries.count == 1)
+    }
+
+    @Test("completion survives restart, while an older or missing accepted head requests the current snapshot")
+    func snapshotRequests() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        var publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let accepted = publisher.head
+        let key = PhoneWatchLibraryPublisher.key(accepted)
+        env.outstanding.remove(key)
+        try publisher.finished(key: key, error: nil)
+        publisher = try env.publisher()
+        // a failing full-read boundary proves foreground publication uses the saved metadata revision.
+        env.phone.beforeWatchLibraryRead = { throw CocoaError(.fileReadUnknown) }
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.errorMessage == nil && env.deliveries.count == 1)
+        let session = PhoneWatchSession(onPlay: { _ in })
+        var requests = 0
+        session.onLibraryRequest = {
+            requests += 1
+            publisher.publish(identity: "account", playlistIDs: ["p2"], libraryRequest: $0)
+        }
+        session.receive(userInfo: try WatchLibraryRequest(acceptedHead: accepted).encode())
+        try await PlayerStoreTests.waitFor { requests == 1 }
+        await publisher.waitForPublication()
+        #expect(env.deliveries.count == 1)
+        let older = WatchLibraryHead(publisher: accepted.publisher, revision: accepted.revision - 1,
+                                     libraryID: accepted.libraryID, playlistIDs: accepted.playlistIDs, metadataReady: true)
+        session.receive(userInfo: try WatchLibraryRequest(acceptedHead: older).encode())
+        try await PlayerStoreTests.waitFor { env.deliveries.count == 2 }
+        await publisher.waitForPublication()
+        #expect(publisher.head == accepted && publisher.errorMessage == nil)
+        env.outstanding.remove(key)
+        try publisher.finished(key: key, error: nil)
+        session.receive(userInfo: ["kind": "watchLibraryRequest"])
+        try await PlayerStoreTests.waitFor { env.deliveries.count == 3 }
+        await publisher.waitForPublication()
+        #expect(env.deliveries.last?.1 == key)
+    }
+
+    @Test("failed metadata transfers retry and obsolete completions cannot suppress a newer revision")
+    func snapshotFailures() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let oldKey = PhoneWatchLibraryPublisher.key(publisher.head)
+        env.outstanding.remove(oldKey)
+        try publisher.finished(key: oldKey, error: CocoaError(.fileReadUnknown))
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(env.deliveries.count == 2)
+        try await env.phone.updateTrack(LibraryDatabaseTests.editedSong(id: "t0", artworkFilename: "updated.jpg"))
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let newKey = PhoneWatchLibraryPublisher.key(publisher.head)
+        #expect(newKey != oldKey && env.deliveries.count == 3)
+        env.outstanding.removeAll()
+        try publisher.finished(key: oldKey, error: nil)
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(env.deliveries.count == 4 && env.deliveries.last?.1 == newKey)
+    }
+
+    @Test("failed phone metadata transactions preserve the snapshot revision and cached publication")
+    func failedSourceRevision() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        let revision = try await env.phone.phoneLibraryRevision(identity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        env.phone.beforeLibrarySave = { throw CocoaError(.fileWriteOutOfSpace) }
+        await #expect(throws: CocoaError.self) {
+            try await env.phone.replaceLibrary(with: Library(), sourceIdentity: "other")
+        }
+        #expect(try await env.phone.phoneLibraryRevision(identity: "account") == revision)
+        env.phone.beforeWatchLibraryRead = { throw CocoaError(.fileReadUnknown) }
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.errorMessage == nil && env.deliveries.count == 1)
+    }
+
+    @Test("failed completion persistence leaves the snapshot eligible for another transfer")
+    func completionPersistenceFailure() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        try await env.phone.replaceLibrary(with: Self.library(count: 4), sourceIdentity: "account")
+        var fails = false
+        let state = WatchDeliveryState(write: { data, url in
+            if fails { throw CocoaError(.fileWriteOutOfSpace) }
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        })
+        let publisher = try PhoneWatchLibraryPublisher(database: env.phone, directory: env.root.appending(path: "publisher"), transport: .init(
+            context: { env.heads.append($0) }, outstanding: { env.outstanding },
+            enqueue: { env.deliveries.append(($0, $1)); env.outstanding.insert($1) }), state: state)
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        let key = PhoneWatchLibraryPublisher.key(publisher.head)
+        env.outstanding.remove(key)
+        fails = true
+        #expect(throws: CocoaError.self) { try publisher.finished(key: key, error: nil) }
+        fails = false
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(env.deliveries.count == 2)
+    }
+
     @Test("unselected track additions and removals leave published snapshot bytes and revision unchanged")
     func unselectedTracks() async throws {
         let env = try Env()

@@ -13,6 +13,8 @@ final class PhoneWatchLibraryPublisher {
     private struct Saved: Codable {
         var head: WatchLibraryHead
         var libraryData: Data?
+        var sourceRevision: Data?
+        var completedKey: String?
     }
 
     private let diagnostics: WatchDiagnostics
@@ -24,6 +26,7 @@ final class PhoneWatchLibraryPublisher {
     private var saved: Saved
     private var runner: Task<Void, Never>?
     private var request = 0
+    private var libraryRequest: WatchLibraryRequest?
     private(set) var errorMessage: String?
 
     var onSnapshot: (WatchLibraryHead, WatchLibrarySnapshot?) -> Void = { _, _ in }
@@ -52,7 +55,8 @@ final class PhoneWatchLibraryPublisher {
     nonisolated static func key(_ head: WatchLibraryHead) -> String { "\(head.publisher.uuidString)-\(head.revision)" }
 
     /// latest request wins even if a database read is suspended during a selection change.
-    func publish(identity: String?, playlistIDs: [String]) {
+    func publish(identity: String?, playlistIDs: [String], libraryRequest: WatchLibraryRequest? = nil) {
+        if let libraryRequest { self.libraryRequest = libraryRequest }
         request += 1
         let generation = request
         let previous = runner
@@ -67,6 +71,13 @@ final class PhoneWatchLibraryPublisher {
                 }
                 try? transport.context(saved.head)
                 guard let identity else { errorMessage = nil; return }
+                let revision = try await database.phoneLibraryRevision(identity: identity)
+                guard generation == request else { return }
+                if revision != nil, saved.sourceRevision == revision, saved.libraryData != nil, saved.head.metadataReady {
+                    preparing = false
+                    try finishPublication()
+                    return
+                }
                 let selection = try await database.selectedWatchLibrary(ids: playlistIDs, identity: identity)
                 guard generation == request else { return }
                 var options = BinaryEncodingOptions()
@@ -82,13 +93,14 @@ final class PhoneWatchLibraryPublisher {
                     head.failed = nil
                     let snapshot = WatchLibrarySnapshot(head: head, libraryData: data)
                     _ = try snapshot.validatedLibrary()
-                    try persist(Saved(head: head, libraryData: data))
+                    try persist(Saved(head: head, libraryData: data, sourceRevision: selection.revision))
+                } else if saved.sourceRevision != selection.revision {
+                    var next = saved
+                    next.sourceRevision = selection.revision
+                    try persist(next)
                 }
                 preparing = false
-                errorMessage = nil
-                onSelectionReconciled(selection.playlistIDs)
-                try deliver()
-                onSnapshot(saved.head, saved.libraryData.map { WatchLibrarySnapshot(head: saved.head, libraryData: $0) })
+                try finishPublication()
             } catch {
                 guard generation == request else { return }
                 errorMessage = error.localizedDescription
@@ -105,6 +117,26 @@ final class PhoneWatchLibraryPublisher {
     }
 
     func waitForPublication() async { await runner?.value }
+
+    func finished(key: String, error: Error?) throws {
+        guard error == nil, key == Self.key(saved.head), saved.head.metadataReady, saved.completedKey != key else { return }
+        var next = saved
+        next.completedKey = key
+        try persist(next)
+    }
+
+    private func finishPublication() throws {
+        onSelectionReconciled(saved.head.playlistIDs)
+        if let libraryRequest {
+            var next = saved
+            next.completedKey = libraryRequest.acceptedHead == saved.head ? Self.key(saved.head) : nil
+            if next.completedKey != saved.completedKey { try persist(next) }
+        }
+        try deliver()
+        libraryRequest = nil
+        errorMessage = nil
+        onSnapshot(saved.head, saved.libraryData.map { WatchLibrarySnapshot(head: saved.head, libraryData: $0) })
+    }
 
     private func persist(_ next: Saved) throws {
         try state.save(next, to: directory.appending(path: "state.json"))
@@ -123,7 +155,7 @@ final class PhoneWatchLibraryPublisher {
                 && !outstanding.contains(url.deletingPathExtension().lastPathComponent) {
             try FileManager.default.removeItem(at: url)
         }
-        guard !outstanding.contains(key) else { return }
+        guard saved.completedKey != key, !outstanding.contains(key) else { return }
         let url = directory.appending(path: "\(key).json")
         if !FileManager.default.fileExists(atPath: url.path) {
             try JSONEncoder().encode(WatchLibrarySnapshot(head: saved.head, libraryData: data)).write(to: url, options: .atomic)

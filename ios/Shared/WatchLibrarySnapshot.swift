@@ -38,6 +38,24 @@ struct WatchLibraryHead: Codable, Equatable, Sendable {
     }
 }
 
+/// requests report committed metadata, never merely the latest received control head.
+struct WatchLibraryRequest: Codable, Equatable, Sendable {
+    var acceptedHead: WatchLibraryHead?
+
+    init(acceptedHead: WatchLibraryHead?) { self.acceptedHead = acceptedHead }
+
+    init?(dictionary: [String: Any]) {
+        guard dictionary["kind"] as? String == "watchLibraryRequest" else { return nil }
+        acceptedHead = WatchLibraryHead(context: dictionary)
+    }
+
+    func encode() throws -> [String: Any] {
+        var info = try acceptedHead?.encode() ?? [:]
+        info["kind"] = "watchLibraryRequest"
+        return info
+    }
+}
+
 struct WatchLibrarySnapshot: Codable, Equatable, Sendable {
     let head: WatchLibraryHead
     let libraryData: Data

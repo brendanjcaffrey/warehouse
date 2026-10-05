@@ -8,6 +8,8 @@ import UIKit
 final class PhoneWatchSession: NSObject {
     var content: PhoneWatchContentQueue?
     var publishLibrary: (() -> Void)?
+    var onLibraryRequest: ((WatchLibraryRequest) -> Void)?
+    var onMetadataFinished: ((String, Error?) -> Void)?
     private let diagnostics: WatchDiagnostics
     private let onPlay: @MainActor (PlayPayload) throws -> Void
     private let acknowledgePlay: @MainActor (PlayPayload) -> Void
@@ -93,8 +95,11 @@ extension PhoneWatchSession: WCSessionDelegate {
     // split from the delegate method so tests can exercise the decode & hop
     // without a real session
     nonisolated func receive(userInfo: [String: Any]) {
-        if userInfo["kind"] as? String == "watchLibraryRequest" {
-            Task { @MainActor in push() }
+        if let request = WatchLibraryRequest(dictionary: userInfo) {
+            Task { @MainActor in
+                if let onLibraryRequest { onLibraryRequest(request) } else { publishLibrary?() }
+                content?.requestInventory()
+            }
             return
         }
         if let request = WatchInventoryRequest(dictionary: userInfo), request.isManual {
@@ -189,6 +194,7 @@ extension PhoneWatchSession: WCSessionDelegate {
         if metadata?["kind"] as? String == "watchLibrarySnapshot" {
             let key = metadata?["watchLibraryKey"] as? String
             Task { @MainActor in
+                if let key { onMetadataFinished?(key, error) }
                 let parts = key?.split(separator: "-")
                 let publisher = key.flatMap { UUID(uuidString: String($0.prefix(36))) }
                 let revision = parts?.last.flatMap { Int64($0) }

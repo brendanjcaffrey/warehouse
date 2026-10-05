@@ -4,6 +4,12 @@ import WatchConnectivity
 /// receives the phone-supplied library, returns durable play reports and controls phone playback.
 @MainActor
 final class WatchPhoneSession: NSObject {
+    struct LibraryTransport {
+        var available: () -> Bool = { WCSession.isSupported() && WCSession.default.activationState == .activated }
+        var outstanding: () -> [[String: Any]] = { WCSession.default.outstandingUserInfoTransfers.map(\.userInfo) }
+        var enqueue: ([String: Any]) -> Void = { WCSession.default.transferUserInfo($0) }
+    }
+
     nonisolated let contentActivity = WatchContentActivity()
     var content: WatchContentReceiver? {
         didSet {
@@ -20,6 +26,8 @@ final class WatchPhoneSession: NSObject {
     private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Result<Data, Error>) -> Void) -> Void
     private let remoteReachable: @MainActor () -> Bool
     private let sendRemoteMessage: ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void
+    private let libraryTransport: LibraryTransport
+    private var libraryRequestTask: Task<Void, Never>?
 
     var onPlayReceipt: (@MainActor (PlayPayload) -> Void)?
     var onPlayTransferFinished: (@MainActor (PlayPayload) -> Void)?
@@ -31,6 +39,7 @@ final class WatchPhoneSession: NSObject {
 
     init(
         library: WatchLibraryReceiver,
+        libraryTransport: LibraryTransport = .init(),
         sessionState: @escaping @MainActor () -> (activated: Bool, contentPending: Bool) = {
             (WCSession.default.activationState == .activated, WCSession.default.hasContentPending)
         },
@@ -53,6 +62,7 @@ final class WatchPhoneSession: NSObject {
         }
     ) {
         self.library = library
+        self.libraryTransport = libraryTransport
         metadataDirectory = library.directory
         self.sessionState = sessionState
         self.remoteReachable = remoteReachable
@@ -108,9 +118,25 @@ final class WatchPhoneSession: NSObject {
     }
 
     func requestLibrary() {
-        guard canSend else { return }
-        WCSession.default.transferUserInfo(["kind": "watchLibraryRequest"])
+        guard libraryRequestTask == nil else { return }
+        contentActivity.begin()
+        updateBackgroundLifetime()
+        libraryRequestTask = Task {
+            defer {
+                libraryRequestTask = nil
+                contentActivity.end()
+                updateBackgroundLifetime()
+            }
+            await library.waitForImport()
+            guard libraryTransport.available() else { return }
+            let request = WatchLibraryRequest(acceptedHead: library.snapshot?.head)
+            guard !libraryTransport.outstanding().contains(where: { WatchLibraryRequest(dictionary: $0) == request }),
+                  let info = try? request.encode() else { return }
+            libraryTransport.enqueue(info)
+        }
     }
+
+    func waitForLibraryRequest() async { await libraryRequestTask?.value }
 
     var canSend: Bool {
         WCSession.isSupported() && WCSession.default.activationState == .activated
