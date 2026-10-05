@@ -14,11 +14,11 @@ struct MainTabView: View {
             Tab("Library", systemImage: "music.note.list", value: AppTab.library) {
                 LibraryView()
             }
-            Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
-                SettingsView()
-            }
             Tab(value: AppTab.search, role: .search) {
                 SearchView()
+            }
+            Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
+                SettingsView()
             }
         }
         // isEnabled keeps the tab view's identity stable when the bar appears,
