@@ -6,10 +6,10 @@ struct WatchInventoryRequest: Codable, Equatable, Sendable {
     static let minimumInterval: TimeInterval = 24 * 60 * 60
     let id: UUID
     let head: WatchLibraryHead
-    var manualSequence: Int?
+    var manualSequence: Int64?
     var isManual: Bool { manualSequence != nil }
 
-    init(id: UUID = UUID(), head: WatchLibraryHead, manualSequence: Int? = nil) {
+    init(id: UUID = UUID(), head: WatchLibraryHead, manualSequence: Int64? = nil) {
         self.id = id; self.head = head; self.manualSequence = manualSequence
     }
 
@@ -74,7 +74,7 @@ final class WatchInventoryResponder {
     }
 
     private struct Manual: Codable {
-        var sequence = 0
+        var sequence: Int64 = 0
         var request: WatchInventoryRequest?
         var completed = false
     }
@@ -144,7 +144,8 @@ final class WatchInventoryResponder {
             errorMessage = "Wait for the library update"
             throw WatchLibraryError.notLoaded
         }
-        let sequence = max(manual.sequence + 1, Int(now().timeIntervalSince1970 * 1_000_000))
+        // epoch microseconds exceed the 32-bit int range on watch hardware.
+        let sequence = max(manual.sequence + 1, Int64(now().timeIntervalSince1970 * 1_000_000))
         let next = Manual(sequence: sequence, request: WatchInventoryRequest(head: head, manualSequence: sequence))
         do { try saveManual(next) } catch { errorMessage = error.localizedDescription; throw error }
         manual = next

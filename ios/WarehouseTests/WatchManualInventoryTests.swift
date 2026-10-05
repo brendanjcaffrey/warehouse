@@ -16,6 +16,43 @@ struct WatchManualInventoryTests {
         return request
     }
 
+    @Test("current-date manual requests use a watch-safe sequence through session activity, transport and restoration")
+    func currentDateSequence() async throws {
+        let env = try Env()
+        let metadata = try WatchLibraryDeliveryTests.Env()
+        defer { env.cleanUp(); metadata.cleanUp() }
+        env.now = Date(timeIntervalSince1970: 1_791_133_200)
+        let (snapshot, queue, receiver) = try await WatchInventoryTests().prepared(env)
+        let session = WatchPhoneSession(library: metadata.receiver(), sessionState: { (true, false) })
+        session.content = receiver
+        let first = try await request(env, queue: queue, receiver: receiver)
+        let sequence = try #require(first.manualSequence)
+        #expect(type(of: sequence) == Int64.self)
+        #expect(sequence > Int32.max)
+        #expect(WatchInventoryRequest(dictionary: try first.encode()) == first)
+        #expect(receiver.inventoryPending)
+        #expect(receiver.pendingOperations == 0)
+        for report in env.inventoryReports {
+            #expect(WatchInventoryReport(dictionary: try report.encode()) == report)
+            try await queue.settledReceive(report)
+        }
+        let completion = try #require(env.inventoryCompletions.last)
+        #expect(WatchInventoryCompletion(dictionary: try completion.encode()) == completion)
+        try receiver.receive(completion)
+        #expect(!receiver.inventoryPending)
+        #expect(receiver.inventoryFeedback == "Downloaded status synced to iPhone.")
+
+        env.now -= 60
+        let restored = try env.receiver()
+        session.content = restored
+        try await restored.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let second = try await request(env, queue: queue, receiver: restored)
+        #expect(second.manualSequence == sequence + 1)
+        #expect(WatchInventoryRequest(dictionary: try second.encode()) == second)
+        #expect(restored.inventoryPending)
+        #expect(env.watchFiles.exists(.music, "m0.mp3"))
+    }
+
     @Test("manual sync discovers 167 local songs when only 65 have phone receipts, without sending valid files")
     func discrepancy() async throws {
         let env = try Env()
