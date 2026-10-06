@@ -980,12 +980,18 @@ final class PlayerStore {
     /// & when it's the one playing also the playback window & lock screen info
     func trackUpdated(_ song: Song) {
         let current = self.song
+        let upcoming = queue.next(wrapping: repeatMode == .all)?.song
         queue.updateSong(song)
-        // an edit to the track queued behind this one moves the marker the
-        // daemon advances at, which was armed when the item was enqueued
+        // queued start positions must be prepared before the daemon moves onto
+        // the item; stop-time edits can update its existing end marker.
         if let nextItem, nextItem.songID == song.id,
            queue.next(wrapping: repeatMode == .all)?.song.libraryID == song.libraryID {
-            nextItem.item.forwardPlaybackEndTime = Self.stopTime(for: song)
+            if upcoming?.start != song.start {
+                removeNextItem()
+                reconcileNextItem()
+            } else {
+                nextItem.item.forwardPlaybackEndTime = Self.stopTime(for: song)
+            }
         }
         guard let current, current.id == song.id, current.libraryID == song.libraryID else { return }
 
@@ -1303,9 +1309,6 @@ final class PlayerStore {
         observeStatus(of: next.item)
         setNowPlayingInfo(for: song)
         applyStopTime()
-        if window.start > 0 {
-            seekPlayer(to: window.start)
-        }
         updateNowPlayingPlaybackState()
         refreshInUse()
         prefetchNext()
@@ -1382,6 +1385,13 @@ final class PlayerStore {
               let (item, streaming) = nextPlayerItem(for: target.song),
               player.currentItem != nil, player.canInsert(item, after: nil)
         else { return }
+        // cue the in point before enqueueing so the daemon starts there without
+        // playing the intro and seeking after the handover.
+        let start = PlaybackWindow(duration: target.song.duration, start: target.song.start, finish: target.song.finish).start
+        if start > 0 {
+            item.seek(to: CMTime(seconds: start, preferredTimescale: 600),
+                      toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil)
+        }
         // armed now rather than when the item becomes current: the daemon
         // advances at the stop time, so it has to be set before it is reached
         item.forwardPlaybackEndTime = Self.stopTime(for: target.song)
