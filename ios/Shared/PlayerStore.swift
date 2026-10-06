@@ -1308,7 +1308,8 @@ final class PlayerStore {
         status = next.streaming ? .buffering : .ready
         observeStatus(of: next.item)
         setNowPlayingInfo(for: song)
-        applyStopTime()
+        // the stop marker was set before enqueueing. assigning it again after
+        // the daemon starts playback flushes the decoder and repeats audio.
         updateNowPlayingPlaybackState()
         refreshInUse()
         prefetchNext()

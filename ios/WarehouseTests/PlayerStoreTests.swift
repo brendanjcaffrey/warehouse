@@ -650,7 +650,9 @@ struct PlayerStoreTests {
         id: String,
         name: String = "Renamed",
         start: TimeInterval = 0,
-        finish: TimeInterval = 0
+        finish: TimeInterval = 0,
+        duration: TimeInterval = 240,
+        musicFilename: String? = nil
     ) -> Song {
         Song(
             id: id,
@@ -664,12 +666,12 @@ struct PlayerStoreTests {
             albumSortName: "",
             genre: "",
             year: 0,
-            duration: 240,
+            duration: duration,
             start: start,
             finish: finish,
             discNumber: 0,
             trackNumber: 0,
-            musicFilename: "\(id).wav",
+            musicFilename: musicFilename ?? "\(id).wav",
             artworkFilename: nil)
     }
 
