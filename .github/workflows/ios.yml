@@ -47,11 +47,15 @@ jobs:
     # signed ad hoc rather than not at all: an unsigned test host has no
     # entitlements, so the simulator keychain refuses every write & the auth
     # tests that read a token back see nothing. ad hoc needs no team/profile
+    # match ios:test: isolate timing tests from unrelated main-actor work
+    # and avoid xcode's optional post-test simulator diagnostic stalls.
     - name: unit tests
       run: |
         xcodebuild test -project "$PROJECT" \
           -scheme "$SCHEME" \
           -destination "platform=iOS Simulator,name=$SIMULATOR" \
+          -parallel-testing-enabled NO \
+          -collect-test-diagnostics never \
           -only-testing:WarehouseTests \
           CODE_SIGN_IDENTITY=- \
           CODE_SIGN_STYLE=Manual \
