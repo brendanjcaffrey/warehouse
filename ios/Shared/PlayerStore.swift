@@ -83,6 +83,9 @@ final class PlayerStore {
         default: .otherRoute
         }
     }
+    static func routesOverAirPlay() -> Bool {
+        AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+    }
     private func waitingReason() -> WatchDiagnostic.WaitingReason? {
         switch player.reasonForWaitingToPlay {
         case .toMinimizeStalls: .minimizeStalls
@@ -100,6 +103,8 @@ final class PlayerStore {
     /// watches loading, buffer prediction and transport changes for the current item
     private var cancelPlaybackObservation: (() -> Void)?
     private let observePlayback: PlaybackObservation.Start
+    /// whether a remote receiver is rendering the audio rather than this device
+    private let routesOverAirPlay: @MainActor () -> Bool
     private let diagnostics: WatchDiagnostics
     private var diagnosticID = UUID()
     private var diagnosticStart = Date()
@@ -253,6 +258,7 @@ final class PlayerStore {
         prefetchRetryDelay: TimeInterval = 30,
         activateSessionForTests: (@MainActor () async -> Bool)? = nil,
         observePlayback: @escaping PlaybackObservation.Start = PlaybackObservation.start,
+        routesOverAirPlay: @escaping @MainActor () -> Bool = PlayerStore.routesOverAirPlay,
         diagnostics: WatchDiagnostics? = nil
     ) {
         self.fileStore = fileStore
@@ -267,6 +273,7 @@ final class PlayerStore {
         self.prefetchRetryDelay = prefetchRetryDelay
         self.activateSessionForTests = activateSessionForTests
         self.observePlayback = observePlayback
+        self.routesOverAirPlay = routesOverAirPlay
         self.diagnostics = diagnostics ?? .shared
         self.downloader = FileDownloader(client: client, fileStore: fileStore)
         self.prefetchDownloader = prefetchDownloader ?? self.downloader
@@ -1310,6 +1317,11 @@ final class PlayerStore {
         setNowPlayingInfo(for: song)
         // the stop marker was set before enqueueing. assigning it again after
         // the daemon starts playback flushes the decoder and repeats audio.
+        // an airplay receiver needs exactly that flush: without it the handover
+        // runs the clock on the new item while the speaker stays silent.
+        if routesOverAirPlay() {
+            applyStopTime()
+        }
         updateNowPlayingPlaybackState()
         refreshInUse()
         prefetchNext()

@@ -92,6 +92,36 @@ struct TrackTransitionTests {
         try await checkTransition(start: 5, skip: false, fileEnd: true, delayed: true)
     }
 
+    @Test("the stop marker is re-armed after a handover only for an airplay receiver", arguments: [false, true])
+    @MainActor
+    func airPlayHandover(airPlay: Bool) async throws {
+        let store = FileCacheTests.makeStore()
+        defer { try? FileManager.default.removeItem(at: store.rootURL) }
+        try PlayerQueueTests.cacheSongs(store, ["1", "2"])
+        try store.write(.music, "1.wav", data: PlayerStoreTests.wav(seconds: 2))
+        var transport: AVQueuePlayer?
+        let player = PlayerStore(
+            fileStore: store, musicPolicy: .downloadedOnly,
+            activateSessionForTests: { true },
+            observePlayback: { queue, item, receive in
+                transport = queue
+                return PlaybackObservation.start(player: queue, item: item, receive: receive)
+            }, routesOverAirPlay: { airPlay }, diagnostics: WatchDiagnostics(logEvents: false))
+        defer { player.pause() }
+        player.play([PlayerStoreTests.edited(id: "1", duration: 2),
+                     PlayerStoreTests.edited(id: "2", finish: 10)], token: nil, baseURL: nil)
+        try await PlayerStoreTests.waitFor { player.nextItemURL != nil }
+        let next = try #require(transport?.items().last)
+        let writes = AudioProbe()
+        let observation = next.observe(\.forwardPlaybackEndTime, options: [.new]) { item, _ in
+            writes.append(item.forwardPlaybackEndTime.seconds)
+        }
+        defer { observation.invalidate() }
+        try await PlayerStoreTests.waitFor { player.song?.id == "2" && player.advancedOntoEnqueuedItem }
+        #expect(writes.times == (airPlay ? [10] : []))
+        #expect(next.forwardPlaybackEndTime.seconds == 10)
+    }
+
     private func delayReconciliation() {
         Thread.sleep(forTimeInterval: 2)
     }
