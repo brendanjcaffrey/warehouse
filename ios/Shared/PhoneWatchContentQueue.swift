@@ -379,8 +379,6 @@ final class PhoneWatchContentQueue {
         saved.inventoryNextAttempt = .distantPast
         for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = request.id }
         do { try save() } catch { saved = previous; throw error }
-        generation = UUID()
-        preparations.values.forEach { $0.cancel() }
         try finishInventoryIfNeeded(request)
         try pump()
     }
@@ -627,7 +625,6 @@ final class PhoneWatchContentQueue {
                 saved.jobs[index] = job
                 continue
             }
-            if saved.inventory?.isManual == true, job.inventoryRequestID == saved.inventory?.id { continue }
             guard occupied < Self.maximumTransfers, job.nextAttempt <= now(), let head = saved.head,
                   head.metadataReady, head.failed != true, head.libraryID != nil else { continue }
             if let pause = saved.storagePause {

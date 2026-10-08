@@ -17,6 +17,95 @@ struct WatchManualInventoryTests {
         return request
     }
 
+    @Test("missing music and artwork keep delivering when a manual scan never reports", arguments: [false, true])
+    func deliveryWithoutInventoryReports(failedScan: Bool) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 9)
+        try env.cache(snapshot)
+        try env.files.delete(.music, "m8.mp3")
+        var queue = try env.queue()
+        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: {
+            if failedScan { throw CocoaError(.fileReadNoPermission) }
+        }))
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        // an older acknowledgment still needs inventory verification after new deliveries finish.
+        let acknowledged = try #require(env.outstanding.first)
+        try queue.receive(.init(file: acknowledged, status: .delivered))
+        env.outstanding.removeAll { $0.id == acknowledged.id }
+        await queue.waitForWork()
+        receiver.syncDownloadedStatus()
+        let request = try #require(env.manualRequests.last)
+        try queue.receive(request)
+        if failedScan {
+            try await receiver.settledQuery(request)
+            #expect(receiver.inventoryFeedback?.hasPrefix("Sync failed:") == true)
+        }
+        await queue.waitForWork()
+        let first = try #require(env.outstanding.first)
+        env.outstanding.removeAll { $0.id == first.id }
+        try await queue.settledFinished(first, error: nil)
+        #expect(env.queries.contains(first))
+        try await queue.settledReceive(.init(file: first, status: .delivered))
+        #expect(env.outstanding.count == PhoneWatchContentQueue.maximumTransfers)
+
+        queue = try env.queue()
+        env.now += 61
+        await queue.settledResume()
+        #expect(env.inventoryRequests.last == request)
+        while let file = env.outstanding.first {
+            env.outstanding.removeAll { $0.id == file.id }
+            try await queue.settledReceive(.init(file: file, status: .delivered))
+            #expect(env.outstanding.count <= PhoneWatchContentQueue.maximumTransfers)
+        }
+        #expect(queue.jobs.first { $0.filename == "m8.mp3" }?.status == .missingOnPhone)
+        try env.files.write(.music, "m8.mp3", data: Data("music m8.mp3".utf8))
+        env.now += 61
+        await queue.settledResume()
+        let supplied = try #require(env.outstanding.first)
+        #expect(supplied.filename == "m8.mp3")
+        env.outstanding.removeAll { $0.id == supplied.id }
+        try await queue.settledReceive(.init(file: supplied, status: .delivered))
+        #expect(queue.progress().music.downloaded == 9)
+        #expect(queue.progress().artwork.downloaded == (try snapshot.artwork.count))
+        #expect(queue.progress().state == .ready)
+        #expect(env.inventoryReports.isEmpty && env.inventoryCompletions.isEmpty)
+        #expect(queue.diagnosticState().inventoryRequestID == request.id)
+        #expect(queue.diagnosticState().inventoryPending == 1)
+        // a late missing-file observation cannot revoke newer delivery receipts.
+        try await queue.settledReceive(WatchInventoryReport(request: request, entries: [
+            .init(type: first.type, filename: first.filename, bytes: nil)
+        ]))
+        #expect(queue.jobs.first { $0.file == first }?.status == .delivered)
+    }
+
+    @Test("a manual scan keeps active phone preparations and their bounded transfer slots")
+    func inventoryDuringPreparation() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 9)
+        try env.cache(snapshot)
+        let gate = WatchContentWorkerTests.Gate()
+        defer { gate.release() }
+        var preparationStarts = 0
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }), backgroundExecution: .init(begin: { _ in
+            preparationStarts += 1
+            return {}
+        }))
+        try queue.reconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(await gate.waitForEntry())
+        let request = WatchInventoryRequest(head: snapshot.head, manualSequence: 1)
+        try queue.receive(request)
+        gate.release()
+        await queue.waitForWork()
+        #expect(env.outstanding.count == PhoneWatchContentQueue.maximumTransfers)
+        #expect(queue.jobs.filter { $0.status == .transferring }.count == PhoneWatchContentQueue.maximumTransfers)
+        #expect(preparationStarts == PhoneWatchContentQueue.maximumTransfers)
+        #expect(queue.diagnosticState().inventoryRequestID == request.id)
+        #expect(env.inventoryCompletions.isEmpty)
+    }
+
     @Test("current-date manual requests use a watch-safe sequence through session activity, transport and restoration")
     func currentDateSequence() async throws {
         let env = try Env()
