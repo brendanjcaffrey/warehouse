@@ -37,7 +37,8 @@ struct WatchContentDeliveryTests {
             try watchFiles.prepare()
         }
 
-        func queue(worker: WatchContentWorker = WatchContentWorker()) throws -> PhoneWatchContentQueue {
+        func queue(worker: WatchContentWorker = WatchContentWorker(), state: WatchDeliveryState = .init(),
+                   backgroundExecution: PhoneWatchContentQueue.BackgroundExecution = .init(begin: { _ in {} })) throws -> PhoneWatchContentQueue {
             try PhoneWatchContentQueue(fileStore: files, directory: root.appending(path: "queue"), transport: .init(
                 available: { [self] in transportAvailable }, outstanding: { [self] in outstanding },
                 enqueue: { [self] file, url in
@@ -47,7 +48,8 @@ struct WatchContentDeliveryTests {
                 query: { [self] in queries.append($0) }, report: { [self] in reports.append($0) },
                 inventory: { [self] in inventoryRequests.append($0) },
                 inventoryCompletion: { [self] in inventoryCompletions.append($0) }),
-                now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics, worker: worker)
+                now: { [self] in now }, schedulesRetries: false, diagnostics: phoneDiagnostics, state: state,
+                worker: worker, backgroundExecution: backgroundExecution)
         }
 
         func receiver(worker: WatchContentWorker = WatchContentWorker()) throws -> WatchContentReceiver {

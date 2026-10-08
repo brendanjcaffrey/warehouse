@@ -19,11 +19,7 @@ struct WarehouseWatchApp: App {
         var reports: PlayReportQueue?
         let remote = WatchRemoteStore(send: { command, completion in session?.send(command, completion: completion) })
         services = WatchLibraryServices(database: database, fileStore: fileStore, sendReceipt: { receipt in
-            guard session?.canSend == true, let info = try? receipt.encode() else { return }
-            let alreadyQueued = WCSession.default.outstandingUserInfoTransfers.contains {
-                WatchContentReceipt(dictionary: $0.userInfo) == receipt
-            }
-            if !alreadyQueued { WCSession.default.transferUserInfo(info) }
+            session?.sendContentReceipt(receipt)
         }, onTrackPlayed: { reports?.add($0) }, onPlaybackRequested: { remote.pausePhone() })
         let phone = WatchPhoneSession(library: services.receiver)
         session = phone

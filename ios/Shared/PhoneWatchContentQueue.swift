@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if os(iOS)
+import UIKit
+#endif
 
 /// intent, transfer ownership and verified delivery survive independently.
 @MainActor
@@ -14,6 +17,29 @@ final class PhoneWatchContentQueue {
         var report: (WatchLibraryDeliveryReport) -> Void = { _ in }
         var inventory: (WatchInventoryRequest) -> Void = { _ in }
         var inventoryCompletion: (WatchInventoryCompletion) -> Void = { _ in }
+    }
+
+    struct BackgroundExecution {
+        var begin: (@escaping @MainActor () -> Void) -> (() -> Void)?
+
+        static var system: Self {
+            Self { expired in
+                #if os(iOS)
+                var identifier = UIBackgroundTaskIdentifier.invalid
+                let end = {
+                    guard identifier != .invalid else { return }
+                    UIApplication.shared.endBackgroundTask(identifier)
+                    identifier = .invalid
+                }
+                identifier = UIApplication.shared.beginBackgroundTask(withName: "watch content preparation") {
+                    MainActor.assumeIsolated { expired(); end() }
+                }
+                return identifier == .invalid ? nil : end
+                #else
+                return {}
+                #endif
+            }
+        }
     }
 
     struct Job: Codable {
@@ -52,6 +78,7 @@ final class PhoneWatchContentQueue {
         var recoveryFiles: [WatchContentFile]?
         var unidentifiedSources: [UUID]?
         var storagePause: StoragePause?
+        var pendingReceipts: [WatchContentReceipt]?
     }
 
     static let maximumTransfers = 4
@@ -66,6 +93,7 @@ final class PhoneWatchContentQueue {
     private var saved: Saved
     private var timer: Task<Void, Never>?
     private let worker: WatchContentWorker
+    private let backgroundExecution: BackgroundExecution
     private var generation = UUID()
     private var preparations: [UUID: Task<Void, Never>] = [:]
     private var preparationSources: [UUID: UUID] = [:]
@@ -85,7 +113,8 @@ final class PhoneWatchContentQueue {
 
     init(fileStore: FileStore, directory: URL = defaultDirectory(), transport: Transport,
          now: @escaping () -> Date = { Date() }, schedulesRetries: Bool = true, diagnostics: WatchDiagnostics? = nil,
-         state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker()) throws {
+         state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker(),
+         backgroundExecution: BackgroundExecution = .system) throws {
         self.diagnostics = diagnostics ?? .shared
         self.fileStore = fileStore
         self.directory = directory
@@ -93,6 +122,7 @@ final class PhoneWatchContentQueue {
         self.now = now
         self.state = state
         self.worker = worker
+        self.backgroundExecution = backgroundExecution
         self.schedulesRetries = schedulesRetries
         let url = directory.appending(path: "state.json")
         let loaded = try state.load(Saved.self, from: url, empty: Saved())
@@ -170,7 +200,8 @@ final class PhoneWatchContentQueue {
                           snapshot: retainsContent ? saved.snapshot : nil, inventoryStartedAt: saved.inventoryStartedAt,
                           manualRequest: saved.manualRequest, manualCompleted: nil,
                           recoveryFiles: saved.recoveryFiles, unidentifiedSources: saved.unidentifiedSources,
-                          storagePause: retainsContent ? saved.storagePause : nil)
+                          storagePause: retainsContent ? saved.storagePause : nil,
+                          pendingReceipts: retainsContent ? saved.pendingReceipts : nil)
             for index in saved.jobs.indices { saved.jobs[index].inventoryRequestID = nil }
             try save()
             if !retainsContent { old.forEach { transport.cancel($0.id) } }
@@ -189,6 +220,9 @@ final class PhoneWatchContentQueue {
             }
             if saved.storagePause != nil, !saved.jobs.contains(where: { ![.delivered, .failed].contains($0.status) }) {
                 saved.storagePause = nil
+            }
+            saved.pendingReceipts = saved.pendingReceipts?.filter { receipt in
+                saved.jobs.contains { $0.file == receipt.file } && head?.retainsContent(from: receipt.file.head) == true
             }
             try save()
             for job in old where desired[job.type]?.contains(job.filename) != true {
@@ -241,11 +275,31 @@ final class PhoneWatchContentQueue {
 
     func receive(_ receipt: WatchContentReceipt) throws {
         guard let index = saved.jobs.firstIndex(where: { $0.file == receipt.file }),
-              saved.snapshot?.head == saved.head, saved.head?.retainsContent(from: receipt.file.head) == true,
+              saved.head?.retainsContent(from: receipt.file.head) == true,
               [.delivered, .retrying, .storageFull, .failed].contains(receipt.status) else { return }
         if saved.jobs[index].status == .delivered { return }
         if saved.jobs[index].status == .failed && receipt.status != .delivered { return }
+        if saved.snapshot?.head != saved.head {
+            let previous = saved
+            var pending = saved.pendingReceipts ?? []
+            if let old = pending.first(where: { $0.file == receipt.file }),
+               old.status == .delivered || (old.status == .failed && receipt.status != .delivered) { return }
+            pending.removeAll { $0.file == receipt.file }
+            pending.append(receipt)
+            saved.pendingReceipts = pending
+            do { try save() } catch { saved = previous; throw error }
+            return
+        }
+        try applyReceipt(receipt)
+        try pump()
+    }
+
+    private func applyReceipt(_ receipt: WatchContentReceipt) throws {
+        guard let index = saved.jobs.firstIndex(where: { $0.file == receipt.file }) else { return }
+        if saved.jobs[index].status == .delivered { return }
+        if saved.jobs[index].status == .failed && receipt.status != .delivered { return }
         let previous = saved
+        saved.pendingReceipts?.removeAll { $0.file == receipt.file }
         saved.jobs[index].status = receipt.status
         if receipt.status == .delivered, saved.inventory?.isManual == true { saved.jobs[index].inventoryRequestID = nil }
         if receipt.status == .retrying || receipt.status == .storageFull {
@@ -260,7 +314,6 @@ final class PhoneWatchContentQueue {
         diagnostics.delivery(receipt.status == .delivered ? .phoneAcknowledged : Self.event(receipt.status),
                              file: receipt.file, source: .phone, status: receipt.status)
         if let request = saved.inventory, request.isManual { try finishInventoryIfNeeded(request) }
-        try pump()
     }
 
     private static func event(_ status: WatchContentStatus) -> WatchDiagnostic.Kind {
@@ -520,6 +573,9 @@ final class PhoneWatchContentQueue {
         diagnostics.record(.init(kind: .queueWakeup, id: saved.head?.publisher ?? UUID(), source: .system,
                                  identity: saved.head.map(WatchDiagnosticIdentity.init)))
         timer?.cancel()
+        if saved.head != nil, saved.snapshot?.head == saved.head {
+            for receipt in saved.pendingReceipts ?? [] { try applyReceipt(receipt) }
+        }
         let outstanding = transport.outstanding()
         let systemIDs = Set(outstanding.map(\.id))
         try cleanSources(systemIDs: systemIDs)
@@ -634,9 +690,20 @@ final class PhoneWatchContentQueue {
         let original = fileStore.fileURL(job.type, job.filename)
         let copy = directory.appending(path: id.uuidString)
         let recoveryURL = recovered.map { source($0) }
+        guard let endBackgroundTask = backgroundExecution.begin({ [weak self] in
+            self?.expirePreparation(id: id, job: job.key, epoch: epoch)
+        }) else {
+            if let index = saved.jobs.firstIndex(where: { $0.key == job.key }) {
+                saved.jobs[index].status = .retrying
+                saved.jobs[index].nextAttempt = now().addingTimeInterval(60)
+            }
+            if saved.storagePause?.probe == job.key { saved.storagePause?.probe = nil }
+            return
+        }
         preparingJobs[id] = job.key
         preparationSources[id] = recovered?.id
         preparations[id] = Task {
+            defer { endBackgroundTask() }
             do {
                 let file = try await worker.prepare(.init(id: id, head: job.file?.head ?? head, type: job.type, filename: job.filename,
                                                            original: original, recovered: recovered, recoveryURL: recoveryURL, copy: copy))
@@ -700,6 +767,18 @@ final class PhoneWatchContentQueue {
                 do { try pump() } catch { errorMessage = error.localizedDescription }
             }
         }
+    }
+
+    private func expirePreparation(id: UUID, job: JobKey, epoch: UUID) {
+        guard let task = preparations[id] else { return }
+        task.cancel()
+        if generation == epoch, let index = saved.jobs.firstIndex(where: { $0.key == job }),
+           ![.delivered, .failed, .storageFull].contains(saved.jobs[index].status) {
+            saved.jobs[index].status = .retrying
+            saved.jobs[index].nextAttempt = now().addingTimeInterval(60)
+            do { try save() } catch { errorMessage = error.localizedDescription }
+        }
+        schedule()
     }
 
     private func publishReport() throws {

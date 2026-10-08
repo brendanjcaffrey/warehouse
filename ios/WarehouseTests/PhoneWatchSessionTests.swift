@@ -5,6 +5,33 @@ import Testing
 @Suite("PhoneWatchSession")
 @MainActor
 struct PhoneWatchSessionTests {
+    @Test("content receipts arriving before matching phone metadata survive relaunch", arguments: [false, true])
+    func pendingMetadataReceipt(storageFull: Bool) async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        var queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let file = try #require(env.queued.first?.0)
+        let next = try env.snapshot(count: 4, revision: 2)
+        try queue.reconcile(head: next.head, snapshot: nil)
+        let phone = PhoneWatchSession(onPlay: { _ in })
+        phone.content = queue
+        let status: WatchContentStatus = storageFull ? .storageFull : .delivered
+        phone.receive(userInfo: try WatchContentReceipt(file: file, status: status).encode())
+        var received = false
+        phone.publishLibrary = { received = true }
+        phone.receive(userInfo: ["kind": "watchLibraryRequest"])
+        try await PlayerStoreTests.waitFor { received }
+        #expect(queue.jobs.first { $0.file == file }?.status != status)
+        queue = try env.queue()
+        phone.content = queue
+        try await queue.settledReconcile(head: next.head, snapshot: next)
+        #expect(queue.jobs.first { $0.file == file }?.status == status)
+        #expect(env.phoneDiagnostics.events.contains { $0.kind == (storageFull ? .contentStorageFull : .phoneAcknowledged) })
+    }
+
     @Test("diagnostic messages are acknowledged only after the report is saved")
     func receivesDiagnosticReport() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

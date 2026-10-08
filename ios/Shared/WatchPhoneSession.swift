@@ -16,6 +16,7 @@ final class WatchPhoneSession: NSObject {
             oldValue?.onActivityChanged = {}
             content?.onActivityChanged = { [weak self] in self?.updateBackgroundLifetime() }
             updateBackgroundLifetime()
+            resendContentReceipts()
         }
     }
     let library: WatchLibraryReceiver
@@ -136,6 +137,16 @@ final class WatchPhoneSession: NSObject {
         }
     }
 
+    func sendContentReceipt(_ receipt: WatchContentReceipt) {
+        guard libraryTransport.available(), let info = try? receipt.encode(),
+              !libraryTransport.outstanding().contains(where: { WatchContentReceipt(dictionary: $0) == receipt }) else { return }
+        libraryTransport.enqueue(info)
+    }
+
+    private func resendContentReceipts() {
+        for receipt in content?.receipts ?? [] { sendContentReceipt(receipt) }
+    }
+
     func waitForLibraryRequest() async { await libraryRequestTask?.value }
 
     var canSend: Bool {
@@ -227,6 +238,7 @@ extension WatchPhoneSession: WCSessionDelegate {
             library.resume()
             content?.resume()
             updateBackgroundLifetime()
+            resendContentReceipts()
             onActivated?()
             requestLibrary()
             updateReachability()
