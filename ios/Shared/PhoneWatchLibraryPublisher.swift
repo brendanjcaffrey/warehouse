@@ -23,8 +23,11 @@ final class PhoneWatchLibraryPublisher {
     let recoveredState: Bool
     private let directory: URL
     private let transport: Transport
+    private let retryDelay: (TimeInterval) async throws -> Void
     private var saved: Saved
     private var runner: Task<Void, Never>?
+    private var retry: Task<Void, Never>?
+    private var retryAttempts = 0
     private var request = 0
     private var libraryRequest: WatchLibraryRequest?
     private(set) var errorMessage: String?
@@ -34,12 +37,14 @@ final class PhoneWatchLibraryPublisher {
 
     var head: WatchLibraryHead { saved.head }
 
-    init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport, diagnostics: WatchDiagnostics? = nil, state: WatchDeliveryState = .init()) throws {
+    init(database: LibraryDatabase, directory: URL = defaultDirectory(), transport: Transport, diagnostics: WatchDiagnostics? = nil, state: WatchDeliveryState = .init(),
+         retryDelay: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) throws {
         self.diagnostics = diagnostics ?? .shared
         self.database = database
         self.state = state
         self.directory = directory
         self.transport = transport
+        self.retryDelay = retryDelay
         let stateURL = directory.appending(path: "state.json")
         let loaded = try state.load(Saved.self, from: stateURL,
                                     empty: Saved(head: .init(publisher: UUID(), revision: 1, libraryID: nil, playlistIDs: []), libraryData: nil))
@@ -57,6 +62,13 @@ final class PhoneWatchLibraryPublisher {
     /// latest request wins even if a database read is suspended during a selection change.
     func publish(identity: String?, playlistIDs: [String], libraryRequest: WatchLibraryRequest? = nil) {
         if let libraryRequest { self.libraryRequest = libraryRequest }
+        retryAttempts = 0
+        startPublication(identity: identity, playlistIDs: playlistIDs)
+    }
+
+    private func startPublication(identity: String?, playlistIDs: [String]) {
+        retry?.cancel()
+        retry = nil
         request += 1
         let generation = request
         let previous = runner
@@ -112,7 +124,19 @@ final class PhoneWatchLibraryPublisher {
                     try? persist(Saved(head: head, libraryData: nil))
                     try? transport.context(saved.head)
                 }
+                scheduleRetry(identity: identity, playlistIDs: playlistIDs, generation: generation)
             }
+        }
+    }
+
+    private func scheduleRetry(identity: String?, playlistIDs: [String], generation: Int) {
+        let seconds = min(3600, 5 * pow(2, Double(min(retryAttempts, 10))))
+        retryAttempts += 1
+        let retryDelay = retryDelay
+        retry = Task { [weak self] in
+            do { try await retryDelay(seconds); try Task.checkCancellation() } catch { return }
+            guard let self, generation == request else { return }
+            startPublication(identity: identity, playlistIDs: playlistIDs)
         }
     }
 
@@ -132,16 +156,19 @@ final class PhoneWatchLibraryPublisher {
             next.completedKey = libraryRequest.acceptedHead == saved.head ? Self.key(saved.head) : nil
             if next.completedKey != saved.completedKey { try persist(next) }
         }
+        defer {
+            onSnapshot(saved.head, saved.libraryData.map { WatchLibrarySnapshot(head: saved.head, libraryData: $0) })
+        }
         try deliver()
         libraryRequest = nil
         errorMessage = nil
-        onSnapshot(saved.head, saved.libraryData.map { WatchLibrarySnapshot(head: saved.head, libraryData: $0) })
+        retryAttempts = 0
     }
 
     private func persist(_ next: Saved) throws {
         try state.save(next, to: directory.appending(path: "state.json"))
         saved = next
-        // invalidate obsolete content immediately, but queue metadata before starting its files.
+        // invalidate obsolete content immediately; validated inventories follow the metadata delivery attempt.
         if next.libraryData == nil { onSnapshot(next.head, nil) }
     }
 

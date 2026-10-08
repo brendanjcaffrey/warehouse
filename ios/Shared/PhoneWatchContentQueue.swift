@@ -90,6 +90,7 @@ final class PhoneWatchContentQueue {
     private let state: WatchDeliveryState
     let recoveredState: Bool
     private let schedulesRetries: Bool
+    private let retryDelay: (TimeInterval) async throws -> Void
     private var saved: Saved
     private var timer: Task<Void, Never>?
     private let worker: WatchContentWorker
@@ -114,7 +115,8 @@ final class PhoneWatchContentQueue {
     init(fileStore: FileStore, directory: URL = defaultDirectory(), transport: Transport,
          now: @escaping () -> Date = { Date() }, schedulesRetries: Bool = true, diagnostics: WatchDiagnostics? = nil,
          state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker(),
-         backgroundExecution: BackgroundExecution = .system) throws {
+         backgroundExecution: BackgroundExecution = .system,
+         retryDelay: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) throws {
         self.diagnostics = diagnostics ?? .shared
         self.fileStore = fileStore
         self.directory = directory
@@ -124,6 +126,7 @@ final class PhoneWatchContentQueue {
         self.worker = worker
         self.backgroundExecution = backgroundExecution
         self.schedulesRetries = schedulesRetries
+        self.retryDelay = retryDelay
         let url = directory.appending(path: "state.json")
         let loaded = try state.load(Saved.self, from: url, empty: Saved())
         saved = loaded.value
@@ -573,6 +576,7 @@ final class PhoneWatchContentQueue {
         diagnostics.record(.init(kind: .queueWakeup, id: saved.head?.publisher ?? UUID(), source: .system,
                                  identity: saved.head.map(WatchDiagnosticIdentity.init)))
         timer?.cancel()
+        defer { schedule() }
         if saved.head != nil, saved.snapshot?.head == saved.head {
             for receipt in saved.pendingReceipts ?? [] { try applyReceipt(receipt) }
         }
@@ -681,7 +685,6 @@ final class PhoneWatchContentQueue {
         }
         try save()
         try publishReport()
-        schedule()
     }
 
     private func prepare(_ job: Job, head: WatchLibraryHead, recovered: WatchContentFile?) {
@@ -804,13 +807,18 @@ final class PhoneWatchContentQueue {
 
     private func schedule() {
         guard schedulesRetries else { return }
-        let deadlines = retryDeadlines()
+        var deadlines = retryDeadlines()
+        if saved.head != nil, !saved.jobs.allSatisfy({ [.delivered, .failed].contains($0.status) }),
+           !transport.available() || saved.snapshot?.head != saved.head {
+            deadlines.append(now().addingTimeInterval(60))
+        }
         guard !deadlines.isEmpty else { return }
         // due retries blocked by occupied slots wait for completion or a later wakeup, never a one-second loop.
         let next = deadlines.filter { $0 > now() }.min() ?? now().addingTimeInterval(60)
         let delay = max(1, next.timeIntervalSince(now()))
+        let retryDelay = retryDelay
         timer = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            do { try await retryDelay(delay); try Task.checkCancellation() } catch { return }
             self?.resume()
         }
     }

@@ -521,7 +521,7 @@ struct WatchLibraryDeliveryTests {
         await publisher.waitForPublication()
         let head = publisher.head
         #expect(head.metadataReady && env.deliveries.isEmpty)
-        #expect(!contentStarted)
+        #expect(contentStarted)
         env.unavailable = false
         publisher = try env.publisher()
         publisher.publish(identity: "account", playlistIDs: ["p1"])
