@@ -63,12 +63,12 @@ struct WatchDeliveryRecoveryTests {
             })
         }
 
-        func prepare() async throws -> PhoneWatchLibraryServices {
-            try await metadata.phone.replaceLibrary(with: WatchLibraryDeliveryTests.library(count: 4), sourceIdentity: "account")
+        func prepare(identity: String = "account") async throws -> PhoneWatchLibraryServices {
+            try await metadata.phone.replaceLibrary(with: WatchLibraryDeliveryTests.library(count: 4), sourceIdentity: identity)
             let snapshot = try files.snapshot(count: 4)
             try files.cache(snapshot)
             let services = services()
-            services.publish(identity: "account")
+            services.publish(identity: identity)
             await services.waitForPublication()
             await services.content?.waitForWork()
             #expect(services.publisher?.errorMessage == nil)
@@ -88,6 +88,92 @@ struct WatchDeliveryRecoveryTests {
             files.cleanUp()
             metadata.cleanUp()
         }
+    }
+
+    @Test("expired credentials preserve delivered and in-flight content through re-login", arguments: [false, true])
+    func expiredCredentials(relaunch: Bool) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let defaults = UserDefaults(suiteName: env.files.root.lastPathComponent)!
+        let host = "watch-auth-\(env.files.root.lastPathComponent.lowercased()).test"
+        let origin = URL(string: "https://\(host)")!
+        defaults.set(origin.absoluteString, forKey: "serverURL")
+        let identity = try #require(LibraryIdentity.make(token: AuthTests.validToken(), baseURL: origin))
+        var services = try await env.prepare(identity: identity)
+        var queue = try #require(services.content)
+        let delivered = try #require(env.files.outstanding.first)
+        env.files.outstanding.removeAll { $0.id == delivered.id }
+        try await queue.settledReceive(.init(file: delivered, status: .delivered))
+        let head = try #require(services.publisher?.head)
+        let outstanding = env.files.outstanding
+        let count = env.files.queued.count
+        let publications = env.metadata.deliveries.count
+        let contexts = env.metadata.heads.count
+        let auth = AuthStore(session: MockURLProtocol.makeSession(), defaults: defaults,
+                             readToken: { AuthTests.expiredToken() }, writeToken: { _ in })
+        #expect(auth.token == nil)
+        if relaunch { services = env.services(); queue = try #require(services.content) }
+        let queueBytes = try Data(contentsOf: env.queueDirectory.appending(path: "state.json"))
+        let publisherBytes = try Data(contentsOf: env.publisherDirectory.appending(path: "state.json"))
+        // a queued publication must not outlive the loss of authentication.
+        services.publish(identity: identity)
+        services.publish(identity: LibraryIdentity.make(token: auth.token, baseURL: auth.baseURL()))
+        await services.waitForPublication()
+        #expect(services.publisher?.head == head)
+        #expect(env.metadata.heads.count == contexts)
+        #expect(env.files.outstanding == outstanding)
+        #expect(queue.jobs.first { $0.file == delivered }?.status == .delivered)
+        #expect(try Data(contentsOf: env.queueDirectory.appending(path: "state.json")) == queueBytes)
+        #expect(try Data(contentsOf: env.publisherDirectory.appending(path: "state.json")) == publisherBytes)
+        services.retry()
+        await services.waitForPublication()
+        #expect(env.files.outstanding == outstanding && services.publisher?.head == head)
+        // system completions and durable receipts still belong to the saved library during the auth gap.
+        let arriving = try #require(outstanding.first)
+        env.files.outstanding.removeAll { $0.id == arriving.id }
+        try await queue.settledFinished(arriving, error: nil)
+        try await queue.settledReceive(.init(file: arriving, status: .delivered))
+        let resumedOutstanding = env.files.outstanding
+        let resumedCount = env.files.queued.count
+        MockURLProtocol.setHandler(forHost: host, AuthTests.handler(returning: try AuthTests.tokenData(AuthTests.validToken())))
+        #expect(await auth.logIn(username: "brendan", password: "password", serverURL: origin.absoluteString) == nil)
+        #expect(LibraryIdentity.make(token: auth.token, baseURL: auth.baseURL()) == identity)
+        services.publish(identity: LibraryIdentity.make(token: auth.token, baseURL: auth.baseURL()))
+        await services.waitForPublication()
+        await queue.waitForWork()
+        #expect(services.publisher?.head == head && services.publisher?.errorMessage == nil)
+        #expect(queue.jobs.first { $0.file == delivered }?.status == .delivered)
+        #expect(queue.jobs.first { $0.file == arriving }?.status == .delivered)
+        #expect(env.files.outstanding == resumedOutstanding && env.files.queued.count == resumedCount)
+        #expect(env.files.queued.count == count)
+        #expect(env.metadata.deliveries.count == publications)
+    }
+
+    @Test("authenticated account and selection changes still invalidate saved content", arguments: [false, true])
+    func authenticatedChange(account: Bool) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let services = try await env.prepare()
+        let old = env.files.outstanding
+        services.publish(identity: nil)
+        await services.waitForPublication()
+        if account {
+            try await env.metadata.phone.replaceLibrary(with: WatchLibraryDeliveryTests.library(count: 4), sourceIdentity: "other-account")
+        } else {
+            env.settings.setPlaylistIds([])
+        }
+        services.publish(identity: account ? "other-account" : "account")
+        // invalidation is synchronous, before the replacement metadata read.
+        #expect(!env.files.outstanding.contains { old.contains($0) })
+        let queue = try #require(services.content)
+        #expect(queue.jobs.isEmpty)
+        await services.waitForPublication()
+        await queue.waitForWork()
+        #expect(services.publisher?.head.libraryID == (account ? "other-account" : "account"))
+        #expect(services.publisher?.errorMessage == nil)
+        if !account { #expect(queue.jobs.isEmpty) }
+        try await queue.settledReceive(.init(file: #require(old.first), status: .delivered))
+        #expect(!queue.jobs.contains { $0.status == .delivered })
     }
 
     @Test("transient startup read and write failures recover both services in the same process", arguments: [false, true])

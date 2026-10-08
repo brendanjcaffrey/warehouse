@@ -127,6 +127,33 @@ struct WatchDeliverySchedulingTests {
         #expect(publisher.head.playlistIDs == ["p1"])
     }
 
+    @Test("suspending publication fences pending retries without replacing the saved library")
+    func suspendedPublicationRetry() async throws {
+        let env = try WatchLibraryDeliveryTests.Env()
+        let delay = Delay()
+        defer { delay.release(); env.cleanUp() }
+        try await env.phone.replaceLibrary(with: WatchLibraryDeliveryTests.library(count: 4), sourceIdentity: "account")
+        var failing = true
+        env.phone.beforeWatchLibraryRead = { if failing { throw CocoaError(.fileReadUnknown) } }
+        let publisher = try PhoneWatchLibraryPublisher(database: env.phone, directory: env.root.appending(path: "publisher"), transport: .init(
+            context: { env.heads.append($0) }, outstanding: { env.outstanding },
+            enqueue: { env.deliveries.append(($0, $1)); env.outstanding.insert($1) }), retryDelay: { await delay.wait($0) })
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 1 }
+        let head = publisher.head
+        let contexts = env.heads.count
+        publisher.suspendPublication()
+        failing = false
+        delay.release()
+        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.resumed == 1 }
+        await publisher.waitForPublication()
+        #expect(publisher.head == head && env.heads.count == contexts && env.deliveries.isEmpty)
+        publisher.publish(identity: "account", playlistIDs: ["p1"])
+        await publisher.waitForPublication()
+        #expect(publisher.head.metadataReady && publisher.errorMessage == nil && env.deliveries.count == 1)
+    }
+
     @Test("context failures still reconcile the content snapshot and retry metadata delivery")
     func contextFailure() async throws {
         let env = try WatchLibraryDeliveryTests.Env()

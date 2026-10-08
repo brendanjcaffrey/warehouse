@@ -66,6 +66,14 @@ final class PhoneWatchLibraryPublisher {
         startPublication(identity: identity, playlistIDs: playlistIDs)
     }
 
+    /// fence suspended reads and retries without changing the durable head or outstanding snapshot files.
+    func suspendPublication(libraryRequest: WatchLibraryRequest? = nil) {
+        if let libraryRequest { self.libraryRequest = libraryRequest }
+        request += 1
+        retry?.cancel()
+        retry = nil
+    }
+
     private func startPublication(identity: String?, playlistIDs: [String]) {
         retry?.cancel()
         retry = nil

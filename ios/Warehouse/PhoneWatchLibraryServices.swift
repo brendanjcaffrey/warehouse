@@ -59,6 +59,11 @@ final class PhoneWatchLibraryServices {
     }
 
     private func publish(libraryRequest: WatchLibraryRequest? = nil) {
+        // missing credentials cannot establish a library change; retain its validated delivery authority.
+        guard let identity else {
+            publisher?.suspendPublication(libraryRequest: libraryRequest)
+            return
+        }
         guard settings.deliveryStartupError == nil else { return }
         do {
             try content?.invalidate(identity: identity, playlistIDs: settings.playlistIds)
