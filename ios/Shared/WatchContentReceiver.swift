@@ -38,7 +38,7 @@ final class WatchContentReceiver {
     private var work: Task<Void, Never>?
     private var needsDrain = false
     private var queries: [WatchContentFile] = []
-    private var stagingErrors: [(WatchContentFile, Error)] = []
+    private var stagingErrors: [WatchContentReceipt]
     var pendingOperations: Int { (work == nil ? 0 : 1) + inventory.pendingOperations }
     var onActivityChanged: () -> Void = {}
 
@@ -91,8 +91,12 @@ final class WatchContentReceiver {
         let url = directory.appending(path: "receipts.json")
         let loaded = try state.load([WatchContentReceipt].self, from: url, empty: [])
         receipts = loaded.value
-        recoveredState = loaded.repaired
+        let errorsURL = directory.appending(path: "staging-errors.json")
+        let errors = try state.load([WatchContentReceipt].self, from: errorsURL, empty: [])
+        stagingErrors = errors.value
+        recoveredState = loaded.repaired || errors.repaired
         if loaded.repaired { try state.save(receipts, to: url) }
+        if errors.repaired { try state.save(stagingErrors, to: errorsURL) }
         inventory.onActivityChanged = { [weak self] in
             guard let self else { return }
             if inventory.pendingOperations == 0 { refreshLocalProgress() }
@@ -132,13 +136,16 @@ final class WatchContentReceiver {
         defer { updateProgress() }
         // an absent or pending snapshot cannot revoke the last durable selection.
         if head != nil { fileCache.awaitWatchSelection() }
+        let canAdopt = snapshot.map {
+            head?.failed != true && head?.retainsContent(from: $0.head) == true && head?.playlistIDs == $0.head.playlistIDs
+        } ?? false
         let nextIndex: WatchProgressIndex?
-        if let snapshot, snapshot != progressIndex?.snapshot, snapshot.head == head || progressIndex == nil {
+        if let snapshot, snapshot != progressIndex?.snapshot, canAdopt || progressIndex == nil {
             nextIndex = WatchProgressIndex(snapshot: snapshot, library: try progressSource.validate(snapshot))
         } else {
             nextIndex = progressIndex
         }
-        if let snapshot, snapshot.head == head {
+        if let snapshot, canAdopt {
             guard let nextIndex, nextIndex.snapshot == snapshot else { throw WatchLibraryError.invalid }
             try fileCache.adoptWatchSelection(music: Set(nextIndex.overall.music), artwork: nextIndex.overall.artwork)
         }
@@ -271,16 +278,23 @@ final class WatchContentReceiver {
     }
 
     private func isDesired(_ file: WatchContentFile) -> Bool {
-        guard head?.retainsContent(from: file.head) == true, let index = progressIndex,
-              index.head == head, snapshot?.head == head else { return false }
+        guard let head, let index = progressIndex, fileCache.hasDurableWatchSelection,
+              head.retainsContent(from: index.head), head.playlistIDs == index.head.playlistIDs,
+              index.head.retainsContent(from: file.head) else { return false }
+        // the last durable inventory authorizes known bytes while a same-selection update is pending.
         return index.files.contains(.init(type: file.type, filename: file.filename))
+    }
+
+    private func isObsolete(_ file: WatchContentFile) -> Bool {
+        guard let head, snapshot?.head == head else { return false }
+        return head.publisher != file.head.publisher || head.revision >= file.head.revision
     }
 
     /// a lost receipt is repaired from durable identity plus actual verified bytes, never system completion.
     func query(_ file: WatchContentFile) throws {
         diagnostics.delivery(.receiptQuery, file: file, source: .phone)
         guard isDesired(file) else {
-            if let head, head.publisher == file.head.publisher, file.head.revision < head.revision {
+            if let head, snapshot?.head == head, head.publisher == file.head.publisher, file.head.revision < head.revision {
                 send(.init(file: file, status: .failed))
             }
             return
@@ -294,6 +308,7 @@ final class WatchContentReceiver {
         guard isDesired(file) else { return }
         let epoch = generation
         if receipts.contains(where: { $0.file == file && $0.status == .failed }) {
+            guard snapshot?.head == head else { return }
             send(.init(file: file, status: .failed))
             return
         }
@@ -319,27 +334,46 @@ final class WatchContentReceiver {
     func stagingFailed(_ file: WatchContentFile, error: Error) {
         diagnostics.delivery(BackgroundDownload.isOutOfSpace(error) ? .contentStorageFull : .contentFailed,
                              file: file, source: .phone, error: error)
-        guard isDesired(file) else { return }
-        stagingErrors.append((file, error))
+        let permanent = error is WatchLibraryError || error is FileStore.FilenameError
+        let status: WatchContentStatus = permanent ? .failed : BackgroundDownload.isOutOfSpace(error) ? .storageFull : .retrying
+        stagingErrors.removeAll { $0.file.id == file.id }
+        stagingErrors.append(.init(file: file, status: status))
+        // keep the in-memory failure even if the disk cannot save its small recovery record yet.
+        do {
+            try state.save(stagingErrors, to: directory.appending(path: "staging-errors.json"))
+        } catch { errorMessage = error.localizedDescription }
         needsProgressScan = true
         scheduleWork()
     }
 
-    private func answerStagingFailure(_ file: WatchContentFile, error: Error) async throws {
-        guard isDesired(file) else { return }
+    private func answerStagingFailure(_ failure: WatchContentReceipt) async throws -> Bool {
+        let file = failure.file
+        guard snapshot?.head == head, isDesired(file) else { return false }
         let epoch = generation
         let destination = fileCache.fileStore.fileURL(file.type, file.filename)
         let verified = try await worker.verify(file, at: destination)
-        guard generation == epoch, isDesired(file) else { return }
+        guard generation == epoch, snapshot?.head == head, isDesired(file) else { return false }
         if verified?.stillMatches(destination) == true {
             diagnostics.delivery(.contentReused, file: file, source: .cache)
             refreshLocalProgress()
             try acknowledge(file, status: .delivered)
             fileCache.noteFileStored(file.type, file.filename)
-            return
+        } else {
+            try acknowledge(file, status: failure.status)
         }
-        let permanent = error is WatchLibraryError || error is FileStore.FilenameError
-        try acknowledge(file, status: permanent ? .failed : BackgroundDownload.isOutOfSpace(error) ? .storageFull : .retrying)
+        return true
+    }
+
+    private func drainStagingErrors() async throws {
+        for failure in stagingErrors {
+            let answered = try await answerStagingFailure(failure)
+            // only accepted metadata can discard obsolete failures; future descriptors wait.
+            let obsolete = !isDesired(failure.file) && isObsolete(failure.file)
+            guard answered || obsolete else { continue }
+            let next = stagingErrors.filter { $0 != failure }
+            try state.save(next, to: directory.appending(path: "staging-errors.json"))
+            stagingErrors = next
+        }
     }
 
     private func acknowledge(_ file: WatchContentFile, status: WatchContentStatus,
@@ -389,18 +423,15 @@ final class WatchContentReceiver {
         needsDrain = needsDrain || drain
         guard work == nil else { return }
         work = Task {
-            while needsDrain || !queries.isEmpty || !stagingErrors.isEmpty || needsProgressScan {
+            while needsDrain || !queries.isEmpty || needsProgressScan {
                 if needsDrain {
                     needsDrain = false
                     do { try await self.drain() } catch { errorMessage = error.localizedDescription }
+                    do { try await drainStagingErrors() } catch { errorMessage = error.localizedDescription }
                 }
                 while !queries.isEmpty {
                     let file = queries.removeFirst()
                     do { try await answer(file) } catch { errorMessage = error.localizedDescription }
-                }
-                while !stagingErrors.isEmpty {
-                    let (file, error) = stagingErrors.removeFirst()
-                    do { try await answerStagingFailure(file, error: error) } catch { errorMessage = error.localizedDescription }
                 }
                 if needsProgressScan {
                     needsProgressScan = false
@@ -435,8 +466,7 @@ final class WatchContentReceiver {
             }
             guard isDesired(file) else {
                 // only the context authorizes files; future files wait for their snapshot.
-                if let head, snapshot?.head == head,
-                   head.publisher != file.head.publisher || head.revision >= file.head.revision {
+                if isObsolete(file) {
                     try FileManager.default.removeItem(at: url)
                 }
                 continue

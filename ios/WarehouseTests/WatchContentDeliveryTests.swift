@@ -81,6 +81,167 @@ struct WatchContentDeliveryTests {
         func cleanUp() { try? FileManager.default.removeItem(at: root) }
     }
 
+    @Test("play-count and rating revisions keep accepted music and artwork delivery moving", arguments: [false, true])
+    func volatileMetadata(rating: Bool) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 2)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: original.head, snapshot: original)
+        var library = try original.validatedLibrary()
+        for index in library.tracks.indices {
+            if rating { library.tracks[index].rating = 80 } else { library.tracks[index].playCount += 1 }
+        }
+        let head = WatchLibraryHead(publisher: original.head.publisher, revision: 2, libraryID: original.head.libraryID,
+                                    playlistIDs: original.head.playlistIDs, metadataReady: true)
+        let next = WatchLibrarySnapshot(head: head, libraryData: try library.serializedData())
+        #expect(next.libraryData != original.libraryData)
+        try await queue.settledReconcile(head: head, snapshot: next)
+        receiver.pause()
+        try await receiver.settledReconcile(head: head, snapshot: original)
+        for type in LibraryFileType.allCases {
+            let (file, url) = try #require(env.queued.first { $0.0.type == type })
+            try env.stage(file, url: url)
+            await receiver.settledStaged(file)
+            env.outstanding.removeAll { $0.id == file.id }
+            try await queue.settledFinished(file, error: nil)
+            #expect(file.matches(env.watchFiles.fileURL(type, file.filename)))
+            #expect(env.receipts.last == WatchContentReceipt(file: file, status: .delivered))
+            try await receiver.settledQuery(file)
+            #expect(env.receipts.last?.status == .delivered)
+            try await queue.settledReceive(try #require(env.receipts.last))
+            #expect(queue.jobs.first { $0.file == file }?.status == .delivered)
+        }
+        try await receiver.settledReconcile(head: head, snapshot: next)
+        #expect(receiver.errorMessage == nil)
+    }
+
+    @Test("pending account, publisher, selection and future-file changes cannot reuse prior authority",
+          arguments: ["account", "publisher", "selection", "future"])
+    func pendingAuthority(change: String) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let (oldFile, url) = try #require(env.queued.first)
+        let head = WatchLibraryHead(publisher: change == "publisher" ? UUID() : original.head.publisher, revision: 2,
+                                    libraryID: change == "account" ? "replacement" : original.head.libraryID,
+                                    playlistIDs: change == "selection" ? ["p1"] : original.head.playlistIDs, metadataReady: true)
+        let file = change == "future"
+            ? WatchContentFile(head: head, type: oldFile.type, filename: oldFile.filename, bytes: oldFile.bytes, digest: oldFile.digest)
+            : oldFile
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: original.head, snapshot: original)
+        try await receiver.settledReconcile(head: head, snapshot: original)
+        try env.stage(file, url: url)
+        await receiver.settledStaged(file)
+        try await receiver.settledQuery(file)
+        #expect(!env.watchFiles.exists(file.type, file.filename) && env.receipts.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: env.root.appending(path: "receiver/\(file.id.uuidString)").path))
+    }
+
+    @Test("known staging failures wait through a forward revision and cannot fail pending receipt queries")
+    func forwardStagingFailure() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let file = try #require(env.queued.first?.0)
+        var receiver = try env.receiver()
+        try await receiver.settledReconcile(head: original.head, snapshot: original)
+        await receiver.settledStagingFailed(file, error: WatchLibraryError.invalid)
+        #expect(env.receipts.last?.status == .failed)
+        env.receipts.removeAll()
+        let next = try env.snapshot(count: 4, revision: 2)
+        try await receiver.settledReconcile(head: next.head, snapshot: original)
+        try await receiver.settledQuery(file)
+        #expect(env.receipts.isEmpty)
+        await receiver.settledStagingFailed(file, error: CocoaError(.fileWriteOutOfSpace))
+        #expect(env.receipts.isEmpty)
+        receiver = try env.receiver()
+        try await receiver.settledReconcile(head: next.head, snapshot: original)
+        #expect(env.receipts.isEmpty)
+        try await receiver.settledReconcile(head: next.head, snapshot: next)
+        #expect(env.receipts.last == WatchContentReceipt(file: file, status: .storageFull))
+    }
+
+    @Test("restored accepted inventory becomes durable before delivery during a pending revision")
+    func restoredPendingInventory() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        try env.cache(original)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: original.head, snapshot: original)
+        let (file, url) = try #require(env.queued.first)
+        try env.stage(file, url: url)
+        var fails = true
+        let cache = FileCache(fileStore: env.watchFiles, beforeWatchSelectionSave: {
+            if fails { throw CocoaError(.fileWriteOutOfSpace) }
+        })
+        let receiver = try WatchContentReceiver(fileCache: cache, directory: env.root.appending(path: "receiver"),
+                                                availableBytes: { env.available }, send: { env.receipts.append($0) })
+        let next = try env.snapshot(count: 4, revision: 2)
+        #expect(throws: CocoaError.self) { try receiver.reconcile(head: next.head, snapshot: original) }
+        await receiver.settledResume()
+        #expect(env.receipts.isEmpty && !env.watchFiles.exists(file.type, file.filename))
+        fails = false
+        try await receiver.settledReconcile(head: next.head, snapshot: original)
+        #expect(cache.hasDurableWatchSelection)
+        #expect(file.matches(env.watchFiles.fileURL(file.type, file.filename)))
+        #expect(env.receipts.last?.status == .delivered)
+    }
+
+    @Test("pending metadata cannot turn older receipt queries into terminal failures")
+    func pendingReceiptQuery() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        let head = WatchLibraryHead(publisher: original.head.publisher, revision: 2, libraryID: original.head.libraryID,
+                                    playlistIDs: original.head.playlistIDs, metadataReady: true)
+        let file = WatchContentFile(head: original.head, type: .music, filename: "unseen.mp3", bytes: 1,
+                                    digest: String(repeating: "a", count: 64))
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: head, snapshot: nil)
+        try await receiver.settledQuery(file)
+        #expect(env.receipts.isEmpty)
+        try await receiver.settledReconcile(head: head, snapshot: original)
+        try await receiver.settledQuery(file)
+        #expect(env.receipts.isEmpty)
+    }
+
+    @Test("pending staging failures survive recreation and report only after metadata accepts them",
+          arguments: [WatchContentStatus.storageFull, .retrying, .failed])
+    func pendingStagingFailure(status: WatchContentStatus) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let file = try #require(env.queued.first?.0)
+        var receiver = try env.receiver()
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: nil)
+        let error: Error = status == .failed ? WatchLibraryError.invalid
+            : CocoaError(status == .storageFull ? .fileWriteOutOfSpace : .fileWriteUnknown)
+        receiver.stagingFailed(file, error: error)
+        await receiver.waitForWork()
+        #expect(env.receipts.isEmpty)
+        receiver = try env.receiver()
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(env.receipts.last == WatchContentReceipt(file: file, status: status))
+        #expect(receiver.pendingOperations == 0)
+        try await queue.settledReceive(try #require(env.receipts.last))
+        #expect(queue.jobs.first { $0.file == file }?.status == status)
+    }
+
     @Test("300 cached songs and artwork drain through bounded restartable production queues")
     func bulk() async throws {
         let env = try Env()
