@@ -29,6 +29,7 @@ final class WatchContentReceiver {
     private var head: WatchLibraryHead?
     private var pendingHead: WatchLibraryHead?
     private var isPaused = false
+    private var selectionFailure: (index: WatchProgressIndex, error: Error)?
     private var snapshot: WatchLibrarySnapshot?
     private var reports: [WatchLibraryDeliveryReport]
     private(set) var receipts: [WatchContentReceipt]
@@ -129,10 +130,23 @@ final class WatchContentReceiver {
     }
 
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
+        do {
+            try reconcileSelection(head: head, snapshot: snapshot)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+
+    private func reconcileSelection(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
         if pendingHead != head || self.snapshot != snapshot { generation = UUID() }
         pendingHead = head
         self.head = nil
         self.snapshot = snapshot
+        // the metadata callback has finished; failed persistence can retry without authorizing commits.
+        isPaused = false
+        selectionFailure = nil
         defer { updateProgress() }
         // an absent or pending snapshot cannot revoke the last durable selection.
         if head != nil { fileCache.awaitWatchSelection() }
@@ -147,11 +161,15 @@ final class WatchContentReceiver {
         }
         if let snapshot, canAdopt {
             guard let nextIndex, nextIndex.snapshot == snapshot else { throw WatchLibraryError.invalid }
-            try fileCache.adoptWatchSelection(music: Set(nextIndex.overall.music), artwork: nextIndex.overall.artwork)
+            do {
+                try fileCache.adoptWatchSelection(music: Set(nextIndex.overall.music), artwork: nextIndex.overall.artwork)
+            } catch {
+                selectionFailure = (nextIndex, error)
+                throw error
+            }
         }
         progressIndex = nextIndex
         self.head = head
-        isPaused = false
         try compactReceipts()
         needsProgressScan = true
         scheduleWork()
@@ -261,6 +279,7 @@ final class WatchContentReceiver {
     func staged(_ file: WatchContentFile) {
         diagnostics.delivery(.contentStaged, file: file, source: .phone)
         resume()
+        _ = answerSelectionFailure(file)
     }
 
     /// stop commits while the database serializes a newly received control message.
@@ -268,6 +287,7 @@ final class WatchContentReceiver {
         generation = UUID()
         head = nil
         isPaused = true
+        selectionFailure = nil
         inventory.pause()
     }
 
@@ -293,6 +313,7 @@ final class WatchContentReceiver {
     /// a lost receipt is repaired from durable identity plus actual verified bytes, never system completion.
     func query(_ file: WatchContentFile) throws {
         diagnostics.delivery(.receiptQuery, file: file, source: .phone)
+        if answerSelectionFailure(file) { return }
         guard isDesired(file) else {
             if let head, snapshot?.head == head, head.publisher == file.head.publisher, file.head.revision < head.revision {
                 send(.init(file: file, status: .failed))
@@ -302,6 +323,18 @@ final class WatchContentReceiver {
         if !queries.contains(file) { queries.append(file) }
         needsProgressScan = true
         scheduleWork()
+    }
+
+    private func answerSelectionFailure(_ file: WatchContentFile) -> Bool {
+        guard !isPaused, let failure = selectionFailure, pendingHead == failure.index.head,
+              snapshot?.head == pendingHead, failure.index.head.retainsContent(from: file.head),
+              failure.index.files.contains(.init(type: file.type, filename: file.filename)),
+              (try? file.validate()) != nil else { return false }
+        let status: WatchContentStatus = BackgroundDownload.isOutOfSpace(failure.error) ? .storageFull : .retrying
+        // this reports blocked admission, never ownership; a full disk may be unable to save a receipt.
+        diagnostics.delivery(.receiptSent, file: file, source: .phone, status: status)
+        send(.init(file: file, status: status))
+        return true
     }
 
     private func answer(_ file: WatchContentFile) async throws {
@@ -344,6 +377,7 @@ final class WatchContentReceiver {
         } catch { errorMessage = error.localizedDescription }
         needsProgressScan = true
         scheduleWork()
+        _ = answerSelectionFailure(file)
     }
 
     private func answerStagingFailure(_ failure: WatchContentReceipt) async throws -> Bool {
