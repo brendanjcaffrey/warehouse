@@ -89,7 +89,7 @@ struct WatchStoragePauseTests {
         let initial = env.queued
         let gate = WatchContentWorkerTests.Gate()
         defer { gate.release() }
-        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
         let completed = initial[1].0
         env.outstanding.removeAll { $0.id == completed.id }
@@ -228,7 +228,7 @@ struct WatchStoragePauseTests {
         let gate = WatchContentWorkerTests.Gate()
         defer { gate.release() }
         let queue = try env.queue(worker: WatchContentWorker(beforeWork: {
-            try gate.block()
+            try await gate.block()
             if workerFails { throw CocoaError(.fileReadNoPermission) }
         }))
         env.now += 3601

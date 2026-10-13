@@ -89,7 +89,7 @@ struct WatchManualInventoryTests {
         let gate = WatchContentWorkerTests.Gate()
         defer { gate.release() }
         var preparationStarts = 0
-        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }), backgroundExecution: .init(begin: { _ in
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }), backgroundExecution: .init(begin: { _ in
             preparationStarts += 1
             return {}
         }))
@@ -461,7 +461,7 @@ struct WatchManualInventoryTests {
         try env.watchFiles.write(.music, "m0.mp3", data: Data("music m0.mp3".utf8))
         let gate = WatchContentWorkerTests.Gate()
         defer { gate.release() }
-        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         let receiver = try env.receiver()
         try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
         try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)

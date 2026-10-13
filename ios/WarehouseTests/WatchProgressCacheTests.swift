@@ -189,7 +189,7 @@ struct WatchProgressCacheTests {
         let files = env.watchFiles
         receiver.progressSource.exists = { type, name in
             let exists = files.exists(type, name)
-            try? gate.block()
+            try? await gate.block()
             return exists
         }
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)

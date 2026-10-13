@@ -7,7 +7,7 @@ import Observation
 final class WatchContentReceiver {
     struct ProgressSource {
         var validate: (WatchLibrarySnapshot) throws -> Library = { try $0.validatedLibrary() }
-        var exists: @Sendable (LibraryFileType, String) -> Bool
+        var exists: @Sendable (LibraryFileType, String) async -> Bool
     }
 
     @ObservationIgnored var progressSource: ProgressSource

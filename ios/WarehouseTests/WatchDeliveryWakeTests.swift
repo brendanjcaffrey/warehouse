@@ -38,7 +38,7 @@ struct WatchDeliveryWakeTests {
         let gate = WatchContentWorkerTests.Gate()
         defer { gate.release() }
         let worker = WatchContentWorker(beforeWork: {
-            try gate.block()
+            try await gate.block()
             if writeFails { throw CocoaError(.fileWriteUnknown) }
         })
         var protectedEnqueues = 0
@@ -70,7 +70,7 @@ struct WatchDeliveryWakeTests {
         let execution = Execution()
         let gate = WatchContentWorkerTests.Gate()
         defer { gate.release() }
-        var queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }), backgroundExecution: execution.background)
+        var queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }), backgroundExecution: execution.background)
         try queue.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(await gate.waitForEntry())
         for expire in execution.expirations.values { expire() }

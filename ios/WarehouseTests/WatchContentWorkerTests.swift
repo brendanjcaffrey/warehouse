@@ -102,38 +102,57 @@ struct WatchContentWorkerTests {
         #expect(delay < .milliseconds(100))
     }
 
-    final class Gate: @unchecked Sendable {
-        private let condition = NSCondition()
+    @MainActor
+    final class Gate {
         private var entered = false
         private var released = false
+        private var blocked = [CheckedContinuation<Void, Never>]()
+        private var entryWaiters = [UUID: CheckedContinuation<Bool, Never>]()
 
-        func block() throws {
-            condition.lock()
-            defer { condition.unlock() }
+        func block() async throws {
             entered = true
-            condition.broadcast()
-            while !released {
-                guard condition.wait(until: Date().addingTimeInterval(10)) else { throw CocoaError(.userCancelled) }
+            let waiters = entryWaiters.values
+            entryWaiters.removeAll()
+            for waiter in waiters { waiter.resume(returning: true) }
+            if !released {
+                await withCheckedContinuation { blocked.append($0) }
             }
+            try Task.checkCancellation()
         }
 
         func waitForEntry() async -> Bool {
-            await Task.detached { [self] in
-                condition.lock()
-                defer { condition.unlock() }
-                while !entered {
-                    if !condition.wait(until: Date().addingTimeInterval(5)) { return false }
+            if entered { return true }
+            let id = UUID()
+            return await withCheckedContinuation { continuation in
+                entryWaiters[id] = continuation
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(5))
+                    self?.entryWaiters.removeValue(forKey: id)?.resume(returning: false)
                 }
-                return true
-            }.value
+            }
         }
 
         func release() {
-            condition.lock()
             released = true
-            condition.broadcast()
-            condition.unlock()
+            let blocked = blocked
+            self.blocked.removeAll()
+            for continuation in blocked { continuation.resume() }
         }
+    }
+
+    @Test("a waiting gate leaves cooperative workers free to enter and make unrelated progress")
+    func gateForwardProgress() async throws {
+        let gate = Gate()
+        defer { gate.release() }
+        let waiter = Task.detached { await gate.waitForEntry() }
+        try await Task.sleep(for: .milliseconds(100))
+        let worker = Task.detached { try await gate.block() }
+        #expect(await waiter.value)
+        #expect(await Task.detached { 42 }.value == 42)
+        gate.release()
+        try await worker.value
+        #expect(await gate.waitForEntry())
+        try await gate.block()
     }
 
     @Test("selection cancellation fences preparing copies and limits slots while the worker is suspended")
@@ -144,7 +163,7 @@ struct WatchContentWorkerTests {
         try env.cache(snapshot)
         let gate = Gate()
         defer { gate.release() }
-        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try queue.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(await gate.waitForEntry())
         queue.resume()
@@ -175,7 +194,7 @@ struct WatchContentWorkerTests {
         try env.cache(snapshot)
         let gate = Gate()
         defer { gate.release() }
-        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try queue.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(await gate.waitForEntry())
         env.transportAvailable = false
@@ -203,7 +222,7 @@ struct WatchContentWorkerTests {
         try FileManager.default.removeItem(at: url)
         let gate = Gate()
         defer { gate.release() }
-        let receiver = try env.content.receiver(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let receiver = try env.content.receiver(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         env.session.content = receiver
         env.hold()
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
@@ -251,7 +270,7 @@ struct WatchContentWorkerTests {
         }
         let gate = Gate()
         defer { gate.release() }
-        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
         if query { try receiver.query(file) }
         #expect(await gate.waitForEntry())
@@ -275,7 +294,7 @@ struct WatchContentWorkerTests {
         try env.cache(original)
         let gate = Gate()
         defer { gate.release() }
-        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let queue = try env.queue(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try queue.reconcile(head: original.head, snapshot: original)
         #expect(await gate.waitForEntry())
         let next = try env.snapshot(count: 8, revision: 2)
@@ -305,7 +324,7 @@ struct WatchContentWorkerTests {
         try env.stage(file, url: url)
         let gate = Gate()
         defer { gate.release() }
-        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try receiver.reconcile(head: original.head, snapshot: original)
         #expect(await gate.waitForEntry())
         receiver.pause()
@@ -359,7 +378,7 @@ struct WatchContentWorkerTests {
         try env.stage(file, url: url)
         let gate = Gate()
         defer { gate.release() }
-        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try gate.block() }))
+        let receiver = try env.receiver(worker: WatchContentWorker(beforeWork: { try await gate.block() }))
         try receiver.reconcile(head: snapshot.head, snapshot: snapshot)
         #expect(await gate.waitForEntry())
         let expected = receiver.progress()

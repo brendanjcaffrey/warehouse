@@ -3,7 +3,7 @@ import Testing
 import WatchConnectivity
 @testable import Warehouse
 
-@Suite("watch delivery scheduling", .serialized)
+@Suite("watch delivery scheduling", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct WatchDeliverySchedulingTests {
     final class Delay {
@@ -11,10 +11,44 @@ struct WatchDeliverySchedulingTests {
         var pending = [CheckedContinuation<Void, Never>]()
         var resumed = 0
 
+        private var observers = [UUID: (() -> Bool, CheckedContinuation<Void, any Error>)]()
+
         func wait(_ seconds: TimeInterval) async {
             self.seconds.append(seconds)
-            await withCheckedContinuation { pending.append($0) }
+            await withCheckedContinuation {
+                pending.append($0)
+                notify()
+            }
             resumed += 1
+            notify()
+        }
+
+        func waitForCalls(_ count: Int) async throws {
+            try await waitUntil { self.seconds.count >= count }
+        }
+
+        func waitForResumes(_ count: Int) async throws {
+            try await waitUntil { self.resumed >= count }
+        }
+
+        private func waitUntil(_ ready: @escaping () -> Bool) async throws {
+            let id = UUID()
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                if ready() { return }
+                try await withCheckedThrowingContinuation { observers[id] = (ready, $0) }
+            } onCancel: {
+                Task { @MainActor in
+                    self.observers.removeValue(forKey: id)?.1.resume(throwing: CancellationError())
+                }
+            }
+        }
+
+        private func notify() {
+            for (id, (ready, continuation)) in observers where ready() {
+                observers.removeValue(forKey: id)
+                continuation.resume()
+            }
         }
 
         func release() {
@@ -36,7 +70,7 @@ struct WatchDeliverySchedulingTests {
             now: { env.now }, diagnostics: env.phoneDiagnostics, backgroundExecution: .init(begin: { _ in {} }),
             retryDelay: { await delay.wait($0) })
         try queue.reconcile(head: snapshot.head, snapshot: snapshot)
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 1 }
+        try await delay.waitForCalls(1)
         var pendingHead = WatchLibraryHead(publisher: snapshot.head.publisher, revision: snapshot.head.revision + 1,
                                           libraryID: snapshot.head.libraryID, playlistIDs: snapshot.head.playlistIDs)
         if metadataPending {
@@ -45,11 +79,11 @@ struct WatchDeliverySchedulingTests {
             env.transportAvailable = false
             queue.resume()
         }
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 2 }
+        try await delay.waitForCalls(2)
         #expect(delay.seconds == [60, 60])
         env.now += 60
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 3 }
+        try await delay.waitForCalls(3)
         #expect(env.queued.isEmpty && env.queries.isEmpty)
         try env.cache(snapshot)
         env.transportAvailable = true
@@ -59,9 +93,10 @@ struct WatchDeliverySchedulingTests {
             try queue.reconcile(head: next.head, snapshot: next)
         } else {
             env.now += 60
+            let resumes = delay.resumed + delay.pending.count
             delay.release()
+            try await delay.waitForResumes(resumes)
         }
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { !env.queued.isEmpty }
         await queue.waitForWork()
         #expect(env.queued.count == PhoneWatchContentQueue.maximumTransfers)
     }
@@ -85,17 +120,18 @@ struct WatchDeliverySchedulingTests {
             try queue.reconcile(head: head, snapshot: nil)
         }
         #expect(queue.jobs.allSatisfy { $0.status == .pending })
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { !delay.seconds.isEmpty }
+        try await delay.waitForCalls(1)
         #expect(delay.seconds.last == 60)
         env.now += 60
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { !delay.pending.isEmpty }
+        try await delay.waitForCalls(2)
         #expect(env.queued.isEmpty && env.queries.isEmpty)
         if !metadataPending {
             env.transportAvailable = true
             env.now += 60
+            let resumes = delay.resumed + delay.pending.count
             delay.release()
-            try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { !env.queued.isEmpty }
+            try await delay.waitForResumes(resumes)
             await queue.waitForWork()
             #expect(env.queued.count == PhoneWatchContentQueue.maximumTransfers)
         }
@@ -115,14 +151,16 @@ struct WatchDeliverySchedulingTests {
         publisher.publish(identity: "account", playlistIDs: ["p1"])
         await publisher.waitForPublication()
         #expect(publisher.head.failed == true && publisher.errorMessage != nil)
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 1 }
+        try await delay.waitForCalls(1)
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 2 }
+        try await delay.waitForCalls(2)
         #expect(delay.seconds == [5, 10])
         failing = false
+        let resumes = delay.resumed + delay.pending.count
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { env.deliveries.count == 1 }
+        try await delay.waitForResumes(resumes)
         await publisher.waitForPublication()
+        #expect(env.deliveries.count == 1)
         #expect(publisher.head.metadataReady && publisher.head.failed != true && publisher.errorMessage == nil)
         #expect(publisher.head.playlistIDs == ["p1"])
     }
@@ -140,13 +178,13 @@ struct WatchDeliverySchedulingTests {
             enqueue: { env.deliveries.append(($0, $1)); env.outstanding.insert($1) }), retryDelay: { await delay.wait($0) })
         publisher.publish(identity: "account", playlistIDs: ["p1"])
         await publisher.waitForPublication()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 1 }
+        try await delay.waitForCalls(1)
         let head = publisher.head
         let contexts = env.heads.count
         publisher.suspendPublication()
         failing = false
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.resumed == 1 }
+        try await delay.waitForResumes(1)
         await publisher.waitForPublication()
         #expect(publisher.head == head && env.heads.count == contexts && env.deliveries.isEmpty)
         publisher.publish(identity: "account", playlistIDs: ["p1"])
@@ -172,12 +210,14 @@ struct WatchDeliverySchedulingTests {
         await publisher.waitForPublication()
         #expect(queue.progress().music.total == 4)
         #expect(publisher.head.metadataReady && publisher.errorMessage != nil && env.deliveries.isEmpty)
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 1 }
+        try await delay.waitForCalls(1)
         let head = publisher.head
         env.unavailable = false
+        let resumes = delay.resumed + delay.pending.count
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { env.deliveries.count == 1 }
+        try await delay.waitForResumes(resumes)
         await publisher.waitForPublication()
+        #expect(env.deliveries.count == 1)
         #expect(publisher.head == head && publisher.errorMessage == nil)
     }
 
@@ -193,13 +233,13 @@ struct WatchDeliverySchedulingTests {
             enqueue: { env.deliveries.append(($0, $1)); env.outstanding.insert($1) }), retryDelay: { await delay.wait($0) })
         publisher.publish(identity: "account", playlistIDs: ["p1"])
         await publisher.waitForPublication()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.seconds.count == 1 }
+        try await delay.waitForCalls(1)
         env.phone.beforeWatchLibraryRead = {}
         publisher.publish(identity: "account", playlistIDs: ["p2"])
         await publisher.waitForPublication()
         let head = publisher.head
         delay.release()
-        try await PlayerStoreTests.waitFor(timeout: .seconds(2)) { delay.resumed == 1 }
+        try await delay.waitForResumes(1)
         await publisher.waitForPublication()
         #expect(publisher.head == head && publisher.head.playlistIDs == ["p2"])
         #expect(env.deliveries.count == 1 && publisher.errorMessage == nil)
