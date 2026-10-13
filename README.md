@@ -247,6 +247,12 @@ Useful tasks:
   To collect verbose diagnostics for an investigation, rerun the printed
   `xcodebuild` command with `-collect-test-diagnostics on-failure`.
   See [Apple's explanation of the option](https://developer.apple.com/forums/thread/698054).
+  Failed CI unit-test runs print the result summary and each failing test's
+  details, including assertions, source locations and parameter values.
+  They retain the full bundle as `ios-unit-test-results` for 14 days.
+  Download it with `gh run download <run-id> --name ios-unit-test-results
+  --dir /tmp/ios-unit-tests.xcresult`, then inspect it in Xcode or run
+  `xcrun xcresulttool get test-results summary --path /tmp/ios-unit-tests.xcresult`.
 - `rake ios:testflight` — archive the iOS app and upload it to TestFlight (see
   the task's comments in the `Rakefile` for the required App Store Connect key).
 - `rake checks` — run the Ruby and web linting and formatting checks.

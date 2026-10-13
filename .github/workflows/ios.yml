@@ -52,18 +52,51 @@ jobs:
     # keep the host-sensitive 100 ms profile in serial local runs; parallelize
     # ci correctness tests and avoid optional simulator diagnostic stalls.
     - name: unit tests
+      id: unit-tests
       run: |
         xcodebuild test -project "$PROJECT" \
           -scheme "$SCHEME" \
           -destination "platform=iOS Simulator,name=$SIMULATOR" \
           -parallel-testing-enabled YES \
           -collect-test-diagnostics never \
+          -resultBundlePath "$RUNNER_TEMP/ios-unit-tests.xcresult" \
           -only-testing:WarehouseTests \
           '-skip-testing:WarehouseTests/WatchContentWorkerTests/responsiveness()' \
           CODE_SIGN_IDENTITY=- \
           CODE_SIGN_STYLE=Manual \
           DEVELOPMENT_TEAM= \
           PROVISIONING_PROFILE_SPECIFIER=
+
+    - name: unit test failure summary
+      if: ${{ !cancelled() && steps.unit-tests.outcome == 'failure' }}
+      run: |
+        if [ -d "$RUNNER_TEMP/ios-unit-tests.xcresult" ]; then
+          python3 - "$RUNNER_TEMP/ios-unit-tests.xcresult" <<'PY'
+        import json
+        import subprocess
+        import sys
+
+        bundle = sys.argv[1]
+        command = ["xcrun", "xcresulttool", "get", "test-results"]
+        summary = subprocess.check_output(command + ["summary", "--path", bundle], text=True)
+        print(summary, end="", flush=True)
+        test_ids = dict.fromkeys(failure["testIdentifierString"] for failure in json.loads(summary)["testFailures"])
+        for test_id in test_ids:
+            subprocess.run(command + ["test-details", "--path", bundle, "--test-id", test_id], check=True)
+        PY
+        else
+          echo 'unit test result bundle unavailable; xcodebuild may have failed before tests ran'
+        fi
+
+    - name: upload unit test results
+      if: ${{ !cancelled() && steps.unit-tests.outcome == 'failure' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: ios-unit-test-results
+        path: ${{ runner.temp }}/ios-unit-tests.xcresult
+        include-hidden-files: true
+        retention-days: 14
+        overwrite: true
 
     - name: ui tests
       run: |
