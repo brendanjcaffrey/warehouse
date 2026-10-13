@@ -23,7 +23,7 @@ final class WatchDiagnosticInbox {
     @discardableResult
     func receive(_ data: Data, phone: WatchDiagnosticReport? = nil) -> Bool {
         guard data.count <= WatchDiagnosticMessage.maximumReportBytes,
-              var report = WatchDiagnosticReport.decode(data), report.events.count <= 512 else { return false }
+              var report = WatchDiagnosticReport.decode(data), report.events.count <= WatchDiagnostics.defaultCapacity else { return false }
         let pairID = UUID()
         if phone != nil { report.pairID = pairID }
         guard let cleanData = report.encoded() else { return false }

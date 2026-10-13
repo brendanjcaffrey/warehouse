@@ -3,7 +3,7 @@ import Foundation
 /// live messages carry bounded pieces; exports retain the complete capture.
 struct WatchDiagnosticMessage: Codable {
     static let chunkBytes = 24_000
-    static let maximumReportBytes = 1_024_000
+    static let maximumReportBytes = 4_096_000
     static let saved = Data("saved".utf8)
     static let more = Data("more".utf8)
 

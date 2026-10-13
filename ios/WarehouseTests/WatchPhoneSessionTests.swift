@@ -103,7 +103,7 @@ struct WatchPhoneSessionTests {
         #expect(queued.count == 1)
     }
 
-    @Test("empty and full delivery captures reach the phone within the live message budget", arguments: [0, 512])
+    @Test("empty and full delivery captures reach the phone within the live message budget", arguments: [0, 4096])
     func sendsFullDiagnosticCapture(eventCount: Int) async throws {
         let env = try WatchLibraryDeliveryTests.Env()
         defer { env.cleanUp() }
@@ -420,7 +420,8 @@ struct WatchPhoneSessionTests {
             content = try WatchContentDeliveryTests.Env()
             library = metadata.receiver()
             receiver = try content.receiver()
-            session = WatchPhoneSession(library: library, sessionState: { [unowned self] in (true, systemPending) })
+            session = WatchPhoneSession(library: library, sessionState: { [unowned self] in (true, systemPending) },
+                                        diagnostics: content.watchDiagnostics)
             session.content = receiver
         }
 

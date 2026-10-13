@@ -146,16 +146,21 @@ final class WatchLibraryBackgroundLifetime {
     private(set) var contentPending = true
     private(set) var importsPending = 0
     private var completions = [() -> Void]()
+    var heldTasks: Int { completions.count }
+    var onChanged: () -> Void = {}
+    var onCompleted: (Int) -> Void = { _ in }
 
     func update(activated: Bool, contentPending: Bool, importsPending: Int) {
         self.activated = activated
         self.contentPending = contentPending
         self.importsPending = importsPending
+        onChanged()
         finishIfIdle()
     }
 
     func hold(_ completion: @escaping () -> Void) {
         completions.append(completion)
+        onChanged()
         finishIfIdle()
     }
 
@@ -163,6 +168,7 @@ final class WatchLibraryBackgroundLifetime {
         guard activated, !contentPending, importsPending == 0 else { return }
         let ready = completions
         completions.removeAll()
+        if !ready.isEmpty { onCompleted(ready.count) }
         ready.forEach { $0() }
     }
 }

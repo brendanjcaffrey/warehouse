@@ -50,6 +50,7 @@ final class PhoneWatchContentQueue {
         var attempts = 0
         var nextAttempt = Date.distantPast
         var inventoryRequestID: UUID?
+        var enqueuedAt: Date?
 
         var key: JobKey { JobKey(type: type, filename: filename) }
     }
@@ -256,7 +257,15 @@ final class PhoneWatchContentQueue {
         state.head = saved.head.map(WatchDiagnosticIdentity.init)
         state.inventoryHead = saved.snapshot.map { WatchDiagnosticIdentity($0.head) }
         state.transportAvailable = transport.available()
-        state.systemOutstanding = transport.outstanding().count
+        let outstanding = transport.outstanding()
+        state.systemOutstanding = outstanding.count
+        state.outstandingTransfers = outstanding.map { file in
+            WatchDiagnosticTransfer(file, startedAt: saved.jobs.first { $0.file == file }?.enqueuedAt, now: now())
+        }
+        state.receiptTransfers = saved.jobs.filter { $0.status == .awaitingReceipt }.compactMap { job in
+            job.file.map { WatchDiagnosticTransfer($0, startedAt: job.enqueuedAt, now: now()) }
+        }
+        state.preparingFiles = preparations.count
         state.receiptWait = saved.jobs.count { $0.status == .awaitingReceipt }
         state.inventoryPending = saved.jobs.count { $0.inventoryRequestID != nil }
         state.inventoryRequestID = saved.inventory?.id
@@ -496,6 +505,7 @@ final class PhoneWatchContentQueue {
             let previous = saved
             let verified = file.map { entry.bytes == $0.bytes && entry.digest == $0.digest } ?? false
             if verified, let file {
+                if saved.jobs[index].file?.id != file.id { saved.jobs[index].enqueuedAt = nil }
                 saved.jobs[index].file = file
                 saved.jobs[index].status = .delivered
                 saved.jobs[index].inventoryRequestID = nil
@@ -652,6 +662,7 @@ final class PhoneWatchContentQueue {
                 guard let file = job.file else { continue }
                 job.attempts += 1
                 job.status = .transferring
+                job.enqueuedAt = now()
                 saved.jobs[index] = job
                 // independent immutable descriptors let a damaged queue recover private source ownership.
                 try state.save(file, to: directory.appending(path: "\(file.id.uuidString).json"))
@@ -723,6 +734,7 @@ final class PhoneWatchContentQueue {
                 saved.jobs[index].status = queriesRecovery ? .awaitingReceipt : metadataReady ? .transferring : .pending
                 saved.jobs[index].nextAttempt = queriesRecovery && metadataReady ? now().addingTimeInterval(60) : .distantPast
                 saved.jobs[index].attempts += 1
+                if metadataReady, !queriesRecovery { saved.jobs[index].enqueuedAt = now() }
                 try state.save(file, to: directory.appending(path: "\(file.id.uuidString).json"))
                 try save()
                 if metadataReady {

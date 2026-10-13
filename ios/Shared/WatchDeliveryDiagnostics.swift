@@ -71,6 +71,50 @@ struct WatchDiagnosticInventory: Codable {
     }
 }
 
+/// timestamps describe local ownership, not a system-reported transfer start.
+struct WatchDiagnosticTransfer: Codable {
+    let id: UUID
+    let identity: WatchDiagnosticIdentity
+    let fileType: LibraryFileType
+    let bytes: Int64
+    let startedAt: Date?
+    let ageSeconds: TimeInterval?
+    var authorized: Bool?
+
+    init(_ file: WatchContentFile, startedAt: Date?, now: Date) {
+        id = file.id
+        identity = WatchDiagnosticIdentity(file.head)
+        fileType = file.type
+        bytes = file.bytes
+        self.startedAt = startedAt
+        ageSeconds = startedAt.map { max(0, now.timeIntervalSince($0)) }
+    }
+}
+
+struct WatchDiagnosticProcessing: Codable, Equatable {
+    enum Phase: String, Codable {
+        case idle, draining, querying, scanning, verifyingExisting, verifyingIncoming, committing, waitingForPlayback
+    }
+    var phase: Phase = .idle
+    var fileID: UUID?
+    var startedAt: Date?
+    var paused = false
+    var authorized = false
+    var pendingOperations = 0
+    var drainRequested = false
+    var queuedQueries = 0
+    var progressScanRequested = false
+}
+
+struct WatchDiagnosticBackground: Codable, Equatable {
+    let activated: Bool
+    let contentPending: Bool
+    let libraryOperations: Int
+    let callbackOperations: Int
+    let contentOperations: Int
+    let heldTasks: Int
+}
+
 struct WatchDeliveryDiagnosticState: Codable {
     enum Peer: String, Codable { case phone, watch }
     let peer: Peer
@@ -91,6 +135,12 @@ struct WatchDeliveryDiagnosticState: Codable {
     var inventoryCompletedAt: Date?
     var inventoryStartedAt: Date?
     var inventoryEligibleAt: Date?
+    var outstandingTransfers: [WatchDiagnosticTransfer]?
+    var receiptTransfers: [WatchDiagnosticTransfer]?
+    var stagedTransfers: [WatchDiagnosticTransfer]?
+    var processing: WatchDiagnosticProcessing?
+    var background: WatchDiagnosticBackground?
+    var preparingFiles: Int?
 
     mutating func add(type: LibraryFileType, status: WatchContentStatus, bytes: Int64?) {
         if type == .music { music.add(status: status, bytes: bytes) } else { artwork.add(status: status, bytes: bytes) }

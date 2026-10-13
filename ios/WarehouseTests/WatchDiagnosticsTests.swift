@@ -5,6 +5,228 @@ import Testing
 @Suite("watch diagnostics")
 @MainActor
 struct WatchDiagnosticsTests {
+    @Test("journaled events survive relaunch without rewriting the full ring or double counting receipts")
+    func journalDurability() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let capture = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "account", playlistIDs: [])
+        let file = WatchContentFile(head: head, type: .music, filename: "private-name.mp3", bytes: 42, digest: "secret")
+        capture.delivery(.contentCommitted, file: file, source: .cache)
+        let checkpoint = try Data(contentsOf: url)
+        for _ in 0..<64 { capture.delivery(.contentReused, file: file, source: .cache) }
+        #expect(try Data(contentsOf: url) == checkpoint)
+        let restored = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        let report = restored.report(deviceModel: "watch", systemVersion: "26")
+        #expect(report.capture?.totalEvents == 65)
+        #expect(report.capture?.droppedEvents == 63)
+        #expect(report.totals?["contentCommitted:music"]?.bytes == 42)
+        #expect(report.totals?["contentReused:music"] == nil)
+        let journal = url.appendingPathExtension("events")
+        let entries = try Data(contentsOf: journal)
+        #expect(entries.split(separator: 10).count == 64)
+        let text = try #require(String(data: entries, encoding: .utf8))
+        #expect(!text.contains(file.filename))
+        #expect(!text.contains(file.digest))
+        restored.delivery(.receiptSent, file: file, source: .phone)
+        #expect(try Data(contentsOf: url) != checkpoint)
+        #expect(try Data(contentsOf: journal).isEmpty)
+        #expect(WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+            .report(deviceModel: "watch", systemVersion: "26").capture?.totalEvents == 66)
+    }
+
+    @Test("interrupted journal cleanup cannot duplicate totals or revive a cleared capture")
+    func checkpointReplay() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let journal = url.appendingPathExtension("events")
+        let capture = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        for _ in 0..<65 { capture.record(.init(kind: .queueWakeup, id: UUID(), source: .system)) }
+        let oldJournal = try Data(contentsOf: journal)
+        capture.record(.init(kind: .queueWakeup, id: UUID(), source: .system))
+        try oldJournal.write(to: journal)
+        let restored = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        #expect(restored.report(deviceModel: "watch", systemVersion: "26").capture?.totalEvents == 66)
+        #expect(restored.report(deviceModel: "watch", systemVersion: "26").totals?["queueWakeup:metadata"]?.count == 66)
+        restored.clear()
+        try oldJournal.write(to: journal)
+        let cleared = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url)
+        #expect(cleared.events.isEmpty)
+        #expect(cleared.report(deviceModel: "watch", systemVersion: "26").capture?.totalEvents == 0)
+        cleared.record(.init(kind: .activationChanged, id: UUID(), source: .system))
+        let latest = WatchDiagnostics(capacity: 2, logEvents: false, storeURL: url).report(deviceModel: "watch", systemVersion: "26")
+        #expect(latest.capture?.totalEvents == 1)
+        #expect(latest.totals?["queueWakeup:metadata"] == nil)
+    }
+
+    @Test("an interrupted journal append preserves its valid prefix and reports uncertain persistence")
+    func damagedJournal() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let capture = WatchDiagnostics(logEvents: false, storeURL: url)
+        for _ in 0..<2 { capture.record(.init(kind: .queueWakeup, id: UUID(), source: .system)) }
+        let journal = url.appendingPathExtension("events")
+        var bytes = try Data(contentsOf: journal)
+        bytes.append(contentsOf: "{interrupted".utf8)
+        try bytes.write(to: journal)
+        let restored = WatchDiagnostics(logEvents: false, storeURL: url)
+        #expect(restored.events.count == 2)
+        #expect(restored.report(deviceModel: "watch", systemVersion: "26").capture?.persistenceFailed == true)
+        restored.record(.init(kind: .queueWakeup, id: UUID(), source: .system))
+        let latest = WatchDiagnostics(logEvents: false, storeURL: url).report(deviceModel: "watch", systemVersion: "26")
+        #expect(latest.capture?.totalEvents == 3)
+        #expect(latest.totals?["queueWakeup:metadata"]?.count == 3)
+        #expect(latest.capture?.persistenceFailed == true)
+    }
+
+    @Test("a lost checkpoint cannot silently claim journal continuity", arguments: [false, true])
+    func lostCheckpoint(corrupt: Bool) throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let capture = WatchDiagnostics(logEvents: false, storeURL: url)
+        for _ in 0..<2 { capture.record(.init(kind: .queueWakeup, id: UUID(), source: .system)) }
+        if corrupt { try Data("invalid".utf8).write(to: url) } else { try FileManager.default.removeItem(at: url) }
+        let restored = WatchDiagnostics(logEvents: false, storeURL: url).report(deviceModel: "watch", systemVersion: "26")
+        #expect(restored.events.isEmpty)
+        #expect(restored.capture?.persistenceFailed == true)
+        #expect(restored.capture?.id != capture.report(deviceModel: "watch", systemVersion: "26").capture?.id)
+    }
+
+    @Test("outstanding transfer ages survive relaunch and receipt waits retain their identity")
+    func transferAges() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let enqueuedAt = env.now
+        env.now.addTimeInterval(36_000)
+        let restored = try env.queue()
+        let outstanding = try #require(restored.diagnosticState().outstandingTransfers)
+        #expect(Set(outstanding.map(\.id)) == Set(env.outstanding.map(\.id)))
+        #expect(outstanding.allSatisfy { $0.startedAt == enqueuedAt && $0.ageSeconds == 36_000 })
+        let file = try #require(env.outstanding.first)
+        env.outstanding.removeAll { $0.id == file.id }
+        try await restored.settledFinished(file, error: nil)
+        let waiting = try #require(restored.diagnosticState().receiptTransfers?.first)
+        #expect(waiting.id == file.id)
+        #expect(waiting.startedAt == enqueuedAt)
+        #expect(waiting.ageSeconds == 36_000)
+        let data = try #require(env.phoneDiagnostics.report(deviceModel: "phone", systemVersion: "26",
+                                                           delivery: restored.diagnosticState()).encoded())
+        let text = try #require(String(data: data, encoding: .utf8))
+        #expect(!text.contains(file.filename))
+        #expect(!text.contains(file.digest))
+        #expect(!text.contains("account"))
+    }
+
+    @Test("a full larger capture remains bounded, persists, and shares in chunks")
+    func largerCapture() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = WatchDiagnostics(logEvents: false)
+        let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "account", playlistIDs: [])
+        for _ in 0..<4100 {
+            capture.record(.init(kind: .contentFailed, id: UUID(), source: .system, fileType: .music,
+                                 bytes: 42, throughput: 3, bufferSeconds: 1, elapsed: 2,
+                                 error: CocoaError(.fileWriteOutOfSpace), detail: .speaker,
+                                 waitingReason: .evaluatingBufferingRate, identity: WatchDiagnosticIdentity(head), status: .retrying))
+        }
+        let report = capture.report(deviceModel: "watch", systemVersion: "26")
+        #expect(report.events.count == 4096)
+        #expect(report.capture?.droppedEvents == 4)
+        #expect(report.totals?["contentFailed:music"]?.count == 4100)
+        let data = try #require(report.encoded())
+        #expect(data.count > 1_024_000)
+        let url = root.appending(path: "saved.json")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try data.write(to: url)
+        let persisted = WatchDiagnostics(logEvents: false, storeURL: url)
+        let restored = persisted.report(deviceModel: "watch", systemVersion: "26")
+        #expect(restored.events.map(\.id) == report.events.map(\.id))
+        #expect(restored.capture?.droppedEvents == 4)
+        let latest = WatchDiagnostic(kind: .queueWakeup, id: UUID(), source: .system)
+        persisted.record(latest)
+        let relaunched = WatchDiagnostics(logEvents: false, storeURL: url).report(deviceModel: "watch", systemVersion: "26")
+        #expect(relaunched.events.count == 4096)
+        #expect(relaunched.events.last?.id == latest.id)
+        #expect(relaunched.capture?.droppedEvents == 5)
+        #expect(relaunched.totals?["contentFailed:music"]?.count == 4100)
+        let inbox = WatchDiagnosticInbox(directory: root.appending(path: "inbox"))
+        let messages = try WatchDiagnosticMessage.messages(data)
+        for message in messages.dropLast() {
+            #expect(inbox.receiveMessage(message, phone: report) == WatchDiagnosticMessage.more)
+        }
+        #expect(inbox.receiveMessage(try #require(messages.last), phone: report) == WatchDiagnosticMessage.saved)
+        #expect(inbox.reports.count == 2)
+        let savedURL = try #require(inbox.reports.first)
+        let saved = try #require(WatchDiagnosticReport.decode(Data(contentsOf: savedURL)))
+        #expect(saved.events.map(\.id) == report.events.map(\.id))
+        let oversized = WatchDiagnosticReport(capturedAt: report.capturedAt, deviceModel: "watch", systemVersion: "26",
+                                               events: report.events + [latest])
+        #expect(!inbox.receive(try #require(oversized.encoded())))
+    }
+
+    @Test("staged file ages survive recreation while a metadata pause blocks commits")
+    func stagedAgesAndPause() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let (file, url) = try #require(env.queued.first)
+        let receiver = try env.receiver()
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        receiver.pause()
+        try env.stage(file, url: url)
+        let stagedURL = env.root.appending(path: "receiver").appending(path: file.id.uuidString)
+        let stagedAt = Date().addingTimeInterval(-36_000)
+        try FileManager.default.setAttributes([.creationDate: stagedAt], ofItemAtPath: stagedURL.path)
+        env.now = stagedAt.addingTimeInterval(36_000)
+        await receiver.settledStaged(file)
+        let state = receiver.diagnosticState()
+        #expect(state.processing?.paused == true)
+        #expect(state.processing?.authorized == false)
+        #expect(state.stagedFiles == 1)
+        let staged = try #require(state.stagedTransfers?.first)
+        #expect(staged.id == file.id)
+        #expect(staged.authorized == false)
+        #expect(abs(try #require(staged.ageSeconds) - 36_000) < 1)
+        #expect(env.receipts.isEmpty)
+        let restored = try env.receiver()
+        #expect(restored.diagnosticState().stagedTransfers?.first?.startedAt == staged.startedAt)
+        try await restored.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        #expect(restored.diagnosticState().stagedTransfers?.isEmpty == true)
+        #expect(restored.diagnosticState().processing?.authorized == true)
+        #expect(env.receipts.last?.status == .delivered)
+    }
+
+    @Test("legacy queue dates stay unknown rather than acquiring a fictitious age")
+    func unknownTransferAge() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let url = env.root.appending(path: "queue/state.json")
+        var saved = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var jobs = try #require(saved["jobs"] as? [[String: Any]])
+        for index in jobs.indices { jobs[index].removeValue(forKey: "enqueuedAt") }
+        saved["jobs"] = jobs
+        try JSONSerialization.data(withJSONObject: saved).write(to: url)
+        let restored = try env.queue()
+        let transfers = try #require(restored.diagnosticState().outstandingTransfers)
+        #expect(transfers.count == env.outstanding.count)
+        #expect(transfers.allSatisfy { $0.startedAt == nil && $0.ageSeconds == nil })
+    }
+
     @Test("delivery totals outlive the ring and relaunch, while replayed verification adds no bytes")
     func cumulativeDelivery() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

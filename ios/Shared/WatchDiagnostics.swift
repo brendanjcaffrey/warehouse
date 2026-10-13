@@ -18,6 +18,7 @@ struct WatchDiagnostic: Codable {
         case contentEnqueued, contentCompleted, contentStaged, contentCommitted, contentReused
         case contentTransferFailed, contentFailed, contentRetry, contentStorageFull, receiptPersisted, receiptSent, receiptQuery, phoneAcknowledged
         case queueWakeup
+        case contentProcessingChanged, backgroundStateChanged, backgroundCompleted
         case inventoryRequested, inventoryReported, inventoryConfirmed, inventoryMissing, inventoryCompleted, inventoryRejected, inventoryFailed
         case inventoryScanned, inventoryManualRequested, inventoryManualScanned, inventoryVerified
 
@@ -56,6 +57,9 @@ struct WatchDiagnostic: Codable {
     let errorCode: Int?
     let detail: Detail?
     let waitingReason: WaitingReason?
+    var processing: WatchDiagnosticProcessing?
+    var background: WatchDiagnosticBackground?
+    var completedTasks: Int?
 
     init(kind: Kind, id: UUID, source: Source, fileType: LibraryFileType? = nil,
          reply: PhoneFileReply? = nil, bytes: Int64? = nil,
@@ -123,6 +127,7 @@ struct WatchDiagnosticReport: Codable {
 
 @MainActor
 final class WatchDiagnostics {
+    static let defaultCapacity = 4096
     static let shared = WatchDiagnostics(
         storeURL: FileStore.defaultRootURL().appending(path: "watch-diagnostics.json"))
     private let logger = Logger(subsystem: "com.jcaffrey.warehouse", category: "watch-diagnostics")
@@ -133,13 +138,22 @@ final class WatchDiagnostics {
     private var capture: WatchDiagnosticCapture
     private var totals: [String: WatchDiagnosticTotal] = [:]
     private var counted = Set<String>()
+    private var checkpointReady = false
+    private var journalEntries = 0
+    private static let checkpointInterval = 64
 
     private struct Saved: Codable {
         let report: WatchDiagnosticReport
         let counted: Set<String>
     }
 
-    init(capacity: Int = 512, logEvents: Bool = true, storeURL: URL? = nil) {
+    private struct JournalEntry: Codable {
+        let captureID: UUID
+        let sequence: Int
+        let event: WatchDiagnostic
+    }
+
+    init(capacity: Int = WatchDiagnostics.defaultCapacity, logEvents: Bool = true, storeURL: URL? = nil) {
         self.capacity = max(1, capacity)
         self.logEvents = logEvents
         self.storeURL = storeURL
@@ -156,11 +170,21 @@ final class WatchDiagnostics {
                 capture.droppedEvents = capture.totalEvents - events.count
                 totals = report.totals ?? [:]
                 counted = saved?.counted ?? []
+                checkpointReady = saved != nil
             }
         }
+        restoreJournal()
     }
 
     func record(_ event: WatchDiagnostic) {
+        append(event)
+        persist(event)
+        if logEvents, let message = Self.line(for: event) {
+            logger.info("\(message, privacy: .public)")
+        }
+    }
+
+    private func append(_ event: WatchDiagnostic) {
         capture.totalEvents += 1
         let kind = event.kind
         let unique = [WatchDiagnostic.Kind.contentCommitted, .contentReused, .phoneAcknowledged].contains(kind)
@@ -178,10 +202,6 @@ final class WatchDiagnostics {
         events.append(event)
         if events.count > capacity { events.removeFirst(events.count - capacity) }
         capture.droppedEvents = capture.totalEvents - events.count
-        persist()
-        if logEvents, let message = Self.line(for: event) {
-            logger.info("\(message, privacy: .public)")
-        }
     }
 
     func report(deviceModel: String, systemVersion: String,
@@ -199,21 +219,63 @@ final class WatchDiagnostics {
         totals = [:]
         counted = []
         capture = WatchDiagnosticCapture(capacity: capacity)
-        persist()
+        checkpointReady = false
+        persist(nil)
     }
 
-    private func persist() {
+    private func restoreJournal() {
         guard let storeURL else { return }
-        let report = report(deviceModel: "", systemVersion: "")
+        let journal = storeURL.appendingPathExtension("events")
+        guard FileManager.default.fileExists(atPath: journal.path) else { return }
+        do {
+            let data = try Data(contentsOf: journal)
+            if !checkpointReady, !data.isEmpty { capture.persistenceFailed = true }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .millisecondsSince1970
+            let lines = data.split(separator: 10, omittingEmptySubsequences: false)
+            for line in lines.dropLast() {
+                let entry = try decoder.decode(JournalEntry.self, from: Data(line))
+                guard entry.captureID == capture.id, entry.sequence > capture.totalEvents else { continue }
+                guard entry.sequence == capture.totalEvents + 1 else { throw CocoaError(.fileReadCorruptFile) }
+                append(entry.event)
+                journalEntries += 1
+            }
+            guard lines.last?.isEmpty != false else { throw CocoaError(.fileReadCorruptFile) }
+        } catch {
+            capture.persistenceFailed = true
+            checkpointReady = false
+        }
+    }
+
+    private func persist(_ event: WatchDiagnostic?) {
+        guard let storeURL else { return }
+        let journal = storeURL.appendingPathExtension("events")
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .millisecondsSince1970
-            let data = try encoder.encode(Saved(report: report, counted: counted))
-            try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try data.write(to: storeURL, options: .atomic)
+            if !checkpointReady || journalEntries >= Self.checkpointInterval || event == nil {
+                let report = report(deviceModel: "", systemVersion: "")
+                let data = try encoder.encode(Saved(report: report, counted: counted))
+                try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                // checkpoint first; replay ignores already checkpointed sequences if journal cleanup is interrupted.
+                try data.write(to: storeURL, options: .atomic)
+                try Data().write(to: journal, options: .atomic)
+                checkpointReady = true
+                journalEntries = 0
+            } else if let event {
+                let entry = JournalEntry(captureID: capture.id, sequence: capture.totalEvents, event: event)
+                var data = try encoder.encode(entry)
+                data.append(10)
+                if !FileManager.default.fileExists(atPath: journal.path) { try Data().write(to: journal, options: .atomic) }
+                let handle = try FileHandle(forWritingTo: journal)
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+                journalEntries += 1
+            }
         } catch {
             capture.persistenceFailed = true
+            checkpointReady = false
             logger.error("diagnostic persistence failed")
         }
     }

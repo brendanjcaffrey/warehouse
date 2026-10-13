@@ -29,6 +29,8 @@ final class WatchPhoneSession: NSObject {
     private let sendRemoteMessage: ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void
     private let libraryTransport: LibraryTransport
     private var libraryRequestTask: Task<Void, Never>?
+    private let diagnostics: WatchDiagnostics
+    private var lastBackground: WatchDiagnosticBackground?
 
     var onPlayReceipt: (@MainActor (PlayPayload) -> Void)?
     var onPlayTransferFinished: (@MainActor (PlayPayload) -> Void)?
@@ -60,7 +62,8 @@ final class WatchPhoneSession: NSObject {
             }, errorHandler: { error in
                 Task { @MainActor in completion(.failure(error)) }
             })
-        }
+        },
+        diagnostics: WatchDiagnostics? = nil
     ) {
         self.library = library
         self.libraryTransport = libraryTransport
@@ -69,12 +72,35 @@ final class WatchPhoneSession: NSObject {
         self.remoteReachable = remoteReachable
         self.sendRemoteMessage = sendRemoteMessage
         self.sendDiagnosticData = sendDiagnosticData
+        self.diagnostics = diagnostics ?? .shared
         super.init()
+        lifetime.onChanged = { [weak self] in self?.recordBackground() }
+        lifetime.onCompleted = { [weak self] count in self?.recordBackground(completed: count) }
         library.onIdle = { [weak self] in self?.updateBackgroundLifetime() }
     }
 
     func diagnosticReport(deviceModel: String, systemVersion: String) -> WatchDiagnosticReport {
-        WatchDiagnostics.shared.report(deviceModel: deviceModel, systemVersion: systemVersion, delivery: content?.diagnosticState())
+        var delivery = content?.diagnosticState() ?? WatchDeliveryDiagnosticState(peer: .watch)
+        delivery.background = backgroundState()
+        return diagnostics.report(deviceModel: deviceModel, systemVersion: systemVersion, delivery: delivery)
+    }
+
+    private func backgroundState() -> WatchDiagnosticBackground {
+        let state = sessionState()
+        return WatchDiagnosticBackground(activated: state.activated, contentPending: state.contentPending,
+                                         libraryOperations: library.pendingOperations, callbackOperations: contentActivity.count,
+                                         contentOperations: content?.pendingOperations ?? 0, heldTasks: lifetime.heldTasks)
+    }
+
+    private func recordBackground(completed: Int? = nil) {
+        let background = backgroundState()
+        guard completed != nil || background != lastBackground else { return }
+        lastBackground = background
+        var event = WatchDiagnostic(kind: completed == nil ? .backgroundStateChanged : .backgroundCompleted,
+                                    id: UUID(), source: .system)
+        event.background = background
+        event.completedTasks = completed
+        diagnostics.record(event)
     }
 
     func sendDiagnostics(_ report: WatchDiagnosticReport, completion: @escaping @MainActor (Result<Void, WatchDiagnosticSendError>) -> Void) {

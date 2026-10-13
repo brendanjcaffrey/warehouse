@@ -250,8 +250,8 @@ struct WatchContentDeliveryTests {
         defer { env.cleanUp() }
         let phoneCapture = env.root.appending(path: "phone-capture.json")
         let watchCapture = env.root.appending(path: "watch-capture.json")
-        env.phoneDiagnostics = WatchDiagnostics(logEvents: false, storeURL: phoneCapture)
-        env.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: watchCapture)
+        env.phoneDiagnostics = WatchDiagnostics(capacity: 512, logEvents: false, storeURL: phoneCapture)
+        env.watchDiagnostics = WatchDiagnostics(capacity: 512, logEvents: false, storeURL: watchCapture)
         let snapshot = try env.snapshot()
         try env.cache(snapshot)
         var queue = try env.queue()
@@ -268,8 +268,8 @@ struct WatchContentDeliveryTests {
             env.now += 120
             env.outstanding.removeAll { $0.id == file.id }
             // recreation before commit must recover the synchronously staged bytes.
-            env.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: watchCapture)
-            env.phoneDiagnostics = WatchDiagnostics(logEvents: false, storeURL: phoneCapture)
+            env.watchDiagnostics = WatchDiagnostics(capacity: 512, logEvents: false, storeURL: watchCapture)
+            env.phoneDiagnostics = WatchDiagnostics(capacity: 512, logEvents: false, storeURL: phoneCapture)
             receiver = try env.receiver()
             await receiver.settledStaged(file)
             try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)

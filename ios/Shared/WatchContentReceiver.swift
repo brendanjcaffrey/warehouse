@@ -39,6 +39,7 @@ final class WatchContentReceiver {
     private var work: Task<Void, Never>?
     private var needsDrain = false
     private var queries: [WatchContentFile] = []
+    private var processing = WatchDiagnosticProcessing()
     private var stagingErrors: [WatchContentReceipt]
     var pendingOperations: Int { (work == nil ? 0 : 1) + inventory.pendingOperations }
     var onActivityChanged: () -> Void = {}
@@ -130,6 +131,11 @@ final class WatchContentReceiver {
     }
 
     func reconcile(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
+        let wasPaused = isPaused
+        let wasAuthorized = self.head != nil
+        defer {
+            if wasPaused != isPaused || wasAuthorized != (self.head != nil) { recordProcessing() }
+        }
         do {
             try reconcileSelection(head: head, snapshot: snapshot)
             errorMessage = nil
@@ -260,6 +266,8 @@ final class WatchContentReceiver {
         state.localArtwork = WatchDeliveryDiagnosticState.local(artwork)
         state.stagedFiles = ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
             .count { UUID(uuidString: $0) != nil }
+        state.stagedTransfers = stagedDiagnostics()
+        state.processing = diagnosticProcessing()
         for type in LibraryFileType.allCases {
             let names = type == .music ? try? snapshot?.music : try? snapshot?.artwork
             for name in names ?? [] {
@@ -276,6 +284,48 @@ final class WatchContentReceiver {
         return state
     }
 
+    private func stagedDiagnostics() -> [WatchDiagnosticTransfer] {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        return urls.compactMap { url in
+            guard UUID(uuidString: url.lastPathComponent) != nil,
+                  let data = try? Data(contentsOf: url.appending(path: "file.json")),
+                  let file = try? JSONDecoder().decode(WatchContentFile.self, from: data),
+                  (try? file.validate()) != nil else { return nil }
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+            var transfer = WatchDiagnosticTransfer(file, startedAt: attributes?[.creationDate] as? Date, now: now())
+            transfer.authorized = isDesired(file)
+            return transfer
+        }
+    }
+
+    private func diagnosticProcessing() -> WatchDiagnosticProcessing {
+        var result = processing
+        result.paused = isPaused
+        result.authorized = head != nil && progressIndex.map {
+            fileCache.hasDurableWatchSelection && head?.retainsContent(from: $0.head) == true && head?.playlistIDs == $0.head.playlistIDs
+        } == true
+        result.pendingOperations = pendingOperations
+        result.drainRequested = needsDrain
+        result.queuedQueries = queries.count
+        result.progressScanRequested = needsProgressScan
+        return result
+    }
+
+    private func recordProcessing() {
+        var event = WatchDiagnostic(kind: .contentProcessingChanged, id: processing.fileID ?? UUID(), source: .cache,
+                                    date: now(), identity: pendingHead.map(WatchDiagnosticIdentity.init))
+        event.processing = diagnosticProcessing()
+        diagnostics.record(event)
+    }
+
+    private func setPhase(_ phase: WatchDiagnosticProcessing.Phase, file: WatchContentFile? = nil) {
+        guard processing.phase != phase || processing.fileID != file?.id else { return }
+        processing.phase = phase
+        processing.fileID = file?.id
+        processing.startedAt = phase == .idle ? nil : now()
+        recordProcessing()
+    }
+
     func staged(_ file: WatchContentFile) {
         diagnostics.delivery(.contentStaged, file: file, source: .phone)
         resume()
@@ -284,11 +334,13 @@ final class WatchContentReceiver {
 
     /// stop commits while the database serializes a newly received control message.
     func pause() {
+        let wasPaused = isPaused
         generation = UUID()
         head = nil
         isPaused = true
         selectionFailure = nil
         inventory.pause()
+        if !wasPaused { recordProcessing() }
     }
 
     func resume() {
@@ -460,17 +512,20 @@ final class WatchContentReceiver {
             while needsDrain || !queries.isEmpty || needsProgressScan {
                 if needsDrain {
                     needsDrain = false
+                    setPhase(.draining)
                     do { try await self.drain() } catch { errorMessage = error.localizedDescription }
                     do { try await drainStagingErrors() } catch { errorMessage = error.localizedDescription }
                 }
                 while !queries.isEmpty {
                     let file = queries.removeFirst()
+                    setPhase(.querying, file: file)
                     do { try await answer(file) } catch { errorMessage = error.localizedDescription }
                 }
                 if needsProgressScan {
                     needsProgressScan = false
                     let epoch = generation
                     let files = progressIndex?.files ?? []
+                    setPhase(.scanning)
                     let local = await worker.inventory(files, exists: progressSource.exists)
                     if generation == epoch && !needsProgressScan {
                         localProgressFiles = local
@@ -481,6 +536,7 @@ final class WatchContentReceiver {
                 updateProgress()
             }
             work = nil
+            setPhase(.idle)
             onActivityChanged()
         }
         // register the hold synchronously, before the delegate's dispatch hold ends.
@@ -529,6 +585,7 @@ final class WatchContentReceiver {
     private func commit(_ file: WatchContentFile, from url: URL) async throws {
         let epoch = generation
         let destination = fileCache.fileStore.fileURL(file.type, file.filename)
+        setPhase(.verifyingExisting, file: file)
         let existing = try await worker.verify(file, at: destination)
         guard generation == epoch, isDesired(file) else { return }
         if existing?.stillMatches(destination) == true {
@@ -540,6 +597,7 @@ final class WatchContentReceiver {
             return
         }
         let staged = url.appending(path: "bytes")
+        setPhase(.verifyingIncoming, file: file)
         let incoming = try await worker.verify(file, at: staged)
         guard generation == epoch, isDesired(file) else { return }
         guard incoming?.stillMatches(staged) == true else {
@@ -549,7 +607,10 @@ final class WatchContentReceiver {
             return
         }
         // replacing bytes under the same name also waits for active playback to release them.
-        if fileCache.fileStore.exists(file.type, file.filename), fileCache.isInUse(file.type, file.filename) { return }
+        if fileCache.fileStore.exists(file.type, file.filename), fileCache.isInUse(file.type, file.filename) {
+            setPhase(.waitingForPlayback, file: file)
+            return
+        }
         // staging already occupies this space, so admission accounts for the pending move.
         guard fileCache.reserve(file.type, file.filename, bytes: file.bytes,
                                 availableBytes: availableBytes().map { $0 + file.bytes }, allowOversized: true) else {
@@ -561,6 +622,7 @@ final class WatchContentReceiver {
         }
         defer { fileCache.release(file.type, file.filename) }
         try beforeCommit()
+        setPhase(.committing, file: file)
         // same-volume rename avoids another full copy; the manifest repairs a lost receipt after commit.
         try FileManager.default.createDirectory(at: fileCache.fileStore.directoryURL(file.type), withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: destination.path) {
