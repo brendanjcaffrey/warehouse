@@ -8,6 +8,7 @@ server - sinatra based api server that backs the web & ios apps
 update - applescript via ruby that takes changes (plays, metadata edits, artwork changes) from the local & remote databases and pushes them back into the itunes library
 
 always unit test changes to the server, web or ios
+always run rake ios:lint after changing swift sources or tests; use swiftlint 0.65.1 or newer so local checks catch ci violations
 keep all comments/log lines in lower case and do not add section separator comments in files
 
 useful rake commands, use these instead of running things manually:
@@ -18,7 +19,8 @@ rake web:vitest (run web tests)
 rake ios:build (build app)
 rake ios:test (run tests)
 rake ios:uitest (run ui tests)
-rake checks (linting & formatting checks)
+rake ios:lint (strict swiftlint checks for ios/watch sources and tests)
+rake checks (ruby & web linting and formatting checks)
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:46cd31e7 -->
 

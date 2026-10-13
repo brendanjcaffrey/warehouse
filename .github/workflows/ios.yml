@@ -5,10 +5,12 @@ on:
     branches: [ "master" ]
     paths:
       - 'ios/**'
+      - 'check_swiftlint.sh'
       - '.github/workflows/ios.yml'
   pull_request:
     paths:
       - 'ios/**'
+      - 'check_swiftlint.sh'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
@@ -33,7 +35,7 @@ jobs:
     - name: swiftlint
       run: |
         brew install swiftlint
-        ./check_swiftlint.sh
+        rake -f ios/lint.rake ios:lint
 
     - name: build
       run: |

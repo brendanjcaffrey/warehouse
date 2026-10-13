@@ -229,6 +229,10 @@ Useful tasks:
   or `rake web:vitest_browser` for the browser-mode suite, which needs
   playwright chromium).
 - `rake ios:build` — build the iOS app for the simulator.
+- `rake ios:lint` — run strict SwiftLint checks for iOS and watch sources and
+  tests. Use SwiftLint 0.65.1 or newer to catch the violations checked by CI.
+  CI loads the same task with `rake -f ios/lint.rake ios:lint` to avoid
+  installing the server's Ruby dependencies.
 - `rake ios:test` / `rake ios:uitest` — run the iOS unit and UI tests (override
   the simulator with `SIMULATOR=...`). Unit tests run serially so unrelated
   fixtures do not interfere with the 100 ms playback command latency gate.

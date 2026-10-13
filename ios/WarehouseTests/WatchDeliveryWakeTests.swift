@@ -114,7 +114,8 @@ struct WatchDeliveryWakeTests {
         let file = try #require(env.queued.first?.0)
         let next = try env.snapshot(count: 4, revision: 2)
         try queue.reconcile(head: next.head, snapshot: nil)
-        let impostor = WatchContentFile(id: file.id, head: file.head, type: file.type, filename: file.filename, bytes: file.bytes + 1, digest: file.digest)
+        let impostor = WatchContentFile(id: file.id, head: file.head, type: file.type,
+                                        filename: file.filename, bytes: file.bytes + 1, digest: file.digest)
         try queue.receive(.init(file: impostor, status: .delivered))
         try queue.receive(.init(file: file, status: .delivered))
         try queue.receive(.init(file: file, status: .retrying))

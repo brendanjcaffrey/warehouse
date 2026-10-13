@@ -387,6 +387,8 @@ namespace :web do
   end
 end
 
+load File.join(ROOT, 'ios/lint.rake')
+
 namespace :ios do
   desc 'list the available xcode schemes'
   task :list_schemas do
@@ -641,7 +643,7 @@ desc 'run linting and formatting checks'
 task :checks do
   # ensure a .rubocop.yml file exists to avoid RuboCop complaining
   FileUtils.touch(File.expand_path('~/.rubocop.yml'))
-  command.run('bundle exec rubocop Rakefile server/ shared/ update/ changes/')
+  command.run('bundle exec rubocop Rakefile ios/lint.rake server/ shared/ update/ changes/')
   Dir.chdir('web') do
     command.run('npm run lint')
     command.run('npm run format:check')
