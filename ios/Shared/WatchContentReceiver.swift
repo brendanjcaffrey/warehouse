@@ -32,7 +32,10 @@ final class WatchContentReceiver {
     private var selectionFailure: (index: WatchProgressIndex, error: Error)?
     private var snapshot: WatchLibrarySnapshot?
     private var reports: [WatchLibraryDeliveryReport]
-    private(set) var receipts: [WatchContentReceipt]
+    @ObservationIgnored private(set) var receiptsRevision = UUID()
+    private(set) var receipts: [WatchContentReceipt] {
+        didSet { receiptsRevision = UUID() }
+    }
     private(set) var errorMessage: String?
     private let worker: WatchContentWorker
     private var generation = UUID()
