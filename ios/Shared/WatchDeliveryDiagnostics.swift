@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 /// only opaque namespaces cross the diagnostic boundary, never library or playlist names.
-struct WatchDiagnosticIdentity: Codable, Equatable {
+struct WatchDiagnosticIdentity: Codable, Equatable, Sendable {
     let publisher: UUID
     let revision: Int64
     let library: String?
@@ -91,8 +91,8 @@ struct WatchDiagnosticTransfer: Codable {
     }
 }
 
-struct WatchDiagnosticProcessing: Codable, Equatable {
-    enum Phase: String, Codable {
+struct WatchDiagnosticProcessing: Codable, Equatable, Sendable {
+    enum Phase: String, Codable, Sendable {
         case idle, draining, querying, scanning, verifyingExisting, verifyingIncoming, committing, waitingForPlayback
     }
     var phase: Phase = .idle
@@ -106,13 +106,21 @@ struct WatchDiagnosticProcessing: Codable, Equatable {
     var progressScanRequested = false
 }
 
-struct WatchDiagnosticBackground: Codable, Equatable {
+struct WatchDiagnosticBackground: Codable, Equatable, Sendable {
     let activated: Bool
     let contentPending: Bool
     let libraryOperations: Int
     let callbackOperations: Int
     let contentOperations: Int
     let heldTasks: Int
+}
+
+/// unknown means no lifecycle notification has been observed in this process.
+struct WatchDiagnosticLifecycle: Codable, Equatable, Sendable {
+    enum State: String, Codable, Sendable { case unknown, active, inactive, background }
+    var processID = UUID()
+    var application: State = .unknown
+    var scene: State = .unknown
 }
 
 struct WatchDeliveryDiagnosticState: Codable {
@@ -155,9 +163,10 @@ struct WatchDeliveryDiagnosticState: Codable {
 
 extension WatchDiagnostics {
     func delivery(_ kind: WatchDiagnostic.Kind, file: WatchContentFile, source: WatchDiagnostic.Source,
-                  status: WatchContentStatus? = nil, error: Error? = nil) {
+                  status: WatchContentStatus? = nil, error: Error? = nil, elapsed: TimeInterval? = nil, date: Date = Date()) {
         record(.init(kind: kind, id: file.id, source: source, fileType: file.type,
-                     bytes: file.bytes, error: error, identity: WatchDiagnosticIdentity(file.head), status: status))
+                     bytes: file.bytes, elapsed: elapsed, error: error, date: date,
+                     identity: WatchDiagnosticIdentity(file.head), status: status))
     }
 
     func metadata(_ kind: WatchDiagnostic.Kind, head: WatchLibraryHead, bytes: Int64? = nil, error: Error? = nil) {

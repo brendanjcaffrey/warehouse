@@ -22,6 +22,7 @@ final class WatchPhoneSession: NSObject {
     let library: WatchLibraryReceiver
     let lifetime = WatchLibraryBackgroundLifetime()
     private nonisolated let metadataDirectory: URL
+    private nonisolated let contentDirectory: URL
     private let sessionState: @MainActor () -> (activated: Bool, contentPending: Bool)
     private var contentObservation: NSKeyValueObservation?
     private let sendDiagnosticData: @MainActor (Data, @escaping @MainActor (Result<Data, Error>) -> Void) -> Void
@@ -29,7 +30,7 @@ final class WatchPhoneSession: NSObject {
     private let sendRemoteMessage: ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void
     private let libraryTransport: LibraryTransport
     private var libraryRequestTask: Task<Void, Never>?
-    private let diagnostics: WatchDiagnostics
+    private nonisolated let diagnostics: WatchDiagnostics
     private var lastBackground: WatchDiagnosticBackground?
 
     var onPlayReceipt: (@MainActor (PlayPayload) -> Void)?
@@ -63,11 +64,13 @@ final class WatchPhoneSession: NSObject {
                 Task { @MainActor in completion(.failure(error)) }
             })
         },
-        diagnostics: WatchDiagnostics? = nil
+        diagnostics: WatchDiagnostics? = nil,
+        contentDirectory: URL = WatchContentReceiver.defaultDirectory()
     ) {
         self.library = library
         self.libraryTransport = libraryTransport
         metadataDirectory = library.directory
+        self.contentDirectory = contentDirectory
         self.sessionState = sessionState
         self.remoteReachable = remoteReachable
         self.sendRemoteMessage = sendRemoteMessage
@@ -130,6 +133,7 @@ final class WatchPhoneSession: NSObject {
 
     func activate() {
         guard WCSession.isSupported() else { return }
+        diagnostics.record(.init(kind: .sessionActivationRequested, id: UUID(), source: .system))
         contentObservation = WCSession.default.observe(\.hasContentPending, options: [.initial, .new]) { [weak self] _, _ in
             guard let self else { return }
             self.dispatch { [self] in self.updateBackgroundLifetime() }
@@ -142,6 +146,12 @@ final class WatchPhoneSession: NSObject {
         let state = sessionState()
         lifetime.update(activated: state.activated, contentPending: state.contentPending,
                         importsPending: library.pendingOperations + contentActivity.count + (content?.pendingOperations ?? 0))
+    }
+
+    func receivedBackgroundTask() {
+        var event = WatchDiagnostic(kind: .backgroundTaskReceived, id: UUID(), source: .system)
+        event.background = backgroundState()
+        diagnostics.record(event)
     }
 
     func requestLibrary() {
@@ -253,10 +263,13 @@ extension WatchPhoneSession: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        contentActivity.begin()
+        diagnostics.record(.init(kind: .sessionActivationCompleted, id: UUID(), source: .system,
+                                 error: error, detail: activationState == .activated ? .activated : .inactive))
         let context = session.receivedApplicationContext
-        dispatch { [self] in
-            WatchDiagnostics.shared.record(.init(kind: .activationChanged, id: UUID(), source: .system,
-                                                 error: error, detail: activationState == .activated ? .activated : .inactive))
+        dispatchHeld { [self] in
+            diagnostics.record(.init(kind: .activationChanged, id: UUID(), source: .system,
+                                     error: error, detail: activationState == .activated ? .activated : .inactive))
             guard activationState == .activated else { return }
             // the last received library head persists across launches, even
             // when the phone is unavailable
@@ -301,7 +314,14 @@ extension WatchPhoneSession: WCSessionDelegate {
             return
         }
         guard userInfo["kind"] as? String == "watchContentQuery", let file = WatchContentFile(dictionary: userInfo) else { return }
-        dispatch { [self] in try? content?.query(file) }
+        contentActivity.begin()
+        let entered = ProcessInfo.processInfo.systemUptime
+        diagnostics.delivery(.contentQueryReceived, file: file, source: .phone)
+        dispatchHeld { [self] in
+            diagnostics.delivery(.contentQueryHandled, file: file, source: .phone,
+                                 elapsed: ProcessInfo.processInfo.systemUptime - entered)
+            try? content?.query(file)
+        }
     }
 
     nonisolated func session(_ session: WCSession, didFinish userInfoTransfer: WCSessionUserInfoTransfer, error: Error?) {
@@ -318,16 +338,29 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     nonisolated func receiveFile(_ source: URL, metadata: [String: Any]?) {
+        let receivedAt = Date()
+        let entered = ProcessInfo.processInfo.systemUptime
         if metadata?["kind"] as? String == "watchContentFile",
            let metadata, let contentFile = WatchContentFile(dictionary: metadata) {
             contentActivity.begin()
+            diagnostics.delivery(.contentCallbackReceived, file: contentFile, source: .phone, date: receivedAt)
             do {
-                try WatchContentReceiver.stage(source, file: contentFile)
+                try WatchContentReceiver.stage(source, file: contentFile, directory: contentDirectory)
+                diagnostics.delivery(.contentStagingCompleted, file: contentFile, source: .cache,
+                                     elapsed: ProcessInfo.processInfo.systemUptime - entered)
+                let staged = ProcessInfo.processInfo.systemUptime
                 dispatchHeld { [self] in
+                    diagnostics.delivery(.contentCallbackHandled, file: contentFile, source: .phone,
+                                         elapsed: ProcessInfo.processInfo.systemUptime - staged)
                     content?.staged(contentFile)
                 }
             } catch {
+                diagnostics.delivery(.contentStagingFailed, file: contentFile, source: .cache, error: error,
+                                     elapsed: ProcessInfo.processInfo.systemUptime - entered)
+                let failed = ProcessInfo.processInfo.systemUptime
                 dispatchHeld { [self] in
+                    diagnostics.delivery(.contentCallbackHandled, file: contentFile, source: .phone,
+                                         elapsed: ProcessInfo.processInfo.systemUptime - failed)
                     content?.stagingFailed(contentFile, error: error)
                 }
             }
@@ -335,11 +368,27 @@ extension WatchPhoneSession: WCSessionDelegate {
         }
         if metadata?["kind"] as? String == "watchLibrarySnapshot" {
             contentActivity.begin()
+            let callbackID = UUID()
+            diagnostics.record(.init(kind: .metadataCallbackReceived, id: callbackID, source: .phone, date: receivedAt))
             do {
                 _ = try WatchLibraryReceiver.stage(source, directory: metadataDirectory)
-                dispatchHeld { [self] in library.received() }
+                diagnostics.record(.init(kind: .metadataStagingCompleted, id: callbackID, source: .cache,
+                                         elapsed: ProcessInfo.processInfo.systemUptime - entered))
+                let staged = ProcessInfo.processInfo.systemUptime
+                dispatchHeld { [self] in
+                    diagnostics.record(.init(kind: .metadataCallbackHandled, id: callbackID, source: .phone,
+                                             elapsed: ProcessInfo.processInfo.systemUptime - staged))
+                    library.received()
+                }
             } catch {
-                dispatchHeld { [self] in library.failed(error) }
+                diagnostics.record(.init(kind: .metadataStagingFailed, id: callbackID, source: .cache,
+                                         elapsed: ProcessInfo.processInfo.systemUptime - entered, error: error))
+                let failed = ProcessInfo.processInfo.systemUptime
+                dispatchHeld { [self] in
+                    diagnostics.record(.init(kind: .metadataCallbackHandled, id: callbackID, source: .phone,
+                                             elapsed: ProcessInfo.processInfo.systemUptime - failed))
+                    library.failed(error)
+                }
             }
             return
         }
@@ -354,7 +403,17 @@ extension WatchPhoneSession: WCSessionDelegate {
     }
 
     private nonisolated func apply(_ context: [String: Any]) {
-        dispatch { [self] in applyContext(context) }
+        contentActivity.begin()
+        let entered = ProcessInfo.processInfo.systemUptime
+        let head = WatchLibraryHead(context: context)
+        let callbackID = head?.publisher ?? UUID()
+        let identity = head.map(WatchDiagnosticIdentity.init)
+        diagnostics.record(.init(kind: .contextCallbackReceived, id: callbackID, source: .phone, identity: identity))
+        dispatchHeld { [self] in
+            diagnostics.record(.init(kind: .contextCallbackHandled, id: callbackID, source: .phone,
+                                     elapsed: ProcessInfo.processInfo.systemUptime - entered, identity: identity))
+            applyContext(context)
+        }
     }
 
     func applyContext(_ context: [String: Any]) {

@@ -12,6 +12,7 @@ struct WarehouseWatchApp: App {
     @State private var remote: WatchRemoteStore
 
     init() {
+        WatchDiagnostics.shared.startProcess()
         Keychain.setToken(nil)
         let database = LibraryDatabase()
         let fileStore = FileStore(rootURL: FileStore.defaultRootURL())
@@ -76,6 +77,12 @@ struct WarehouseWatchApp: App {
                 .environment(\.watchLibraryRefresh, { await services.refresh() })
                 .task { await services.launch() }
                 .onChange(of: scenePhase, initial: true) {
+                    switch scenePhase {
+                    case .active: WatchDiagnostics.shared.sceneChanged(.active)
+                    case .inactive: WatchDiagnostics.shared.sceneChanged(.inactive)
+                    case .background: WatchDiagnostics.shared.sceneChanged(.background)
+                    @unknown default: WatchDiagnostics.shared.sceneChanged(.unknown)
+                    }
                     if scenePhase == .active {
                         Task { await services.refresh() }
                         plays.drain()
@@ -90,12 +97,27 @@ struct WarehouseWatchApp: App {
 final class WatchBackgroundDelegate: NSObject, WKApplicationDelegate {
     static var phone: WatchPhoneSession?
 
+    func applicationDidFinishLaunching() {
+        switch WKApplication.shared().applicationState {
+        case .active: WatchDiagnostics.shared.applicationChanged(.active)
+        case .inactive: WatchDiagnostics.shared.applicationChanged(.inactive)
+        case .background: WatchDiagnostics.shared.applicationChanged(.background)
+        @unknown default: WatchDiagnostics.shared.applicationChanged(.unknown)
+        }
+    }
+
+    func applicationDidBecomeActive() { WatchDiagnostics.shared.applicationChanged(.active) }
+    func applicationWillResignActive() { WatchDiagnostics.shared.applicationChanged(.inactive) }
+    func applicationDidEnterBackground() { WatchDiagnostics.shared.applicationChanged(.background) }
+    func applicationWillEnterForeground() { WatchDiagnostics.shared.applicationChanged(.inactive) }
+
     func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
         for task in backgroundTasks {
             guard let connectivity = task as? WKWatchConnectivityRefreshBackgroundTask, let phone = Self.phone else {
                 task.setTaskCompletedWithSnapshot(false)
                 continue
             }
+            phone.receivedBackgroundTask()
             phone.library.resume()
             phone.content?.resume()
             phone.updateBackgroundLifetime()

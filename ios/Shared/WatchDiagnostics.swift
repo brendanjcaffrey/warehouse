@@ -7,8 +7,8 @@ enum PhoneFileReply: String, Codable, Sendable {
 }
 
 /// bounded, credential-free events for a paired-device capture.
-struct WatchDiagnostic: Codable {
-    enum Kind: String, Codable {
+struct WatchDiagnostic: Codable, Sendable {
+    enum Kind: String, Codable, Sendable {
         case cacheHit, queued, phoneAccepted, phoneMiss, requestRejected
         case phoneTransferring, phoneDelivered, phoneFailed, phoneTimedOut
         case httpStarted, httpDelivered, httpFailed, storageFailure, evicted
@@ -19,6 +19,12 @@ struct WatchDiagnostic: Codable {
         case contentTransferFailed, contentFailed, contentRetry, contentStorageFull, receiptPersisted, receiptSent, receiptQuery, phoneAcknowledged
         case queueWakeup
         case contentProcessingChanged, backgroundStateChanged, backgroundCompleted
+        case contentCallbackReceived, contentStagingCompleted, contentStagingFailed, contentCallbackHandled
+        case contentQueryReceived, contentQueryHandled
+        case metadataCallbackReceived, metadataStagingCompleted, metadataStagingFailed, metadataCallbackHandled
+        case contextCallbackReceived, contextCallbackHandled
+        case processStarted, scenePhaseChanged, applicationStateChanged
+        case sessionActivationRequested, sessionActivationCompleted, backgroundTaskReceived
         case inventoryRequested, inventoryReported, inventoryConfirmed, inventoryMissing, inventoryCompleted, inventoryRejected, inventoryFailed
         case inventoryScanned, inventoryManualRequested, inventoryManualScanned, inventoryVerified
 
@@ -32,12 +38,12 @@ struct WatchDiagnostic: Codable {
         }
     }
 
-    enum Source: String, Codable { case phone, http, cache, system }
-    enum Detail: String, Codable {
+    enum Source: String, Codable, Sendable { case phone, http, cache, system }
+    enum Detail: String, Codable, Sendable {
         case reachable, unreachable, activated, inactive
         case bluetooth, headphones, speaker, otherRoute
     }
-    enum WaitingReason: String, Codable {
+    enum WaitingReason: String, Codable, Sendable {
         case minimizeStalls, evaluatingBufferingRate, noItem, other
     }
 
@@ -60,6 +66,7 @@ struct WatchDiagnostic: Codable {
     var processing: WatchDiagnosticProcessing?
     var background: WatchDiagnosticBackground?
     var completedTasks: Int?
+    var lifecycle: WatchDiagnosticLifecycle?
 
     init(kind: Kind, id: UUID, source: Source, fileType: LibraryFileType? = nil,
          reply: PhoneFileReply? = nil, bytes: Int64? = nil,
@@ -104,6 +111,7 @@ struct WatchDiagnosticReport: Codable {
     var totals: [String: WatchDiagnosticTotal]?
     var delivery: WatchDeliveryDiagnosticState?
     var pairID: UUID?
+    var lifecycle: WatchDiagnosticLifecycle?
 
     var count: Int { events.count }
 
@@ -125,8 +133,8 @@ struct WatchDiagnosticReport: Codable {
     }
 }
 
-@MainActor
-final class WatchDiagnostics {
+/// one lock covers memory and journal writes so delegate probes persist before any actor hop.
+final class WatchDiagnostics: @unchecked Sendable {
     static let defaultCapacity = 4096
     static let shared = WatchDiagnostics(
         storeURL: FileStore.defaultRootURL().appending(path: "watch-diagnostics.json"))
@@ -134,7 +142,10 @@ final class WatchDiagnostics {
     private let capacity: Int
     private let logEvents: Bool
     private let storeURL: URL?
-    private(set) var events: [WatchDiagnostic] = []
+    private let lock = NSLock()
+    private var storedEvents: [WatchDiagnostic] = []
+    var events: [WatchDiagnostic] { lock.withLock { storedEvents } }
+    private var lifecycle: WatchDiagnosticLifecycle?
     private var capture: WatchDiagnosticCapture
     private var totals: [String: WatchDiagnosticTotal] = [:]
     private var counted = Set<String>()
@@ -163,11 +174,11 @@ final class WatchDiagnostics {
             decoder.dateDecodingStrategy = .millisecondsSince1970
             let saved = try? decoder.decode(Saved.self, from: data)
             if let report = saved?.report ?? WatchDiagnosticReport.decode(data) {
-                events = Array(report.events.suffix(self.capacity))
-                capture = report.capture ?? WatchDiagnosticCapture(startedAt: events.first?.date ?? Date(),
+                storedEvents = Array(report.events.suffix(self.capacity))
+                capture = report.capture ?? WatchDiagnosticCapture(startedAt: storedEvents.first?.date ?? Date(),
                                                                    totalEvents: report.events.count, capacity: self.capacity)
                 capture.capacity = self.capacity
-                capture.droppedEvents = capture.totalEvents - events.count
+                capture.droppedEvents = capture.totalEvents - storedEvents.count
                 totals = report.totals ?? [:]
                 counted = saved?.counted ?? []
                 checkpointReady = saved != nil
@@ -177,10 +188,42 @@ final class WatchDiagnostics {
     }
 
     func record(_ event: WatchDiagnostic) {
+        lock.withLock { recordLocked(event) }
+    }
+
+    private func recordLocked(_ incoming: WatchDiagnostic) {
+        var event = incoming
+        event.lifecycle = lifecycle
         append(event)
         persist(event)
         if logEvents, let message = Self.line(for: event) {
             logger.info("\(message, privacy: .public)")
+        }
+    }
+
+    func startProcess() {
+        lock.withLock {
+            let current = WatchDiagnosticLifecycle()
+            lifecycle = current
+            recordLocked(.init(kind: .processStarted, id: current.processID, source: .system))
+        }
+    }
+
+    func sceneChanged(_ phase: WatchDiagnosticLifecycle.State) {
+        lock.withLock {
+            guard var current = lifecycle, current.scene != phase else { return }
+            current.scene = phase
+            lifecycle = current
+            recordLocked(.init(kind: .scenePhaseChanged, id: current.processID, source: .system))
+        }
+    }
+
+    func applicationChanged(_ state: WatchDiagnosticLifecycle.State) {
+        lock.withLock {
+            guard var current = lifecycle, current.application != state else { return }
+            current.application = state
+            lifecycle = current
+            recordLocked(.init(kind: .applicationStateChanged, id: current.processID, source: .system))
         }
     }
 
@@ -196,31 +239,40 @@ final class WatchDiagnostics {
             // receipts and queries are control traffic, never newly delivered file bytes.
             if [.contentEnqueued, .contentCompleted, .contentStaged, .contentCommitted, .contentReused,
                 .phoneAcknowledged, .metadataPublished, .metadataAccepted].contains(kind) { total.bytes += event.bytes ?? 0 }
-            total.lastAt = event.date
+            total.firstAt = min(total.firstAt, event.date)
+            total.lastAt = max(total.lastAt, event.date)
             totals[key] = total
         }
-        events.append(event)
-        if events.count > capacity { events.removeFirst(events.count - capacity) }
-        capture.droppedEvents = capture.totalEvents - events.count
+        storedEvents.append(event)
+        if storedEvents.count > capacity { storedEvents.removeFirst(storedEvents.count - capacity) }
+        capture.droppedEvents = capture.totalEvents - storedEvents.count
     }
 
     func report(deviceModel: String, systemVersion: String,
                 delivery: WatchDeliveryDiagnosticState? = nil) -> WatchDiagnosticReport {
+        lock.withLock { reportLocked(deviceModel: deviceModel, systemVersion: systemVersion, delivery: delivery) }
+    }
+
+    private func reportLocked(deviceModel: String, systemVersion: String,
+                              delivery: WatchDeliveryDiagnosticState? = nil) -> WatchDiagnosticReport {
         var report = WatchDiagnosticReport(capturedAt: Date(), deviceModel: deviceModel,
-                                           systemVersion: systemVersion, events: events)
+                                           systemVersion: systemVersion, events: storedEvents)
         report.capture = capture
         report.totals = totals
         report.delivery = delivery
+        report.lifecycle = lifecycle
         return report
     }
 
     func clear() {
-        events = []
-        totals = [:]
-        counted = []
-        capture = WatchDiagnosticCapture(capacity: capacity)
-        checkpointReady = false
-        persist(nil)
+        lock.withLock {
+            storedEvents = []
+            totals = [:]
+            counted = []
+            capture = WatchDiagnosticCapture(capacity: capacity)
+            checkpointReady = false
+            persist(nil)
+        }
     }
 
     private func restoreJournal() {
@@ -254,7 +306,7 @@ final class WatchDiagnostics {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .millisecondsSince1970
             if !checkpointReady || journalEntries >= Self.checkpointInterval || event == nil {
-                let report = report(deviceModel: "", systemVersion: "")
+                let report = reportLocked(deviceModel: "", systemVersion: "")
                 let data = try encoder.encode(Saved(report: report, counted: counted))
                 try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 // checkpoint first; replay ignores already checkpointed sequences if journal cleanup is interrupted.

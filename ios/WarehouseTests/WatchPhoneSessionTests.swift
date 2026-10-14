@@ -415,13 +415,16 @@ struct WatchPhoneSessionTests {
         var systemPending = true
         var finished = 0
 
-        init() throws {
+        init(persistDiagnostics: Bool = false) throws {
             metadata = try WatchLibraryDeliveryTests.Env()
             content = try WatchContentDeliveryTests.Env()
+            if persistDiagnostics {
+                content.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: content.root.appending(path: "capture.json"))
+            }
             library = metadata.receiver()
             receiver = try content.receiver()
             session = WatchPhoneSession(library: library, sessionState: { [unowned self] in (true, systemPending) },
-                                        diagnostics: content.watchDiagnostics)
+                                        diagnostics: content.watchDiagnostics, contentDirectory: content.root.appending(path: "receiver"))
             session.content = receiver
         }
 
@@ -448,6 +451,56 @@ struct WatchPhoneSessionTests {
         }
 
         func cleanUp() { metadata.cleanUp(); content.cleanUp() }
+    }
+
+    @Test("file delegate entry and staging persist before actor handling and retain the background hold", arguments: [false, true])
+    func fileCallbackBoundaries(missing: Bool) async throws {
+        let env = try Env(persistDiagnostics: true)
+        defer { env.cleanUp() }
+        await env.library.waitForImport()
+        let snapshot = try env.content.snapshot(count: 4)
+        try env.content.cache(snapshot)
+        let queue = try env.content.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let (file, source) = try #require(env.content.queued.first)
+        try await env.receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let capture = env.content.watchDiagnostics
+        capture.startProcess()
+        capture.applicationChanged(.background)
+        capture.sceneChanged(.background)
+        env.hold()
+        env.session.receivedBackgroundTask()
+        let before = Date()
+        env.session.receiveFile(missing ? env.content.root.appending(path: "missing") : source, metadata: try file.encode())
+        let restored = WatchDiagnostics(logEvents: false, storeURL: env.content.root.appending(path: "capture.json"))
+        let early = restored.events.filter { $0.id == file.id }
+        let staging: WatchDiagnostic.Kind = missing ? .contentStagingFailed : .contentStagingCompleted
+        #expect(early.map(\.kind) == [.contentCallbackReceived, staging])
+        #expect(early.allSatisfy { $0.date >= before && $0.date <= Date() })
+        #expect(early.allSatisfy { $0.lifecycle?.scene == .background && $0.lifecycle?.application == .background })
+        #expect(early.allSatisfy { $0.lifecycle?.processID == capture.report(deviceModel: "", systemVersion: "").lifecycle?.processID })
+        #expect(early.last?.elapsed != nil)
+        #expect(restored.report(deviceModel: "", systemVersion: "").totals?["\(staging.rawValue):music"]?.bytes == 0)
+        #expect(env.session.contentActivity.count == 1)
+        #expect(env.content.receipts.isEmpty)
+        if !missing {
+            #expect(env.receiver.diagnosticState().stagedFiles == 1)
+            try FileManager.default.removeItem(at: source)
+        }
+        env.delivered()
+        try await env.waitForCompletion()
+        let handled = try #require(capture.events.first { $0.id == file.id && $0.kind == .contentCallbackHandled })
+        let stagingEvent = try #require(early.last)
+        #expect(handled.date >= stagingEvent.date)
+        #expect(try #require(handled.elapsed) >= 0)
+        #expect(env.content.receipts.last?.status == (missing ? .retrying : .delivered))
+        let completed = try #require(capture.events.last { $0.kind == .backgroundCompleted })
+        #expect(completed.date >= handled.date)
+        #expect(completed.background?.callbackOperations == 0)
+        #expect(completed.background?.contentOperations == 0)
+        let data = try #require(env.session.diagnosticReport(deviceModel: "watch", systemVersion: "26").encoded())
+        let text = try #require(String(data: data, encoding: .utf8))
+        #expect(!text.contains(file.filename) && !text.contains(file.digest) && !text.contains("account"))
     }
 
     @Test("play receipts and transfer completions hold background execution through queue persistence", arguments: [false, true])
@@ -490,11 +543,13 @@ struct WatchPhoneSessionTests {
         var storedHead: WatchLibraryHead?
         env.hold { storedHead = env.library.head }
         env.session.session(WCSession.default, didReceiveApplicationContext: try snapshot.head.encode())
+        #expect(env.content.watchDiagnostics.events.last?.kind == .contextCallbackReceived)
         env.delivered()
         try await env.waitForCompletion()
         #expect(storedHead == (saveFails ? nil : snapshot.head))
         #expect(env.library.refreshFailed == saveFails)
         #expect(try await env.metadata.watch.watchHead() == storedHead)
+        #expect(env.content.watchDiagnostics.events.contains { $0.kind == .contextCallbackHandled && $0.id == snapshot.head.publisher })
     }
 
     @Test("unsupported context releases completion after recording its failure")
@@ -531,6 +586,11 @@ struct WatchPhoneSessionTests {
             failedAtCompletion = env.library.refreshFailed
         }
         env.session.receiveFile(source, metadata: ["kind": "watchLibrarySnapshot"])
+        let early = env.content.watchDiagnostics.events.filter {
+            [.metadataCallbackReceived, .metadataStagingCompleted, .metadataStagingFailed, .metadataCallbackHandled].contains($0.kind)
+        }
+        #expect(early.map(\.kind) == [.metadataCallbackReceived, outcome == "missing" ? .metadataStagingFailed : .metadataStagingCompleted])
+        #expect(early.first?.id == early.last?.id)
         if outcome != "missing" {
             #expect(try FileManager.default.contentsOfDirectory(atPath: env.metadata.inbox.path).count == 1)
             try FileManager.default.removeItem(at: source)
@@ -540,6 +600,7 @@ struct WatchPhoneSessionTests {
         #expect(savedAtCompletion == (outcome == "valid" ? snapshot : nil))
         #expect(failedAtCompletion == (outcome != "valid"))
         #expect(try await env.metadata.watch.watchSnapshot() == savedAtCompletion)
+        #expect(env.content.watchDiagnostics.events.contains { $0.kind == .metadataCallbackHandled && $0.id == early.first?.id })
         if outcome == "saveFailure" {
             #expect(try FileManager.default.contentsOfDirectory(atPath: env.metadata.inbox.path).count == 1)
         }
@@ -586,10 +647,15 @@ struct WatchPhoneSessionTests {
                                                  from: Data(contentsOf: inbox.appending(path: "receipts.json")))
         }
         env.session.session(WCSession.default, didReceiveUserInfo: try file.encode(kind: "watchContentQuery"))
+        #expect(env.content.watchDiagnostics.events.last?.kind == .contentQueryReceived)
+        #expect(!env.content.watchDiagnostics.events.contains { $0.kind == .contentQueryHandled })
         env.delivered()
         try await env.waitForCompletion()
         #expect(responsesAtCompletion == (writeFails ? 0 : 1))
         #expect(persisted == (writeFails ? nil : [.init(file: file, status: .retrying)]))
+        let handled = try #require(env.content.watchDiagnostics.events.first { $0.kind == .contentQueryHandled })
+        #expect(handled.id == file.id)
+        #expect(try #require(handled.elapsed) >= 0)
     }
 
     @Test("overlapping callbacks and suspended asynchronous import keep all held tasks alive")

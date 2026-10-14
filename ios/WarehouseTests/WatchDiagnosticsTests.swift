@@ -5,6 +5,71 @@ import Testing
 @Suite("watch diagnostics")
 @MainActor
 struct WatchDiagnosticsTests {
+    @Test("concurrent delegate probes persist without actor execution or journal sequence loss")
+    func concurrentDelegateJournal() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let capture = WatchDiagnostics(capacity: 32, logEvents: false, storeURL: url)
+        capture.startProcess()
+        capture.applicationChanged(.background)
+        capture.sceneChanged(.background)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    for _ in 0..<40 {
+                        capture.record(.init(kind: .contentCallbackReceived, id: UUID(), source: .phone))
+                        _ = capture.report(deviceModel: "watch", systemVersion: "26")
+                    }
+                }
+            }
+        }
+        let expected = capture.report(deviceModel: "watch", systemVersion: "26")
+        let encoded = try #require(expected.encoded())
+        let decoded = try #require(WatchDiagnosticReport.decode(encoded))
+        let restored = WatchDiagnostics(capacity: 32, logEvents: false, storeURL: url).report(deviceModel: "watch", systemVersion: "26")
+        #expect(restored.capture?.totalEvents == 323)
+        #expect(restored.capture?.droppedEvents == 291)
+        #expect(restored.capture?.persistenceFailed == false)
+        #expect(restored.events.map(\.id) == expected.events.map(\.id))
+        #expect(restored.totals == decoded.totals)
+        #expect(restored.totals?["contentCallbackReceived:metadata"]?.count == 320)
+        #expect(Set(restored.events.map(\.id)).count == 32)
+        #expect(restored.events.allSatisfy { $0.lifecycle?.application == .background && $0.lifecycle?.scene == .background })
+        #expect(restored.events.allSatisfy { $0.lifecycle?.processID == expected.lifecycle?.processID })
+    }
+
+    @Test("capture clear preserves observed lifecycle while relaunch uses a new process identity")
+    func processLifecycle() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "capture.json")
+        let capture = WatchDiagnostics(logEvents: false, storeURL: url)
+        capture.startProcess()
+        let original = try #require(capture.report(deviceModel: "watch", systemVersion: "26").lifecycle)
+        #expect(original.scene == .unknown && original.application == .unknown)
+        capture.applicationChanged(.background)
+        capture.sceneChanged(.background)
+        capture.sceneChanged(.background)
+        #expect(capture.events.count == 3)
+        capture.clear()
+        let cleared = capture.report(deviceModel: "watch", systemVersion: "26")
+        #expect(cleared.events.isEmpty)
+        #expect(cleared.lifecycle?.processID == original.processID)
+        #expect(cleared.lifecycle?.scene == .background)
+        let restored = WatchDiagnostics(logEvents: false, storeURL: url)
+        restored.startProcess()
+        let relaunched = restored.report(deviceModel: "watch", systemVersion: "26")
+        #expect(relaunched.capture?.id == cleared.capture?.id)
+        #expect(relaunched.lifecycle?.processID != original.processID)
+        #expect(relaunched.lifecycle?.scene == .unknown)
+        #expect(relaunched.events.map(\.kind) == [.processStarted])
+        let data = try #require(relaunched.encoded())
+        let decoded = try #require(WatchDiagnosticReport.decode(data))
+        #expect(decoded.lifecycle == relaunched.lifecycle)
+        #expect(decoded.events.first?.lifecycle == relaunched.lifecycle)
+    }
+
     @Test("journaled events survive relaunch without rewriting the full ring or double counting receipts")
     func journalDurability() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -130,6 +195,10 @@ struct WatchDiagnosticsTests {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let capture = WatchDiagnostics(logEvents: false)
+        capture.startProcess()
+        capture.applicationChanged(.background)
+        capture.sceneChanged(.background)
+        capture.clear()
         let head = WatchLibraryHead(publisher: UUID(), revision: 7, libraryID: "account", playlistIDs: [])
         for _ in 0..<4100 {
             capture.record(.init(kind: .contentFailed, id: UUID(), source: .system, fileType: .music,
@@ -149,6 +218,7 @@ struct WatchDiagnosticsTests {
         let persisted = WatchDiagnostics(logEvents: false, storeURL: url)
         let restored = persisted.report(deviceModel: "watch", systemVersion: "26")
         #expect(restored.events.map(\.id) == report.events.map(\.id))
+        #expect(restored.events.map(\.lifecycle) == report.events.map(\.lifecycle))
         #expect(restored.capture?.droppedEvents == 4)
         let latest = WatchDiagnostic(kind: .queueWakeup, id: UUID(), source: .system)
         persisted.record(latest)
