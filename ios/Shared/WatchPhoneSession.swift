@@ -193,32 +193,58 @@ final class WatchPhoneSession: NSObject {
         guard receiptReplayTask == nil, content?.receipts.isEmpty == false, libraryTransport.available() else { return }
         // register before dispatch so a connectivity task cannot complete while replay is queued.
         contentActivity.begin()
+        let replayID = UUID()
+        let scheduled = ProcessInfo.processInfo.systemUptime
+        let record: @Sendable (WatchDiagnosticReplay) -> Void = { [diagnostics] replay in
+            diagnostics.receiptReplay(replay, id: replayID, elapsed: ProcessInfo.processInfo.systemUptime - scheduled)
+        }
+        record(.init(phase: .scheduled, receiptCount: content?.receipts.count))
         updateBackgroundLifetime()
         receiptReplayTask = Task { [weak self, contentActivity] in
-            guard let self else { contentActivity.end(); return }
+            record(.init(phase: .started))
+            guard let self else {
+                record(.init(phase: .finished, result: .ownerReleased))
+                contentActivity.end()
+                return
+            }
+            var result: WatchDiagnosticReplay.Result = .completed
             defer {
+                record(.init(phase: .finished, result: Task.isCancelled ? .cancelled : result))
                 receiptReplayTask = nil
                 receiptReplayOutstanding = nil
                 contentActivity.end()
                 updateBackgroundLifetime()
             }
-            guard content?.receipts.isEmpty == false, libraryTransport.available() else { return }
-            receiptReplayOutstanding = Dictionary(grouping: libraryTransport.outstanding().compactMap(WatchContentReceipt.init(dictionary:)),
-                                                  by: { $0.file.id })
+            guard let receiptCount = content?.receipts.count else { result = .noReceiver; return }
+            guard receiptCount > 0 else { result = .empty; return }
+            guard libraryTransport.available() else { result = .unavailable; return }
+            record(.init(phase: .indexing, receiptCount: receiptCount))
+            let outstandingCount: Int
+            do {
+                let outstanding = libraryTransport.outstanding()
+                outstandingCount = outstanding.count
+                receiptReplayOutstanding = Dictionary(grouping: outstanding.compactMap(WatchContentReceipt.init(dictionary:)), by: { $0.file.id })
+            }
             while receiptReplayRequested, !Task.isCancelled {
                 receiptReplayRequested = false
-                guard let receiver = content, libraryTransport.available() else { return }
-                await replayContentReceipts(from: receiver)
+                guard let receiver = self.content else { result = .noReceiver; return }
+                guard libraryTransport.available() else { result = .unavailable; return }
+                record(.init(phase: .replaying, receiptCount: receiver.receipts.count, outstandingCount: outstandingCount))
+                let pass = await replayContentReceipts(from: receiver)
+                record(.init(phase: .passFinished, result: pass))
+                if pass == .unavailable || pass == .cancelled { result = pass; return }
             }
         }
     }
 
-    private func replayContentReceipts(from receiver: WatchContentReceiver) async {
+    private func replayContentReceipts(from receiver: WatchContentReceiver) async -> WatchDiagnosticReplay.Result {
         let receipts = receiver.receipts
         var revision = receiver.receiptsRevision
         var current = Dictionary(grouping: receipts, by: { $0.file.id })
         for (offset, receipt) in receipts.enumerated() {
-            guard !Task.isCancelled, content === receiver, libraryTransport.available() else { return }
+            guard !Task.isCancelled else { return .cancelled }
+            guard content === receiver else { return .receiverChanged }
+            guard libraryTransport.available() else { return .unavailable }
             if revision != receiver.receiptsRevision {
                 revision = receiver.receiptsRevision
                 current = Dictionary(grouping: receiver.receipts, by: { $0.file.id })
@@ -227,6 +253,7 @@ final class WatchPhoneSession: NSObject {
             if current[receipt.file.id]?.contains(receipt) == true { sendContentReceipt(receipt) }
             if (offset + 1).isMultiple(of: Self.receiptReplayBatchSize) { await Task.yield() }
         }
+        return .completed
     }
 
     func waitForLibraryRequest() async { await libraryRequestTask?.value }
@@ -389,24 +416,28 @@ extension WatchPhoneSession: WCSessionDelegate {
         if metadata?["kind"] as? String == "watchContentFile",
            let metadata, let contentFile = WatchContentFile(dictionary: metadata) {
             contentActivity.begin()
-            diagnostics.delivery(.contentCallbackReceived, file: contentFile, source: .phone, date: receivedAt)
+            let operationID = UUID()
+            diagnostics.delivery(.contentCallbackReceived, file: contentFile, source: .phone, date: receivedAt, operationID: operationID)
             do {
-                try WatchContentReceiver.stage(source, file: contentFile, directory: contentDirectory)
+                try WatchContentReceiver.stage(source, file: contentFile, directory: contentDirectory) { [diagnostics] phase in
+                    diagnostics.staging(phase, file: contentFile, operationID: operationID,
+                                        elapsed: ProcessInfo.processInfo.systemUptime - entered)
+                }
                 diagnostics.delivery(.contentStagingCompleted, file: contentFile, source: .cache,
-                                     elapsed: ProcessInfo.processInfo.systemUptime - entered)
+                                     elapsed: ProcessInfo.processInfo.systemUptime - entered, operationID: operationID)
                 let staged = ProcessInfo.processInfo.systemUptime
                 dispatchHeld { [self] in
                     diagnostics.delivery(.contentCallbackHandled, file: contentFile, source: .phone,
-                                         elapsed: ProcessInfo.processInfo.systemUptime - staged)
+                                         elapsed: ProcessInfo.processInfo.systemUptime - staged, operationID: operationID)
                     content?.staged(contentFile)
                 }
             } catch {
                 diagnostics.delivery(.contentStagingFailed, file: contentFile, source: .cache, error: error,
-                                     elapsed: ProcessInfo.processInfo.systemUptime - entered)
+                                     elapsed: ProcessInfo.processInfo.systemUptime - entered, operationID: operationID)
                 let failed = ProcessInfo.processInfo.systemUptime
                 dispatchHeld { [self] in
                     diagnostics.delivery(.contentCallbackHandled, file: contentFile, source: .phone,
-                                         elapsed: ProcessInfo.processInfo.systemUptime - failed)
+                                         elapsed: ProcessInfo.processInfo.systemUptime - failed, operationID: operationID)
                     content?.stagingFailed(contentFile, error: error)
                 }
             }

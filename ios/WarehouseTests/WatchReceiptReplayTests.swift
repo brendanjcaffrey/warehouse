@@ -22,9 +22,10 @@ struct WatchReceiptReplayTests {
         var onEnqueue: (() -> Void)?
         var onReceipt: ((WatchContentReceipt) -> Void)?
         var lastReplayHandledIncoming = false
+        var onRead: (() -> Void)?
 
         var adapter: WatchPhoneSession.LibraryTransport {
-            .init(available: { [self] in available }, outstanding: { [self] in reads += 1; return queued }, enqueue: { [self] in
+            .init(available: { [self] in available }, outstanding: { [self] in reads += 1; onRead?(); return queued }, enqueue: { [self] in
                 queued.append($0)
                 if let receipt = WatchContentReceipt(dictionary: $0) {
                     sent += 1
@@ -46,9 +47,12 @@ struct WatchReceiptReplayTests {
         let receiver: WatchContentReceiver
         let forwarder = ReceiptForwarder()
 
-        init(count: Int) throws {
+        init(count: Int, persistDiagnostics: Bool = false) throws {
             metadata = try WatchLibraryDeliveryTests.Env()
             content = try WatchContentDeliveryTests.Env()
+            if persistDiagnostics {
+                content.watchDiagnostics = WatchDiagnostics(logEvents: false, storeURL: content.root.appending(path: "capture.json"))
+            }
             let snapshot = try content.snapshot(count: count + 1)
             self.snapshot = snapshot
             receipts = (0..<count).map { index in
@@ -64,6 +68,59 @@ struct WatchReceiptReplayTests {
         }
 
         func cleanUp() { metadata.cleanUp(); content.cleanUp() }
+    }
+
+    @Test("replay checkpoints queueing, indexing and sending before releasing its background hold", arguments: [false, true])
+    func replayDiagnostics(alreadyQueued: Bool) async throws {
+        let env = try Env(count: 32, persistDiagnostics: true)
+        defer { env.cleanUp() }
+        let transport = Transport()
+        defer { transport.onRead = nil; transport.onReceipt = nil }
+        if alreadyQueued { transport.queued = try env.receipts.map { try $0.encode() } }
+        let library = env.metadata.receiver()
+        await library.waitForImport()
+        let capture = env.content.watchDiagnostics
+        capture.startProcess()
+        capture.applicationChanged(.background)
+        func restored() -> WatchDiagnosticReport {
+            WatchDiagnostics(logEvents: false, storeURL: env.content.root.appending(path: "capture.json"))
+                .report(deviceModel: "watch", systemVersion: "26")
+        }
+        let session = WatchPhoneSession(library: library, libraryTransport: transport.adapter,
+                                        sessionState: { (true, false) }, diagnostics: capture)
+        transport.available = true
+        session.content = env.receiver
+        let scheduled = restored().events.filter { $0.kind == .receiptReplayChanged }
+        #expect(scheduled.map { $0.replay?.phase } == [.scheduled])
+        let replayID = try #require(scheduled.first?.id)
+        transport.onRead = { #expect(restored().events.last { $0.id == replayID }?.replay?.phase == .indexing) }
+        transport.onReceipt = { _ in
+            #expect(restored().events.last { $0.id == replayID }?.replay?.phase == .replaying)
+            let active = session.contentActivity.count
+            #expect(active > 0)
+        }
+        var finished = false
+        session.lifetime.hold {
+            let event = restored().events.last { $0.id == replayID }
+            #expect(event?.replay?.phase == .finished && event?.replay?.result == .completed)
+            finished = true
+        }
+        try await PlayerStoreTests.waitFor { finished }
+        let report = restored()
+        let events = report.events.filter { $0.id == replayID }
+        #expect(events.map { $0.replay?.phase } == [.scheduled, .started, .indexing, .replaying, .passFinished, .finished])
+        #expect(events.first { $0.replay?.phase == .replaying }?.replay?.receiptCount == 32)
+        #expect(events.first { $0.replay?.phase == .replaying }?.replay?.outstandingCount == (alreadyQueued ? 32 : 0))
+        #expect(events.allSatisfy { $0.lifecycle?.application == .background })
+        let elapsed = events.compactMap(\.elapsed)
+        #expect(elapsed.count == events.count && elapsed == elapsed.sorted())
+        #expect(transport.reads == 1 && transport.sent == (alreadyQueued ? 0 : 32))
+        #expect(env.receiver.receipts == env.receipts)
+        #expect(report.capture?.persistenceFailed == false)
+        #expect(report.totals?["receiptReplayChanged:metadata"]?.bytes == 0)
+        let data = try #require(report.encoded())
+        let decoded = try #require(WatchDiagnosticReport.decode(data))
+        #expect(decoded.events.compactMap(\.replay) == report.events.compactMap(\.replay))
     }
 
     @Test("activation with a full saved ledger lets incoming file callbacks run before replay drains", arguments: [64, 1000])
@@ -126,7 +183,8 @@ struct WatchReceiptReplayTests {
         defer { transport.onReceipt = nil }
         let library = env.metadata.receiver()
         await library.waitForImport()
-        let session = WatchPhoneSession(library: library, libraryTransport: transport.adapter, sessionState: { (true, false) })
+        let session = WatchPhoneSession(library: library, libraryTransport: transport.adapter, sessionState: { (true, false) },
+                                        diagnostics: env.content.watchDiagnostics)
         session.content = env.receiver
         var completed = 0
         transport.onReceipt = { _ in
@@ -140,6 +198,7 @@ struct WatchReceiptReplayTests {
         session.lifetime.hold { completed += 1 }
         try await PlayerStoreTests.waitFor { completed == 1 }
         #expect(transport.sent == 3)
+        #expect(env.content.watchDiagnostics.events.last { $0.kind == .receiptReplayChanged }?.replay?.result == .unavailable)
         #expect(env.receiver.receipts == env.receipts)
         let restored = try env.content.receiver()
         #expect(restored.receipts == env.receipts)
@@ -247,7 +306,8 @@ struct WatchReceiptReplayTests {
         let transport = Transport()
         let library = env.metadata.receiver()
         await library.waitForImport()
-        let session = WatchPhoneSession(library: library, libraryTransport: transport.adapter, sessionState: { (true, false) })
+        let session = WatchPhoneSession(library: library, libraryTransport: transport.adapter, sessionState: { (true, false) },
+                                        diagnostics: env.content.watchDiagnostics)
         transport.available = true
         session.content = env.receiver
         transport.available = false
@@ -258,5 +318,8 @@ struct WatchReceiptReplayTests {
         #expect(transport.reads == 0)
         #expect(transport.queued.isEmpty)
         #expect(env.receiver.receipts == env.receipts)
+        let events = env.content.watchDiagnostics.events.filter { $0.kind == .receiptReplayChanged }
+        #expect(events.map { $0.replay?.phase } == [.scheduled, .started, .finished])
+        #expect(events.last?.replay?.result == .unavailable)
     }
 }

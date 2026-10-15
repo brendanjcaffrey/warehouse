@@ -475,12 +475,21 @@ struct WatchPhoneSessionTests {
         let restored = WatchDiagnostics(logEvents: false, storeURL: env.content.root.appending(path: "capture.json"))
         let early = restored.events.filter { $0.id == file.id }
         let staging: WatchDiagnostic.Kind = missing ? .contentStagingFailed : .contentStagingCompleted
-        #expect(early.map(\.kind) == [.contentCallbackReceived, staging])
+        #expect(early.filter { $0.kind != .contentStagingProgress }.map(\.kind) == [.contentCallbackReceived, staging])
+        let phases: [WatchDiagnosticStagingPhase] = missing ? [.validating, .checkingSource] : [
+            .validating, .checkingSource, .checkingCapacity, .preparingDirectory, .writingManifest, .copying, .publishing, .cleaningUp
+        ]
+        #expect(early.compactMap(\.stagingPhase) == phases)
+        let operationID = try #require(early.first?.operationID)
+        #expect(early.allSatisfy { $0.operationID == operationID })
+        let elapsed = early.dropFirst().compactMap(\.elapsed)
+        #expect(elapsed.count == early.count - 1 && elapsed == elapsed.sorted())
         #expect(early.allSatisfy { $0.date >= before && $0.date <= Date() })
         #expect(early.allSatisfy { $0.lifecycle?.scene == .background && $0.lifecycle?.application == .background })
         #expect(early.allSatisfy { $0.lifecycle?.processID == capture.report(deviceModel: "", systemVersion: "").lifecycle?.processID })
         #expect(early.last?.elapsed != nil)
         #expect(restored.report(deviceModel: "", systemVersion: "").totals?["\(staging.rawValue):music"]?.bytes == 0)
+        #expect(restored.report(deviceModel: "", systemVersion: "").totals?["contentStagingProgress:music"]?.bytes == 0)
         #expect(env.session.contentActivity.count == 1)
         #expect(env.content.receipts.isEmpty)
         if !missing {
@@ -492,6 +501,7 @@ struct WatchPhoneSessionTests {
         let handled = try #require(capture.events.first { $0.id == file.id && $0.kind == .contentCallbackHandled })
         let stagingEvent = try #require(early.last)
         #expect(handled.date >= stagingEvent.date)
+        #expect(handled.operationID == operationID)
         #expect(try #require(handled.elapsed) >= 0)
         #expect(env.content.receipts.last?.status == (missing ? .retrying : .delivered))
         let completed = try #require(capture.events.last { $0.kind == .backgroundCompleted })
@@ -501,6 +511,36 @@ struct WatchPhoneSessionTests {
         let data = try #require(env.session.diagnosticReport(deviceModel: "watch", systemVersion: "26").encoded())
         let text = try #require(String(data: data, encoding: .utf8))
         #expect(!text.contains(file.filename) && !text.contains(file.digest) && !text.contains("account"))
+    }
+
+    @Test("repeated callbacks retain separate attempt ids while committing the transfer once")
+    func repeatedFileAttempts() async throws {
+        let env = try Env(persistDiagnostics: true)
+        defer { env.cleanUp() }
+        await env.library.waitForImport()
+        let snapshot = try env.content.snapshot(count: 4)
+        try env.content.cache(snapshot)
+        let queue = try env.content.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let (file, source) = try #require(env.content.queued.first)
+        try await env.receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        env.hold()
+        for _ in 0..<2 { env.session.receiveFile(source, metadata: try file.encode()) }
+        let restored = WatchDiagnostics(logEvents: false, storeURL: env.content.root.appending(path: "capture.json"))
+        let events = restored.events.filter { $0.id == file.id }
+        let attempts = Set(events.filter { $0.kind == .contentCallbackReceived }.compactMap(\.operationID))
+        #expect(attempts.count == 2)
+        for attempt in attempts {
+            let progress = events.filter { $0.operationID == attempt }
+            #expect(progress.first?.kind == .contentCallbackReceived && progress.last?.kind == .contentStagingCompleted)
+            #expect(progress.compactMap(\.stagingPhase).contains(.copying))
+        }
+        env.delivered()
+        try await env.waitForCompletion()
+        let handled = env.content.watchDiagnostics.events.filter { $0.kind == .contentCallbackHandled && $0.id == file.id }
+        #expect(Set(handled.compactMap(\.operationID)) == attempts)
+        #expect(env.receiver.receipts == [.init(file: file, status: .delivered)])
+        #expect(try env.content.receiver().receipts == env.receiver.receipts)
     }
 
     @Test("play receipts and transfer completions hold background execution through queue persistence", arguments: [false, true])

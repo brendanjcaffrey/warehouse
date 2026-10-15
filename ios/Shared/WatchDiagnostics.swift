@@ -20,6 +20,7 @@ struct WatchDiagnostic: Codable, Sendable {
         case queueWakeup
         case contentProcessingChanged, backgroundStateChanged, backgroundCompleted
         case contentCallbackReceived, contentStagingCompleted, contentStagingFailed, contentCallbackHandled
+        case contentStagingProgress, receiptReplayChanged
         case contentQueryReceived, contentQueryHandled
         case metadataCallbackReceived, metadataStagingCompleted, metadataStagingFailed, metadataCallbackHandled
         case contextCallbackReceived, contextCallbackHandled
@@ -67,6 +68,9 @@ struct WatchDiagnostic: Codable, Sendable {
     var background: WatchDiagnosticBackground?
     var completedTasks: Int?
     var lifecycle: WatchDiagnosticLifecycle?
+    var operationID: UUID?
+    var stagingPhase: WatchDiagnosticStagingPhase?
+    var replay: WatchDiagnosticReplay?
 
     init(kind: Kind, id: UUID, source: Source, fileType: LibraryFileType? = nil,
          reply: PhoneFileReply? = nil, bytes: Int64? = nil,

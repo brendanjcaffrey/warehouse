@@ -117,17 +117,29 @@ final class WatchContentReceiver {
 
     /// the manifest and bytes become visible together, before the delegate returns.
     nonisolated static func stage(_ source: URL, file: WatchContentFile, directory: URL = defaultDirectory(),
-                                  availableBytes: Int64? = FileStore.deviceStorage()?.availableBytes) throws {
+                                  availableBytes: @autoclosure () -> Int64? = FileStore.deviceStorage()?.availableBytes,
+                                  progress: (WatchDiagnosticStagingPhase) -> Void = { _ in }) throws {
+        progress(.validating)
         try file.validate()
+        progress(.checkingSource)
         let attributes = try FileManager.default.attributesOfItem(atPath: source.path)
         guard (attributes[.size] as? NSNumber)?.int64Value == file.bytes else { throw WatchLibraryError.invalid }
+        progress(.checkingCapacity)
+        let availableBytes = availableBytes()
         guard let availableBytes, availableBytes - file.bytes >= 32_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
+        progress(.preparingDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let temporary = directory.appending(path: ".\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: temporary) }
+        defer {
+            progress(.cleaningUp)
+            try? FileManager.default.removeItem(at: temporary)
+        }
+        progress(.writingManifest)
         try JSONEncoder().encode(file).write(to: temporary.appending(path: "file.json"), options: .atomic)
+        progress(.copying)
         try FileManager.default.copyItem(at: source, to: temporary.appending(path: "bytes"))
+        progress(.publishing)
         let destination = directory.appending(path: file.id.uuidString)
         if FileManager.default.fileExists(atPath: destination.path) { return }
         try FileManager.default.moveItem(at: temporary, to: destination)

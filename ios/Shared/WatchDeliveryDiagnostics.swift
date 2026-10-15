@@ -115,6 +115,19 @@ struct WatchDiagnosticBackground: Codable, Equatable, Sendable {
     let heldTasks: Int
 }
 
+enum WatchDiagnosticStagingPhase: String, Codable, Sendable {
+    case validating, checkingSource, checkingCapacity, preparingDirectory, writingManifest, copying, publishing, cleaningUp
+}
+
+struct WatchDiagnosticReplay: Codable, Equatable, Sendable {
+    enum Phase: String, Codable, Sendable { case scheduled, started, indexing, replaying, passFinished, finished }
+    enum Result: String, Codable, Sendable { case completed, unavailable, cancelled, receiverChanged, noReceiver, empty, ownerReleased }
+    let phase: Phase
+    var receiptCount: Int?
+    var outstandingCount: Int?
+    var result: Result?
+}
+
 /// unknown means no lifecycle notification has been observed in this process.
 struct WatchDiagnosticLifecycle: Codable, Equatable, Sendable {
     enum State: String, Codable, Sendable { case unknown, active, inactive, background }
@@ -163,10 +176,27 @@ struct WatchDeliveryDiagnosticState: Codable {
 
 extension WatchDiagnostics {
     func delivery(_ kind: WatchDiagnostic.Kind, file: WatchContentFile, source: WatchDiagnostic.Source,
-                  status: WatchContentStatus? = nil, error: Error? = nil, elapsed: TimeInterval? = nil, date: Date = Date()) {
-        record(.init(kind: kind, id: file.id, source: source, fileType: file.type,
-                     bytes: file.bytes, elapsed: elapsed, error: error, date: date,
-                     identity: WatchDiagnosticIdentity(file.head), status: status))
+                  status: WatchContentStatus? = nil, error: Error? = nil, elapsed: TimeInterval? = nil,
+                  date: Date = Date(), operationID: UUID? = nil) {
+        var event = WatchDiagnostic(kind: kind, id: file.id, source: source, fileType: file.type,
+                                    bytes: file.bytes, elapsed: elapsed, error: error, date: date,
+                                    identity: WatchDiagnosticIdentity(file.head), status: status)
+        event.operationID = operationID
+        record(event)
+    }
+
+    func staging(_ phase: WatchDiagnosticStagingPhase, file: WatchContentFile, operationID: UUID, elapsed: TimeInterval) {
+        var event = WatchDiagnostic(kind: .contentStagingProgress, id: file.id, source: .cache, fileType: file.type,
+                                    elapsed: elapsed, identity: WatchDiagnosticIdentity(file.head))
+        event.operationID = operationID
+        event.stagingPhase = phase
+        record(event)
+    }
+
+    func receiptReplay(_ replay: WatchDiagnosticReplay, id: UUID, elapsed: TimeInterval) {
+        var event = WatchDiagnostic(kind: .receiptReplayChanged, id: id, source: .system, elapsed: elapsed)
+        event.replay = replay
+        record(event)
     }
 
     func metadata(_ kind: WatchDiagnostic.Kind, head: WatchLibraryHead, bytes: Int64? = nil, error: Error? = nil) {
