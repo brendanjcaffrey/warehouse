@@ -19,6 +19,12 @@ final class WatchLibraryServices {
     private let contentDirectory: URL
     private let sendReceipt: (WatchContentReceipt) -> Void
     private let contentState: WatchDeliveryState
+    var isForeground: Bool {
+        didSet {
+            fileCache.allowsMaintenance = isForeground
+            content?.allowsMaintenance = isForeground
+        }
+    }
 
     init(
         database: LibraryDatabase, fileStore: FileStore, defaults: UserDefaults = .standard,
@@ -28,14 +34,16 @@ final class WatchLibraryServices {
         sendReceipt: @escaping (WatchContentReceipt) -> Void = { _ in },
         onTrackPlayed: @escaping @MainActor (PlayPayload) -> Void = { _ in },
         onPlaybackRequested: @escaping @MainActor () -> Void = {},
-        contentState: WatchDeliveryState = .init()
+        contentState: WatchDeliveryState = .init(), isForeground: Bool = true
     ) {
+        self.isForeground = isForeground
         // discard old watch credentials without changing saved library metadata or files.
         for key in ["serverURL", "deepPrefetchDepth", "fileGeneration"] { defaults.removeObject(forKey: key) }
         self.contentDirectory = contentDirectory
         self.contentState = contentState
         self.sendReceipt = sendReceipt
         fileCache = FileCache(fileStore: fileStore)
+        fileCache.allowsMaintenance = isForeground
         migration = OfflineLibrary(fileCache: fileCache)
         songs = SongsStore(database: database, fileStore: fileStore)
         playlists = PlaylistsStore(database: database)
@@ -48,12 +56,15 @@ final class WatchLibraryServices {
             guard let self else { return }
             restoreContent()
             try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
-            migration.retireForPhoneSelection()
-            await library.load()
+            if isForeground {
+                migration.retireForPhoneSelection()
+                await library.load()
+            }
         }
         fileCache.onMusicChanged = { [weak self] in
-            self?.songs.refreshDownloads()
-            self?.player.downloadsChanged()
+            guard let self else { return }
+            if isForeground { songs.refreshDownloads() }
+            if isForeground || player.isPlaying { player.downloadsChanged() }
         }
         restoreContent()
     }
@@ -65,7 +76,8 @@ final class WatchLibraryServices {
             state.repairsDamage = repairsDamage
             content = try WatchContentReceiver(fileCache: fileCache, directory: contentDirectory,
                                                 availableBytes: { [weak self] in self?.availableBytes() }, send: sendReceipt,
-                                                now: { [weak self] in self?.now() ?? Date() }, state: state)
+                                                now: { [weak self] in self?.now() ?? Date() }, state: state,
+                                                allowsMaintenance: isForeground)
             library.content = content
             library.deliveryStartupError = nil
             if content?.recoveredState == true { library.deliveryRecovered = true }
@@ -79,10 +91,12 @@ final class WatchLibraryServices {
         await receiver.waitForImport()
         restoreContent()
         try? content?.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+        guard isForeground else { return }
         migration.retireForPhoneSelection()
         // do not evict old downloads until phone intent is safely persisted.
         if fileCache.hasDurableWatchSelection { fileCache.evict() }
         await library.load()
+        player.downloadsChanged()
     }
 
     func refresh() async {
@@ -90,6 +104,6 @@ final class WatchLibraryServices {
         receiver.resume()
         await launch()
         content?.resume()
-        requestLibrary()
+        if isForeground { requestLibrary() }
     }
 }

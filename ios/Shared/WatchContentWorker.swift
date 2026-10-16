@@ -25,9 +25,13 @@ actor WatchContentWorker {
 
     init(beforeWork: (@Sendable () async throws -> Void)? = nil) { self.beforeWork = beforeWork }
 
-    func inventory(_ files: Set<FileToDownload>, exists: @Sendable (LibraryFileType, String) async -> Bool) async -> Set<FileToDownload> {
+    func inventory(_ files: Set<FileToDownload>, exists: @Sendable (LibraryFileType, String) async -> Bool,
+                   shouldContinue: @Sendable () async -> Bool) async -> Set<FileToDownload>? {
         var local = Set<FileToDownload>()
-        for file in files where await exists(file.type, file.filename) { local.insert(file) }
+        for file in files {
+            guard await shouldContinue() else { return nil }
+            if await exists(file.type, file.filename) { local.insert(file) }
+        }
         return local
     }
 

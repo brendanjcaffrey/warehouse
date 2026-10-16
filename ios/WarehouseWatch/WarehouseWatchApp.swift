@@ -21,8 +21,9 @@ struct WarehouseWatchApp: App {
         let remote = WatchRemoteStore(send: { command, completion in session?.send(command, completion: completion) })
         services = WatchLibraryServices(database: database, fileStore: fileStore, sendReceipt: { receipt in
             session?.sendContentReceipt(receipt)
-        }, onTrackPlayed: { reports?.add($0) }, onPlaybackRequested: { remote.pausePhone() })
+        }, onTrackPlayed: { reports?.add($0) }, onPlaybackRequested: { remote.pausePhone() }, isForeground: false)
         let phone = WatchPhoneSession(library: services.receiver)
+        phone.allowsMaintenance = { [weak services] in services?.isForeground == true }
         session = phone
         phone.content = services.content
         services.requestLibrary = { phone.requestLibrary() }
@@ -51,7 +52,9 @@ struct WarehouseWatchApp: App {
         services.onContentChanged()
         let plays = PlayReportQueue(canSend: { phone.canSend }, outstandingIds: { phone.outstandingPlayIds }, send: { phone.send($0) })
         reports = plays
-        phone.onActivated = { plays.drain() }
+        phone.onActivated = { [weak services] in
+            if services?.isForeground == true { plays.drain() }
+        }
         phone.onPlayReceipt = { plays.acknowledge($0) }
         phone.onPlayTransferFinished = { plays.finished($0) }
         phone.remote = remote
@@ -59,6 +62,7 @@ struct WarehouseWatchApp: App {
         self.phone = phone
         self.plays = plays
         WatchBackgroundDelegate.phone = phone
+        WatchBackgroundDelegate.services = services
         // background delivery initializes before a scene is needed.
         phone.activate()
     }
@@ -77,6 +81,7 @@ struct WarehouseWatchApp: App {
                 .environment(\.watchLibraryRefresh, { await services.refresh() })
                 .task { await services.launch() }
                 .onChange(of: scenePhase, initial: true) {
+                    services.isForeground = scenePhase == .active
                     switch scenePhase {
                     case .active: WatchDiagnostics.shared.sceneChanged(.active)
                     case .inactive: WatchDiagnostics.shared.sceneChanged(.inactive)
@@ -96,6 +101,7 @@ struct WarehouseWatchApp: App {
 @MainActor
 final class WatchBackgroundDelegate: NSObject, WKApplicationDelegate {
     static var phone: WatchPhoneSession?
+    static var services: WatchLibraryServices?
 
     func applicationDidFinishLaunching() {
         switch WKApplication.shared().applicationState {
@@ -106,9 +112,15 @@ final class WatchBackgroundDelegate: NSObject, WKApplicationDelegate {
         }
     }
 
-    func applicationDidBecomeActive() { WatchDiagnostics.shared.applicationChanged(.active) }
+    func applicationDidBecomeActive() {
+        Self.services?.isForeground = true
+        WatchDiagnostics.shared.applicationChanged(.active)
+    }
     func applicationWillResignActive() { WatchDiagnostics.shared.applicationChanged(.inactive) }
-    func applicationDidEnterBackground() { WatchDiagnostics.shared.applicationChanged(.background) }
+    func applicationDidEnterBackground() {
+        Self.services?.isForeground = false
+        WatchDiagnostics.shared.applicationChanged(.background)
+    }
     func applicationWillEnterForeground() { WatchDiagnostics.shared.applicationChanged(.inactive) }
 
     func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {

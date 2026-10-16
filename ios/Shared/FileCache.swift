@@ -68,6 +68,13 @@ final class FileCache {
     private var unreadableWatchSelection = false
     private var awaitingWatchSelection = false
     private var cleaning = false
+    var allowsMaintenance = true {
+        didSet {
+            if allowsMaintenance, !oldValue {
+                for type in LibraryFileType.allCases { cleanWatchFiles(type) }
+            }
+        }
+    }
     private let beforeWatchSelectionSave: () throws -> Void
     var hasWatchSelection: Bool { watchSelection != nil || unreadableWatchSelection }
     var hasDurableWatchSelection: Bool { watchSelection != nil }
@@ -176,7 +183,7 @@ final class FileCache {
 
     /// scans durable intent again when the player releases a file, including after relaunch.
     private func cleanWatchFiles(_ type: LibraryFileType) {
-        guard watchSelection != nil, !awaitingWatchSelection, !cleaning else { return }
+        guard allowsMaintenance, watchSelection != nil, !awaitingWatchSelection, !cleaning else { return }
         cleaning = true
         defer { cleaning = false }
         let protected = retainedFiles(type).union(inUse[type.directory] ?? [])
@@ -212,6 +219,14 @@ final class FileCache {
         let file = FileToDownload(type: type, filename: filename)
         if reservations[file] != nil { return true }
         if fileStore.exists(type, filename) { return true }
+
+        // selected watch files may exceed the cache budget; sufficient free space needs no eviction inventory.
+        let selected = type == .music ? watchSelection?.music : watchSelection?.artwork
+        if allowOversized, selected?.contains(filename) == true,
+           availableBytes - reservations.values.reduce(0, +) - bytes >= freeSpaceReserve {
+            reservations[file] = bytes
+            return true
+        }
 
         let entries = fileStore.entries(type)
         let held = entries.reduce(0) { $0 + $1.sizeBytes }

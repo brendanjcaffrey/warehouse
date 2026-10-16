@@ -14,6 +14,21 @@ struct WatchProgressCacheTests {
         func record() { lock.withLock { value += 1 } }
     }
 
+    @Test("repeated delivery wakeups do not rescan an unchanged library")
+    func unchangedWakeups() async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let snapshot = try env.snapshot(count: 1000)
+        let receiver = try env.receiver()
+        let probes = Probes()
+        receiver.progressSource.exists = { _, _ in probes.record(); return false }
+        try await receiver.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let before = probes.count
+        receiver.allowsMaintenance = false
+        for _ in 0..<4 { await receiver.settledResume() }
+        #expect(probes.count == before)
+    }
+
     @Test("unchanged large-library presentation reads do no validation or filesystem work")
     func presentationReads() async throws {
         let env = try WatchContentDeliveryTests.Env()

@@ -96,7 +96,7 @@ struct WatchLibraryStoreTests {
         let content = try WatchContentReceiver(fileCache: FileCache(fileStore: env.files),
                                                directory: env.root.appending(path: "content"), send: { _ in })
         try env.files.write(.music, "m0.mp3", data: PlayerStoreTests.musicBytes)
-        try content.reconcile(head: receiver.head, snapshot: receiver.snapshot)
+        try await content.settledReconcile(head: receiver.head, snapshot: receiver.snapshot)
         let library = WatchLibraryStore(songs: env.songs, playlists: env.playlists, defaults: env.defaults,
                                         receiver: receiver, content: content)
         await library.load()

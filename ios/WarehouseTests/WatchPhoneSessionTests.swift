@@ -11,7 +11,33 @@ struct WatchPhoneSessionTests {
         var value = false
     }
 
-    @Test("persisted content receipts are handed to connectivity after activation", arguments: [false, true])
+    @Test("background activation requests metadata only when the accepted snapshot is missing", arguments: [false, true])
+    func backgroundLibraryRequest(accepted: Bool) async throws {
+        let env = try WatchLibraryDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let head = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "account", playlistIDs: [], metadataReady: true)
+        _ = try await env.watch.expectWatchLibrary(head)
+        if accepted { _ = try await env.watch.importWatchLibrary(.init(head: head, libraryData: Library().serializedData())) }
+        let library = env.receiver()
+        await library.waitForImport()
+        var reads = 0
+        var queued = [[String: Any]]()
+        let session = WatchPhoneSession(library: library, libraryTransport: .init(
+            available: { true }, outstanding: { reads += 1; return queued }, enqueue: { queued.append($0) }),
+            sessionState: { (true, false) })
+        session.allowsMaintenance = { false }
+        for _ in 0..<4 { session.session(WCSession.default, activationDidCompleteWith: .activated, error: nil) }
+        try await PlayerStoreTests.waitFor {
+            let active = session.contentActivity.count
+            return active == 0
+        }
+        await session.waitForLibraryRequest()
+        #expect(accepted ? reads == 0 : (1...4).contains(reads))
+        #expect(queued.count == (accepted ? 0 : 1))
+        #expect(accepted || queued.first.flatMap(WatchLibraryRequest.init(dictionary:)) != nil)
+    }
+
+    @Test("persisted content receipts wait for specific phone queries after activation", arguments: [false, true])
     func activationReceipts(fails: Bool) async throws {
         let metadata = try WatchLibraryDeliveryTests.Env()
         let env = try WatchContentDeliveryTests.Env()
@@ -41,7 +67,8 @@ struct WatchPhoneSessionTests {
         }
         await session.waitForLibraryRequest()
         let receipts = queued.compactMap(WatchContentReceipt.init(dictionary:))
-        #expect(receipts == (fails ? [] : receiver.receipts))
+        #expect(receipts.isEmpty)
+        #expect(receiver.receipts == [.init(file: file, status: .delivered)])
         session.session(WCSession.default, activationDidCompleteWith: fails ? .notActivated : .activated, error: nil)
         try await PlayerStoreTests.waitFor {
             let pending = session.contentActivity.count

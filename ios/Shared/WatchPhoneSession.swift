@@ -16,7 +16,6 @@ final class WatchPhoneSession: NSObject {
             oldValue?.onActivityChanged = {}
             content?.onActivityChanged = { [weak self] in self?.updateBackgroundLifetime() }
             updateBackgroundLifetime()
-            resendContentReceipts()
         }
     }
     let library: WatchLibraryReceiver
@@ -30,10 +29,7 @@ final class WatchPhoneSession: NSObject {
     private let sendRemoteMessage: ([String: Any], @escaping ([String: Any]) -> Void, @escaping () -> Void) -> Void
     private let libraryTransport: LibraryTransport
     private var libraryRequestTask: Task<Void, Never>?
-    private var receiptReplayTask: Task<Void, Never>?
-    private var receiptReplayRequested = false
-    private var receiptReplayOutstanding: [UUID: [WatchContentReceipt]]?
-    private static let receiptReplayBatchSize = 16
+    var allowsMaintenance: () -> Bool = { true }
     private nonisolated let diagnostics: WatchDiagnostics
     private var lastBackground: WatchDiagnosticBackground?
 
@@ -158,7 +154,7 @@ final class WatchPhoneSession: NSObject {
         diagnostics.record(event)
     }
 
-    func requestLibrary() {
+    func requestLibrary(ifNeeded: Bool = false) {
         guard libraryRequestTask == nil else { return }
         contentActivity.begin()
         updateBackgroundLifetime()
@@ -170,6 +166,7 @@ final class WatchPhoneSession: NSObject {
             }
             await library.waitForImport()
             guard libraryTransport.available() else { return }
+            if ifNeeded, let snapshot = library.snapshot, snapshot.head == library.head { return }
             let request = WatchLibraryRequest(acceptedHead: library.snapshot?.head)
             guard !libraryTransport.outstanding().contains(where: { WatchLibraryRequest(dictionary: $0) == request }),
                   let info = try? request.encode() else { return }
@@ -179,81 +176,9 @@ final class WatchPhoneSession: NSObject {
 
     func sendContentReceipt(_ receipt: WatchContentReceipt) {
         guard libraryTransport.available(), let info = try? receipt.encode() else { return }
-        if let outstanding = receiptReplayOutstanding {
-            guard outstanding[receipt.file.id]?.contains(receipt) != true else { return }
-        } else {
-            guard !libraryTransport.outstanding().contains(where: { WatchContentReceipt(dictionary: $0) == receipt }) else { return }
-        }
+        // recovery is driven by the phone's specific queries, never a replay of the saved ledger.
+        guard !libraryTransport.outstanding().contains(where: { WatchContentReceipt(dictionary: $0) == receipt }) else { return }
         libraryTransport.enqueue(info)
-        receiptReplayOutstanding?[receipt.file.id, default: []].append(receipt)
-    }
-
-    private func resendContentReceipts() {
-        receiptReplayRequested = true
-        guard receiptReplayTask == nil, content?.receipts.isEmpty == false, libraryTransport.available() else { return }
-        // register before dispatch so a connectivity task cannot complete while replay is queued.
-        contentActivity.begin()
-        let replayID = UUID()
-        let scheduled = ProcessInfo.processInfo.systemUptime
-        let record: @Sendable (WatchDiagnosticReplay) -> Void = { [diagnostics] replay in
-            diagnostics.receiptReplay(replay, id: replayID, elapsed: ProcessInfo.processInfo.systemUptime - scheduled)
-        }
-        record(.init(phase: .scheduled, receiptCount: content?.receipts.count))
-        updateBackgroundLifetime()
-        receiptReplayTask = Task { [weak self, contentActivity] in
-            record(.init(phase: .started))
-            guard let self else {
-                record(.init(phase: .finished, result: .ownerReleased))
-                contentActivity.end()
-                return
-            }
-            var result: WatchDiagnosticReplay.Result = .completed
-            defer {
-                record(.init(phase: .finished, result: Task.isCancelled ? .cancelled : result))
-                receiptReplayTask = nil
-                receiptReplayOutstanding = nil
-                contentActivity.end()
-                updateBackgroundLifetime()
-            }
-            guard let receiptCount = content?.receipts.count else { result = .noReceiver; return }
-            guard receiptCount > 0 else { result = .empty; return }
-            guard libraryTransport.available() else { result = .unavailable; return }
-            record(.init(phase: .indexing, receiptCount: receiptCount))
-            let outstandingCount: Int
-            do {
-                let outstanding = libraryTransport.outstanding()
-                outstandingCount = outstanding.count
-                receiptReplayOutstanding = Dictionary(grouping: outstanding.compactMap(WatchContentReceipt.init(dictionary:)), by: { $0.file.id })
-            }
-            while receiptReplayRequested, !Task.isCancelled {
-                receiptReplayRequested = false
-                guard let receiver = self.content else { result = .noReceiver; return }
-                guard libraryTransport.available() else { result = .unavailable; return }
-                record(.init(phase: .replaying, receiptCount: receiver.receipts.count, outstandingCount: outstandingCount))
-                let pass = await replayContentReceipts(from: receiver)
-                record(.init(phase: .passFinished, result: pass))
-                if pass == .unavailable || pass == .cancelled { result = pass; return }
-            }
-        }
-    }
-
-    private func replayContentReceipts(from receiver: WatchContentReceiver) async -> WatchDiagnosticReplay.Result {
-        let receipts = receiver.receipts
-        var revision = receiver.receiptsRevision
-        var current = Dictionary(grouping: receipts, by: { $0.file.id })
-        for (offset, receipt) in receipts.enumerated() {
-            guard !Task.isCancelled else { return .cancelled }
-            guard content === receiver else { return .receiverChanged }
-            guard libraryTransport.available() else { return .unavailable }
-            if revision != receiver.receiptsRevision {
-                revision = receiver.receiptsRevision
-                current = Dictionary(grouping: receiver.receipts, by: { $0.file.id })
-            }
-            // reconciliation can retire or replace a saved receipt while another batch is suspended.
-            if current[receipt.file.id]?.contains(receipt) == true { sendContentReceipt(receipt) }
-            if (offset + 1).isMultiple(of: Self.receiptReplayBatchSize) { await Task.yield() }
-        }
-        return .completed
     }
 
     func waitForLibraryRequest() async { await libraryRequestTask?.value }
@@ -350,9 +275,8 @@ extension WatchPhoneSession: WCSessionDelegate {
             library.resume()
             content?.resume()
             updateBackgroundLifetime()
-            resendContentReceipts()
             onActivated?()
-            requestLibrary()
+            requestLibrary(ifNeeded: !allowsMaintenance())
             updateReachability()
         }
     }
@@ -475,7 +399,7 @@ extension WatchPhoneSession: WCSessionDelegate {
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         dispatch { [self] in
             updateReachability()
-            if session.isReachable { requestLibrary() }
+            if session.isReachable { requestLibrary(ifNeeded: !allowsMaintenance()) }
         }
     }
 
@@ -495,6 +419,8 @@ extension WatchPhoneSession: WCSessionDelegate {
 
     func applyContext(_ context: [String: Any]) {
         guard !context.isEmpty else { return }
+        if let head = WatchLibraryHead(context: context), library.initialized, library.pendingOperations == 0,
+           head == library.head, !library.refreshFailed { return }
         content?.pause()
         if let head = WatchLibraryHead(context: context) {
             library.expect(head)

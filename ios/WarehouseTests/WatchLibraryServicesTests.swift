@@ -1,6 +1,7 @@
 import Foundation
 import SwiftProtobuf
 import Testing
+import WatchConnectivity
 @testable import Warehouse
 
 @Suite("watch production composition", .serialized)
@@ -12,8 +13,9 @@ struct WatchLibraryServicesTests {
         let defaults: UserDefaults
         let services: WatchLibraryServices
         let session: WatchPhoneSession
+        let forwarder = WatchReceiptReplayTests.ReceiptForwarder()
 
-        init(saved: Bool = true) async throws {
+        init(saved: Bool = true, isForeground: Bool = true) async throws {
             metadata = try WatchLibraryDeliveryTests.Env()
             defaults = UserDefaults(suiteName: metadata.root.lastPathComponent)!
             let files = FileStore(rootURL: metadata.root.appending(path: "files"))
@@ -26,16 +28,128 @@ struct WatchLibraryServicesTests {
                 _ = try await metadata.watch.importWatchLibrary(snapshot)
                 try files.write(.music, "m0.mp3", data: PlayerStoreTests.musicBytes)
             }
+            let forwarder = forwarder
             services = WatchLibraryServices(database: metadata.watch, fileStore: files, defaults: defaults,
-                                           metadataDirectory: metadata.inbox, contentDirectory: metadata.root.appending(path: "content"))
+                                           metadataDirectory: metadata.inbox, contentDirectory: metadata.root.appending(path: "content"),
+                                           sendReceipt: { forwarder.send($0) },
+                                           isForeground: isForeground)
             session = WatchPhoneSession(library: services.receiver)
             session.content = services.content
+            forwarder.session = session
         }
 
         func cleanUp() {
             defaults.removePersistentDomain(forName: metadata.root.lastPathComponent)
             metadata.cleanUp()
         }
+    }
+
+    @Test("background launch and unchanged contexts defer presentation and inventory scans")
+    func backgroundLaunch() async throws {
+        let env = try await StatusEnv(isForeground: false)
+        defer { env.cleanUp() }
+        let content = try #require(env.services.content)
+        let probes = WatchProgressCacheTests.Probes()
+        let files = env.services.fileCache.fileStore
+        content.progressSource.exists = { type, name in probes.record(); return files.exists(type, name) }
+        await env.services.launch()
+        await content.waitForWork()
+        let head = try #require(env.services.receiver.head)
+        #expect(env.services.fileCache.hasDurableWatchSelection)
+        #expect(env.services.songs.songs.isEmpty)
+        for _ in 0..<4 {
+            env.session.applyContext(try head.encode())
+            env.services.receiver.resume()
+            content.resume()
+            await env.services.receiver.waitForImport()
+            await content.waitForWork()
+        }
+        let backgroundReads = probes.count
+        #expect(backgroundReads == 0)
+        env.services.isForeground = true
+        await env.services.refresh()
+        await content.waitForWork()
+        #expect(probes.count >= 3)
+        #expect(env.services.library.progress().music.downloaded == 1)
+        #expect(!env.services.songs.songs.isEmpty)
+    }
+
+    @Test("background file delivery persists its receipt before completing without progress scans")
+    func backgroundDelivery() async throws {
+        let env = try await StatusEnv(isForeground: false)
+        defer { env.cleanUp() }
+        let content = try #require(env.services.content)
+        let probes = WatchProgressCacheTests.Probes()
+        content.progressSource.exists = { _, _ in probes.record(); return false }
+        await env.services.launch()
+        await content.waitForWork()
+        let head = try #require(env.services.receiver.head)
+        let directory = env.metadata.root.appending(path: "content")
+        let source = env.metadata.root.appending(path: "incoming")
+        try Data("incoming music".utf8).write(to: source)
+        let fingerprint = try WatchContentFile.fingerprint(source)
+        let file = WatchContentFile(head: head, type: .music, filename: "m1.mp3", bytes: fingerprint.bytes, digest: fingerprint.digest)
+        var sent = [WatchContentReceipt]()
+        let session = WatchPhoneSession(library: env.services.receiver, libraryTransport: .init(
+            available: { true }, outstanding: { [] }, enqueue: { if let receipt = WatchContentReceipt(dictionary: $0) { sent.append(receipt) } }),
+            sessionState: { (true, false) }, contentDirectory: directory)
+        session.content = content
+        env.forwarder.session = session
+        session.receiveFile(source, metadata: try file.encode())
+        var completed = false
+        session.updateBackgroundLifetime()
+        session.lifetime.hold {
+            #expect(content.receipts.contains(.init(file: file, status: .delivered)))
+            #expect(file.matches(env.services.fileCache.fileStore.fileURL(file.type, file.filename)))
+            completed = true
+        }
+        try await PlayerStoreTests.waitFor { completed }
+        let saved = try JSONDecoder().decode([WatchContentReceipt].self, from: Data(contentsOf: directory.appending(path: "receipts.json")))
+        #expect(saved == [.init(file: file, status: .delivered)])
+        #expect(sent == saved)
+        let deliveryReads = probes.count
+        #expect(deliveryReads == 0)
+        // route a lost receipt query through the real delegate after the file has committed.
+        var query = try file.encode()
+        query["kind"] = "watchContentQuery"
+        session.session(WCSession.default, didReceiveUserInfo: query)
+        try await PlayerStoreTests.waitFor {
+            let active = session.contentActivity.count
+            return active == 0
+        }
+        await content.waitForWork()
+        #expect(sent == saved + saved)
+        let queryReads = probes.count
+        #expect(queryReads == 0)
+    }
+
+    @Test("a rejected stale context resumes delivery under the current accepted selection")
+    func staleBackgroundContext() async throws {
+        let env = try await StatusEnv(isForeground: false)
+        defer { env.cleanUp() }
+        await env.services.launch()
+        let snapshot = try #require(env.services.receiver.snapshot)
+        let previous = snapshot.head
+        let head = WatchLibraryHead(publisher: previous.publisher, revision: previous.revision + 1,
+                                    libraryID: previous.libraryID, playlistIDs: previous.playlistIDs, metadataReady: true)
+        let next = WatchLibrarySnapshot(head: head, libraryData: snapshot.libraryData)
+        let source = env.metadata.root.appending(path: "source")
+        try JSONEncoder().encode(next).write(to: source)
+        _ = try WatchLibraryReceiver.stage(source, directory: env.metadata.inbox)
+        env.session.applyContext(try head.encode())
+        await env.services.receiver.waitForImport()
+        let content = try #require(env.services.content)
+        await content.waitForWork()
+        env.session.applyContext(try previous.encode())
+        await env.services.receiver.waitForImport()
+        #expect(env.services.receiver.head == head)
+        try Data("incoming".utf8).write(to: source)
+        let fingerprint = try WatchContentFile.fingerprint(source)
+        let file = WatchContentFile(head: head, type: .music, filename: "m1.mp3", bytes: fingerprint.bytes, digest: fingerprint.digest)
+        try WatchContentReceiver.stage(source, file: file, directory: env.metadata.root.appending(path: "content"))
+        await content.settledStaged(file)
+        #expect(content.receipts.contains(.init(file: file, status: .delivered)))
+        #expect(file.matches(env.services.fileCache.fileStore.fileURL(file.type, file.filename)))
     }
 
     @Test("startup restores configuration before offering setup", arguments: [false, true])

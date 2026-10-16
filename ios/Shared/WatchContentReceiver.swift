@@ -14,6 +14,16 @@ final class WatchContentReceiver {
     @ObservationIgnored private var progressIndex: WatchProgressIndex?
     @ObservationIgnored private var localProgressFiles = Set<FileToDownload>()
     @ObservationIgnored private var needsProgressScan = false
+    var allowsMaintenance: Bool {
+        didSet {
+            guard allowsMaintenance != oldValue else { return }
+            inventory.isActive = allowsMaintenance
+            if allowsMaintenance {
+                refreshLocalProgress()
+                do { try inventory.publish(head: head, snapshot: snapshot) } catch { errorMessage = error.localizedDescription }
+            }
+        }
+    }
     private var overallProgress = WatchLibraryProgress(state: .setup)
     private var playlistProgress: [String: WatchLibraryProgress] = [:]
     private let diagnostics: WatchDiagnostics
@@ -32,10 +42,7 @@ final class WatchContentReceiver {
     private var selectionFailure: (index: WatchProgressIndex, error: Error)?
     private var snapshot: WatchLibrarySnapshot?
     private var reports: [WatchLibraryDeliveryReport]
-    @ObservationIgnored private(set) var receiptsRevision = UUID()
-    private(set) var receipts: [WatchContentReceipt] {
-        didSet { receiptsRevision = UUID() }
-    }
+    private(set) var receipts: [WatchContentReceipt]
     private(set) var errorMessage: String?
     private let worker: WatchContentWorker
     private var generation = UUID()
@@ -77,10 +84,12 @@ final class WatchContentReceiver {
          availableBytes: @escaping () -> Int64? = { FileStore.deviceStorage()?.availableBytes },
          send: @escaping (WatchContentReceipt) -> Void, beforeCommit: @escaping () throws -> Void = {},
          beforeReceipt: @escaping () throws -> Void = {}, now: @escaping () -> Date = { Date() }, diagnostics: WatchDiagnostics? = nil,
-         state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker()) throws {
+         state: WatchDeliveryState = .init(), worker: WatchContentWorker = WatchContentWorker(), allowsMaintenance: Bool = true) throws {
+        self.allowsMaintenance = allowsMaintenance
         self.diagnostics = diagnostics ?? .shared
         inventory = WatchInventoryResponder(fileStore: fileCache.fileStore, directory: directory,
                                             diagnostics: diagnostics ?? .shared, now: now, worker: worker)
+        inventory.isActive = allowsMaintenance
         self.fileCache = fileCache
         progressSource = ProgressSource(exists: fileCache.fileStore.exists)
         self.directory = directory
@@ -161,6 +170,13 @@ final class WatchContentReceiver {
     }
 
     private func reconcileSelection(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
+        if !isPaused, errorMessage == nil, self.head == head, pendingHead == head, self.snapshot == snapshot,
+           progressIndex?.snapshot == snapshot, selectionFailure == nil {
+            if allowsMaintenance { refreshLocalProgress() }
+            scheduleWork()
+            try inventory.publish(head: head, snapshot: snapshot)
+            return
+        }
         if pendingHead != head || self.snapshot != snapshot { generation = UUID() }
         pendingHead = head
         self.head = nil
@@ -224,6 +240,7 @@ final class WatchContentReceiver {
 
     private func refreshLocalProgress() {
         needsProgressScan = true
+        guard allowsMaintenance else { return }
         scheduleWork(drain: false)
     }
 
@@ -524,7 +541,7 @@ final class WatchContentReceiver {
         needsDrain = needsDrain || drain
         guard work == nil else { return }
         work = Task {
-            while needsDrain || !queries.isEmpty || needsProgressScan {
+            while needsDrain || !queries.isEmpty || (allowsMaintenance && needsProgressScan) {
                 if needsDrain {
                     needsDrain = false
                     setPhase(.draining)
@@ -536,13 +553,15 @@ final class WatchContentReceiver {
                     setPhase(.querying, file: file)
                     do { try await answer(file) } catch { errorMessage = error.localizedDescription }
                 }
-                if needsProgressScan {
+                if allowsMaintenance && needsProgressScan {
                     needsProgressScan = false
                     let epoch = generation
                     let files = progressIndex?.files ?? []
                     setPhase(.scanning)
-                    let local = await worker.inventory(files, exists: progressSource.exists)
-                    if generation == epoch && !needsProgressScan {
+                    let local = await worker.inventory(files, exists: progressSource.exists, shouldContinue: { [weak self] in
+                        await self?.allowsMaintenance == true
+                    })
+                    if let local, generation == epoch && !needsProgressScan {
                         localProgressFiles = local
                     } else {
                         needsProgressScan = true

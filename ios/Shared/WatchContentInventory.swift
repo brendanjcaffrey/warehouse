@@ -85,6 +85,11 @@ final class WatchInventoryResponder {
     private var currentHead: WatchLibraryHead?
     private var work: Task<Void, Never>?
     private var timer: Task<Void, Never>?
+    var isActive = true {
+        didSet {
+            if !isActive { currentHead = nil; timer?.cancel(); work?.cancel() }
+        }
+    }
     var pendingOperations: Int { work == nil ? 0 : 1 }
     var onActivityChanged: () -> Void = {}
     var sendRequest: (WatchInventoryRequest) -> Bool = { _ in false }
@@ -169,7 +174,7 @@ final class WatchInventoryResponder {
     }
 
     private func retryManual() {
-        guard manualPending, let request = manual.request else { return }
+        guard isActive, manualPending, let request = manual.request else { return }
         _ = sendRequest(request)
         timer?.cancel()
         timer = Task { [weak self] in
@@ -192,6 +197,7 @@ final class WatchInventoryResponder {
     func pause() { currentHead = nil }
 
     func publish(head: WatchLibraryHead?, snapshot: WatchLibrarySnapshot?) throws {
+        guard isActive else { return }
         currentHead = head
         if let head, manualPending, manual.request?.head != head {
             var next = manual
@@ -202,6 +208,7 @@ final class WatchInventoryResponder {
             timer?.cancel()
         }
         guard let head, let snapshot, snapshot.head == head else { return }
+        guard manualPending || requests.contains(where: { $0.head == head }) else { return }
         _ = try snapshot.validatedLibrary()
         retryManual()
         for request in requests where request.head == head {
@@ -236,12 +243,17 @@ final class WatchInventoryResponder {
     private func scanManual(_ request: WatchInventoryRequest, snapshot: WatchLibrarySnapshot) {
         guard work == nil else { return }
         work = Task {
-            defer { work = nil; onActivityChanged() }
+            defer {
+                work = nil
+                onActivityChanged()
+                if Task.isCancelled, isActive { try? publish(head: currentHead, snapshot: snapshot) }
+            }
             do {
                 var entries = [WatchInventoryReport.Entry]()
                 for type in LibraryFileType.allCases {
                     let names = try type == .music ? snapshot.music : snapshot.artwork
                     for name in names.sorted() {
+                        guard isActive, currentHead == request.head else { return }
                         let value = try await worker.observe(fileStore.fileURL(type, name))
                         entries.append(.init(type: type, filename: name, bytes: value?.stamp.size, digest: value?.digest))
                     }
@@ -254,6 +266,8 @@ final class WatchInventoryResponder {
                 diagnostics.record(.init(kind: .inventoryManualScanned, id: request.id, source: .cache,
                                          identity: WatchDiagnosticIdentity(request.head)))
                 try publish(head: snapshot.head, snapshot: snapshot)
+            } catch is CancellationError {
+                // keep the durable challenge for the next foreground pass.
             } catch {
                 errorMessage = error.localizedDescription
                 diagnostics.metadata(.inventoryFailed, head: request.head, error: error)

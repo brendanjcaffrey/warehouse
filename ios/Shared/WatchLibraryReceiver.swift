@@ -46,9 +46,10 @@ final class WatchLibraryReceiver {
 
     func expect(_ head: WatchLibraryHead) {
         protocolSelected = true
-        enqueue {
+        enqueue(notifiesUnchanged: true) {
             _ = try await self.database.expectWatchLibrary(head)
             self.head = try await self.database.watchHead()
+            if self.snapshot?.head != self.head { self.snapshot = try await self.database.watchSnapshot() }
             guard self.head?.version == 1 else { throw WatchLibraryError.unsupported }
             try await self.drain()
         }
@@ -64,10 +65,12 @@ final class WatchLibraryReceiver {
 
     func resume() {
         enqueue {
-            self.protocolSelected = try await self.database.watchProtocolSelected() || self.protocolSelected
-            self.head = try await self.database.watchHead()
-            self.snapshot = try await self.database.watchSnapshot()
-            self.initialized = true
+            if !self.initialized || self.snapshot?.head != self.head {
+                self.protocolSelected = try await self.database.watchProtocolSelected() || self.protocolSelected
+                self.head = try await self.database.watchHead()
+                self.snapshot = try await self.database.watchSnapshot()
+                self.initialized = true
+            }
             if self.protocolSelected, self.head == nil { throw WatchLibraryError.unsupported }
             if let head = self.head, head.version != 1 { throw WatchLibraryError.unsupported }
             try await self.drain()
@@ -82,23 +85,29 @@ final class WatchLibraryReceiver {
     }
     func waitForImport() async { await runner?.value }
 
-    private func enqueue(_ operation: @escaping () async throws -> Void) {
+    private func enqueue(notifiesUnchanged: Bool = false, _ operation: @escaping () async throws -> Void) {
         let previous = runner
         pendingOperations += 1
         runner = Task {
             await previous?.value
             defer { pendingOperations -= 1; onIdle() }
+            let previousHead = head
+            let previousSnapshot = snapshot
+            let wasInitialized = initialized
+            let previousError = errorMessage
             do {
                 try await operation()
             } catch {
                 failed(error)
             }
-            await onChanged()
+            if notifiesUnchanged || previousHead != head || previousSnapshot != snapshot || wasInitialized != initialized
+                || previousError != errorMessage || errorMessage != nil {
+                await onChanged()
+            }
         }
     }
 
     private func drain() async throws {
-        snapshot = try await database.watchSnapshot()
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         let retired = try await database.watchRetiredPublishers()
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
