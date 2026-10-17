@@ -244,7 +244,7 @@ struct WatchContentWorkerTests {
         gate.release()
         await receiver.waitForWork()
         #expect(receiver.pendingOperations == 0)
-        #expect(env.finished == 1)
+        try await PlayerStoreTests.waitFor { env.finished == 1 }
         #expect(env.content.receipts.last?.status == .delivered)
         #expect(file.matches(env.content.watchFiles.fileURL(file.type, file.filename)))
         #expect(receiver.diagnosticState().processing?.phase == .idle)

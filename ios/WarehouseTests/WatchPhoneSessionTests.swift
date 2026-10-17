@@ -96,7 +96,8 @@ struct WatchPhoneSessionTests {
         session.requestLibrary()
         await session.waitForLibraryRequest()
         let pendingActivity = session.contentActivity.count
-        #expect(completed == 1 && pendingActivity == 0)
+        #expect(pendingActivity == 0)
+        try await PlayerStoreTests.waitFor { completed == 1 }
         #expect(queued.count == 1 && WatchLibraryRequest(dictionary: queued[0])?.acceptedHead == head)
         session.requestLibrary()
         await session.waitForLibraryRequest()
@@ -478,6 +479,29 @@ struct WatchPhoneSessionTests {
         }
 
         func cleanUp() { metadata.cleanUp(); content.cleanUp() }
+    }
+
+    @Test("settling refreshes system flags and raw callback activity without waiting for actor notifications", arguments: [false, true])
+    func settlingRefresh(rawCallback: Bool) async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        await env.library.waitForImport()
+        env.systemPending = false
+        env.hold()
+        var callbackHeld = rawCallback
+        defer { if callbackHeld { env.session.contentActivity.end() } }
+        if rawCallback { env.session.contentActivity.begin() } else { env.systemPending = true }
+        try await PlayerStoreTests.waitFor {
+            rawCallback ? env.session.lifetime.importsPending == 1 : env.session.lifetime.contentPending
+        }
+        #expect(env.finished == 0 && env.session.lifetime.heldTasks == 1)
+        if rawCallback {
+            env.session.contentActivity.end()
+            callbackHeld = false
+        }
+        env.systemPending = false
+        env.session.updateBackgroundLifetime()
+        try await env.waitForCompletion()
     }
 
     @Test("file delegate entry and staging persist before actor handling and retain the background hold", arguments: [false, true])

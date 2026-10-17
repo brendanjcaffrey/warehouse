@@ -533,7 +533,8 @@ struct WatchLibraryDeliveryTests {
         lifetime.update(activated: true, contentPending: false, importsPending: 1)
         #expect(completed == 0)
         lifetime.update(activated: true, contentPending: false, importsPending: 0)
-        #expect(completed == 1)
+        #expect(completed == 0)
+        try await PlayerStoreTests.waitFor { completed == 1 }
         lifetime.finishIfIdle()
         #expect(completed == 1)
     }

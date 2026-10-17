@@ -681,7 +681,7 @@ struct WatchContentDeliveryTests {
     }
 
     @Test("connectivity background completion waits across delegate staging and the main-actor commit hop")
-    func backgroundContentLifetime() {
+    func backgroundContentLifetime() async throws {
         let activity = WatchContentActivity()
         let lifetime = WatchLibraryBackgroundLifetime()
         var finished = 0
@@ -691,7 +691,8 @@ struct WatchContentDeliveryTests {
         #expect(finished == 0)
         activity.end()
         lifetime.update(activated: true, contentPending: false, importsPending: activity.count)
-        #expect(finished == 1)
+        #expect(finished == 0)
+        try await PlayerStoreTests.waitFor { finished == 1 }
     }
 
     @Test("an unreceived snapshot preserves selected files; authoritative empty selection removes them")

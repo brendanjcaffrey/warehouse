@@ -19,7 +19,7 @@ final class WatchPhoneSession: NSObject {
         }
     }
     let library: WatchLibraryReceiver
-    let lifetime = WatchLibraryBackgroundLifetime()
+    let lifetime: WatchLibraryBackgroundLifetime
     private nonisolated let metadataDirectory: URL
     private nonisolated let contentDirectory: URL
     private let sessionState: @MainActor () -> (activated: Bool, contentPending: Bool)
@@ -44,6 +44,7 @@ final class WatchPhoneSession: NSObject {
     init(
         library: WatchLibraryReceiver,
         libraryTransport: LibraryTransport = .init(),
+        backgroundLifetime: WatchLibraryBackgroundLifetime? = nil,
         sessionState: @escaping @MainActor () -> (activated: Bool, contentPending: Bool) = {
             (WCSession.default.activationState == .activated, WCSession.default.hasContentPending)
         },
@@ -69,6 +70,7 @@ final class WatchPhoneSession: NSObject {
     ) {
         self.library = library
         self.libraryTransport = libraryTransport
+        lifetime = backgroundLifetime ?? .init()
         metadataDirectory = library.directory
         self.contentDirectory = contentDirectory
         self.sessionState = sessionState
@@ -77,6 +79,7 @@ final class WatchPhoneSession: NSObject {
         self.sendDiagnosticData = sendDiagnosticData
         self.diagnostics = diagnostics ?? .shared
         super.init()
+        lifetime.refreshState = { [weak self] in self?.updateBackgroundLifetime() }
         lifetime.onChanged = { [weak self] in self?.recordBackground() }
         lifetime.onCompleted = { [weak self] count in self?.recordBackground(completed: count) }
         library.onIdle = { [weak self] in self?.updateBackgroundLifetime() }
@@ -249,6 +252,7 @@ final class WatchPhoneSession: NSObject {
     /// file callbacks acquire their hold before staging and keep it through this actor hop.
     private nonisolated func dispatchHeld(_ operation: @escaping @MainActor () -> Void) {
         Task { @MainActor in
+            lifetime.activityBegan()
             defer { contentActivity.end(); updateBackgroundLifetime() }
             operation()
         }

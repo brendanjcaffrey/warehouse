@@ -148,16 +148,28 @@ final class WatchLibraryReceiver {
     }
 }
 
-/// background tasks remain alive until both queued imports and system delivery finish.
+/// background tasks remain alive through required work and a bounded idle settling window.
 @MainActor
 final class WatchLibraryBackgroundLifetime {
     private(set) var activated = false
     private(set) var contentPending = true
     private(set) var importsPending = 0
     private var completions = [() -> Void]()
+    private let now: () -> ContinuousClock.Instant
+    private let sleep: @MainActor (Duration) async throws -> Void
+    private var settlingTask: Task<Void, Never>?
+    private var settlingID: UUID?
+    private var settlingDeadline: ContinuousClock.Instant?
     var heldTasks: Int { completions.count }
     var onChanged: () -> Void = {}
     var onCompleted: (Int) -> Void = { _ in }
+    var refreshState: () -> Void = {}
+
+    init(now: @escaping () -> ContinuousClock.Instant = { .now },
+         sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.now = now
+        self.sleep = sleep
+    }
 
     func update(activated: Bool, contentPending: Bool, importsPending: Int) {
         self.activated = activated
@@ -173,11 +185,43 @@ final class WatchLibraryBackgroundLifetime {
         finishIfIdle()
     }
 
-    func finishIfIdle() {
-        guard activated, !contentPending, importsPending == 0 else { return }
-        let ready = completions
-        completions.removeAll()
-        if !ready.isEmpty { onCompleted(ready.count) }
-        ready.forEach { $0() }
+    func activityBegan() {
+        settlingTask?.cancel()
+        settlingTask = nil
+        settlingID = nil
     }
+
+    func finishIfIdle() {
+        guard !completions.isEmpty else { return }
+        guard isIdle else {
+            activityBegan()
+            return
+        }
+        guard settlingTask == nil else { return }
+        let instant = now()
+        // activity can restart the quiet window, but cannot renew this group's settling allowance.
+        let deadline = settlingDeadline ?? instant.advanced(by: .seconds(1))
+        settlingDeadline = deadline
+        let wake = min(instant.advanced(by: .milliseconds(250)), deadline)
+        let id = UUID()
+        settlingID = id
+        let sleep = sleep
+        let now = now
+        settlingTask = Task { [weak self] in
+            do { try await sleep(max(.zero, now().duration(to: wake))) } catch { return }
+            guard let self, self.settlingID == id else { return }
+            // raw delegate activity and session flags may change before their actor notifications run.
+            self.refreshState()
+            guard self.settlingID == id, self.isIdle else { return }
+            self.settlingTask = nil
+            self.settlingID = nil
+            self.settlingDeadline = nil
+            let ready = self.completions
+            self.completions.removeAll()
+            self.onCompleted(ready.count)
+            ready.forEach { $0() }
+        }
+    }
+
+    private var isIdle: Bool { activated && !contentPending && importsPending == 0 }
 }
