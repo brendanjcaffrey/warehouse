@@ -26,6 +26,8 @@ struct Song: Identifiable, Hashable, Sendable {
     var addedDate: Date?
     /// committed metadata ownership, retained by queue copies through account changes.
     var libraryID: String?
+    var lyrics = ""
+    var comments = ""
 
     var titleSortKey: String { sortName.isEmpty ? name : sortName }
     var artistSortKey: String { artistSortName.isEmpty ? artistName : artistSortName }

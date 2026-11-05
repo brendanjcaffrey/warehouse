@@ -13,6 +13,9 @@ final class TrackEntity: NSManagedObject {
     @NSManaged var albumName: String
     @NSManaged var albumSortName: String
     @NSManaged var genre: String
+    @NSManaged private var lyricsData: Data?
+    @NSManaged private var commentsData: Data?
+
     @NSManaged var year: Int32
     @NSManaged var duration: Double
     @NSManaged var start: Double
@@ -25,6 +28,19 @@ final class TrackEntity: NSManagedObject {
     @NSManaged var artworkFilename: String?
     @NSManaged var addedDate: Date?
     @NSManaged var playlistIds: [String]
+
+    // binary storage and nonfailable decoding preserve leading unicode markers.
+    var lyrics: String {
+        // swiftlint:disable:next optional_data_string_conversion
+        get { String(decoding: lyricsData ?? Data(), as: UTF8.self) }
+        set { lyricsData = Data(newValue.utf8) }
+    }
+
+    var comments: String {
+        // swiftlint:disable:next optional_data_string_conversion
+        get { String(decoding: commentsData ?? Data(), as: UTF8.self) }
+        set { commentsData = Data(newValue.utf8) }
+    }
 }
 
 @objc(PlaylistEntity)
@@ -101,6 +117,8 @@ final class LibraryDatabase {
             entity.albumName = album?.name ?? ""
             entity.albumSortName = Self.sortName(album)
             entity.genre = library.genres[track.genreID]?.name ?? ""
+            entity.lyrics = track.lyrics
+            entity.comments = track.comments
             entity.year = Int32(track.year)
             entity.duration = Double(track.duration)
             entity.start = Double(track.start)
@@ -152,6 +170,8 @@ final class LibraryDatabase {
             entity.albumArtistName = song.albumArtistName
             entity.albumName = song.albumName
             entity.genre = song.genre
+            entity.lyrics = song.lyrics
+            entity.comments = song.comments
             entity.year = Int32(song.year)
             entity.start = song.start
             entity.finish = song.finish
@@ -227,7 +247,9 @@ final class LibraryDatabase {
             musicFilename: track.musicFilename,
             artworkFilename: track.artworkFilename,
             addedDate: track.addedDate,
-            libraryID: libraryID)
+            libraryID: libraryID,
+            lyrics: track.lyrics,
+            comments: track.comments)
     }
 
     /// lightweight copies of every playlist for the playlists list
@@ -308,6 +330,8 @@ final class LibraryDatabase {
             stringAttribute("albumName"),
             stringAttribute("albumSortName"),
             stringAttribute("genre"),
+            textAttribute("lyricsData"),
+            textAttribute("commentsData"),
             numberAttribute("year", .integer32AttributeType),
             numberAttribute("duration", .doubleAttributeType),
             numberAttribute("start", .doubleAttributeType),
@@ -356,6 +380,14 @@ final class LibraryDatabase {
         if !optional {
             attribute.defaultValue = ""
         }
+        return attribute
+    }
+
+    private static func textAttribute(_ name: String) -> NSAttributeDescription {
+        let attribute = NSAttributeDescription()
+        attribute.name = name
+        attribute.attributeType = .binaryDataAttributeType
+        attribute.isOptional = true
         return attribute
     }
 

@@ -58,6 +58,8 @@ struct TrackEditForm: Equatable {
     var album: String
     var albumArtist: String
     var genre: String
+    var lyrics: String
+    var comments: String
     var year: String
     var start: String
     var finish: String
@@ -72,6 +74,8 @@ struct TrackEditForm: Equatable {
         album = song.albumName
         albumArtist = song.albumArtistName
         genre = song.genre
+        lyrics = song.lyrics
+        comments = song.comments
         year = String(song.year)
         start = PlaybackTimeMillis.format(song.start)
         finish = PlaybackTimeMillis.format(song.finish)
@@ -109,6 +113,8 @@ struct TrackEditForm: Equatable {
         if album != song.albumName { update.album = album }
         if albumArtist != song.albumArtistName { update.albumArtist = albumArtist }
         if genre != song.genre { update.genre = genre }
+        if lyrics != song.lyrics { update.lyrics = lyrics }
+        if comments != song.comments { update.comments = comments }
         if year != String(song.year), let year = Int32(year) { update.year = year }
         if start != PlaybackTimeMillis.format(song.start), let seconds = PlaybackTimeMillis.parse(start) {
             update.start = seconds
@@ -149,7 +155,10 @@ struct TrackEditForm: Equatable {
             rating: ratingValue,
             musicFilename: song.musicFilename,
             artworkFilename: artworkCleared ? nil : artworkFilename,
-            addedDate: song.addedDate)
+            addedDate: song.addedDate,
+            libraryID: song.libraryID,
+            lyrics: lyrics,
+            comments: comments)
     }
 
     /// the stars back in 0-100 form

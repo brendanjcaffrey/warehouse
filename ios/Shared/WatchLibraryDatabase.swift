@@ -167,6 +167,9 @@ extension LibraryDatabase {
                 track.musicFilename = entity.musicFilename
                 track.artworkFilename = entity.artworkFilename ?? ""
                 if let date = entity.addedDate { track.addedDate = Int64(date.timeIntervalSince1970) }
+                // phone-only text is deliberately omitted from watch metadata.
+                track.lyrics = ""
+                track.comments = ""
                 track.playlistIds = entity.playlistIds
                 library.tracks.append(track)
             }

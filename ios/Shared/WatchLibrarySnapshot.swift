@@ -119,6 +119,8 @@ struct WatchLibrarySnapshot: Codable, Equatable, Sendable {
         var result = library
         result.tracks = library.tracks.filter { trackIDs.contains($0.id) }.map {
             var track = $0
+            track.lyrics = ""
+            track.comments = ""
             track.playlistIds = track.playlistIds.filter { included.contains($0) }
             return track
         }

@@ -7,6 +7,41 @@ import Testing
 @Suite("WatchLibraryDelivery", .serialized)
 @MainActor
 struct WatchLibraryDeliveryTests {
+    @Test("serialized selected watch metadata excludes phone text while phone storage retains it")
+    func excludesPhoneText() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        var library = Self.library(count: 4)
+        library.tracks[0].lyrics = TrackTextTests.lyrics
+        library.tracks[0].comments = TrackTextTests.comments
+        try await env.phone.replaceLibrary(with: library, sourceIdentity: "account")
+        let publisher = try env.publisher()
+        publisher.publish(identity: "account", playlistIDs: ["p2"])
+        await publisher.waitForPublication()
+        #expect(publisher.errorMessage == nil && env.deliveries.count == 1)
+        let file = try Data(contentsOf: #require(env.deliveries.first?.0))
+        let snapshot = try JSONDecoder().decode(WatchLibrarySnapshot.self, from: file)
+        let outgoing = try snapshot.validatedLibrary()
+        #expect(Set(outgoing.tracks.map(\.id)) == ["t0", "t1"])
+        #expect(outgoing.tracks.allSatisfy { $0.lyrics.isEmpty && $0.comments.isEmpty })
+        #expect(snapshot.libraryData.range(of: Data(TrackTextTests.lyrics.utf8)) == nil)
+        #expect(snapshot.libraryData.range(of: Data(TrackTextTests.comments.utf8)) == nil)
+        let receiver = env.receiver()
+        receiver.expect(publisher.head)
+        try env.stage(0)
+        receiver.received()
+        await receiver.waitForImport()
+        #expect(receiver.errorMessage == nil && receiver.snapshot?.head == publisher.head)
+        #expect(try receiver.snapshot?.music == ["m0.mp3", "m1.mp3"])
+        #expect(try await env.watch.allSongs().allSatisfy { $0.lyrics.isEmpty && $0.comments.isEmpty })
+        let phone = try #require(try await env.phone.songs(ids: ["t0"])["t0"])
+        #expect(phone.lyrics == TrackTextTests.lyrics && phone.comments == TrackTextTests.comments)
+        #expect(outgoing.tracks.first { $0.id == "t0" }?.name == phone.name)
+        // direct selection of a full protobuf must enforce the same boundary.
+        let selected = try WatchLibrarySnapshot.selected(library, ids: ["p2"])
+        #expect(selected.tracks.allSatisfy { $0.lyrics.isEmpty && $0.comments.isEmpty })
+    }
+
     @Test("completed unchanged snapshots are not transferred again on repeated phone pushes")
     func completedSnapshot() async throws {
         let env = try Env()

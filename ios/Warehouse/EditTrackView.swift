@@ -69,6 +69,8 @@ struct EditTrackView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                textSection("Lyrics", text: $form.lyrics, id: "editLyrics")
+                textSection("Comments", text: $form.comments, id: "editComments")
                 artworkSection
             }
             .navigationTitle("Edit Track")
@@ -116,6 +118,15 @@ struct EditTrackView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier(id)
+        }
+    }
+
+    private func textSection(_ label: String, text: Binding<String>, id: String) -> some View {
+        Section(label) {
+            TextEditor(text: text)
+                .frame(minHeight: 120)
+                .accessibilityLabel(label)
                 .accessibilityIdentifier(id)
         }
     }
