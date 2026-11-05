@@ -2,6 +2,7 @@
 
 ENV['RACK_ENV'] = 'test'
 
+require 'json'
 require 'rspec'
 require 'rack/test'
 require 'pg'
@@ -1307,7 +1308,7 @@ describe 'Warehouse Server' do
       DB_POOL.with do |conn|
         conn.exec('ALTER TABLE tracks DROP COLUMN lyrics, DROP COLUMN comments')
         conn.exec('DROP TABLE lyrics_updates, comments_updates')
-        conn.exec_params(CREATE_NAME_UPDATE_SQL, [track_id1, 'pending name'])
+        conn.exec_params('INSERT INTO name_updates (track_id, name) VALUES ($1, $2)', [track_id1, 'pending name'])
         expansion = File.read(File.expand_path('../../shared/track_text.sql', __dir__))
         2.times { conn.exec(expansion.sub('BEGIN;', '').sub('COMMIT;', '')) }
       end
@@ -1323,6 +1324,151 @@ describe 'Warehouse Server' do
       expect(library_text.comments).to eq(comments_text)
       expect(pending_text.lyrics.map(&:value)).to eq([lyrics_text])
       expect(pending_text.comments.map(&:value)).to eq([comments_text])
+    end
+  end
+
+  describe 'atomic track and play updates' do
+    let(:all_fields) do
+      TrackUpdate.new(name: "a 'name' \\ 🎵", artist: 'shared new artist', albumArtist: 'shared new artist',
+                      album: 'new album', genre: 'new genre', year: 2026, start: 0, finish: 0, rating: 0,
+                      artwork: '__artwork.png', lyrics: "\uFEFFlyrics\r\nété", comments: "notes\n日本語")
+    end
+    let(:pending_columns) do
+      { 'name' => 'name', 'artist' => 'artist', 'album_artist' => 'album_artist', 'album' => 'album',
+        'genre' => 'genre', 'year' => 'year', 'start' => 'start', 'finish' => 'finish', 'rating' => 'rating',
+        'artwork' => 'artwork_filename', 'lyrics' => 'lyrics', 'comments' => 'comments' }
+    end
+
+    before do
+      # exercise the real autocommit boundary so a test rollback cannot hide partial writes.
+      DB_POOL.with do |conn|
+        conn.exec('COMMIT')
+        conn.exec("INSERT INTO export_finished (finished_at) VALUES ('2020-01-01 00:00:00.123456')")
+      end
+    end
+
+    after do
+      DB_POOL.with do |conn|
+        conn.exec('ALTER TABLE comments_updates DROP CONSTRAINT IF EXISTS reject_atomic')
+        conn.exec('ALTER TABLE export_finished DROP CONSTRAINT IF EXISTS reject_atomic')
+        tables = %w[tracks artists albums genres export_finished plays] + pending_columns.keys.map { "#{_1}_updates" }
+        conn.exec("TRUNCATE #{tables.join(', ')} RESTART IDENTITY")
+        conn.exec('BEGIN')
+      end
+    end
+
+    def post_atomic_track(update)
+      post "/api/track/#{track_id1}", update.to_proto, get_auth_header.merge('CONTENT_TYPE' => 'application/octet-stream')
+    end
+
+    def metadata_snapshot
+      tables = %w[tracks artists albums genres export_finished plays] + pending_columns.keys.map { "#{_1}_updates" }
+      DB_POOL.with { |conn| tables.to_h { |table| [table, conn.exec("SELECT * FROM #{table} ORDER BY 1").to_a] } }
+    end
+
+    def capture_mutations
+      statements = []
+      DB_POOL.with do |conn|
+        %i[exec exec_params].each do |method|
+          allow(conn).to receive(method).and_wrap_original do |original, sql, *args|
+            statements << [sql, args.first] if sql.match?(/\A\s*(?:WITH|INSERT|UPDATE|DELETE)\b/i)
+            original.call(sql, *args)
+          end
+        end
+      end
+      yield
+      statements
+    end
+
+    it 'uses one named-payload statement for all fields, associations, pending edits and freshness' do
+      statements = capture_mutations { post_atomic_track(all_fields) }
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      expect(statements.length).to eq(1)
+      expect(statements.first.last.length).to eq(2)
+      expect(JSON.parse(statements.first.last.last)).to include('name' => all_fields.name, 'lyrics' => all_fields.lyrics, 'rating' => 0)
+      snapshot = metadata_snapshot
+      track = snapshot['tracks'].first
+      expect(track).to include('name' => all_fields.name, 'year' => '2026', 'start' => '0', 'finish' => '0', 'rating' => '0',
+                               'artwork_filename' => '__artwork.png', 'lyrics' => all_fields.lyrics, 'comments' => all_fields.comments)
+      expect(track['artist_id']).to eq(track['album_artist_id'])
+      expect(snapshot['artists'].map { _1['name'] }).to contain_exactly('test_artist', 'shared new artist')
+      expect(snapshot['albums'].find { _1['id'] == track['album_id'] }['name']).to eq('new album')
+      expect(snapshot['genres'].find { _1['id'] == track['genre_id'] }['name']).to eq('new genre')
+      pending_columns.each do |field, column|
+        pending = snapshot["#{field}_updates"]
+        expect(pending.length).to eq(1)
+        expect(pending.first['track_id']).to eq(track_id1)
+        expected_field = { 'album_artist' => :albumArtist, 'artwork' => :artwork }.fetch(field, field.to_sym)
+        expected = all_fields.public_send(expected_field)
+        if expected.is_a?(Numeric)
+          expect(pending.first[column].to_f).to eq(expected)
+        elsif field == 'artwork'
+          expect(pending.first[column].strip).to eq(expected)
+        else
+          expect(pending.first[column]).to eq(expected)
+        end
+      end
+      expect(snapshot['export_finished'].first['finished_at']).not_to start_with('2020-')
+    end
+
+    it 'retains nonfinite start and finish values through the named payload' do
+      post_atomic_track(TrackUpdate.new(start: Float::NAN, finish: Float::INFINITY))
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      snapshot = metadata_snapshot
+      expect(snapshot['tracks'].first).to include('start' => 'NaN', 'finish' => 'Infinity')
+      expect(snapshot['start_updates'].first['start']).to eq('NaN')
+      expect(snapshot['finish_updates'].first['finish']).to eq('Infinity')
+    end
+
+    it 'replaces every supplied pending value and preserves omissions during a mixed clear' do
+      2.times { post_atomic_track(all_fields) }
+      post_atomic_track(TrackUpdate.new(album: '', albumArtist: '', artwork: '', lyrics: '', comments: '', rating: 50))
+      expect(OperationResponse.decode(last_response.body).success).to be true
+      snapshot = metadata_snapshot
+      expect(snapshot['tracks'].first).to include('name' => all_fields.name, 'album_id' => nil, 'album_artist_id' => nil,
+                                                  'artwork_filename' => nil, 'lyrics' => '', 'comments' => '', 'rating' => '50')
+      pending_columns.each_key { |field| expect(snapshot["#{field}_updates"].length).to eq(1) }
+      expect(snapshot['album_updates'].first['album']).to eq('')
+      expect(snapshot['album_artist_updates'].first['album_artist']).to eq('')
+      expect(snapshot['artwork_updates'].first['artwork_filename']).to be_nil
+      expect(snapshot['artists'].length).to eq(2)
+    end
+
+    %w[pending freshness].each do |failure|
+      it "rolls back the entire mixed edit and new associations after a #{failure} failure" do
+        post_atomic_track(TrackUpdate.new(name: 'old pending name', lyrics: 'old pending lyrics'))
+        DB_POOL.with do |conn|
+          conn.exec("UPDATE export_finished SET finished_at='2020-01-01 00:00:00.123456'")
+          if failure == 'pending'
+            conn.exec("ALTER TABLE comments_updates ADD CONSTRAINT reject_atomic CHECK (comments <> 'notes' || chr(10) || '日本語')")
+          else
+            conn.exec("ALTER TABLE export_finished ADD CONSTRAINT reject_atomic CHECK (finished_at < TIMESTAMP '2021-01-01')")
+          end
+        end
+        before = metadata_snapshot
+        expect { post_atomic_track(all_fields) }.to raise_error(PG::CheckViolation)
+        expect(metadata_snapshot).to eq(before)
+      end
+    end
+
+    it 'records each play, its count and freshness in one statement' do
+      2.times do
+        statements = capture_mutations { post "/api/play/#{track_id1}", {}, get_auth_header }
+        expect(OperationResponse.decode(last_response.body).success).to be true
+        expect(statements.length).to eq(1)
+      end
+      expect(get_first_value('SELECT COUNT(*) FROM plays')).to eq('2')
+      expect(get_first_value("SELECT play_count FROM tracks WHERE id='#{track_id1}'")).to eq('7')
+      expect(get_first_value('SELECT finished_at FROM export_finished')).not_to start_with('2020-')
+    end
+
+    it 'rolls back the play count and queued event if freshness cannot be written' do
+      DB_POOL.with do |conn|
+        conn.exec("ALTER TABLE export_finished ADD CONSTRAINT reject_atomic CHECK (finished_at < TIMESTAMP '2021-01-01')")
+      end
+      before = metadata_snapshot
+      expect { post "/api/play/#{track_id1}", {}, get_auth_header }.to raise_error(PG::CheckViolation)
+      expect(metadata_snapshot).to eq(before)
     end
   end
 

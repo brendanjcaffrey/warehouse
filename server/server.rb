@@ -348,9 +348,7 @@ class Server < Sinatra::Base
     post '/play/*' do
       id = params['splat'][0]
       perform_updates_if_should_track_changes(id) do |conn|
-        conn.exec_params(CREATE_PLAY_SQL, [id])
-        conn.exec_params(INCREMENT_PLAY_SQL, [id])
-        conn.exec(UPDATE_EXPORT_FINISHED_SQL)
+        conn.exec_params(RECORD_PLAY_SQL, [id])
       end
     end
 
@@ -375,83 +373,7 @@ class Server < Sinatra::Base
       return proto(OperationResponse.new(success: false, error: MISSING_FILE_ERROR)) if update.has_artwork? && !update.artwork.empty? && !File.exist?(File.join(Config.env.artwork_path, update.artwork))
 
       perform_updates_if_should_track_changes(id) do |conn|
-        if update.has_name?
-          conn.exec_params(DELETE_NAME_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_NAME_UPDATE_SQL, [id, update.name])
-          conn.exec_params(UPDATE_NAME_SQL, [update.name, id])
-        end
-        if update.has_year?
-          conn.exec_params(DELETE_YEAR_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_YEAR_UPDATE_SQL, [id, update.year])
-          conn.exec_params(UPDATE_YEAR_SQL, [update.year, id])
-        end
-        if update.has_start?
-          conn.exec_params(DELETE_START_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_START_UPDATE_SQL, [id, update.start])
-          conn.exec_params(UPDATE_START_SQL, [update.start, id])
-        end
-        if update.has_finish?
-          conn.exec_params(DELETE_FINISH_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_FINISH_UPDATE_SQL, [id, update.finish])
-          conn.exec_params(UPDATE_FINISH_SQL, [update.finish, id])
-        end
-        if update.has_artist?
-          conn.exec_params(DELETE_ARTIST_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_ARTIST_UPDATE_SQL, [id, update.artist])
-          result = conn.exec_params(ARTIST_ID_SQL, [update.artist])
-          artist_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-          artist_id ||= conn.exec_params(CREATE_ARTIST_SQL, [update.artist]).getvalue(0, 0)
-          conn.exec_params(UPDATE_ARTIST_SQL, [artist_id.to_i, id])
-        end
-        if update.has_genre?
-          conn.exec_params(DELETE_GENRE_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_GENRE_UPDATE_SQL, [id, update.genre])
-
-          result = conn.exec_params(GENRE_ID_SQL, [update.genre])
-          genre_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-          genre_id ||= conn.exec_params(CREATE_GENRE_SQL, [update.genre]).getvalue(0, 0)
-          conn.exec_params(UPDATE_GENRE_SQL, [genre_id.to_i, id])
-        end
-        if update.has_albumArtist?
-          album_artist = update.albumArtist
-          conn.exec_params(DELETE_ALBUM_ARTIST_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_ALBUM_ARTIST_UPDATE_SQL, [id, album_artist])
-          if album_artist.empty?
-            album_artist_id = nil
-          else
-            result = conn.exec_params(ARTIST_ID_SQL, [album_artist])
-            album_artist_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-            album_artist_id ||= conn.exec_params(CREATE_ARTIST_SQL, [album_artist]).getvalue(0, 0)
-            album_artist_id = album_artist_id.to_i
-          end
-          conn.exec_params(UPDATE_ALBUM_ARTIST_SQL, [album_artist_id, id])
-        end
-        if update.has_album?
-          conn.exec_params(DELETE_ALBUM_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_ALBUM_UPDATE_SQL, [id, update.album])
-          if update.album.empty?
-            album_id = nil
-          else
-            result = conn.exec_params(ALBUM_ID_SQL, [update.album])
-            album_id = result.ntuples.zero? ? nil : result.getvalue(0, 0)
-            album_id ||= conn.exec_params(CREATE_ALBUM_SQL, [update.album]).getvalue(0, 0)
-            album_id = album_id.to_i
-          end
-          conn.exec_params(UPDATE_ALBUM_SQL, [album_id, id])
-        end
-        if update.has_artwork?
-          artwork = update.artwork.empty? ? nil : update.artwork
-          conn.exec_params(DELETE_ARTWORK_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_ARTWORK_UPDATE_SQL, [id, artwork])
-          conn.exec_params(UPDATE_ARTWORK_SQL, [artwork, id])
-        end
-        if update.has_rating?
-          conn.exec_params(DELETE_RATING_UPDATE_SQL, [id])
-          conn.exec_params(CREATE_RATING_UPDATE_SQL, [id, update.rating])
-          conn.exec_params(UPDATE_RATING_SQL, [update.rating, id])
-        end
-        conn.exec_params(UPDATE_TRACK_TEXT_SQL, [id, update.has_lyrics? ? 'true' : 'false', update.lyrics, update.has_comments? ? 'true' : 'false', update.comments]) if update.has_lyrics? || update.has_comments?
-        conn.exec(UPDATE_EXPORT_FINISHED_SQL)
+        conn.exec_params(UPDATE_TRACK_SQL, [id, TrackUpdate.encode_json(update)])
       end
     end
 
