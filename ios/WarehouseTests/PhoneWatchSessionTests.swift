@@ -1,10 +1,107 @@
 import Foundation
 import Testing
+import WatchConnectivity
 @testable import Warehouse
 
 @Suite("PhoneWatchSession")
 @MainActor
 struct PhoneWatchSessionTests {
+    @Test("repeated receipt callbacks keep distinct attempt ids without claiming queue acceptance",
+           arguments: [WatchContentStatus.delivered, .retrying, .storageFull, .failed])
+    func receiptProbeAttempts(status: WatchContentStatus) async throws {
+        let head = WatchLibraryHead(publisher: UUID(), revision: 1, libraryID: "private-library", playlistIDs: [], metadataReady: true)
+        let file = WatchContentFile(head: head, type: .artwork, filename: "private-artwork.jpg", bytes: 42,
+                                   digest: String(repeating: "a", count: 64))
+        let receipt = WatchContentReceipt(file: file, status: status)
+        let capture = WatchDiagnostics(logEvents: false)
+        var plays = 0
+        let phone = PhoneWatchSession(onPlay: { _ in plays += 1 }, diagnostics: capture)
+        for _ in 0..<2 { phone.session(WCSession.default, didReceiveUserInfo: try receipt.encode()) }
+        phone.session(WCSession.default, didReceiveUserInfo: ["kind": "watchContentReceipt"])
+        phone.session(WCSession.default, didReceiveUserInfo: try WatchContentReceipt(file: file, status: .transferring).encode())
+        let received = capture.events
+        try #require(received.map(\.kind) == [.receiptCallbackReceived, .receiptCallbackReceived])
+        let attempts = try received.map { try #require($0.operationID) }
+        #expect(Set(attempts).count == 2)
+        try await PlayerStoreTests.waitFor { capture.events.filter { $0.kind == .receiptCallbackHandled }.count == 2 }
+        let handled = capture.events.filter { $0.kind == .receiptCallbackHandled }
+        #expect(Set(handled.compactMap(\.operationID)) == Set(attempts))
+        #expect(capture.events.count == 4)
+        #expect(capture.events.allSatisfy { $0.id == file.id && $0.status == status && $0.source == .system })
+        for event in handled {
+            let raw = try #require(received.first { $0.operationID == event.operationID })
+            #expect(event.date >= raw.date && (event.elapsed ?? -1) >= 0)
+        }
+        #expect(plays == 0)
+        let report = phone.diagnosticReport(deviceModel: "phone", systemVersion: "27")
+        #expect(report.totals?["receiptCallbackReceived:artwork"]?.count == 2)
+        #expect(report.totals?["receiptCallbackHandled:artwork"]?.count == 2)
+        #expect(report.totals?.values.allSatisfy { $0.bytes == 0 } == true)
+        let exported = try #require(report.encoded())
+        let text = try #require(String(data: exported, encoding: .utf8))
+        #expect(!text.contains(file.filename) && !text.contains(file.digest) && !text.contains("private-library"))
+    }
+
+    @Test("receipt probes persist before actor handling and acknowledgment still requires a durable save", arguments: [false, true])
+    func receiptCallbackBoundaries(writeFails: Bool) async throws {
+        let env = try WatchContentDeliveryTests.Env()
+        defer { env.cleanUp() }
+        let captureURL = env.root.appending(path: "phone-capture.json")
+        env.phoneDiagnostics = WatchDiagnostics(logEvents: false, storeURL: captureURL)
+        var failSave = false
+        var saves = 0
+        let state = WatchDeliveryState(write: { data, url in
+            saves += 1
+            if failSave { throw CocoaError(.fileWriteNoPermission) }
+            try WatchDeliveryState().write(data, url)
+        })
+        let snapshot = try env.snapshot(count: 4)
+        try env.cache(snapshot)
+        let queue = try env.queue(state: state)
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let file = try #require(env.queued.first?.0)
+        env.outstanding.removeAll { $0.id == file.id }
+        try await queue.settledFinished(file, error: nil)
+        env.phoneDiagnostics.clear()
+        failSave = writeFails
+        let previousSaves = saves
+        let receipt = WatchContentReceipt(file: file, status: .delivered)
+        let phone = PhoneWatchSession(onPlay: { _ in }, diagnostics: env.phoneDiagnostics)
+        phone.content = queue
+        let before = Date()
+        phone.session(WCSession.default, didReceiveUserInfo: try receipt.encode())
+
+        // no actor work can run before this synchronous journal read.
+        let early = WatchDiagnostics(logEvents: false, storeURL: captureURL).events
+        #expect(early.map(\.kind) == [.receiptCallbackReceived])
+        #expect(queue.jobs.first { $0.file == file }?.status == .awaitingReceipt)
+        try await PlayerStoreTests.waitFor { saves > previousSaves }
+        await queue.waitForWork()
+        let report = phone.diagnosticReport(deviceModel: "phone", systemVersion: "27")
+        let received = try #require(report.events.first { $0.kind == .receiptCallbackReceived })
+        let handled = try #require(report.events.first { $0.kind == .receiptCallbackHandled })
+        let operationID = try #require(received.operationID)
+        #expect(handled.operationID == operationID)
+        #expect(received.id == file.id && handled.id == file.id)
+        #expect(received.identity == WatchDiagnosticIdentity(snapshot.head) && handled.identity == received.identity)
+        #expect(received.status == .delivered && handled.status == .delivered)
+        #expect(received.date >= before && received.date <= handled.date)
+        #expect(try #require(handled.elapsed) >= 0)
+        #expect(report.events.filter { $0.kind == .phoneAcknowledged }.count == (writeFails ? 0 : 1))
+        if let acknowledged = report.events.first(where: { $0.kind == .phoneAcknowledged }) {
+            #expect(acknowledged.date >= handled.date && acknowledged.id == file.id)
+        }
+        #expect(report.totals?["receiptCallbackReceived:music"]?.bytes == 0)
+        #expect(report.totals?["receiptCallbackHandled:music"]?.bytes == 0)
+        let restored = try env.queue()
+        #expect(restored.jobs.first { $0.file == file }?.status == (writeFails ? .awaitingReceipt : .delivered))
+        let exported = try #require(report.encoded())
+        let decoded = try #require(WatchDiagnosticReport.decode(exported))
+        #expect(decoded.events.map(\.kind) == report.events.map(\.kind))
+        let text = try #require(String(data: exported, encoding: .utf8))
+        #expect(!text.contains(file.filename) && !text.contains(file.digest))
+    }
+
     @Test("content receipts arriving before matching phone metadata survive relaunch", arguments: [false, true])
     func pendingMetadataReceipt(storageFull: Bool) async throws {
         let env = try WatchContentDeliveryTests.Env()

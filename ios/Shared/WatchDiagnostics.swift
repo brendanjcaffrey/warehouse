@@ -22,6 +22,7 @@ struct WatchDiagnostic: Codable, Sendable {
         case contentCallbackReceived, contentStagingCompleted, contentStagingFailed, contentCallbackHandled
         case contentStagingProgress, receiptReplayChanged
         case contentQueryReceived, contentQueryHandled
+        case receiptCallbackReceived, receiptCallbackHandled
         case metadataCallbackReceived, metadataStagingCompleted, metadataStagingFailed, metadataCallbackHandled
         case contextCallbackReceived, contextCallbackHandled
         case processStarted, scenePhaseChanged, applicationStateChanged

@@ -10,7 +10,7 @@ final class PhoneWatchSession: NSObject {
     var publishLibrary: (() -> Void)?
     var onLibraryRequest: ((WatchLibraryRequest) -> Void)?
     var onMetadataFinished: ((String, Error?) -> Void)?
-    private let diagnostics: WatchDiagnostics
+    private nonisolated let diagnostics: WatchDiagnostics
     private let onPlay: @MainActor (PlayPayload) throws -> Void
     private let acknowledgePlay: @MainActor (PlayPayload) -> Void
     private let nowPlaying: @MainActor () -> RemotePlaybackPayload?
@@ -95,6 +95,8 @@ extension PhoneWatchSession: WCSessionDelegate {
     // split from the delegate method so tests can exercise the decode & hop
     // without a real session
     nonisolated func receive(userInfo: [String: Any]) {
+        let receivedAt = Date()
+        let entered = ProcessInfo.processInfo.systemUptime
         if let request = WatchLibraryRequest(dictionary: userInfo) {
             Task { @MainActor in
                 if let onLibraryRequest { onLibraryRequest(request) } else { publishLibrary?() }
@@ -111,7 +113,13 @@ extension PhoneWatchSession: WCSessionDelegate {
             return
         }
         if let receipt = WatchContentReceipt(dictionary: userInfo) {
+            let operationID = UUID()
+            diagnostics.delivery(.receiptCallbackReceived, file: receipt.file, source: .system,
+                                 status: receipt.status, date: receivedAt, operationID: operationID)
             Task { @MainActor in
+                diagnostics.delivery(.receiptCallbackHandled, file: receipt.file, source: .system,
+                                     status: receipt.status, elapsed: ProcessInfo.processInfo.systemUptime - entered,
+                                     operationID: operationID)
                 try? content?.receive(receipt)
             }
             return
