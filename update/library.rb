@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
+require 'tempfile'
+require 'json'
 require_relative 'pretty_on_failure'
 
 module Update
@@ -51,6 +53,21 @@ module Update
     UPDATE_YEAR = format(UPDATE_TEMPLATE, '%s', 'year', '%s')
     UPDATE_START = format(UPDATE_TEMPLATE, '%s', 'start', '%s')
     UPDATE_FINISH = format(UPDATE_TEMPLATE, '%s', 'finish', '%s')
+
+    # jxa keeps json text out of applescript's string coercion, which drops a leading bom.
+    UPDATE_TEXT_TEMPLATE = <<~SCRIPT
+      ObjC.import('Foundation');
+      function run(argv) {
+        var data = $.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null);
+        var request = JSON.parse(ObjC.unwrap(data));
+        var track = Application('Music').fileTracks.whose({persistentID: request.track_id})[0];
+        track.%<field>s = request.value;
+        return JSON.stringify(track.%<field>s());
+      }
+    SCRIPT
+
+    UPDATE_LYRICS = format(UPDATE_TEXT_TEMPLATE, field: 'lyrics')
+    UPDATE_COMMENTS = format(UPDATE_TEXT_TEMPLATE, field: 'comment')
 
     GET_ARTWORK = <<-SCRIPT
       tell application "Music"
@@ -210,6 +227,14 @@ module Update
       puts "#{start_finish} -> #{end_finish}"
     end
 
+    def update_lyrics(persistent_id, new_lyrics)
+      update_text(persistent_id, new_lyrics, UPDATE_LYRICS, 'lyrics')
+    end
+
+    def update_comments(persistent_id, new_comments)
+      update_text(persistent_id, new_comments, UPDATE_COMMENTS, 'comments')
+    end
+
     def get_artwork(persistent_id)
       @command.run!("osascript -e '#{format(GET_ARTWORK, persistent_id, "#{@tmpdir}/")}'")
       artwork_filename = "#{@tmpdir}/#{persistent_id}"
@@ -235,6 +260,20 @@ module Update
       end_artwork = get_artwork(persistent_id)
       puts "#{start_artwork} -> #{end_artwork}"
     end
+
+    def update_text(persistent_id, value, script, field)
+      Tempfile.create(['warehouse-track-text', '.json']) do |request|
+        request.write(JSON.generate(track_id: persistent_id, value: value))
+        request.flush
+        result = @command.run('osascript', '-l', 'JavaScript', '-e', script, request.path)
+        saved_text = JSON.parse(result.out)
+        raise 'music text read-back does not match the queued value' unless saved_text == value
+
+        puts "updated #{field}"
+        saved_text
+      end
+    end
+    private :update_text
 
     def escape(str)
       str.gsub('"', '\"').gsub("'", "'\"'\"'")

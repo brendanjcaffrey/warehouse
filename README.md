@@ -148,6 +148,12 @@ media filenames. Lyrics are handled according to Music's file type:
 Comments are included for all supported file types, including WAV. An unknown
 file type or failed lyrics read stops export before the database is rebuilt.
 
+`rake update` writes queued lyrics and comments back to Music independently,
+including empty values that clear a field. Local updates are applied first,
+then remote updates; a remote edit to the same field wins. Queued edits can
+overwrite direct Music edits. Text writes use JavaScript for Automation through
+`osascript`, with JSON request files to preserve line breaks and special characters.
+
 ## Syncing the library
 
 Run these commands from the repo root to refresh the library from Music.
@@ -233,6 +239,9 @@ Useful tasks:
 - `rake export:test` — run exporter tests using temporary tables in
   `warehouse_test`, with the same database credentials as the server specs.
 - `rake server:spec` — run the server tests.
+- `rake update:spec` — run updater and Music automation boundary specs with
+  Music calls and remote responses stubbed. On macOS, this also exercises real
+  `osascript` text transport with an in-memory Music stub.
 - `rake web:vitest` — run the web tests once (`rake web:vitest_watch` to watch,
   or `rake web:vitest_browser` for the browser-mode suite, which needs
   playwright chromium).

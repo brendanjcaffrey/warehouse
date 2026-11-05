@@ -1,5 +1,4 @@
 require 'rubygems'
-require 'require_all'
 require 'rspec/core/rake_task'
 require 'sinatra'
 require 'tty-command'
@@ -223,11 +222,20 @@ end
 desc 'update iTunes library with any changes in the database'
 task :update do
   Config.set_env('local')
-  require_all 'update'
+  require_relative 'update/database'
+  require_relative 'update/library'
+  require_relative 'update/updater'
 
   database = Update::Database.new(Config.env.database_username, Config.env.database_password, Config.env.database_name)
   library = Update::Library.new
   Update::Updater.new(database, library).update_library!
+end
+
+namespace :update do
+  desc 'run updater specs without accessing music or live servers'
+  RSpec::Core::RakeTask.new(:spec) do |t|
+    t.pattern = Dir.glob('update/spec/*_spec.rb')
+  end
 end
 
 desc 'compile the protobuf definitions'

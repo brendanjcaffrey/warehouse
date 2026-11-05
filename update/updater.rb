@@ -24,6 +24,8 @@ module Update
         start_updates(@database.get_start_updates)
         finish_updates(@database.get_finish_updates)
         artwork_updates(@database.get_artwork_updates)
+        lyrics_updates(@database.get_lyrics_updates)
+        comments_updates(@database.get_comments_updates)
       end
 
       return unless Config.remote.update_library
@@ -74,6 +76,8 @@ module Update
         end
       end
       artwork_updates(flat_artwork_updates)
+      lyrics_updates(flatten_updates(updates.lyrics))
+      comments_updates(flatten_updates(updates.comments))
     end
 
     private
@@ -177,6 +181,22 @@ module Update
       artworks.each do |row|
         puts @database.get_track_and_artist_name(row.first).join(' - ')
         @library.update_artwork(row.first, row.last)
+      end
+    end
+
+    def lyrics_updates(lyrics)
+      puts "\nlyrics updates"
+      lyrics.each do |persistent_id, value|
+        puts @database.get_track_and_artist_name(persistent_id).join(' - ')
+        @library.update_lyrics(persistent_id, value)
+      end
+    end
+
+    def comments_updates(comments)
+      puts "\ncomments updates"
+      comments.each do |persistent_id, value|
+        puts @database.get_track_and_artist_name(persistent_id).join(' - ')
+        @library.update_comments(persistent_id, value)
       end
     end
 
