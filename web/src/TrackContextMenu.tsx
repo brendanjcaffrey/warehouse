@@ -6,10 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAtomValue } from "jotai";
 import { useLocation } from "react-router-dom";
 import {
   ArrowReturnLeft,
   CaretRightFill,
+  ChatLeftText,
   Disc,
   Download,
   MusicNoteBeamed,
@@ -18,6 +20,7 @@ import {
   PersonFill,
   PlayFill,
   SkipForwardFill,
+  TextLeft,
 } from "react-bootstrap-icons";
 import library, { Playlist, Track } from "./Library";
 import { player } from "./Player";
@@ -30,7 +33,8 @@ import {
   trackGotoTargets,
   trackPlaylistOptions,
 } from "./TrackMenu";
-import { RevealView } from "./State";
+import { RevealView, updatedTrackAtom } from "./State";
+import TrackTextReader, { TrackTextField } from "./TrackTextReader";
 import { useReveal } from "./useReveal";
 
 // the icon each "go to" entry shows, matching the sidebar's view icons
@@ -86,6 +90,7 @@ function TrackContextMenu({
   actions,
   returnToSource,
   onEdit,
+  onRead,
   onClose,
 }: {
   position: Position;
@@ -95,6 +100,7 @@ function TrackContextMenu({
   actions?: TrackMenuActions;
   returnToSource?: { label: string; onClick: () => void };
   onEdit: () => void;
+  onRead: (field: TrackTextField) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -242,6 +248,24 @@ function TrackContextMenu({
       >
         Download
       </MenuItem>
+      <MenuItem
+        icon={<TextLeft size={15} />}
+        onClick={() => {
+          onRead("lyrics");
+          onClose();
+        }}
+      >
+        Lyrics
+      </MenuItem>
+      <MenuItem
+        icon={<ChatLeftText size={15} />}
+        onClick={() => {
+          onRead("comments");
+          onClose();
+        }}
+      >
+        Comments
+      </MenuItem>
       {canEdit && (
         <MenuItem
           icon={<PencilSquare size={15} />}
@@ -342,6 +366,19 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
     returnToSource?: { label: string; onClick: () => void };
   } | null>(null);
   const [editTrack, setEditTrack] = useState<Track | null>(null);
+  const [reader, setReader] = useState<{
+    track: Track;
+    field: TrackTextField;
+  } | null>(null);
+  const updatedTrack = useAtomValue(updatedTrackAtom);
+
+  useEffect(() => {
+    setReader((current) =>
+      current && updatedTrack?.id === current.track.id
+        ? { ...current, track: updatedTrack }
+        : current
+    );
+  }, [updatedTrack]);
 
   const openMenu = useCallback(
     (
@@ -372,7 +409,15 @@ export function useTrackContextMenu(currentPlaylistId?: string) {
           actions={state.actions}
           returnToSource={state.returnToSource}
           onEdit={() => setEditTrack(state.track)}
+          onRead={(field) => setReader({ track: state.track, field })}
           onClose={() => setState(null)}
+        />
+      )}
+      {reader && (
+        <TrackTextReader
+          track={reader.track}
+          field={reader.field}
+          onClose={() => setReader(null)}
         />
       )}
       {editTrack && (

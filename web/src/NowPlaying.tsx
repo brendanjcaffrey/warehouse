@@ -1,8 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { useAtomValue } from "jotai";
 import { Form, Spinner, Stack } from "react-bootstrap";
-import { ThreeDots } from "react-bootstrap-icons";
+import { TextLeft, ThreeDots } from "react-bootstrap-icons";
 import Artwork from "./Artwork";
+import IconButton from "./IconButton";
+import TrackTextReader from "./TrackTextReader";
 import DelayedElement from "./DelayedElement";
 import useBreakpoint from "@restart/hooks/useBreakpoint";
 import { player } from "./Player";
@@ -65,6 +67,7 @@ function TrimNotch({ position }: { position: number }) {
 }
 
 function NowPlaying() {
+  const [showLyrics, setShowLyrics] = useState(false);
   const isSmallScreen = useBreakpoint("md", "down");
 
   const playingTrack = useAtomValue(playingTrackAtom);
@@ -206,6 +209,21 @@ function NowPlaying() {
           {finishNotch !== null && <TrimNotch position={finishNotch} />}
         </div>
       </div>
+      <IconButton
+        aria-label="Lyrics"
+        title="Lyrics"
+        disabled={!playingTrack}
+        onClick={() => setShowLyrics(true)}
+      >
+        <TextLeft size={16} />
+      </IconButton>
+      {showLyrics && (
+        <TrackTextReader
+          track={playingTrack?.track}
+          field="lyrics"
+          onClose={() => setShowLyrics(false)}
+        />
+      )}
       {trackMenu.element}
     </Stack>
   );

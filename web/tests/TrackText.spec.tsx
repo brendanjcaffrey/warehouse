@@ -312,6 +312,7 @@ test.each([true, false])(
           track={track}
           playlists={[]}
           onEdit={vi.fn()}
+          onRead={vi.fn()}
           onClose={vi.fn()}
         />
       </MemoryRouter>
