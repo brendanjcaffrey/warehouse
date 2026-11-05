@@ -2,7 +2,10 @@ import SwiftUI
 import Yams
 import PostgresNIO
 
+@MainActor
 struct ExportApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var automation = MusicAutomationAuthorization()
     @State private var authStatus: AuthStatus = MusicAuth.getStatus()
     func checkAuth() {
         authStatus = MusicAuth.getStatus()
@@ -101,6 +104,7 @@ struct ExportApp: App {
             exportError = error.localizedDescription
         }
         exportRunning = false
+        await automation.refresh()
     }
 
     private var canExport: Bool {
@@ -115,6 +119,10 @@ struct ExportApp: App {
 
                     ExportCard(title: "Music Library Access", systemImage: "music.note.house") {
                         authSection
+                    }
+
+                    ExportCard(title: "Music Automation", systemImage: "music.note") {
+                        automationSection
                     }
 
                     ExportCard(title: "Workspace", systemImage: "folder") {
@@ -140,6 +148,13 @@ struct ExportApp: App {
             }
             .frame(minWidth: 520, minHeight: 620)
             .background(Color(nsColor: .windowBackgroundColor))
+            .task { await automation.refresh() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    checkAuth()
+                    Task { await automation.refresh() }
+                }
+            }
         }
         .windowResizability(.contentMinSize)
     }
@@ -151,6 +166,25 @@ struct ExportApp: App {
             Text("Export your Apple Music library into Postgres.")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private var automationSection: some View {
+        StatusRow(systemImage: automation.status == .authorized ? "checkmark.circle.fill" : "info.circle.fill",
+                  tint: automation.status == .authorized ? .green : .secondary,
+                  text: automation.status.message)
+        HStack {
+            if automation.status.canRequest {
+                Button("Allow Music Automation") { Task { await automation.request() } }
+            }
+            if automation.status == .denied {
+                Button("Open System Settings", action: automation.openSettings)
+            }
+            Spacer()
+            Button("Refresh Status") { Task { await automation.refresh() } }
+                .controlSize(.small)
+        }
+        .disabled(exportRunning || automation.isChecking)
     }
 
     @ViewBuilder
@@ -212,7 +246,7 @@ struct ExportApp: App {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(!canExport || exportRunning)
+                .disabled(!canExport || exportRunning || automation.isChecking)
             }
 
             if !canExport {

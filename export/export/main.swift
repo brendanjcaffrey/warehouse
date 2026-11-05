@@ -58,14 +58,13 @@ if args.headless {
     }
 
     let pgConfig = try Config.getDatabaseConfig(configFileURL: configFileURL)
-    let library = Library(pgConfig: pgConfig!, musicDirURL: musicDirURL, artworkDirURL: artworkDirURL)
+    let library = Library(pgConfig: pgConfig!, musicDirURL: musicDirURL, artworkDirURL: artworkDirURL,
+                          allowAutomationPrompt: false)
 
     let exportProgress = ExportProgressModel()
     let progressReporter = Task {
         while !Task.isCancelled {
-            if exportProgress.status.totalTracks > 0 {
-                printToStderr("tracks processed: \(exportProgress.status.processedTracks)/\(exportProgress.status.totalTracks)")
-            }
+            printToStderr("tracks processed: \(exportProgress.status.processedTracks)/\(exportProgress.status.totalTracks)")
             try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
         }
     }

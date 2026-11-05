@@ -79,6 +79,23 @@ def run_export_app
 end
 
 namespace :export do
+  desc 'test exporter text reads and database preflight with isolated postgres fixtures'
+  task :test do
+    require 'json'
+    require 'tempfile'
+
+    test_config = ENV['CI'] ? { 'database_username' => 'ci', 'database_password' => 'ci' } : Config.local.to_h.transform_keys(&:to_s)
+    Tempfile.create(['warehouse-export-test', '.json']) do |config|
+      config.write(JSON.generate(test_config.slice('database_username', 'database_password')))
+      config.flush
+      sh({ 'TEST_RUNNER_EXPORT_TEST_CONFIG_PATH' => config.path },
+         'xcodebuild', 'test', '-project', "#{ROOT}/export/warehouse-export.xcodeproj",
+         '-scheme', 'ExportTests', '-destination', 'platform=macOS',
+         '-derivedDataPath', EXPORT_BUILD_DIR, '-parallel-testing-enabled', 'NO',
+         '-collect-test-diagnostics', 'never')
+    end
+  end
+
   desc 'build the macos Warehouse Export app'
   task :build do
     sh "xcodebuild -project #{ROOT}/export/warehouse-export.xcodeproj " \

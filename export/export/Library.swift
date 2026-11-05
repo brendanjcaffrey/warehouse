@@ -78,14 +78,16 @@ class Library {
     var newArtworkFiles: Set<String> = []
 
     var existingFilenames: Dictionary<String, ExistingFilenames> = [:]
+    private let allowAutomationPrompt: Bool
 
     let allowedDistinguisedKinds: Set<ITLibDistinguishedPlaylistKind> = [.kindNone, .kindMusic]
     let allowedPlaylistKinds: Set<ITLibPlaylistKind> = [.smart, .regular, .folder]
 
-    init(pgConfig: PostgresClient.Configuration, musicDirURL: URL, artworkDirURL: URL) {
+    init(pgConfig: PostgresClient.Configuration, musicDirURL: URL, artworkDirURL: URL, allowAutomationPrompt: Bool = true) {
         self.dbConfig = pgConfig
         self.musicDirURL = musicDirURL
         self.artworkDirURL = artworkDirURL
+        self.allowAutomationPrompt = allowAutomationPrompt
     }
 
     func export(progress: ExportProgressModel, fast: Bool) async throws -> Optional<String> {
@@ -119,18 +121,25 @@ class Library {
             defer { taskGroup.cancelAll() }
             taskGroup.addTask { await client.run() }
             do {
-                let lib = try! ITLibrary(apiVersion: "1.1")
-                if !fast { try self.gatherOldFiles() }
-                if fast { try await self.gatherExistingFilenames(client) }
-                try await self.dropTables(client, progress)
-                try await self.createTables(client, progress)
-                try await self.exportGenres(lib, client, progress)
-                try await self.exportArtists(lib, client, progress)
-                try await self.exportAlbums(lib, client, progress)
-                try await self.exportTracks(lib, client, progress, fast)
-                try await self.exportPlaylists(lib, client, progress)
-                try await self.finishExport(client, progress)
-                if !fast { try self.removeOldFiles() }
+                let lib = try ITLibrary(apiVersion: "1.1")
+                let comments = lib.allMediaItems.filter { !self.shouldIgnoreItem($0) }.map {
+                    TrackComments(id: self.formatPersistentId($0.persistentID), comments: $0.comments ?? "")
+                }
+                await MainActor.run { progress.status.totalTracks = lib.allMediaItems.count }
+                let source = try NativeMusicTextSource(allowPrompt: allowAutomationPrompt)
+                try await MusicTextExport.run(comments: comments, source: source) { text in
+                    if !fast { try self.gatherOldFiles() }
+                    if fast { try await self.gatherExistingFilenames(client) }
+                    try await self.dropTables(client, progress)
+                    try await self.createTables(client, progress)
+                    try await self.exportGenres(lib, client, progress)
+                    try await self.exportArtists(lib, client, progress)
+                    try await self.exportAlbums(lib, client, progress)
+                    try await self.exportTracks(lib, client, progress, fast, text)
+                    try await self.exportPlaylists(lib, client, progress)
+                    try await self.finishExport(client, progress)
+                    if !fast { try self.removeOldFiles() }
+                }
                 await MainActor.run { progress.status.totalTime = Date().timeIntervalSince(start) }
                 return nil
             } catch let error {
@@ -258,7 +267,8 @@ class Library {
         await MainActor.run { progress.status.albumQueryTime = duration }
     }
 
-    private func exportTracks(_ lib: ITLibrary, _ client: PostgresClient, _ progress: ExportProgressModel, _ fast: Bool) async throws {
+    private func exportTracks(_ lib: ITLibrary, _ client: PostgresClient, _ progress: ExportProgressModel,
+                              _ fast: Bool, _ text: [String: TrackText]) async throws {
         let allItems = lib.allMediaItems
         await MainActor.run { progress.status.totalTracks = allItems.count }
 
@@ -273,6 +283,9 @@ class Library {
             guard let location = item.location else { fatalError() }
 
             let persistentId = formatPersistentId(item.persistentID)
+            guard let trackText = text[persistentId] else {
+                throw MusicTextError(message: "validated text missing for export track \(persistentId)")
+            }
             let genreId = genreIds[normalizeUTF(item.genre)]
             let artistId = item.artist?.name != nil ? artistIds[normalizeUTF(item.artist!.name!)] : nil
             let albumArtistId = item.album.albumArtist != nil ? artistIds[normalizeUTF(item.album.albumArtist!)] : nil
@@ -335,7 +348,8 @@ class Library {
                 id: persistentId, name: title, sortName: sortTitle, artistId: artistId, albumArtistId: albumArtistId,
                 albumId: albumId, genreId: genreId, year: item.year, duration: totalTime, start: startTime, finish: finishTime,
                 trackNumber: item.trackNumber, discNumber: item.album.discNumber, playCount: item.playCount, rating: rating,
-                musicFilename: musicFilename, artworkFilename: artworkFilename, addedDate: item.addedDate
+                musicFilename: musicFilename, artworkFilename: artworkFilename, addedDate: item.addedDate,
+                lyrics: trackText.lyrics, comments: trackText.comments
             ))
             trackIds.insert(persistentId)
 

@@ -113,17 +113,18 @@ export:run` rebuilds that database from your current Music library, so any of
 > pushes them into Music first (via AppleScript). The
 > [full sync](#syncing-the-library) below runs it as step one.
 
-The headless export relies on two pieces of state it can't establish on its
-own: a persisted bookmark for the workspace directory (which holds
-`config.yaml` and the music/artwork dirs), and the macOS music-library access
-grant. Both are set through the app's UI, so on a fresh machine run the
-one-time setup first:
+Before running a headless export, use the app to choose the workspace directory
+and grant access to your Music library:
 
 - `rake export:setup`
 
-This builds the app and launches its window. Click **request authorization**
-to grant music-library access, then **update workspace dir** to pick the
-workspace (the repo root). Both persist, so you only need to do this once.
+This builds the app and opens its window. Click **Request Authorization**
+to grant music-library access, then **Choose Workspace…** to pick the repo root.
+Click **Allow Music Automation** and approve control of Music so the exporter
+can read lyrics. The app saves the directory and permissions for future runs.
+If automation was denied, enable Warehouse Export in
+**System Settings → Privacy & Security → Automation → Music** before retrying.
+Headless runs fail if this permission is missing.
 
 After that, build and run the export headless:
 
@@ -135,12 +136,24 @@ This builds the app (scheme `warehouse-export`, Release) into the gitignored
 faster, less thorough pass, or `rake export:build` to just compile the app
 without running it.
 
+Both full and fast exports read current lyrics and comments from Music,
+preserving whitespace, line breaks and Unicode. Fast mode reuses existing
+media filenames. Lyrics are handled according to Music's file type:
+
+| Lyrics policy       | File types                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| Read from Music     | `MPEG audio file`, `AAC audio file`, `Purchased AAC audio file`, `Purchased MPEG-4 video file` |
+| Assume empty lyrics | `WAV audio file`                                                                               |
+
+Comments are included for all supported file types, including WAV. An unknown
+file type or failed lyrics read stops export before the database is rebuilt.
+
 ## Syncing the library
 
-The end-to-end routine to refresh the library from Music and, optionally, push
-it to a [remote](#remote) server. Run it from the repo root. `<server>` is the
-ssh host of your remote box, and you start/stop the server however you manage it
-(a process manager, systemd, etc.).
+Run these commands from the repo root to refresh the library from Music.
+The later steps copy it to a [remote](#remote) server if needed. `<server>` is
+the ssh host of your remote box. Start and stop the server using your usual
+process manager.
 
 Freeze both libraries first, or anything an app writes between `rake update`
 fetching the remote's changes and the database being replaced is dropped. Frozen
@@ -202,8 +215,7 @@ local one, and it happens while the remote server is stopped.
 
 In the iPhone app, open **Settings → Apple Watch** and select playlists. The phone
 supplies their metadata, music and artwork automatically whenever the system
-permits. Missing phone files wait for a normal phone sync. Progress shows music
-actually downloaded to the watch; selection and queued transfers do not mean Ready.
+permits.
 
 The watch browses its saved library and plays downloaded songs without the phone.
 Missing songs stay dimmed and cannot be played. Missing artwork uses a placeholder
@@ -212,49 +224,14 @@ shared music and protecting active playback. Storage Full preserves downloaded
 selected songs and retries missing delivery when space permits. Free space or
 deselect playlists on the phone to release storage.
 
-The watch requires no server URL, credentials or direct network connection.
-It can also control phone playback and return play reports through the phone.
-Keep both apps current: unsupported older peers preserve saved local content
-and report a library refresh failure. See [the delivery guide](ios/WatchLibraryDelivery.md)
-and [diagnostic capture instructions](ios/WatchDiagnosticsCapture.md).
-
-## Lyrics and comments schema expansion
-
-Before starting a server with the expanded text contract against an existing
-local or remote database, stop that server and apply the additive schema update
-on its database host:
-
-```bash
-psql -v ON_ERROR_STOP=1 -U warehouse -d warehouse -f shared/track_text.sql
-```
-
-Use the configured database name and role if they differ. The script runs in
-one transaction and can be repeated; it preserves existing tracks and pending
-edits. Fresh exports create the same columns and pending tables automatically.
-Deploy this schema before the updated server, and deploy the server before
-clients that submit lyrics/comments. Older client payloads remain valid.
-
-Both track text columns default to empty strings, so the current exporter can
-continue inserting tracks without supplying text during this expansion. Music
-text extraction and writing pending text back to Music are separate follow-up
-slices; until those are deployed, avoid submitting text edits or rebuilding a
-database with pending text edits. The current updater does not apply them yet.
-An exporter built before this schema change must be rebuilt before the next
-export, since its bundled schema would otherwise remove the expansion.
-
-Normal library responses include both fields. Track updates use optional fields:
-omission preserves the current value; an explicit empty string clears it. Each
-server retains the last accepted whole value independently for each field and
-exposes it through `/api/updates` and the updater's database readers. Text is
-stored and served verbatim, including whitespace, line breaks, Unicode and any
-leading byte-order mark.
-
 ## Development
 
 Useful tasks:
 
 - `rake proto` — recompile the protobuf definitions (`messages.proto`) into
   Ruby, TypeScript, and Swift after editing the schema.
+- `rake export:test` — run exporter tests using temporary tables in
+  `warehouse_test`, with the same database credentials as the server specs.
 - `rake server:spec` — run the server tests.
 - `rake web:vitest` — run the web tests once (`rake web:vitest_watch` to watch,
   or `rake web:vitest_browser` for the browser-mode suite, which needs
@@ -265,17 +242,10 @@ Useful tasks:
   CI loads the same task with `rake -f ios/lint.rake ios:lint` to avoid
   installing the server's Ruby dependencies.
 - `rake ios:test` / `rake ios:uitest` — run the iOS unit and UI tests (override
-  the simulator with `SIMULATOR=...`). Unit tests run serially so unrelated
-  fixtures do not interfere with the 100 ms playback command latency gate.
-  Tests still exercise concurrent content workers and playback commands.
-  CI runs unit tests in parallel and excludes only
-  `WatchContentWorkerTests.responsiveness()` because its 100 ms timing limit
-  is unreliable on the CI runner. All other worker tests remain enabled.
-  The unit task disables optional verbose diagnostic collection with
-  `-collect-test-diagnostics never`: on this host, Xcode 27 can stall in
-  `collectSimulatorDiagnostics` after all tests pass. Assertion failures,
-  nonzero failure exits and the normal `.xcresult` bundle remain available.
-  To collect verbose diagnostics for an investigation, rerun the printed
+  the simulator with `SIMULATOR=...`). Local unit tests run serially. CI runs
+  them in parallel, excluding `WatchContentWorkerTests.responsiveness()` because
+  its timing limit is unreliable on shared runners. Verbose diagnostic
+  collection is disabled by default; to enable it, rerun the printed
   `xcodebuild` command with `-collect-test-diagnostics on-failure`.
   See [Apple's explanation of the option](https://developer.apple.com/forums/thread/698054).
   Failed CI unit-test runs print the result summary and each failing test's

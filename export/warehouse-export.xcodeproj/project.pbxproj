@@ -7,12 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		26104D09CCF47FD231383B9B /* ExportTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A6087D045460DED1065109 /* ExportTextTests.swift */; };
+		2A254325336C40A9F61D7752 /* MusicText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9367ADA8CB11473A9CAC0CD7 /* MusicText.swift */; };
+		50D72D99F112F1C70F747C7C /* PostgresNIO in Frameworks */ = {isa = PBXBuildFile; productRef = C6C62BC05E70EAB3EB700E50 /* PostgresNIO */; };
+		6935DA2410D3DB839A5A1C1C /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8576828F90A70BB2940BCCDA /* Cocoa.framework */; };
+		A2BBBB081FE8C8A418B7C729 /* Queries.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30DD57E2CFA99A7D778C347 /* Queries.swift */; };
 		C68DDF9D2E16E78900BA752B /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = C68DDF9C2E16E78900BA752B /* Yams */; };
 		C6B9C2A32DEB675900D238C1 /* PostgresNIO in Frameworks */ = {isa = PBXBuildFile; productRef = C6B9C2A22DEB675900D238C1 /* PostgresNIO */; };
+		D53E116711361B871EB4CE66 /* MusicAutomationAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B35ABCB17DAD5D62E055F94 /* MusicAutomationAuthorization.swift */; };
+		DB24C1C95242D0C919BCB20D /* MusicTextReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B431B3DEECC1772C5023C180 /* MusicTextReader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		04A6087D045460DED1065109 /* ExportTextTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportTextTests.swift; path = tests/ExportTextTests.swift; sourceTree = "<group>"; };
+		6B35ABCB17DAD5D62E055F94 /* MusicAutomationAuthorization.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MusicAutomationAuthorization.swift; path = export/MusicAutomationAuthorization.swift; sourceTree = "<group>"; };
+		8576828F90A70BB2940BCCDA /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		9367ADA8CB11473A9CAC0CD7 /* MusicText.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MusicText.swift; path = export/MusicText.swift; sourceTree = "<group>"; };
+		B431B3DEECC1772C5023C180 /* MusicTextReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MusicTextReader.swift; path = export/MusicTextReader.swift; sourceTree = "<group>"; };
+		C30DD57E2CFA99A7D778C347 /* Queries.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Queries.swift; path = export/Queries.swift; sourceTree = "<group>"; };
 		C61E35582DE6B33300591C12 /* Warehouse Export.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Warehouse Export.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CE3BAFB19DDD8991EF75B815 /* ExportTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ExportTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -37,6 +51,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		7113FEF3FBCB368AF410C9FC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6935DA2410D3DB839A5A1C1C /* Cocoa.framework in Frameworks */,
+				50D72D99F112F1C70F747C7C /* PostgresNIO in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C61E35552DE6B33300591C12 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -49,12 +72,25 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		794DD044C847C72BAC994B60 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				8576828F90A70BB2940BCCDA /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
 		C61E354F2DE6B33300591C12 = {
 			isa = PBXGroup;
 			children = (
 				C61E355A2DE6B33300591C12 /* export */,
 				C65731BE2E16DBBC0019E03F /* Frameworks */,
 				C61E35592DE6B33300591C12 /* Products */,
+				9367ADA8CB11473A9CAC0CD7 /* MusicText.swift */,
+				B431B3DEECC1772C5023C180 /* MusicTextReader.swift */,
+				C30DD57E2CFA99A7D778C347 /* Queries.swift */,
+				04A6087D045460DED1065109 /* ExportTextTests.swift */,
+				6B35ABCB17DAD5D62E055F94 /* MusicAutomationAuthorization.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -62,6 +98,7 @@
 			isa = PBXGroup;
 			children = (
 				C61E35582DE6B33300591C12 /* Warehouse Export.app */,
+				CE3BAFB19DDD8991EF75B815 /* ExportTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -69,6 +106,7 @@
 		C65731BE2E16DBBC0019E03F /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				794DD044C847C72BAC994B60 /* OS X */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -76,6 +114,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		44E5943C8778D8133918D055 /* ExportTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D947B014984C2B6592F26EDF /* Build configuration list for PBXNativeTarget "ExportTests" */;
+			buildPhases = (
+				A78F2D33A9310E62EC275862 /* Sources */,
+				7113FEF3FBCB368AF410C9FC /* Frameworks */,
+				EDECE3ACA92110AA65BD2125 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ExportTests;
+			packageProductDependencies = (
+				C6C62BC05E70EAB3EB700E50 /* PostgresNIO */,
+			);
+			productName = ExportTests;
+			productReference = CE3BAFB19DDD8991EF75B815 /* ExportTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		C61E35572DE6B33300591C12 /* warehouse-export */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C61E35662DE6B33400591C12 /* Build configuration list for PBXNativeTarget "warehouse-export" */;
@@ -134,6 +192,7 @@
 			projectRoot = "";
 			targets = (
 				C61E35572DE6B33300591C12 /* warehouse-export */,
+				44E5943C8778D8133918D055 /* ExportTests */,
 			);
 		};
 /* End PBXProject section */
@@ -146,9 +205,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EDECE3ACA92110AA65BD2125 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A78F2D33A9310E62EC275862 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2A254325336C40A9F61D7752 /* MusicText.swift in Sources */,
+				DB24C1C95242D0C919BCB20D /* MusicTextReader.swift in Sources */,
+				A2BBBB081FE8C8A418B7C729 /* Queries.swift in Sources */,
+				26104D09CCF47FD231383B9B /* ExportTextTests.swift in Sources */,
+				D53E116711361B871EB4CE66 /* MusicAutomationAuthorization.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C61E35542DE6B33300591C12 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -159,6 +237,32 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		0F7B12ED84FD076BC82BB763 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcaffrey.export.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		95398DF78C89A44C39328E82 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcaffrey.export.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 		C61E35642DE6B33400591C12 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -372,6 +476,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		D947B014984C2B6592F26EDF /* Build configuration list for PBXNativeTarget "ExportTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0F7B12ED84FD076BC82BB763 /* Release */,
+				95398DF78C89A44C39328E82 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -400,6 +513,11 @@
 			productName = Yams;
 		};
 		C6B9C2A22DEB675900D238C1 /* PostgresNIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C6B9C2A12DEB675900D238C1 /* XCRemoteSwiftPackageReference "postgres-nio" */;
+			productName = PostgresNIO;
+		};
+		C6C62BC05E70EAB3EB700E50 /* PostgresNIO */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C6B9C2A12DEB675900D238C1 /* XCRemoteSwiftPackageReference "postgres-nio" */;
 			productName = PostgresNIO;
