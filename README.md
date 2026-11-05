@@ -218,6 +218,37 @@ Keep both apps current: unsupported older peers preserve saved local content
 and report a library refresh failure. See [the delivery guide](ios/WatchLibraryDelivery.md)
 and [diagnostic capture instructions](ios/WatchDiagnosticsCapture.md).
 
+## Lyrics and comments schema expansion
+
+Before starting a server with the expanded text contract against an existing
+local or remote database, stop that server and apply the additive schema update
+on its database host:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U warehouse -d warehouse -f shared/track_text.sql
+```
+
+Use the configured database name and role if they differ. The script runs in
+one transaction and can be repeated; it preserves existing tracks and pending
+edits. Fresh exports create the same columns and pending tables automatically.
+Deploy this schema before the updated server, and deploy the server before
+clients that submit lyrics/comments. Older client payloads remain valid.
+
+Both track text columns default to empty strings, so the current exporter can
+continue inserting tracks without supplying text during this expansion. Music
+text extraction and writing pending text back to Music are separate follow-up
+slices; until those are deployed, avoid submitting text edits or rebuilding a
+database with pending text edits. The current updater does not apply them yet.
+An exporter built before this schema change must be rebuilt before the next
+export, since its bundled schema would otherwise remove the expansion.
+
+Normal library responses include both fields. Track updates use optional fields:
+omission preserves the current value; an explicit empty string clears it. Each
+server retains the last accepted whole value independently for each field and
+exposes it through `/api/updates` and the updater's database readers. Text is
+stored and served verbatim, including whitespace, line breaks, Unicode and any
+leading byte-order mark.
+
 ## Development
 
 Useful tasks:

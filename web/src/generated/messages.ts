@@ -490,6 +490,8 @@ export class Track extends pb_1.Message {
         artworkFilename?: string;
         playlistIds?: string[];
         musicFilename?: string;
+        lyrics?: string;
+        comments?: string;
     } & (({
         addedDate?: number;
     })))) {
@@ -552,6 +554,12 @@ export class Track extends pb_1.Message {
             }
             if ("musicFilename" in data && data.musicFilename != undefined) {
                 this.musicFilename = data.musicFilename;
+            }
+            if ("lyrics" in data && data.lyrics != undefined) {
+                this.lyrics = data.lyrics;
+            }
+            if ("comments" in data && data.comments != undefined) {
+                this.comments = data.comments;
             }
         }
     }
@@ -672,6 +680,18 @@ export class Track extends pb_1.Message {
     set musicFilename(value: string) {
         pb_1.Message.setField(this, 21, value);
     }
+    get lyrics() {
+        return pb_1.Message.getFieldWithDefault(this, 22, "") as string;
+    }
+    set lyrics(value: string) {
+        pb_1.Message.setField(this, 22, value);
+    }
+    get comments() {
+        return pb_1.Message.getFieldWithDefault(this, 23, "") as string;
+    }
+    set comments(value: string) {
+        pb_1.Message.setField(this, 23, value);
+    }
     get _addedDate() {
         const cases: {
             [index: number]: "none" | "addedDate";
@@ -701,6 +721,8 @@ export class Track extends pb_1.Message {
         artworkFilename?: string;
         playlistIds?: string[];
         musicFilename?: string;
+        lyrics?: string;
+        comments?: string;
     }): Track {
         const message = new Track({});
         if (data.id != null) {
@@ -760,6 +782,12 @@ export class Track extends pb_1.Message {
         if (data.musicFilename != null) {
             message.musicFilename = data.musicFilename;
         }
+        if (data.lyrics != null) {
+            message.lyrics = data.lyrics;
+        }
+        if (data.comments != null) {
+            message.comments = data.comments;
+        }
         return message;
     }
     toObject() {
@@ -783,6 +811,8 @@ export class Track extends pb_1.Message {
             artworkFilename?: string;
             playlistIds?: string[];
             musicFilename?: string;
+            lyrics?: string;
+            comments?: string;
         } = {};
         if (this.id != null) {
             data.id = this.id;
@@ -841,6 +871,12 @@ export class Track extends pb_1.Message {
         if (this.musicFilename != null) {
             data.musicFilename = this.musicFilename;
         }
+        if (this.lyrics != null) {
+            data.lyrics = this.lyrics;
+        }
+        if (this.comments != null) {
+            data.comments = this.comments;
+        }
         return data;
     }
     serialize(): Uint8Array;
@@ -885,6 +921,10 @@ export class Track extends pb_1.Message {
             writer.writeRepeatedString(20, this.playlistIds);
         if (this.musicFilename.length)
             writer.writeString(21, this.musicFilename);
+        if (this.lyrics.length)
+            writer.writeString(22, this.lyrics);
+        if (this.comments.length)
+            writer.writeString(23, this.comments);
         if (!w)
             return writer.getResultBuffer();
     }
@@ -950,6 +990,12 @@ export class Track extends pb_1.Message {
                     break;
                 case 21:
                     message.musicFilename = reader.readString();
+                    break;
+                case 22:
+                    message.lyrics = reader.readString();
+                    break;
+                case 23:
+                    message.comments = reader.readString();
                     break;
                 default: reader.skipField();
             }
@@ -1569,7 +1615,7 @@ export class LibraryRequest extends pb_1.Message {
     }
 }
 export class TrackUpdate extends pb_1.Message {
-    #one_of_decls: number[][] = [[1], [2], [3], [4], [5], [6], [7], [8], [9], [10]];
+    #one_of_decls: number[][] = [[1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12]];
     constructor(data?: any[] | ({} & (({
         name?: string;
     }) | ({
@@ -1590,6 +1636,10 @@ export class TrackUpdate extends pb_1.Message {
         artwork?: string;
     }) | ({
         rating?: number;
+    }) | ({
+        lyrics?: string;
+    }) | ({
+        comments?: string;
     })))) {
         super();
         pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
@@ -1623,6 +1673,12 @@ export class TrackUpdate extends pb_1.Message {
             }
             if ("rating" in data && data.rating != undefined) {
                 this.rating = data.rating;
+            }
+            if ("lyrics" in data && data.lyrics != undefined) {
+                this.lyrics = data.lyrics;
+            }
+            if ("comments" in data && data.comments != undefined) {
+                this.comments = data.comments;
             }
         }
     }
@@ -1716,6 +1772,24 @@ export class TrackUpdate extends pb_1.Message {
     get has_rating() {
         return pb_1.Message.getField(this, 10) != null;
     }
+    get lyrics() {
+        return pb_1.Message.getFieldWithDefault(this, 11, "") as string;
+    }
+    set lyrics(value: string) {
+        pb_1.Message.setOneofField(this, 11, this.#one_of_decls[10], value);
+    }
+    get has_lyrics() {
+        return pb_1.Message.getField(this, 11) != null;
+    }
+    get comments() {
+        return pb_1.Message.getFieldWithDefault(this, 12, "") as string;
+    }
+    set comments(value: string) {
+        pb_1.Message.setOneofField(this, 12, this.#one_of_decls[11], value);
+    }
+    get has_comments() {
+        return pb_1.Message.getField(this, 12) != null;
+    }
     get _name() {
         const cases: {
             [index: number]: "none" | "name";
@@ -1806,6 +1880,24 @@ export class TrackUpdate extends pb_1.Message {
         };
         return cases[pb_1.Message.computeOneofCase(this, [10])];
     }
+    get _lyrics() {
+        const cases: {
+            [index: number]: "none" | "lyrics";
+        } = {
+            0: "none",
+            11: "lyrics"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [11])];
+    }
+    get _comments() {
+        const cases: {
+            [index: number]: "none" | "comments";
+        } = {
+            0: "none",
+            12: "comments"
+        };
+        return cases[pb_1.Message.computeOneofCase(this, [12])];
+    }
     static fromObject(data: {
         name?: string;
         artist?: string;
@@ -1817,6 +1909,8 @@ export class TrackUpdate extends pb_1.Message {
         finish?: number;
         artwork?: string;
         rating?: number;
+        lyrics?: string;
+        comments?: string;
     }): TrackUpdate {
         const message = new TrackUpdate({});
         if (data.name != null) {
@@ -1849,6 +1943,12 @@ export class TrackUpdate extends pb_1.Message {
         if (data.rating != null) {
             message.rating = data.rating;
         }
+        if (data.lyrics != null) {
+            message.lyrics = data.lyrics;
+        }
+        if (data.comments != null) {
+            message.comments = data.comments;
+        }
         return message;
     }
     toObject() {
@@ -1863,6 +1963,8 @@ export class TrackUpdate extends pb_1.Message {
             finish?: number;
             artwork?: string;
             rating?: number;
+            lyrics?: string;
+            comments?: string;
         } = {};
         if (this.name != null) {
             data.name = this.name;
@@ -1894,6 +1996,12 @@ export class TrackUpdate extends pb_1.Message {
         if (this.rating != null) {
             data.rating = this.rating;
         }
+        if (this.lyrics != null) {
+            data.lyrics = this.lyrics;
+        }
+        if (this.comments != null) {
+            data.comments = this.comments;
+        }
         return data;
     }
     serialize(): Uint8Array;
@@ -1920,6 +2028,10 @@ export class TrackUpdate extends pb_1.Message {
             writer.writeString(9, this.artwork);
         if (this.has_rating)
             writer.writeInt32(10, this.rating);
+        if (this.has_lyrics)
+            writer.writeString(11, this.lyrics);
+        if (this.has_comments)
+            writer.writeString(12, this.comments);
         if (!w)
             return writer.getResultBuffer();
     }
@@ -1958,6 +2070,12 @@ export class TrackUpdate extends pb_1.Message {
                     break;
                 case 10:
                     message.rating = reader.readInt32();
+                    break;
+                case 11:
+                    message.lyrics = reader.readString();
+                    break;
+                case 12:
+                    message.comments = reader.readString();
                     break;
                 default: reader.skipField();
             }
@@ -2322,9 +2440,11 @@ export class Updates extends pb_1.Message {
         starts?: FloatUpdate[];
         finishes?: FloatUpdate[];
         artworks?: StringUpdate[];
+        lyrics?: StringUpdate[];
+        comments?: StringUpdate[];
     }) {
         super();
-        pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], this.#one_of_decls);
+        pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], this.#one_of_decls);
         if (!Array.isArray(data) && typeof data == "object") {
             if ("plays" in data && data.plays != undefined) {
                 this.plays = data.plays;
@@ -2358,6 +2478,12 @@ export class Updates extends pb_1.Message {
             }
             if ("artworks" in data && data.artworks != undefined) {
                 this.artworks = data.artworks;
+            }
+            if ("lyrics" in data && data.lyrics != undefined) {
+                this.lyrics = data.lyrics;
+            }
+            if ("comments" in data && data.comments != undefined) {
+                this.comments = data.comments;
             }
         }
     }
@@ -2427,6 +2553,18 @@ export class Updates extends pb_1.Message {
     set artworks(value: StringUpdate[]) {
         pb_1.Message.setRepeatedWrapperField(this, 11, value);
     }
+    get lyrics() {
+        return pb_1.Message.getRepeatedWrapperField(this, StringUpdate, 12) as StringUpdate[];
+    }
+    set lyrics(value: StringUpdate[]) {
+        pb_1.Message.setRepeatedWrapperField(this, 12, value);
+    }
+    get comments() {
+        return pb_1.Message.getRepeatedWrapperField(this, StringUpdate, 13) as StringUpdate[];
+    }
+    set comments(value: StringUpdate[]) {
+        pb_1.Message.setRepeatedWrapperField(this, 13, value);
+    }
     static fromObject(data: {
         plays?: ReturnType<typeof IncrementUpdate.prototype.toObject>[];
         ratings?: ReturnType<typeof IntUpdate.prototype.toObject>[];
@@ -2439,6 +2577,8 @@ export class Updates extends pb_1.Message {
         starts?: ReturnType<typeof FloatUpdate.prototype.toObject>[];
         finishes?: ReturnType<typeof FloatUpdate.prototype.toObject>[];
         artworks?: ReturnType<typeof StringUpdate.prototype.toObject>[];
+        lyrics?: ReturnType<typeof StringUpdate.prototype.toObject>[];
+        comments?: ReturnType<typeof StringUpdate.prototype.toObject>[];
     }): Updates {
         const message = new Updates({});
         if (data.plays != null) {
@@ -2474,6 +2614,12 @@ export class Updates extends pb_1.Message {
         if (data.artworks != null) {
             message.artworks = data.artworks.map(item => StringUpdate.fromObject(item));
         }
+        if (data.lyrics != null) {
+            message.lyrics = data.lyrics.map(item => StringUpdate.fromObject(item));
+        }
+        if (data.comments != null) {
+            message.comments = data.comments.map(item => StringUpdate.fromObject(item));
+        }
         return message;
     }
     toObject() {
@@ -2489,6 +2635,8 @@ export class Updates extends pb_1.Message {
             starts?: ReturnType<typeof FloatUpdate.prototype.toObject>[];
             finishes?: ReturnType<typeof FloatUpdate.prototype.toObject>[];
             artworks?: ReturnType<typeof StringUpdate.prototype.toObject>[];
+            lyrics?: ReturnType<typeof StringUpdate.prototype.toObject>[];
+            comments?: ReturnType<typeof StringUpdate.prototype.toObject>[];
         } = {};
         if (this.plays != null) {
             data.plays = this.plays.map((item: IncrementUpdate) => item.toObject());
@@ -2523,6 +2671,12 @@ export class Updates extends pb_1.Message {
         if (this.artworks != null) {
             data.artworks = this.artworks.map((item: StringUpdate) => item.toObject());
         }
+        if (this.lyrics != null) {
+            data.lyrics = this.lyrics.map((item: StringUpdate) => item.toObject());
+        }
+        if (this.comments != null) {
+            data.comments = this.comments.map((item: StringUpdate) => item.toObject());
+        }
         return data;
     }
     serialize(): Uint8Array;
@@ -2551,6 +2705,10 @@ export class Updates extends pb_1.Message {
             writer.writeRepeatedMessage(10, this.finishes, (item: FloatUpdate) => item.serialize(writer));
         if (this.artworks.length)
             writer.writeRepeatedMessage(11, this.artworks, (item: StringUpdate) => item.serialize(writer));
+        if (this.lyrics.length)
+            writer.writeRepeatedMessage(12, this.lyrics, (item: StringUpdate) => item.serialize(writer));
+        if (this.comments.length)
+            writer.writeRepeatedMessage(13, this.comments, (item: StringUpdate) => item.serialize(writer));
         if (!w)
             return writer.getResultBuffer();
     }
@@ -2592,6 +2750,12 @@ export class Updates extends pb_1.Message {
                     break;
                 case 11:
                     reader.readMessage(message.artworks, () => pb_1.Message.addToRepeatedWrapperField(message, 11, StringUpdate.deserialize(reader), StringUpdate));
+                    break;
+                case 12:
+                    reader.readMessage(message.lyrics, () => pb_1.Message.addToRepeatedWrapperField(message, 12, StringUpdate.deserialize(reader), StringUpdate));
+                    break;
+                case 13:
+                    reader.readMessage(message.comments, () => pb_1.Message.addToRepeatedWrapperField(message, 13, StringUpdate.deserialize(reader), StringUpdate));
                     break;
                 default: reader.skipField();
             }

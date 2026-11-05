@@ -50,6 +50,8 @@ message Track {
   string artworkFilename = 19;
   repeated string playlistIds = 20;
   string musicFilename = 21;
+  string lyrics = 22;
+  string comments = 23;
 }
 
 message Playlist {
@@ -84,7 +86,7 @@ message LibraryRequest {
 }
 
 // edited track fields; only fields that are present are updated, and a
-// present but empty album/albumArtist/artwork clears the value
+// present but empty album/albumartist/artwork/lyrics/comments clears the value
 message TrackUpdate {
   optional string name = 1;
   optional string artist = 2;
@@ -96,6 +98,8 @@ message TrackUpdate {
   optional double finish = 8;
   optional string artwork = 9;
   optional int32 rating = 10;
+  optional string lyrics = 11;
+  optional string comments = 12;
 }
 
 message IncrementUpdate {
@@ -129,6 +133,8 @@ message Updates {
   repeated FloatUpdate starts = 9;
   repeated FloatUpdate finishes = 10;
   repeated StringUpdate artworks = 11;
+  repeated StringUpdate lyrics = 12;
+  repeated StringUpdate comments = 13;
 }
 
 message UpdatesResponse {

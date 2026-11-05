@@ -954,7 +954,7 @@ describe 'Warehouse Server' do
     it 'updates nothing when no fields are present' do
       post_track_update(track_id1, TrackUpdate.new)
       expect(OperationResponse.decode(last_response.body).success).to be true
-      %w[name year start finish artist genre album_artist album artwork rating].each do |field|
+      %w[name year start finish artist genre album_artist album artwork rating lyrics comments].each do |field|
         expect(get_first_value("SELECT COUNT(*) FROM #{field}_updates")).to eq('0')
       end
     end
@@ -1187,6 +1187,142 @@ describe 'Warehouse Server' do
       expect(get_first_value('SELECT rating FROM rating_updates')).to eq('100')
       expect(get_first_value("SELECT rating FROM tracks WHERE id='#{track_id1}'")).to eq('100')
       expect(export_finished_at).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+  end
+
+  describe 'track text contract' do
+    let(:lyrics_text) { "\uFEFF  first line\r\n\"été\" \\ e\u0301 🎵\nlast line  " }
+    let(:comments_text) { "notes\n日本語 'quoted' \\ path\r\n" }
+
+    before do
+      DB_POOL.with do |conn|
+        conn.exec("INSERT INTO export_finished (finished_at) VALUES ('2020-01-01 00:00:00.123456')")
+        conn.exec('INSERT INTO library_metadata (total_file_size) VALUES (1001)')
+      end
+    end
+
+    def write_text(update, headers = get_auth_header, id = track_id1)
+      post "/api/track/#{id}", update.to_proto, headers.merge('CONTENT_TYPE' => 'application/octet-stream')
+      OperationResponse.decode(last_response.body)
+    end
+
+    def library_text
+      get '/api/library', {}, get_auth_header
+      LibraryResponse.decode(last_response.body).library.tracks.first
+    end
+
+    def pending_text
+      get '/api/updates', {}, get_auth_header
+      UpdatesResponse.decode(last_response.body).updates
+    end
+
+    it 'defaults old exporter inserts to blank text with no pending edits' do
+      track = library_text
+      expect(track.lyrics).to eq('')
+      expect(track.comments).to eq('')
+      expect(pending_text.lyrics).to be_empty
+      expect(pending_text.comments).to be_empty
+    end
+
+    it 'round trips both fields exactly through http, storage, library and updater reads' do
+      expect(write_text(TrackUpdate.new(lyrics: lyrics_text, comments: comments_text)).success).to be true
+      track = library_text
+      expect(track.lyrics.bytes).to eq(lyrics_text.bytes)
+      expect(track.comments.bytes).to eq(comments_text.bytes)
+      updates = pending_text
+      expect(updates.lyrics.map { [_1.trackId, _1.value.bytes] }).to eq([[track_id1, lyrics_text.bytes]])
+      expect(updates.comments.map { [_1.trackId, _1.value.bytes] }).to eq([[track_id1, comments_text.bytes]])
+      DB_POOL.with do |conn|
+        allow(PG).to receive(:connect).and_return(conn)
+        database = Update::Database.new(TEST_CONFIG.database_username, TEST_CONFIG.database_password, TEST_CONFIG.database_name)
+        expect(database.get_lyrics_updates).to eq([[track_id1, lyrics_text]])
+        expect(database.get_comments_updates).to eq([[track_id1, comments_text]])
+      end
+      get '/api/version', {}, get_auth_header
+      expect(VersionResponse.decode(last_response.body).updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
+    end
+
+    %w[lyrics comments].each do |field|
+      other = field == 'lyrics' ? 'comments' : 'lyrics'
+
+      it "replaces only the latest accepted #{field} and distinguishes absent from explicit empty" do
+        expect(write_text(TrackUpdate.new(lyrics: lyrics_text, comments: comments_text)).success).to be true
+        expect(write_text(TrackUpdate.new(field => 'replacement')).success).to be true
+        expect(library_text.public_send(field)).to eq('replacement')
+        expect(library_text.public_send(other)).to eq(public_send("#{other}_text"))
+        expect(pending_text.public_send(field).map(&:value)).to eq(['replacement'])
+        expect(write_text(TrackUpdate.new(name: 'old client edit')).success).to be true
+        expect(library_text.public_send(field)).to eq('replacement')
+        expect(write_text(TrackUpdate.new(field => '')).success).to be true
+        expect(library_text.public_send(field)).to eq('')
+        expect(pending_text.public_send(field).map(&:value)).to eq([''])
+        expect(pending_text.public_send(other).map(&:value)).to eq([public_send("#{other}_text")])
+        expect(get_first_value("SELECT COUNT(*) FROM #{field}_updates")).to eq('1')
+      end
+    end
+
+    it 'accepts an old payload without creating text edits or changing stored text' do
+      DB_POOL.with do |conn|
+        conn.exec_params('UPDATE tracks SET lyrics=$1, comments=$2 WHERE id=$3', [lyrics_text, comments_text, track_id1])
+      end
+      expect(write_text(TrackUpdate.new).success).to be true
+      expect(library_text.lyrics).to eq(lyrics_text)
+      expect(library_text.comments).to eq(comments_text)
+      expect(pending_text.lyrics).to be_empty
+      expect(pending_text.comments).to be_empty
+    end
+
+    it 'retains auth, tracking, invalid-track and frozen outcomes without changing text or freshness' do
+      old_version = get_first_value('SELECT finished_at FROM export_finished')
+      update = TrackUpdate.new(lyrics: lyrics_text, comments: comments_text)
+      [{}, get_invalid_auth_header, get_expired_auth_header].each do |headers|
+        expect(write_text(update, headers).error).to eq(NOT_AUTHED_ERROR)
+      end
+      expect(write_text(update, get_auth_header('notrack')).error).to eq(NOT_TRACKING_ERROR)
+      expect(write_text(update, get_auth_header, 'ABCD').error).to eq(INVALID_TRACK_ERROR)
+      freeze_library
+      expect(write_text(update).error).to eq(LIBRARY_FROZEN_ERROR)
+      expect(library_text.lyrics).to eq('')
+      expect(library_text.comments).to eq('')
+      expect(pending_text.lyrics).to be_empty
+      expect(pending_text.comments).to be_empty
+      expect(get_first_value('SELECT finished_at FROM export_finished')).to eq(old_version)
+    end
+
+    it 'keeps snapshot and pending values unchanged if either pending write fails' do
+      expect(write_text(TrackUpdate.new(lyrics: lyrics_text, comments: comments_text)).success).to be true
+      DB_POOL.with do |conn|
+        conn.exec("ALTER TABLE comments_updates ADD CONSTRAINT reject_probe CHECK (comments <> 'rejected')")
+        conn.exec('SAVEPOINT text_failure')
+      end
+      expect { write_text(TrackUpdate.new(lyrics: 'replacement', comments: 'rejected')) }.to raise_error(PG::CheckViolation)
+      DB_POOL.with { |conn| conn.exec('ROLLBACK TO SAVEPOINT text_failure') }
+      expect(library_text.lyrics).to eq(lyrics_text)
+      expect(library_text.comments).to eq(comments_text)
+      expect(pending_text.lyrics.map(&:value)).to eq([lyrics_text])
+      expect(pending_text.comments.map(&:value)).to eq([comments_text])
+    end
+
+    it 'expands an existing database idempotently without losing tracks or metadata edits' do
+      DB_POOL.with do |conn|
+        conn.exec('ALTER TABLE tracks DROP COLUMN lyrics, DROP COLUMN comments')
+        conn.exec('DROP TABLE lyrics_updates, comments_updates')
+        conn.exec_params(CREATE_NAME_UPDATE_SQL, [track_id1, 'pending name'])
+        expansion = File.read(File.expand_path('../../shared/track_text.sql', __dir__))
+        2.times { conn.exec(expansion.sub('BEGIN;', '').sub('COMMIT;', '')) }
+      end
+      expect(library_text.lyrics).to eq('')
+      expect(library_text.comments).to eq('')
+      expect(pending_text.names.map(&:value)).to eq(['pending name'])
+      expect(write_text(TrackUpdate.new(lyrics: lyrics_text, comments: comments_text)).success).to be true
+      DB_POOL.with do |conn|
+        expansion = File.read(File.expand_path('../../shared/track_text.sql', __dir__))
+        conn.exec(expansion.sub('BEGIN;', '').sub('COMMIT;', ''))
+      end
+      expect(library_text.lyrics).to eq(lyrics_text)
+      expect(library_text.comments).to eq(comments_text)
+      expect(pending_text.lyrics.map(&:value)).to eq([lyrics_text])
+      expect(pending_text.comments.map(&:value)).to eq([comments_text])
     end
   end
 

@@ -30,7 +30,9 @@ CREATE TABLE tracks (
     rating INTEGER NOT NULL,
     music_filename TEXT NOT NULL,
     artwork_filename TEXT,
-    added_date TIMESTAMPTZ
+    added_date TIMESTAMPTZ,
+    lyrics TEXT NOT NULL DEFAULT '',
+    comments TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE playlists (
     id CHAR(16) PRIMARY KEY NOT NULL,
@@ -84,6 +86,14 @@ CREATE TABLE finish_updates (
 CREATE TABLE artwork_updates (
     track_id CHAR(16),
     artwork_filename CHAR(36)
+);
+CREATE TABLE lyrics_updates (
+    track_id CHAR(16) PRIMARY KEY NOT NULL,
+    lyrics TEXT NOT NULL
+);
+CREATE TABLE comments_updates (
+    track_id CHAR(16) PRIMARY KEY NOT NULL,
+    comments TEXT NOT NULL
 );
 CREATE TABLE library_metadata (
     total_file_size BIGINT NOT NULL

@@ -7,7 +7,7 @@ TRACK_SQL = <<~SQL
   SELECT
       t.id, t.name, t.sort_name, t.artist_id, t.album_artist_id, t.album_id, t.genre_id, t.year,
       t.duration, t.start, t.finish, t.track_number, t.disc_number, t.play_count, t.rating,
-      t.music_filename, t.artwork_filename, t.added_date, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
+      t.music_filename, t.artwork_filename, t.added_date, t.lyrics, t.comments, STRING_AGG(pt.playlist_id, ',') AS playlist_ids
   FROM
       tracks t
   LEFT JOIN
@@ -86,6 +86,22 @@ UPDATE_ALBUM_SQL = 'UPDATE tracks SET album_id=$1 WHERE id=$2;'
 DELETE_ARTWORK_UPDATE_SQL = 'DELETE FROM artwork_updates WHERE track_id=$1;'
 CREATE_ARTWORK_UPDATE_SQL = 'INSERT INTO artwork_updates (track_id, artwork_filename) VALUES ($1, $2);'
 UPDATE_ARTWORK_SQL = 'UPDATE tracks SET artwork_filename=$1 WHERE id=$2;'
+
+# lock and update the track before replacing either pending field in the same statement.
+UPDATE_TRACK_TEXT_SQL = <<~SQL
+  WITH updated_track AS (
+    UPDATE tracks SET lyrics=CASE WHEN $2::boolean THEN $3 ELSE lyrics END,
+                      comments=CASE WHEN $4::boolean THEN $5 ELSE comments END
+    WHERE id=$1 RETURNING id, lyrics, comments
+  ), lyrics_update AS (
+    INSERT INTO lyrics_updates (track_id, lyrics)
+    SELECT id, lyrics FROM updated_track WHERE $2::boolean
+    ON CONFLICT (track_id) DO UPDATE SET lyrics=EXCLUDED.lyrics
+  )
+  INSERT INTO comments_updates (track_id, comments)
+  SELECT id, comments FROM updated_track WHERE $4::boolean
+  ON CONFLICT (track_id) DO UPDATE SET comments=EXCLUDED.comments;
+SQL
 
 UPDATE_EXPORT_FINISHED_SQL = 'UPDATE export_finished SET finished_at=current_timestamp;'
 

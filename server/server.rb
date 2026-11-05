@@ -234,6 +234,8 @@ class Server < Sinatra::Base
                                     discNumber: track['disc_number'].to_i,
                                     playCount: track['play_count'].to_i,
                                     rating: track['rating'].to_i,
+                                    lyrics: track['lyrics'],
+                                    comments: track['comments'],
                                     musicFilename: track['music_filename'].strip,
                                     artworkFilename: (track['artwork_filename'] || '').strip,
                                     addedDate: track['added_date'] ? Time.parse(track['added_date']).to_i : nil,
@@ -314,6 +316,12 @@ class Server < Sinatra::Base
         end
         query(Update::Database::GET_ARTWORK_UPDATES_SQL).each do |artwork|
           updates.artworks << StringUpdate.new(trackId: artwork['track_id'], value: artwork['artwork_filename'])
+        end
+        query(Update::Database::GET_LYRICS_UPDATES_SQL).each do |lyrics|
+          updates.lyrics << StringUpdate.new(trackId: lyrics['track_id'], value: lyrics['lyrics'])
+        end
+        query(Update::Database::GET_COMMENTS_UPDATES_SQL).each do |comments|
+          updates.comments << StringUpdate.new(trackId: comments['track_id'], value: comments['comments'])
         end
         proto(UpdatesResponse.new(updates: updates))
       else
@@ -442,6 +450,7 @@ class Server < Sinatra::Base
           conn.exec_params(CREATE_RATING_UPDATE_SQL, [id, update.rating])
           conn.exec_params(UPDATE_RATING_SQL, [update.rating, id])
         end
+        conn.exec_params(UPDATE_TRACK_TEXT_SQL, [id, update.has_lyrics? ? 'true' : 'false', update.lyrics, update.has_comments? ? 'true' : 'false', update.comments]) if update.has_lyrics? || update.has_comments?
         conn.exec(UPDATE_EXPORT_FINISHED_SQL)
       end
     end

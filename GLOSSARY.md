@@ -1,5 +1,7 @@
 # Glossary
 
+- **Lyrics**: The editable plain-text words stored in a track's Lyrics field in Music, preserving line breaks. The value may be empty and has no playback timing. _Avoid_: timed lyrics, fetched lyrics.
+- **Comments**: The editable plain-text notes stored in a track's Comments field in Music, preserving line breaks. The value may be empty and belongs to the track. _Avoid_: discussion, comment thread.
 - **Saved library**: Track and playlist metadata successfully stored on the device. It may contain no songs and does not imply that music files are downloaded.
 - **Local library readiness**: The result of loading the saved library for browsing. It is independent of remote refresh progress or connectivity.
 - **Downloaded track**: A track whose music file is present on the device and can be played without a network connection.

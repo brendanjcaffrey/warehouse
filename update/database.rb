@@ -18,6 +18,9 @@ module Update
     GET_FINISH_UPDATES_SQL = 'SELECT track_id, finish FROM finish_updates;'
     GET_ARTWORK_UPDATES_SQL = 'SELECT track_id, artwork_filename FROM artwork_updates;'
 
+    GET_LYRICS_UPDATES_SQL = 'SELECT track_id, lyrics FROM lyrics_updates;'
+    GET_COMMENTS_UPDATES_SQL = 'SELECT track_id, comments FROM comments_updates;'
+
     GENRE_SQL = 'INSERT INTO genres (name) VALUES ($1) RETURNING id;'
 
     ARTIST_SQL = 'INSERT INTO artists (name, sort_name) VALUES ($1,$2) RETURNING id;'
@@ -89,6 +92,14 @@ module Update
 
     def get_artwork_updates
       @db.exec(GET_ARTWORK_UPDATES_SQL).values
+    end
+
+    def get_lyrics_updates
+      @db.exec(GET_LYRICS_UPDATES_SQL).values
+    end
+
+    def get_comments_updates
+      @db.exec(GET_COMMENTS_UPDATES_SQL).values
     end
 
     def get_track_and_artist_name(id)

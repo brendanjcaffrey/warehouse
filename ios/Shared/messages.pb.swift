@@ -233,6 +233,16 @@ struct Track: @unchecked Sendable {
     set {_uniqueStorage()._musicFilename = newValue}
   }
 
+  var lyrics: String {
+    get {_storage._lyrics}
+    set {_uniqueStorage()._lyrics = newValue}
+  }
+
+  var comments: String {
+    get {_storage._comments}
+    set {_uniqueStorage()._comments = newValue}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -334,7 +344,7 @@ struct LibraryRequest: Sendable {
 }
 
 /// edited track fields; only fields that are present are updated, and a
-/// present but empty album/albumArtist/artwork clears the value
+/// present but empty album/albumartist/artwork/lyrics/comments clears the value
 struct TrackUpdate: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -430,6 +440,24 @@ struct TrackUpdate: Sendable {
   /// Clears the value of `rating`. Subsequent reads from it will return its default value.
   mutating func clearRating() {self._rating = nil}
 
+  var lyrics: String {
+    get {_lyrics ?? String()}
+    set {_lyrics = newValue}
+  }
+  /// Returns true if `lyrics` has been explicitly set.
+  var hasLyrics: Bool {self._lyrics != nil}
+  /// Clears the value of `lyrics`. Subsequent reads from it will return its default value.
+  mutating func clearLyrics() {self._lyrics = nil}
+
+  var comments: String {
+    get {_comments ?? String()}
+    set {_comments = newValue}
+  }
+  /// Returns true if `comments` has been explicitly set.
+  var hasComments: Bool {self._comments != nil}
+  /// Clears the value of `comments`. Subsequent reads from it will return its default value.
+  mutating func clearComments() {self._comments = nil}
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -444,6 +472,8 @@ struct TrackUpdate: Sendable {
   fileprivate var _finish: Double? = nil
   fileprivate var _artwork: String? = nil
   fileprivate var _rating: Int32? = nil
+  fileprivate var _lyrics: String? = nil
+  fileprivate var _comments: String? = nil
 }
 
 struct IncrementUpdate: Sendable {
@@ -526,6 +556,10 @@ struct Updates: Sendable {
   var finishes: [FloatUpdate] = []
 
   var artworks: [StringUpdate] = []
+
+  var lyrics: [StringUpdate] = []
+
+  var comments: [StringUpdate] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -784,7 +818,7 @@ extension SortName: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationB
 
 extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = "Track"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}sortName\0\u{1}artistId\0\u{1}albumArtistId\0\u{1}albumId\0\u{1}genreId\0\u{1}year\0\u{1}duration\0\u{1}start\0\u{1}finish\0\u{1}trackNumber\0\u{1}discNumber\0\u{1}playCount\0\u{1}rating\0\u{1}addedDate\0\u{2}\u{3}artworkFilename\0\u{1}playlistIds\0\u{1}musicFilename\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}sortName\0\u{1}artistId\0\u{1}albumArtistId\0\u{1}albumId\0\u{1}genreId\0\u{1}year\0\u{1}duration\0\u{1}start\0\u{1}finish\0\u{1}trackNumber\0\u{1}discNumber\0\u{1}playCount\0\u{1}rating\0\u{1}addedDate\0\u{2}\u{3}artworkFilename\0\u{1}playlistIds\0\u{1}musicFilename\0\u{1}lyrics\0\u{1}comments\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -806,6 +840,8 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
     var _artworkFilename: String = String()
     var _playlistIds: [String] = []
     var _musicFilename: String = String()
+    var _lyrics: String = String()
+    var _comments: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -835,6 +871,8 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
       _artworkFilename = source._artworkFilename
       _playlistIds = source._playlistIds
       _musicFilename = source._musicFilename
+      _lyrics = source._lyrics
+      _comments = source._comments
     }
   }
 
@@ -872,6 +910,8 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._artworkFilename) }()
         case 20: try { try decoder.decodeRepeatedStringField(value: &_storage._playlistIds) }()
         case 21: try { try decoder.decodeSingularStringField(value: &_storage._musicFilename) }()
+        case 22: try { try decoder.decodeSingularStringField(value: &_storage._lyrics) }()
+        case 23: try { try decoder.decodeSingularStringField(value: &_storage._comments) }()
         default: break
         }
       }
@@ -941,6 +981,12 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
       if !_storage._musicFilename.isEmpty {
         try visitor.visitSingularStringField(value: _storage._musicFilename, fieldNumber: 21)
       }
+      if !_storage._lyrics.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._lyrics, fieldNumber: 22)
+      }
+      if !_storage._comments.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._comments, fieldNumber: 23)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -969,6 +1015,8 @@ extension Track: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase
         if _storage._artworkFilename != rhs_storage._artworkFilename {return false}
         if _storage._playlistIds != rhs_storage._playlistIds {return false}
         if _storage._musicFilename != rhs_storage._musicFilename {return false}
+        if _storage._lyrics != rhs_storage._lyrics {return false}
+        if _storage._comments != rhs_storage._comments {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1187,7 +1235,7 @@ extension LibraryRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
 
 extension TrackUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = "TrackUpdate"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}artist\0\u{1}album\0\u{1}albumArtist\0\u{1}genre\0\u{1}year\0\u{1}start\0\u{1}finish\0\u{1}artwork\0\u{1}rating\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}artist\0\u{1}album\0\u{1}albumArtist\0\u{1}genre\0\u{1}year\0\u{1}start\0\u{1}finish\0\u{1}artwork\0\u{1}rating\0\u{1}lyrics\0\u{1}comments\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1205,6 +1253,8 @@ extension TrackUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementati
       case 8: try { try decoder.decodeSingularDoubleField(value: &self._finish) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self._artwork) }()
       case 10: try { try decoder.decodeSingularInt32Field(value: &self._rating) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self._lyrics) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self._comments) }()
       default: break
       }
     }
@@ -1245,6 +1295,12 @@ extension TrackUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementati
     try { if let v = self._rating {
       try visitor.visitSingularInt32Field(value: v, fieldNumber: 10)
     } }()
+    try { if let v = self._lyrics {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 11)
+    } }()
+    try { if let v = self._comments {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 12)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1259,6 +1315,8 @@ extension TrackUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementati
     if lhs._finish != rhs._finish {return false}
     if lhs._artwork != rhs._artwork {return false}
     if lhs._rating != rhs._rating {return false}
+    if lhs._lyrics != rhs._lyrics {return false}
+    if lhs._comments != rhs._comments {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1401,7 +1459,7 @@ extension StringUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
 
 extension Updates: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = "Updates"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}plays\0\u{1}ratings\0\u{1}names\0\u{1}artists\0\u{1}albums\0\u{1}albumArtists\0\u{1}genres\0\u{1}years\0\u{1}starts\0\u{1}finishes\0\u{1}artworks\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}plays\0\u{1}ratings\0\u{1}names\0\u{1}artists\0\u{1}albums\0\u{1}albumArtists\0\u{1}genres\0\u{1}years\0\u{1}starts\0\u{1}finishes\0\u{1}artworks\0\u{1}lyrics\0\u{1}comments\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1420,6 +1478,8 @@ extension Updates: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBa
       case 9: try { try decoder.decodeRepeatedMessageField(value: &self.starts) }()
       case 10: try { try decoder.decodeRepeatedMessageField(value: &self.finishes) }()
       case 11: try { try decoder.decodeRepeatedMessageField(value: &self.artworks) }()
+      case 12: try { try decoder.decodeRepeatedMessageField(value: &self.lyrics) }()
+      case 13: try { try decoder.decodeRepeatedMessageField(value: &self.comments) }()
       default: break
       }
     }
@@ -1459,6 +1519,12 @@ extension Updates: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBa
     if !self.artworks.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.artworks, fieldNumber: 11)
     }
+    if !self.lyrics.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.lyrics, fieldNumber: 12)
+    }
+    if !self.comments.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.comments, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1474,6 +1540,8 @@ extension Updates: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBa
     if lhs.starts != rhs.starts {return false}
     if lhs.finishes != rhs.finishes {return false}
     if lhs.artworks != rhs.artworks {return false}
+    if lhs.lyrics != rhs.lyrics {return false}
+    if lhs.comments != rhs.comments {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

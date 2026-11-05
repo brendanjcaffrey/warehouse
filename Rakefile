@@ -599,7 +599,7 @@ namespace :db do
 
       # prune rows that referenced the deleted tracks
       %w[plays rating_updates name_updates artist_updates album_updates album_artist_updates
-         genre_updates year_updates start_updates finish_updates artwork_updates].each do |table|
+         genre_updates year_updates start_updates finish_updates artwork_updates lyrics_updates comments_updates].each do |table|
         conn.exec("DELETE FROM #{table} WHERE track_id NOT IN (SELECT id FROM tracks);")
       end
       conn.exec(<<~SQL)

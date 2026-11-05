@@ -14,6 +14,6 @@ hooks = [
 
 [[repos]]
 hooks = [
-    { id = "swiftlint-check", name = "Run swiftlint on ios", description = "Prevents committing ios code with lint violations.", entry = "check_swiftlint.sh", language = "script", files = "^ios/.*\\.swift$", pass_filenames = true },
+    { id = "swiftlint-check", name = "Run swiftlint on ios", description = "Prevents committing ios code with lint violations.", entry = "check_swiftlint.sh", language = "script", files = "^ios/.*\\.swift$", exclude = "^ios/Shared/messages\\.pb\\.swift$", pass_filenames = true },
 ]
 repo = "local"
