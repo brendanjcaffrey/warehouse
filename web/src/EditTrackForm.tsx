@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Button, Form, Modal } from "react-bootstrap";
 import { Track } from "./Library";
 import StarRating from "./StarRating";
@@ -23,24 +23,33 @@ function EditField({
   label,
   value,
   invalid,
+  multiline = false,
   onChange,
 }: {
   label: string;
   value: string;
   invalid: boolean;
+  multiline?: boolean;
   onChange: (value: string) => void;
 }) {
+  const controlId = useId();
+  const controlProps = {
+    value,
+    isInvalid: invalid,
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    ) => onChange(event.target.value),
+  };
   return (
-    <Form.Group className="mb-3">
+    <Form.Group className="mb-3" controlId={controlId}>
       <Form.Label className={invalid ? "text-danger mb-1" : "mb-1"}>
         {label}
       </Form.Label>
-      <Form.Control
-        type="text"
-        value={value}
-        isInvalid={invalid}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {multiline ? (
+        <Form.Control as="textarea" rows={6} {...controlProps} />
+      ) : (
+        <Form.Control type="text" {...controlProps} />
+      )}
     </Form.Group>
   );
 }
@@ -80,6 +89,7 @@ function EditTrackForm({
       show
       onHide={onClose}
       centered
+      scrollable
       onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
     >
       <Modal.Header closeButton>
@@ -122,6 +132,20 @@ function EditTrackForm({
             value={form.year}
             invalid={!isYearValid(form)}
             onChange={(year) => update({ year })}
+          />
+          <EditField
+            label="Lyrics"
+            value={form.lyrics}
+            invalid={false}
+            multiline
+            onChange={(lyrics) => update({ lyrics })}
+          />
+          <EditField
+            label="Comments"
+            value={form.comments}
+            invalid={false}
+            multiline
+            onChange={(comments) => update({ comments })}
           />
           <EditField
             label="Start"

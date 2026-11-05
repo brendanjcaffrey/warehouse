@@ -30,6 +30,8 @@ export interface TrackEditForm {
   album: string;
   albumArtist: string;
   genre: string;
+  lyrics: string;
+  comments: string;
   year: string;
   start: string;
   finish: string;
@@ -44,6 +46,8 @@ export function formFromTrack(track: Track): TrackEditForm {
     album: track.albumName,
     albumArtist: track.albumArtistName,
     genre: track.genre,
+    lyrics: track.lyrics ?? "",
+    comments: track.comments ?? "",
     year: String(track.year),
     start: FormatPlaybackPositionWithMillis(track.start),
     finish: FormatPlaybackPositionWithMillis(track.finish),
@@ -101,6 +105,12 @@ export function changedFields(form: TrackEditForm, track: Track): TrackUpdate {
   if (form.genre !== track.genre) {
     update.genre = form.genre;
   }
+  if (form.lyrics !== (track.lyrics ?? "")) {
+    update.lyrics = form.lyrics;
+  }
+  if (form.comments !== (track.comments ?? "")) {
+    update.comments = form.comments;
+  }
   if (form.year !== String(track.year) && /^\d+$/.test(form.year)) {
     update.year = Number(form.year);
   }
@@ -132,6 +142,8 @@ export function hasChanges(update: TrackUpdate): boolean {
     update.has_album ||
     update.has_albumArtist ||
     update.has_genre ||
+    update.has_lyrics ||
+    update.has_comments ||
     update.has_year ||
     update.has_start ||
     update.has_finish ||
@@ -149,6 +161,8 @@ export function updatedTrack(form: TrackEditForm, track: Track): Track {
     albumName: form.album,
     albumArtistName: form.albumArtist,
     genre: form.genre,
+    lyrics: form.lyrics,
+    comments: form.comments,
     year: /^\d+$/.test(form.year) ? Number(form.year) : track.year,
     start: parsePlaybackTime(form.start) ?? track.start,
     finish: parsePlaybackTime(form.finish) ?? track.finish,

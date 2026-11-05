@@ -189,6 +189,8 @@ export class SyncManager {
         albumName: SyncManager.getName(album),
         albumSortName: SyncManager.getSortName(album),
         genre: SyncManager.getName(genre),
+        lyrics: track.lyrics,
+        comments: track.comments,
         year: track.year,
         duration: track.duration,
         start: track.start,

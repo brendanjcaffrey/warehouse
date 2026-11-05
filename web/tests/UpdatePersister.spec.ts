@@ -374,6 +374,41 @@ describe("UpdatePersister", () => {
   });
 
   describe("track", () => {
+    it("persists long unicode text and explicit clears through reload and delivery", async () => {
+      const lyrics = '\uFEFFfirst line\r\n"quoted" \\ café 第二行 🎶\n'.repeat(
+        6000
+      );
+      const messages = [
+        new TrackUpdate({ lyrics, comments: "notes\n第二行 🎶" }),
+        new TrackUpdate({ lyrics: "" }),
+        new TrackUpdate({ comments: "" }),
+      ];
+      const persister = new UpdatePersister();
+      for (const message of messages) {
+        await persister.updateTrack("123", message);
+      }
+      const reloaded = new UpdatePersister();
+      expectPendingUpdates(
+        reloaded,
+        messages.map((params) => ({ type: "track", trackId: "123", params }))
+      );
+
+      vi.mocked(library().getTrackUserChanges).mockReturnValue(true);
+      vi.mocked(axios.post).mockResolvedValue(OPERATION_SUCCEEDED);
+      await reloaded.setHasLibraryMetadata(true);
+      await reloaded.setAuthToken("mock-token");
+      expect(axios.post).toHaveBeenCalledTimes(3);
+      for (const [index, message] of messages.entries()) {
+        const call = vi.mocked(axios.post).mock.calls[index];
+        expect(call[0]).toBe("/api/track/123");
+        expect(
+          TrackUpdate.deserialize(call[1] as Uint8Array).serialize()
+        ).toEqual(message.serialize());
+      }
+      expect(reloaded.pendingUpdates).toEqual([]);
+      expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("[]");
+    });
+
     it("should initialize with pending track updates from local storage if they exist", () => {
       localStorage.setItem(LOCAL_STORAGE_KEY, TRACK_UPDATE_ARR_STR);
       const persister = new UpdatePersister();

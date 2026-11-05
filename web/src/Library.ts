@@ -19,6 +19,9 @@ export interface Track {
   albumName: string;
   albumSortName: string;
   genre: string;
+  // absent in tracks cached before text sync was available
+  lyrics?: string;
+  comments?: string;
   year: number;
   duration: number;
   start: number;

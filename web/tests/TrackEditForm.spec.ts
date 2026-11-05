@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { Track } from "../src/Library";
+import { TrackUpdate } from "../src/generated/messages";
 import {
   changedFields,
   formFromTrack,
@@ -113,4 +114,37 @@ test("updatedTrack applies edits and leaves sort names stale", () => {
   expect(result.sortName).toBe(track.sortName);
   expect(result.artistSortName).toBe(track.artistSortName);
   expect(result.playCount).toBe(track.playCount);
+});
+
+test.each(["lyrics", "comments"] as const)(
+  "%s edits preserve exact text and distinguish omission from clearing",
+  (field) => {
+    const track = makeTrack({
+      id: "a",
+      lyrics: "original lyrics\n第二行 🎶",
+      comments: 'original comments\n"quoted" \\ path',
+    });
+    const form = formFromTrack(track);
+    expect(form.lyrics).toBe(track.lyrics);
+    expect(form.comments).toBe(track.comments);
+    expect(hasChanges(changedFields(form, track))).toBe(false);
+
+    for (const text of ["  first line\n\n第二行 🎶\n", ""]) {
+      const edited = { ...form, [field]: text };
+      const update = changedFields(edited, track);
+      expect(hasChanges(update)).toBe(true);
+      expect(update.serialize()).toEqual(
+        new TrackUpdate({ [field]: text }).serialize()
+      );
+      expect(updatedTrack(edited, track)).toEqual({ ...track, [field]: text });
+    }
+  }
+);
+
+test("cached tracks without text open with empty fields and no pending change", () => {
+  const track = makeTrack({ id: "legacy" });
+  const form = formFromTrack(track);
+  expect(form.lyrics).toBe("");
+  expect(form.comments).toBe("");
+  expect(hasChanges(changedFields(form, track))).toBe(false);
 });

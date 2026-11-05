@@ -31,6 +31,8 @@ function track(id: string, start = 0): Track {
     finish: 300,
     musicFilename: `${id}.mp3`,
     artworkFilename: null,
+    lyrics: `lyrics for ${id}\n第二行 🎶`,
+    comments: `notes for ${id}\n"quoted" \\ path`,
     playlistIds: [],
   } as unknown as Track;
 }
@@ -99,4 +101,19 @@ test("playing a different track moves to that track's start", async () => {
 
   expect(player().playingTrack?.track.id).toBe("t2");
   expect(audio.currentTime).toBe(0);
+});
+
+test("track edits and queue transitions retain text in player copies", async () => {
+  await player().playTracks("library", rows, 0);
+  expect(player().playingTrack?.track).toEqual(rows[0]);
+
+  const updated = { ...rows[0], lyrics: "edited\nlyrics", comments: "" };
+  tracks.set(updated.id, updated);
+  player().trackUpdated(updated);
+  expect(player().playingTrack?.track).toEqual(updated);
+
+  await player().next();
+  expect(player().playingTrack?.track).toEqual(rows[1]);
+  await player().prev();
+  expect(player().playingTrack?.track).toEqual(updated);
 });

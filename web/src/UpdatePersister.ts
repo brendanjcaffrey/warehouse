@@ -36,7 +36,12 @@ export type Update = PlayUpdate | PendingTrackUpdate | ArtworkUpload;
 // track update messages are persisted as base64 of the serialized message so
 // field presence survives the round trip through json
 function EncodeTrackUpdate(message: TrackUpdate): string {
-  return btoa(String.fromCharCode(...message.serialize()));
+  const bytes = message.serialize();
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 32768) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 32768)));
+  }
+  return btoa(chunks.join(""));
 }
 
 function DecodeTrackUpdate(encoded: string): TrackUpdate {
