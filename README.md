@@ -272,3 +272,18 @@ The `changes` component snapshots the database for diffing over time:
 - `rake changes:archive` / `rake changes:diff` / `rake changes:rewind` —
   snapshot the database for a given day, diff the two newest snapshots, and
   list this year's most-played tracks.
+- `rake changes:spec` — test the archive and CLI diff using JSON fixtures,
+  temporary directories, and isolated schemas in `warehouse_test`, with the
+  same database credentials as the server specs.
+
+Daily track snapshots retain complete Lyrics and Comments, including line breaks.
+Diffs show `lyrics: changed` without lyric text; Comments use the usual metadata
+diff output. A text field absent from either snapshot is unknown and is skipped
+for that comparison, so older archives remain comparable without assuming empty
+text.
+
+Archive and diff commands accept `CHANGES_DIRECTORY` to use a separate directory
+containing `tracks/` and `playlists/`. Archive also accepts `CHANGES_DATABASE_URL`
+to select an isolated database; by default it reads the local `warehouse` database
+as user `warehouse`. Tests exercise both Rake commands with these overrides and
+never read or replace production archives.

@@ -6,9 +6,12 @@ removed_track_keys = %w[file ext file_md5]
 map_removed_track_keys = { 'disc' => 'disc_number', 'track' => 'track_number' }
 # keys that were added at some point for tracks
 added_track_keys = %w[artwork_filename music_filename]
+# missing historical text is unknown, so compare only fields present in both snapshots.
+text_track_keys = %w[lyrics comments]
 
-tracks = Dir.glob('tracks/*.json')[-2..]
-playlists = Dir.glob('playlists/*.json')[-2..]
+directory = ENV.fetch('CHANGES_DIRECTORY', '.')
+tracks = Dir.glob(File.join(directory, 'tracks/*.json'))[-2..]
+playlists = Dir.glob(File.join(directory, 'playlists/*.json'))[-2..]
 
 old_tracks = JSON.parse(File.read(tracks.first))
 new_tracks = JSON.parse(File.read(tracks.last))
@@ -72,6 +75,12 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
       added_track_keys.each do |key|
         new_track_keys -= [key] if new_track_keys.include?(key) && !old_track_keys.include?(key)
       end
+      text_track_keys.each do |key|
+        next if old_track_keys.include?(key) && new_track_keys.include?(key)
+
+        old_track_keys -= [key]
+        new_track_keys -= [key]
+      end
 
       if old_track_keys != new_track_keys
         puts "#{desc(old_track)}: keys don't match! Aborting!"
@@ -80,7 +89,7 @@ while old_idx < old_tracks.size || new_idx < new_tracks.size
 
       changeset = Changeset.new(desc(old_track), 'Changed', [])
       old_track_keys.reject { |key| old_track[key] == new_track[key] }.each do |key|
-        changeset.changed.push("  #{key}: #{old_track[key]} → #{new_track[key]}")
+        changeset.changed.push(key == 'lyrics' ? '  lyrics: changed' : "  #{key}: #{old_track[key]} → #{new_track[key]}")
       end
 
       changesets.push(changeset) unless changeset.changed.empty?

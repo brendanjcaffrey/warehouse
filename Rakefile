@@ -648,6 +648,11 @@ namespace :db do
 end
 
 namespace :changes do
+  desc 'test archives and diffs with isolated postgres and json fixtures'
+  RSpec::Core::RakeTask.new(:spec) do |t|
+    t.pattern = Dir.glob('changes/spec/*_spec.rb')
+  end
+
   desc 'archive the database with today\'s date'
   task :archive do
     command.run('cd changes && ruby archive.rb')

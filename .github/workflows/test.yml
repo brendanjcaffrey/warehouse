@@ -49,6 +49,9 @@ jobs:
     - name: updater spec
       run: bundle exec rake update:spec
 
+    - name: changes spec
+      run: bundle exec rake changes:spec
+
     - name: vitest
       timeout-minutes: 1
       run: cd web && npx vitest run
