@@ -16,6 +16,7 @@ import NowPlaying from "../src/NowPlaying";
 import { useTrackContextMenu } from "../src/TrackContextMenu";
 import { player } from "../src/Player";
 import { store } from "../src/State";
+import TrackTextReader from "../src/TrackTextReader";
 
 vi.mock("../src/DownloadWorker", () => ({
   DownloadWorker: {
@@ -118,6 +119,48 @@ function expectFits(reader: HTMLElement) {
   expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
   expect(body.scrollWidth).toBeLessThanOrEqual(body.clientWidth);
 }
+
+test.each([
+  ["LF", "\n"],
+  ["CRLF", "\r\n"],
+  ["CR", "\r"],
+])(
+  "readers preserve line and stanza breaks with %s newlines",
+  async (_, newline) => {
+    const value = ["  first line", "", "第二行 🎶", "<plain text>"].join(
+      newline
+    );
+    for (const field of ["lyrics", "comments"] as const) {
+      const view = render(
+        <TrackTextReader
+          track={{ ...first, [field]: value }}
+          field={field}
+          onClose={vi.fn()}
+        />
+      );
+      const body = await waitFor(() =>
+        within(document.body).getByRole("region", {
+          name: `${field === "lyrics" ? "Lyrics" : "Comments"} text`,
+        })
+      );
+      const topOf = (line: string) => {
+        const offset = body.textContent!.indexOf(line);
+        const range = document.createRange();
+        range.setStart(body.firstChild!, offset);
+        range.setEnd(body.firstChild!, offset + line.length);
+        return range.getBoundingClientRect().top;
+      };
+      const lineHeight = parseFloat(getComputedStyle(body).lineHeight);
+      expect(topOf("第二行 🎶") - topOf("first line")).toBeCloseTo(
+        lineHeight * 2
+      );
+      expect(topOf("<plain text>") - topOf("第二行 🎶")).toBeCloseTo(
+        lineHeight
+      );
+      view.unmount();
+    }
+  }
+);
 
 test.each([1280, 390])(
   "Now Playing at width %s resets real scroll on advance and keeps the header and Edit visible",

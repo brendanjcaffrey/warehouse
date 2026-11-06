@@ -120,6 +120,39 @@ afterEach(async () => {
 });
 
 test.each([
+  ["LF", "  first line\n\n第二行 🎶\n<plain text> & café\n"],
+  ["CRLF", "  first line\r\n\r\n第二行 🎶\r\n<plain text> & café\r\n"],
+  ["CR", "  first line\r\r第二行 🎶\r<plain text> & café\r"],
+  ["mixed", "  first line\r\n\r第二行 🎶\n<plain text> & café\r"],
+])(
+  "readers display %s newlines without changing saved text",
+  async (_, value) => {
+    const track = { ...first, lyrics: value, comments: value };
+    await library().putTrack(track);
+    const view = app(track);
+    for (const field of ["Lyrics", "Comments"]) {
+      fireEvent.click(
+        view.getByRole("button", { name: "Selected track menu" })
+      );
+      fireEvent.click(view.getByRole("menuitem", { name: field }));
+      const reader = await view.findByRole("dialog", { name: field });
+      const body = within(reader).getByRole("region", {
+        name: `${field} text`,
+      });
+      expect(body.textContent).toBe(
+        "  first line\n\n第二行 🎶\n<plain text> & café\n"
+      );
+      expect(body.style.whiteSpace).toBe("pre-wrap");
+      expect(body.querySelector("plain")).toBeNull();
+      fireEvent.click(within(reader).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
+    }
+    expect(await library().getTrack(first.id)).toEqual(track);
+    expect(localStorage.getItem("updates")).toBeNull();
+  }
+);
+
+test.each([
   ["Lyrics", "Selected track menu"],
   ["Comments", "Selected track menu"],
   ["Lyrics", "track menu"],

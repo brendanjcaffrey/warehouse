@@ -54,7 +54,9 @@ function TrackTextReader({
         style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
       >
         {track ? (
-          track[field] || <span className="text-secondary">No {field}.</span>
+          track[field]?.replace(/\r\n?/g, "\n") || (
+            <span className="text-secondary">No {field}.</span>
+          )
         ) : (
           <span className="text-secondary">No track playing.</span>
         )}
