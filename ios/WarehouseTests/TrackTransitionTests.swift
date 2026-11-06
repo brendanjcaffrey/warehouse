@@ -86,6 +86,13 @@ struct TrackTransitionTests {
                                   firstStart: 70, delayed: delayed)
     }
 
+    @Test("slow tap setup cannot consume the first track before reconciliation is held")
+    @MainActor
+    func delayedSetup() async throws {
+        try await checkTransition(start: 5, skip: false, fileEnd: true, compressed: true,
+                                  firstStart: 70, delayed: true, slowSetup: true)
+    }
+
     @Test("automatic transitions do not replay audio when the app catches up")
     @MainActor
     func lateAppReconciliation() async throws {
@@ -123,13 +130,13 @@ struct TrackTransitionTests {
     }
 
     private func delayReconciliation() {
-        Thread.sleep(forTimeInterval: 2)
+        Thread.sleep(forTimeInterval: 3)
     }
 
     @MainActor
     private func checkTransition(start: Double, skip: Bool, editedStart: Double? = nil,
                                  fileEnd: Bool = false, compressed: Bool = false,
-                                 firstStart: Double = 0, delayed: Bool = false) async throws {
+                                 firstStart: Double = 0, delayed: Bool = false, slowSetup: Bool = false) async throws {
         let store = FileCacheTests.makeStore()
         defer { try? FileManager.default.removeItem(at: store.rootURL) }
         try PlayerQueueTests.cacheSongs(store, ["1", "2"])
@@ -150,6 +157,7 @@ struct TrackTransitionTests {
             fileStore: store, musicPolicy: .downloadedOnly,
             activateSessionForTests: { true },
             observePlayback: { queue, item, receive in
+                if transport == nil { queue.pause() }
                 transport = queue
                 return PlaybackObservation.start(player: queue, item: item, receive: receive)
             }, diagnostics: WatchDiagnostics(logEvents: false))
@@ -167,15 +175,24 @@ struct TrackTransitionTests {
             player.trackUpdated(PlayerStoreTests.edited(id: "2", start: editedStart, finish: finish))
         }
         let start = editedStart ?? start
-        let next = try #require(transport?.items().last)
-        #expect(next !== transport?.currentItem)
+        let queue = try #require(transport)
+        let first = try #require(queue.currentItem)
+        let next = try #require(queue.items().last)
+        #expect(next !== first)
         #expect(next.forwardPlaybackEndTime.seconds == finish)
         try await probe.attach(to: next)
+        if slowSetup { try await Task.sleep(for: .seconds(3)) }
+        try await PlayerStoreTests.waitFor { first.status == .readyToPlay && first.currentTime().seconds >= firstStart }
+        #expect(queue.currentItem === first)
+        #expect(queue.rate == 0)
+        queue.play()
         if skip { player.skipToNext() }
         if delayed {
-            try await PlayerStoreTests.waitFor { player.currentTime >= firstStart + 1 }
-            // hold app callbacks across the file end while the daemon keeps playing.
+            // start the hold before playback can consume the short first-track window.
             delayReconciliation()
+            #expect(player.song?.id == "1")
+            #expect(next.currentTime().seconds > start + 0.05)
+            #expect(probe.times.contains { $0 > start + 0.05 })
         }
         try await PlayerStoreTests.waitFor { player.song?.id == "2" && probe.times.contains { $0 > start + (delayed ? 2 : 1) } }
         let times = probe.times.filter(\.isFinite)
@@ -186,6 +203,7 @@ struct TrackTransitionTests {
         #expect(zip(playback, playback.dropFirst()).allSatisfy { $1 > $0 }, "decoded audio repeated: \(times)")
         #expect(player.advancedOntoEnqueuedItem)
         #expect(player.isPlaying)
+        #expect(queue.currentItem === next)
         #expect(next.currentTime().seconds >= start)
         #expect(player.currentItemURL == store.fileURL(.music, filename))
         #expect(next.forwardPlaybackEndTime.seconds == finish)
