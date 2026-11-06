@@ -58,6 +58,7 @@ RSpec.describe 'queued music updates' do
       expect(tracks[track_id]).to eq(field => text, other_field => "original #{other_field}")
       expect(tracks[other_id]).to eq(field => '', other_field => "original #{other_field}")
       expect(http).not_to have_received(:request)
+      expect($stdout).to have_received(:puts).with("\n=== #{field.capitalize} ===").once
     end
 
     it "applies remote #{field} without changing #{other_field} or consulting local queues" do
@@ -72,6 +73,7 @@ RSpec.describe 'queued music updates' do
       expect(database).not_to have_received(:get_plays)
       expect(database).not_to have_received(:get_lyrics_updates)
       expect(database).not_to have_received(:get_comments_updates)
+      expect($stdout).to have_received(:puts).with("\n=== #{field.capitalize} ===").once
     end
   end
 

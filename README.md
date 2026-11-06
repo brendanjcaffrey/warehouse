@@ -154,6 +154,12 @@ then remote updates; a remote edit to the same field wins. Queued edits can
 overwrite direct Music edits. Text writes use JavaScript for Automation through
 `osascript`, with JSON request files to preserve line breaks and special characters.
 
+If Music retains embedded lyrics after a clear, the updater removes the lyrics
+frames from supported MP3 ID3v2.3/v2.4 tags, refreshes Music and retries once.
+It first saves a complete `.warehouse-lyrics-*.bak` backup beside the original
+file, preserving audio and other metadata. Unsupported tag layouts or a failed
+read-back still stop the update.
+
 ## Syncing the library
 
 Run these commands from the repo root to refresh the library from Music.

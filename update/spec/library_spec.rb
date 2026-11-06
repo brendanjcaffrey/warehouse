@@ -80,4 +80,73 @@ RSpec.describe 'music library text updates' do
       end
     end
   end
+
+  describe 'clearing embedded lyrics' do
+    let(:repair) { class_double(Update::EmbeddedLyrics) }
+    let(:file_info) { { track_id: track_id, path: '/music/track.mp3', lyrics: 'rockdizmusic.com' } }
+
+    before do
+      stub_const('Update::EmbeddedLyrics', repair)
+      allow(repair).to receive(:clear).and_return('/music/.warehouse-lyrics-backup.bak')
+    end
+
+    it 'repairs a failed lyrics clear, refreshes music and verifies the retried clear' do
+      requests = []
+      allow(command).to receive(:run) do |*args|
+        if args.last == track_id
+          instance_double(TTY::Command::Result, out: JSON.generate(file_info))
+        else
+          requests << JSON.parse(File.read(args.last))
+          saved = requests.size == 1 ? 'rockdizmusic.com' : ''
+          instance_double(TTY::Command::Result, out: JSON.generate(saved))
+        end
+      end
+
+      expect { expect(library.update_lyrics(track_id, '')).to eq('') }.to output(/updated lyrics/).to_stdout
+      expect(repair).to have_received(:clear).with('/music/track.mp3').once
+      expect(requests).to eq([{ 'track_id' => track_id, 'value' => '' }, { 'track_id' => track_id, 'value' => '', 'refresh' => true }])
+    end
+
+    it 'still fails if music returns nonempty lyrics after the repair' do
+      allow(command).to receive(:run) do |*args|
+        value = args.last == track_id ? file_info : 'rockdizmusic.com'
+        instance_double(TTY::Command::Result, out: JSON.generate(value))
+      end
+
+      expect { library.update_lyrics(track_id, '') }.to raise_error('music text read-back does not match the queued value')
+      expect(repair).to have_received(:clear).once
+    end
+
+    it 'does not repair changed track identities or lyrics' do
+      [{ track_id: 'another track' }, { lyrics: 'new edit' }, { path: nil }].each do |change|
+        allow(command).to receive(:run) do |*args|
+          value = args.last == track_id ? file_info.merge(change) : 'rockdizmusic.com'
+          instance_double(TTY::Command::Result, out: JSON.generate(value))
+        end
+
+        expect { library.update_lyrics(track_id, '') }.to raise_error(/music track changed/)
+      end
+      expect(repair).not_to have_received(:clear)
+    end
+
+    it 'does not repair comments, nonempty updates or missing read-back values' do
+      [['comments', '', 'old comments'], ['lyrics', 'replacement', 'old lyrics'], ['lyrics', '', nil]].each do |field, requested, saved|
+        allow(command).to receive(:run).and_return(instance_double(TTY::Command::Result, out: JSON.generate(saved)))
+
+        expect { library.public_send("update_#{field}", track_id, requested) }.to raise_error('music text read-back does not match the queued value')
+      end
+      expect(repair).not_to have_received(:clear)
+    end
+
+    it 'keeps the mismatch failure when the file has no supported embedded lyrics to clear' do
+      allow(repair).to receive(:clear).and_return(nil)
+      allow(command).to receive(:run) do |*args|
+        value = args.last == track_id ? file_info : 'rockdizmusic.com'
+        instance_double(TTY::Command::Result, out: JSON.generate(value))
+      end
+
+      expect { library.update_lyrics(track_id, '') }.to raise_error('music text read-back does not match the queued value')
+      expect(command).to have_received(:run).twice
+    end
+  end
 end

@@ -4,6 +4,7 @@ require 'tmpdir'
 require 'tempfile'
 require 'json'
 require_relative 'pretty_on_failure'
+require_relative 'embedded_lyrics'
 
 module Update
   class Library
@@ -60,7 +61,9 @@ module Update
       function run(argv) {
         var data = $.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null);
         var request = JSON.parse(ObjC.unwrap(data));
-        var track = Application('Music').fileTracks.whose({persistentID: request.track_id})[0];
+        var music = Application('Music');
+        var track = music.fileTracks.whose({persistentID: request.track_id})[0];
+        if (request.refresh) music.refresh(track);
         track.%<field>s = request.value;
         return JSON.stringify(track.%<field>s());
       }
@@ -68,6 +71,13 @@ module Update
 
     UPDATE_LYRICS = format(UPDATE_TEXT_TEMPLATE, field: 'lyrics')
     UPDATE_COMMENTS = format(UPDATE_TEXT_TEMPLATE, field: 'comment')
+
+    GET_LYRICS_FILE = <<~SCRIPT
+      function run(argv) {
+        var track = Application('Music').fileTracks.whose({persistentID: argv[0]})[0];
+        return JSON.stringify({track_id: track.persistentID(), path: track.location().toString(), lyrics: track.lyrics()});
+      }
+    SCRIPT
 
     GET_ARTWORK = <<-SCRIPT
       tell application "Music"
@@ -262,18 +272,36 @@ module Update
     end
 
     def update_text(persistent_id, value, script, field)
-      Tempfile.create(['warehouse-track-text', '.json']) do |request|
-        request.write(JSON.generate(track_id: persistent_id, value: value))
-        request.flush
-        result = @command.run('osascript', '-l', 'JavaScript', '-e', script, request.path)
-        saved_text = JSON.parse(result.out)
-        raise 'music text read-back does not match the queued value' unless saved_text == value
+      saved_text = write_text(persistent_id, value, script)
+      if field == 'lyrics' && value == '' && saved_text.is_a?(String) && !saved_text.empty?
+        result = @command.run('osascript', '-l', 'JavaScript', '-e', GET_LYRICS_FILE, persistent_id)
+        info = JSON.parse(result.out)
+        raise 'music track changed before embedded lyrics repair' unless info['track_id'] == persistent_id && info['lyrics'] == saved_text && info['path'].is_a?(String) && info['path'].start_with?('/')
 
-        puts "updated #{field}"
-        saved_text
+        backup = EmbeddedLyrics.clear(info['path'])
+        if backup
+          puts "backed up music file to #{backup}"
+          saved_text = write_text(persistent_id, value, script, refresh: true)
+        end
       end
+      raise 'music text read-back does not match the queued value' unless saved_text == value
+
+      puts "updated #{field}"
+      saved_text
     end
     private :update_text
+
+    def write_text(persistent_id, value, script, refresh: false)
+      Tempfile.create(['warehouse-track-text', '.json']) do |request|
+        data = { track_id: persistent_id, value: value }
+        data[:refresh] = true if refresh
+        request.write(JSON.generate(data))
+        request.flush
+        result = @command.run('osascript', '-l', 'JavaScript', '-e', script, request.path)
+        JSON.parse(result.out)
+      end
+    end
+    private :write_text
 
     def escape(str)
       str.gsub('"', '\"').gsub("'", "'\"'\"'")

@@ -185,7 +185,7 @@ module Update
     end
 
     def lyrics_updates(lyrics)
-      puts "\nlyrics updates"
+      puts "\n=== Lyrics ==="
       lyrics.each do |persistent_id, value|
         puts @database.get_track_and_artist_name(persistent_id).join(' - ')
         @library.update_lyrics(persistent_id, value)
@@ -193,7 +193,7 @@ module Update
     end
 
     def comments_updates(comments)
-      puts "\ncomments updates"
+      puts "\n=== Comments ==="
       comments.each do |persistent_id, value|
         puts @database.get_track_and_artist_name(persistent_id).join(' - ')
         @library.update_comments(persistent_id, value)
