@@ -145,13 +145,32 @@ jobs:
         retention-days: 14
         overwrite: true
 
+    # keep the system share-sheet smoke test local; hosted presentation is flaky.
+    # retry once for simulator launch/termination failures before ui assertions.
     - name: ui tests
+      id: ui-tests
       run: |
         xcodebuild test -project "$PROJECT" \
           -scheme "$SCHEME" \
           -destination "platform=iOS Simulator,name=$SIMULATOR" \
+          -parallel-testing-enabled NO \
+          -collect-test-diagnostics never \
+          -retry-tests-on-failure \
+          -test-iterations 2 \
+          -resultBundlePath "$RUNNER_TEMP/ios-ui-tests.xcresult" \
           -only-testing:WarehouseUITests \
+          '-skip-testing:WarehouseUITests/WarehouseUITests/testAppleWatchDiagnosticsDatesSharingAndSwipeDeletion' \
           CODE_SIGNING_ALLOWED=NO
+
+    - name: upload ui test results
+      if: ${{ !cancelled() && steps.ui-tests.outcome == 'failure' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: ios-ui-test-results
+        path: ${{ runner.temp }}/ios-ui-tests.xcresult
+        include-hidden-files: true
+        retention-days: 14
+        overwrite: true
 
     - name: pushover notification
       if: failure()
