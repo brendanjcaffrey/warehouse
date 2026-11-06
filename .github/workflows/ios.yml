@@ -97,7 +97,8 @@ jobs:
     # tests that read a token back see nothing. ad hoc needs no team/profile
     # unrelated suites contend for the main actor on hosted runners; run them
     # serially, matching rake ios:test, and avoid optional diagnostic stalls.
-    # keep the host-sensitive 100 ms profile in local runs.
+    # keep the host-sensitive 100 ms profile in local runs. the real avplayer
+    # transport smoke test can stall hosted media services; retain it locally.
     - name: unit tests
       id: unit-tests
       run: |
@@ -109,6 +110,7 @@ jobs:
           -resultBundlePath "$RUNNER_TEMP/ios-unit-tests.xcresult" \
           -only-testing:WarehouseTests \
           '-skip-testing:WarehouseTests/WatchContentWorkerTests/responsiveness()' \
+          '-skip-testing:WarehouseTests/PlayerStoreTests/actualTransportObservations()' \
           CODE_SIGN_IDENTITY=- \
           CODE_SIGN_STYLE=Manual \
           DEVELOPMENT_TEAM= \
