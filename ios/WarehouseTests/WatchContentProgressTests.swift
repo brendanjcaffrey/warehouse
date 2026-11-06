@@ -336,6 +336,51 @@ extension WatchContentDeliveryTests {
         #expect(queue.progress().music.downloaded == 0)
     }
 
+    @Test("reports count shared music per track and shared artwork once across receipt and metadata changes")
+    func sharedFileReports() async throws {
+        let env = try Env()
+        defer { env.cleanUp() }
+        let original = try env.snapshot(count: 4)
+        var library = try original.validatedLibrary()
+        library.tracks[1].musicFilename = library.tracks[0].musicFilename
+        let snapshot = WatchLibrarySnapshot(head: original.head, libraryData: try library.serializedData())
+        try env.cache(snapshot)
+        try env.files.delete(.music, "m2.mp3")
+        var queue = try env.queue()
+        try await queue.settledReconcile(head: snapshot.head, snapshot: snapshot)
+        let missing = try #require(env.reports.last)
+        #expect(missing.overall == queue.progress())
+        #expect(missing.playlists["p1"] == queue.progress(playlistID: "p1"))
+        #expect(missing.playlists["p2"] == queue.progress(playlistID: "p2"))
+        #expect(missing.overall.music.total == 4)
+        #expect(missing.overall.music.missingOnPhone == 1)
+        #expect(missing.overall.artwork.total == 1)
+        let file = try #require(env.queued.first { $0.0.type == .music && $0.0.filename == "m0.mp3" }?.0)
+        try await queue.settledReceive(.init(file: file, status: .delivered))
+        let delivered = try #require(env.reports.last)
+        #expect(delivered.overall == queue.progress())
+        #expect(delivered.overall.music.downloaded == 2)
+        #expect(delivered.playlists["p2"]?.music.downloaded == 2)
+        #expect(delivered.sequence > missing.sequence)
+        queue = try env.queue()
+        await queue.settledResume()
+        #expect(env.reports.last == delivered)
+        let head = WatchLibraryHead(publisher: snapshot.head.publisher, revision: 2, libraryID: "account",
+                                    playlistIDs: ["p2"], metadataReady: true)
+        let selected = try WatchLibrarySnapshot.selected(library, ids: ["p2"])
+        let next = WatchLibrarySnapshot(head: head, libraryData: try selected.serializedData())
+        try await queue.settledReconcile(head: head, snapshot: next)
+        let ready = try #require(env.reports.last)
+        #expect(ready.overall == queue.progress())
+        #expect(ready.overall.state == .ready)
+        #expect(ready.overall.music.total == 2 && ready.overall.music.downloaded == 2)
+        #expect(ready.playlists.keys.sorted() == ["p2"])
+        #expect(ready.playlists["p2"] == queue.progress(playlistID: "p2"))
+        let invalid = WatchLibrarySnapshot(head: head, libraryData: Data())
+        #expect(throws: WatchLibraryError.self) { try queue.reconcile(head: head, snapshot: invalid) }
+        #expect(env.reports.last == ready)
+    }
+
     @Test("phone preparation reports survive out-of-order delivery and restart without inventing watch downloads")
     func preparationReports() async throws {
         let env = try Env()

@@ -1,6 +1,6 @@
 import Foundation
 
-/// built from accepted metadata once; presentation reads only the receiver's cached values.
+/// groups accepted metadata for shared file status lookups and playlist counts.
 struct WatchProgressIndex {
     struct Selection {
         let music: [String]

@@ -240,16 +240,20 @@ final class PhoneWatchContentQueue {
 
     func progress(playlistID: String? = nil) -> WatchLibraryProgress {
         WatchLibraryProgress.make(head: saved.head, snapshot: saved.snapshot, playlistID: playlistID) { type, name in
-            guard let job = saved.jobs.first(where: { $0.type == type && $0.filename == name }) else { return .pending }
-            if job.file == nil && !fileStore.exists(type, name),
-               saved.recoveryFiles?.contains(where: {
-                   $0.type == type && $0.filename == name && $0.head.libraryID == saved.head?.libraryID
-               }) != true {
-                return .missingOnPhone
-            }
-            if saved.storagePause != nil, ![.delivered, .failed].contains(job.status) { return .storageFull }
-            return job.status
+            reportedStatus(saved.jobs.first { $0.type == type && $0.filename == name })
         }
+    }
+
+    private func reportedStatus(_ job: Job?) -> WatchContentStatus {
+        guard let job else { return .pending }
+        if job.file == nil && !fileStore.exists(job.type, job.filename),
+           saved.recoveryFiles?.contains(where: {
+               $0.type == job.type && $0.filename == job.filename && $0.head.libraryID == saved.head?.libraryID
+           }) != true {
+            return .missingOnPhone
+        }
+        if saved.storagePause != nil, ![.delivered, .failed].contains(job.status) { return .storageFull }
+        return job.status
     }
 
     func diagnosticState() -> WatchDeliveryDiagnosticState {
@@ -794,9 +798,22 @@ final class PhoneWatchContentQueue {
     }
 
     private func publishReport() throws {
-        guard let head = saved.head, saved.snapshot?.head == head else { return }
-        let overall = progress()
-        let playlists = Dictionary(uniqueKeysWithValues: head.playlistIDs.map { ($0, progress(playlistID: $0)) })
+        guard let head = saved.head, let snapshot = saved.snapshot, snapshot.head == head else { return }
+        let overall: WatchLibraryProgress
+        let playlists: [String: WatchLibraryProgress]
+        if let library = try? snapshot.validatedLibrary() {
+            let index = WatchProgressIndex(snapshot: snapshot, library: library)
+            let jobs = Dictionary(saved.jobs.map { (FileToDownload(type: $0.type, filename: $0.filename), $0) },
+                                  uniquingKeysWith: { first, _ in first })
+            let statuses = Dictionary(uniqueKeysWithValues: index.files.map { ($0, reportedStatus(jobs[$0])) })
+            overall = index.overall.progress(head: head, snapshotHead: index.head, statuses: statuses)
+            playlists = Dictionary(uniqueKeysWithValues: head.playlistIDs.map { id in
+                (id, index.playlists[id]?.progress(head: head, snapshotHead: index.head, statuses: statuses) ?? .init(state: .preparing))
+            })
+        } else {
+            overall = progress()
+            playlists = Dictionary(uniqueKeysWithValues: head.playlistIDs.map { ($0, progress(playlistID: $0)) })
+        }
         if saved.report?.head != head || saved.report?.overall != overall || saved.report?.playlists != playlists {
             let sequence = (saved.report?.sequence ?? 0) + 1
             saved.report = WatchLibraryDeliveryReport(head: head, sequence: sequence, overall: overall, playlists: playlists)
