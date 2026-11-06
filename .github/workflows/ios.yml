@@ -5,18 +5,27 @@ on:
     branches: [ "master" ]
     paths:
       - 'ios/**'
+      - 'export/**'
+      - 'shared/config.rb'
+      - 'Gemfile'
+      - 'Gemfile.lock'
+      - 'Rakefile'
       - 'check_swiftlint.sh'
       - '.github/workflows/ios.yml'
   pull_request:
     paths:
       - 'ios/**'
+      - 'export/**'
+      - 'shared/config.rb'
+      - 'Gemfile'
+      - 'Gemfile.lock'
+      - 'Rakefile'
       - 'check_swiftlint.sh'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
-# these mirror the `rake ios:build`, `ios:test` and `ios:uitest` tasks, but call
-# xcodebuild directly so the mac runner doesn't need the ruby/bundle toolchain
-# (the Gemfile pulls native gems like pg that don't build cleanly here).
+# ios steps mirror the rake tasks with explicit ci signing and diagnostics.
+# exporter tests use rake with isolated postgres fixtures and no music access.
 env:
   PROJECT: ios/Warehouse.xcodeproj
   SCHEME: Warehouse
@@ -31,6 +40,43 @@ jobs:
 
     steps:
     - uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
+
+    - name: install postgres
+      run: |
+        brew install postgresql@17
+        echo "$(brew --prefix postgresql@17)/bin" >> "$GITHUB_PATH"
+        echo "BUNDLE_BUILD__PG=--with-pg-config=$(brew --prefix postgresql@17)/bin/pg_config" >> "$GITHUB_ENV"
+
+    - uses: ruby/setup-ruby@19a9babd0096de1a2aa716cac395f01253934999
+      with:
+        ruby-version: 3.3.4
+        bundler-cache: true
+
+    - name: start export test postgres
+      env:
+        PGPASSWORD: ci
+      run: |
+        printf '%s\n' "$PGPASSWORD" > "$RUNNER_TEMP/export-postgres-password"
+        initdb -D "$RUNNER_TEMP/export-postgres" -U ci \
+          --auth-local=trust --auth-host=scram-sha-256 \
+          --pwfile="$RUNNER_TEMP/export-postgres-password" --encoding=UTF8 --locale=C
+        rm "$RUNNER_TEMP/export-postgres-password"
+        pg_ctl -D "$RUNNER_TEMP/export-postgres" -l "$RUNNER_TEMP/export-postgres.log" \
+          -o '-h localhost -p 5432' -w start
+        createdb -h localhost -U ci warehouse_test
+
+    - name: export tests
+      run: bundle exec rake export:test
+
+    - name: stop export test postgres
+      if: always()
+      run: |
+        if [ -f "$RUNNER_TEMP/export-postgres/postmaster.pid" ]; then
+          pg_ctl -D "$RUNNER_TEMP/export-postgres" -m fast -w stop
+        fi
+        if [ -f "$RUNNER_TEMP/export-postgres.log" ]; then
+          cat "$RUNNER_TEMP/export-postgres.log"
+        fi
 
     - name: swiftlint
       run: |
