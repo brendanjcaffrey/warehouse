@@ -197,6 +197,7 @@ struct ExportApp: App {
                 Spacer()
                 Button("Refresh Status", action: checkAuth)
                     .controlSize(.small)
+                    .disabled(exportRunning)
             }
         } else {
             StatusRow(systemImage: "exclamationmark.triangle.fill",
@@ -209,6 +210,7 @@ struct ExportApp: App {
                 Spacer()
                 Button("Refresh", action: checkAuth)
                     .controlSize(.small)
+                    .disabled(exportRunning)
             }
         }
     }
