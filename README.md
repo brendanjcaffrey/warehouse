@@ -268,11 +268,16 @@ Useful tasks:
   CI loads the same task with `rake -f ios/lint.rake ios:lint` to avoid
   installing the server's Ruby dependencies.
 - `rake ios:test` / `rake ios:uitest` — run the iOS unit and UI tests (override
-  the simulator with `SIMULATOR=...`). Local unit tests run serially. CI runs
-  them in parallel, excluding `WatchContentWorkerTests.responsiveness()` because
-  its timing limit is unreliable on shared runners. Verbose diagnostic
-  collection is disabled by default; to enable it, rerun the printed
-  `xcodebuild` command with `-collect-test-diagnostics on-failure`.
+  the simulator with `SIMULATOR=...`). Local unit tests and both CI suites run
+  serially. CI has a 60-minute job limit and retries failed UI cases once to
+  tolerate simulator lifecycle failures. CI excludes
+  `WatchContentWorkerTests.responsiveness()` because its timing limit is
+  unreliable on shared runners, and
+  `WarehouseUITests.testAppleWatchDiagnosticsDatesSharingAndSwipeDeletion()`
+  because system share-sheet presentation is flaky there. Both remain enabled
+  locally. Unit tests and CI UI tests disable verbose diagnostic collection;
+  to enable it, rerun the printed `xcodebuild` command with
+  `-collect-test-diagnostics on-failure`.
   See [Apple's explanation of the option](https://developer.apple.com/forums/thread/698054).
   Failed CI unit-test runs print the result summary and each failing test's
   details, including assertions, source locations and parameter values.
@@ -280,6 +285,8 @@ Useful tasks:
   Download it with `gh run download <run-id> --name ios-unit-test-results
   --dir /tmp/ios-unit-tests.xcresult`, then inspect it in Xcode or run
   `xcrun xcresulttool get test-results summary --path /tmp/ios-unit-tests.xcresult`.
+  Failed CI UI runs retain `ios-ui-test-results` for 14 days; download it with
+  `--name ios-ui-test-results --dir /tmp/ios-ui-tests.xcresult` instead.
 - `rake ios:testflight` — archive the iOS app and upload it to TestFlight (see
   the task's comments in the `Rakefile` for the required App Store Connect key).
 - `rake checks` — run the Ruby and web linting and formatting checks.
