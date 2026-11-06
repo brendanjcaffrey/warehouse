@@ -257,7 +257,9 @@ struct ExportApp: App {
                     .foregroundStyle(.secondary)
             }
 
-            if exportRunning && exportProgress.status.totalTracks > 0 {
+            if exportRunning && exportProgress.status.isReadingLyrics {
+                ProgressView("Reading lyrics…")
+            } else if exportRunning && exportProgress.status.totalTracks > 0 {
                 ProgressView(value: Double(exportProgress.status.processedTracks),
                              total: Double(exportProgress.status.totalTracks)) {
                     Text("Exporting tracks…")

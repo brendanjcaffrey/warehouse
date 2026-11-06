@@ -14,6 +14,8 @@ struct ExportError: LocalizedError {
 struct ExportProgress {
     var totalTracks: Int = 0
     var processedTracks: Int = 0
+    var isReadingLyrics: Bool = false
+    var lyricsReadTime: Double = 0.0
 
     var tableQueryTime: Double = 0.0
     var genreQueryTime: Double = 0.0
@@ -30,6 +32,7 @@ struct ExportProgress {
     func toString() -> String {
         var msg = String(format: "export finished in %.3f seconds\n", totalTime)
         msg.append(contentsOf: "latency breakdown:\n")
+        appendTime(&msg, "reading lyrics", lyricsReadTime, totalTime)
         appendTime(&msg, "creating tables", tableQueryTime, totalTime)
         appendTime(&msg, "inserting genres", genreQueryTime, totalTime)
         appendTime(&msg, "inserting artists", artistQueryTime, totalTime)
@@ -102,6 +105,8 @@ class Library {
         await MainActor.run {
             progress.status.totalTracks = 0
             progress.status.processedTracks = 0
+            progress.status.isReadingLyrics = false
+            progress.status.lyricsReadTime = 0.0
 
             progress.status.tableQueryTime = 0.0
             progress.status.genreQueryTime = 0.0
@@ -125,9 +130,18 @@ class Library {
                 let comments = lib.allMediaItems.filter { !self.shouldIgnoreItem($0) }.map {
                     TrackComments(id: self.formatPersistentId($0.persistentID), comments: $0.comments ?? "")
                 }
-                await MainActor.run { progress.status.totalTracks = lib.allMediaItems.count }
+                await MainActor.run {
+                    progress.status.totalTracks = lib.allMediaItems.count
+                    progress.status.isReadingLyrics = true
+                }
+                let lyricsStart = ProcessInfo.processInfo.systemUptime
                 let source = try NativeMusicTextSource(allowPrompt: allowAutomationPrompt)
                 try await MusicTextExport.run(comments: comments, source: source) { text in
+                    let lyricsReadTime = ProcessInfo.processInfo.systemUptime - lyricsStart
+                    await MainActor.run {
+                        progress.status.lyricsReadTime = lyricsReadTime
+                        progress.status.isReadingLyrics = false
+                    }
                     if !fast { try self.gatherOldFiles() }
                     if fast { try await self.gatherExistingFilenames(client) }
                     try await self.dropTables(client, progress)
@@ -143,6 +157,7 @@ class Library {
                 await MainActor.run { progress.status.totalTime = Date().timeIntervalSince(start) }
                 return nil
             } catch let error {
+                await MainActor.run { progress.status.isReadingLyrics = false }
                 return "error: \(String(reflecting: error))"
             }
         }
