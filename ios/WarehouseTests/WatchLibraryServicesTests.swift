@@ -156,9 +156,20 @@ struct WatchLibraryServicesTests {
     func downloadStatusStartup(saved: Bool) async throws {
         let env = try await StatusEnv(saved: saved)
         defer { env.cleanUp() }
+        let content = try #require(env.services.content)
+        let gate = WatchContentWorkerTests.Gate()
+        defer { gate.release() }
+        let files = env.services.fileCache.fileStore
+        content.progressSource.exists = { type, name in
+            try? await gate.block()
+            return files.exists(type, name)
+        }
         #expect(env.services.library.presentation(isConfigured: false) == .loading)
         #expect(env.services.library.progress().state == .preparing)
         await env.services.launch()
+        if saved { #expect(await gate.waitForEntry()) }
+        gate.release()
+        await content.waitForWork()
         #expect(env.services.library.presentation(isConfigured: false) == (saved ? .ready : .setup))
         #expect(env.services.library.progress().state == (saved ? .waiting : .setup))
         #expect(env.services.library.progress().music.downloaded == (saved ? 1 : 0))
@@ -174,10 +185,11 @@ struct WatchLibraryServicesTests {
             try env.services.fileCache.fileStore.write(.music, "m1.mp3", data: PlayerStoreTests.musicBytes)
         }
         await env.services.launch()
+        let content = try #require(env.services.content)
+        await content.waitForWork()
         let head = try #require(env.services.receiver.head)
         var reported = env.services.library.progress()
         reported.state = state
-        let content = try #require(env.services.content)
         try content.receive(.init(head: head, sequence: 1, overall: reported, playlists: ["p2": reported]))
         let expected = env.services.library.progress()
         #expect(expected.state == state)
@@ -189,10 +201,12 @@ struct WatchLibraryServicesTests {
             content.resume()
             #expect(env.services.library.progress() == expected)
             await env.services.receiver.waitForImport()
+            await content.waitForWork()
             #expect(env.services.library.progress() == expected)
             #expect(env.services.library.presentation(isConfigured: false) == .ready)
         }
         await env.services.refresh()
+        await content.waitForWork()
         #expect(env.services.library.progress() == expected)
     }
 
@@ -201,11 +215,14 @@ struct WatchLibraryServicesTests {
         let env = try await StatusEnv()
         defer { env.cleanUp() }
         await env.services.launch()
+        let content = try #require(env.services.content)
+        await content.waitForWork()
         let old = try #require(env.services.receiver.head)
         let head = WatchLibraryHead(publisher: old.publisher, revision: old.revision + 1, libraryID: nil, playlistIDs: [])
         env.session.applyContext(try head.encode())
         #expect(env.services.library.progress().state == .waiting)
         await env.services.receiver.waitForImport()
+        await content.waitForWork()
         #expect(env.services.library.progress().state == .setup)
         #expect(env.services.library.progress().music.downloaded == 1)
         #expect(env.services.library.presentation(isConfigured: false) == .ready)
@@ -350,6 +367,7 @@ struct WatchLibraryServicesTests {
         try env.stage(0)
         session.applyContext(context)
         await services.receiver.waitForImport()
+        await services.content?.waitForWork()
         #expect(services.library.progress().music.downloaded == 1)
         publisher.publish(identity: LibraryIdentity.make(token: "header.\(claims).refreshed-signature", baseURL: origin), playlistIDs: ["p2"])
         await publisher.waitForPublication()
@@ -358,6 +376,7 @@ struct WatchLibraryServicesTests {
         session.applyContext(try publisher.head.encode())
         await services.receiver.waitForImport()
         await services.refresh()
+        await services.content?.waitForWork()
         #expect(services.library.state == .ready)
         #expect(services.library.progress().music.downloaded == 1)
         #expect(files.exists(.music, "m0.mp3"))

@@ -175,20 +175,44 @@ extension PlayerStoreTests {
         player.pause()
     }
 
-    @Test("a nonzero stream start and later seek wait for fresh media-clock progress")
+    @Test("a nonzero stream start and later seek wait for fresh media-clock progress", arguments: [false, true])
     @MainActor
-    func streamSeekResetsPlaybackProgress() async throws {
+    func streamSeekResetsPlaybackProgress(delayedAssertion: Bool) async throws {
         let baseURL = try Self.localStreamBaseURL(containing: "1.wav")
-        let (player, _, _) = Self.makeStreamingPlayer(host: UUID().uuidString, baseURL: baseURL)
+        let files = FileStore(rootURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        let observations = SeekPlaybackObservations()
+        let player = PlayerStore(
+            fileStore: files, streams: true, activateSessionForTests: { true }, observePlayback: observations.start)
+        observations.store = player
         player.play([Self.edited(id: "1", start: 60)], token: "tok", baseURL: baseURL)
-        defer { player.pause() }
+        defer {
+            player.pause()
+            try? FileManager.default.removeItem(at: files.rootURL)
+            try? FileManager.default.removeItem(at: baseURL)
+        }
         try await Self.waitFor { player.isActuallyPlaying }
         #expect(player.currentTime >= 60)
 
+        observations.samples.removeAll()
         player.seek(to: 120)
-        try await Self.waitFor { player.status == .buffering }
-        #expect(!player.isActuallyPlaying)
+        if delayedAssertion {
+            // let playback recover before consuming the recorded seek transition.
+            try await Task.sleep(for: .seconds(1))
+            try await Self.waitFor { player.isActuallyPlaying && player.currentTime > 120 }
+            #expect(player.status == .ready)
+        }
+        try await Self.waitFor { observations.samples.contains { !$0.state.hasPlaybackProgress } }
+        let bufferingIndex = try #require(observations.samples.firstIndex { !$0.state.hasPlaybackProgress })
+        let buffering = observations.samples[bufferingIndex]
+        #expect(buffering.status == .buffering)
+        #expect(!buffering.isActuallyPlaying)
         try await Self.waitFor { player.isActuallyPlaying && player.currentTime > 120 }
+        let recovered = try #require(observations.samples.dropFirst(bufferingIndex + 1).first {
+            $0.state.hasPlaybackProgress && $0.time > 120
+        })
+        #expect(recovered.state.hasBufferedAudio)
+        #expect(recovered.isActuallyPlaying)
+        #expect(recovered.status == .ready)
         #expect(player.status == .ready)
     }
 
@@ -209,6 +233,28 @@ extension PlayerStoreTests {
         #expect(!rig.store.isPlaying)
         #expect(rig.observations.player?.rate == 0)
         #expect(rig.downloads.started.isEmpty)
+    }
+}
+
+@MainActor
+private final class SeekPlaybackObservations {
+    struct Sample {
+        let state: PlaybackObservationState
+        let status: PlaybackStatus
+        let isActuallyPlaying: Bool
+        let time: TimeInterval
+    }
+
+    weak var store: PlayerStore?
+    var samples: [Sample] = []
+
+    func start(player: AVQueuePlayer, item: AVPlayerItem, receive: @escaping PlaybackObservation.Handler) -> () -> Void {
+        PlaybackObservation.start(player: player, item: item) { [weak self] state in
+            receive(state)
+            guard let self, let store else { return }
+            samples.append(Sample(state: state, status: store.status,
+                                  isActuallyPlaying: store.isActuallyPlaying, time: item.currentTime().seconds))
+        }
     }
 }
 
