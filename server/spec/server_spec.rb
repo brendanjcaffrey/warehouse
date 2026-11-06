@@ -402,6 +402,21 @@ describe 'Warehouse Server' do
       expect(version.response).to eq(:updateTimeNs)
       expect(version.updateTimeNs).to be_within(2E9).of(Time.now.to_i * 1_000_000_000)
     end
+
+    [
+      ['2026-11-05 20:16:52', 0],
+      ['2026-11-05 20:16:52.123456', 123_456_000]
+    ].each do |timestamp, nanoseconds|
+      it "returns exact freshness with #{nanoseconds} fractional nanoseconds" do
+        DB_POOL.with { |conn| conn.exec_params('INSERT INTO export_finished (finished_at) VALUES ($1)', [timestamp]) }
+
+        get '/api/version', {}, get_auth_header
+
+        expect(last_response.status).to eq(200)
+        version = VersionResponse.decode(last_response.body)
+        expect(version.updateTimeNs).to eq((Time.utc(2026, 11, 5, 20, 16, 52).to_i * 1_000_000_000) + nanoseconds)
+      end
+    end
   end
 
   describe 'get /api/library' do
@@ -429,6 +444,21 @@ describe 'Warehouse Server' do
     it 'returns a 500 if the export did not finish' do
       get '/api/library', {}, get_auth_header
       expect(last_response.status).to eq(500)
+    end
+
+    [
+      ['2026-11-05 20:16:52', 0],
+      ['2026-11-05 20:16:52.123456', 123_456_000]
+    ].each do |timestamp, nanoseconds|
+      it "returns exact freshness with #{nanoseconds} fractional nanoseconds" do
+        DB_POOL.with { |conn| conn.exec_params('INSERT INTO export_finished (finished_at) VALUES ($1)', [timestamp]) }
+
+        get '/api/library', {}, get_auth_header
+
+        expect(last_response.status).to eq(200)
+        library = LibraryResponse.decode(last_response.body).library
+        expect(library.updateTimeNs).to eq((Time.utc(2026, 11, 5, 20, 16, 52).to_i * 1_000_000_000) + nanoseconds)
+      end
     end
 
     it 'dumps all genres, artists, albums and tracks' do

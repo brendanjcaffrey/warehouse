@@ -68,7 +68,8 @@ module Helpers
   end
 
   def timestamp_to_ns(time_str)
-    time = Time.strptime("#{time_str} UTC", '%Y-%m-%d %H:%M:%S.%N %Z')
+    format = time_str.include?('.') ? '%Y-%m-%d %H:%M:%S.%N %Z' : '%Y-%m-%d %H:%M:%S %Z'
+    time = Time.strptime("#{time_str} UTC", format)
     (time.to_i * 1_000_000_000) + time.nsec
   end
 end
