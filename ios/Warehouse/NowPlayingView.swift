@@ -14,8 +14,10 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingQueue = false
+    @State private var showingLyrics = false
     @State private var scrolledQueue = false
     @State private var editingSong: Song?
+    @State private var textDestination: TrackTextSelection?
 
     var body: some View {
         Group {
@@ -26,6 +28,9 @@ struct NowPlayingView: View {
         .presentationDragIndicator(.visible)
         .sheet(item: $editingSong) { song in
             EditTrackView(song: song)
+        }
+        .sheet(item: $textDestination) { selection in
+            TrackTextSheet(selection: selection)
         }
         .task {
             // the queue context menu needs the playlists for show in playlist
@@ -59,7 +64,9 @@ struct NowPlayingView: View {
 
     private func content(_ song: Song) -> some View {
         VStack(spacing: 28) {
-            if showingQueue {
+            if showingLyrics {
+                TrackTextReader(selection: .nowPlayingLyrics)
+            } else if showingQueue {
                 trackInfo(song)
                 queueList
             } else {
@@ -73,7 +80,7 @@ struct NowPlayingView: View {
             controls
             volume
             bottomButtons
-            if !showingQueue {
+            if !showingQueue && !showingLyrics {
                 Spacer(minLength: 0)
             }
         }
@@ -173,6 +180,7 @@ struct NowPlayingView: View {
                     library: songs.songs,
                     playlists: playlists.playlists,
                     edit: editAction(for: song),
+                    textDestination: $textDestination,
                     artistDestination: routeBinding(LibraryRoute.artist),
                     albumDestination: routeBinding(LibraryRoute.album),
                     songsDestination: routeBinding(LibraryRoute.songs),
@@ -199,6 +207,7 @@ struct NowPlayingView: View {
             },
             playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
             edit: editAction(for: song),
+            textDestination: $textDestination,
             artistDestination: routeBinding(LibraryRoute.artist),
             albumDestination: routeBinding(LibraryRoute.album),
             songsDestination: routeBinding(LibraryRoute.songs),
@@ -224,6 +233,7 @@ struct NowPlayingView: View {
             },
             playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
             edit: editAction(for: song),
+            textDestination: $textDestination,
             artistDestination: routeBinding(LibraryRoute.artist),
             albumDestination: routeBinding(LibraryRoute.album),
             songsDestination: routeBinding(LibraryRoute.songs),
@@ -254,6 +264,7 @@ struct NowPlayingView: View {
                     library: songs.songs,
                     playlists: playlists.playlists,
                     edit: editAction(for: song),
+                    textDestination: $textDestination,
                     artistDestination: routeBinding(LibraryRoute.artist),
                     albumDestination: routeBinding(LibraryRoute.album),
                     songsDestination: routeBinding(LibraryRoute.songs),
@@ -336,7 +347,20 @@ struct NowPlayingView: View {
             }
             Spacer()
             Button {
+                showingLyrics.toggle()
+                showingQueue = false
+            } label: {
+                Image(systemName: "quote.bubble")
+                    .font(.title3)
+                    .foregroundStyle(showingLyrics ? Color.accentColor : Color.secondary)
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Lyrics")
+            .accessibilityIdentifier("showLyrics")
+            Spacer()
+            Button {
                 showingQueue.toggle()
+                showingLyrics = false
             } label: {
                 Image(systemName: "list.bullet")
                     .font(.title3)

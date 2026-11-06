@@ -73,6 +73,7 @@ struct EditTrackView: View {
                 textSection("Comments", text: $form.comments, id: "editComments")
                 artworkSection
             }
+            .accessibilityIdentifier("editTrackForm")
             .navigationTitle("Edit Track")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

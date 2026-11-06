@@ -217,6 +217,17 @@ rsync --archive --compress --itemize-changes --delete-during --copy-links \
 The remote unfreezes itself: the dump replaces its `library_state` row with the
 local one, and it happens while the remote server is stopped.
 
+## Lyrics and comments
+
+On iPhone and iPad, tap the Lyrics button in Now Playing to read the current
+track's saved lyrics. The reader follows playback and returns to the top when
+the track changes. Choose Lyrics or Comments from a track's menu to keep reading
+that track instead. Both readers work offline after library sync.
+
+When editing is available, Edit opens the existing Edit Track form with Save and
+Cancel. Playback changes leave that editor on its original track. Read-only
+libraries still offer the readers. Lyrics and comments are not sent to the watch.
+
 ## The Apple Watch library
 
 In the iPhone app, open **Settings → Apple Watch** and select playlists. The phone

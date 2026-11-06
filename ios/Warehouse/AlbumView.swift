@@ -14,6 +14,7 @@ struct AlbumView: View {
     @State private var songsDestination: Song?
     @State private var playlistDestination: PlaylistDestination?
     @State private var editingSong: Song?
+    @State private var textDestination: TrackTextSelection?
 
     var body: some View {
         List {
@@ -59,6 +60,9 @@ struct AlbumView: View {
         .sheet(item: $editingSong) { song in
             EditTrackView(song: song)
         }
+        .sheet(item: $textDestination) { selection in
+            TrackTextSheet(selection: selection)
+        }
         .task {
             // the context menu needs the playlists for show in playlist
             await playlists.load()
@@ -101,6 +105,7 @@ struct AlbumView: View {
                 play: { play(song) },
                 playNext: { player.playNext(song, token: auth.token, baseURL: auth.baseURL()) },
                 edit: updates.canEditTracks ? { editingSong = song } : nil,
+                textDestination: $textDestination,
                 artistDestination: $artistDestination,
                 songsDestination: $songsDestination,
                 playlistDestination: $playlistDestination)

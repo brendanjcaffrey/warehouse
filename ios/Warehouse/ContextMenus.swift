@@ -12,6 +12,7 @@ func songMenuButtons(
     play: (() -> Void)? = nil,
     playNext: (() -> Void)? = nil,
     edit: (() -> Void)? = nil,
+    textDestination: Binding<TrackTextSelection?>,
     artistDestination: Binding<Artist?>,
     albumDestination: Binding<Album?>? = nil,
     songsDestination: Binding<Song?>? = nil,
@@ -23,6 +24,14 @@ func songMenuButtons(
     if let playNext {
         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward", action: playNext)
     }
+    Button("Lyrics", systemImage: "quote.bubble") {
+        textDestination.wrappedValue = .track(song, .lyrics)
+    }
+    .accessibilityIdentifier("trackLyrics")
+    Button("Comments", systemImage: "text.bubble") {
+        textDestination.wrappedValue = .track(song, .comments)
+    }
+    .accessibilityIdentifier("trackComments")
     if let edit {
         Button("Edit", systemImage: "pencil", action: edit)
     }
@@ -67,6 +76,7 @@ extension View {
         play: @escaping () -> Void,
         playNext: @escaping () -> Void,
         edit: (() -> Void)? = nil,
+        textDestination: Binding<TrackTextSelection?>,
         artistDestination: Binding<Artist?>,
         albumDestination: Binding<Album?>? = nil,
         songsDestination: Binding<Song?>? = nil,
@@ -80,6 +90,7 @@ extension View {
                 play: play,
                 playNext: playNext,
                 edit: edit,
+                textDestination: textDestination,
                 artistDestination: artistDestination,
                 albumDestination: albumDestination,
                 songsDestination: songsDestination,

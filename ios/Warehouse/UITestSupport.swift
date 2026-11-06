@@ -15,7 +15,9 @@ enum UITestSupport {
 
     private static func fixtureLibrary() -> Library {
         var library = Library()
-        library.artists = [1: sortName("Fixture Artist")]
+        let artist = ProcessInfo.processInfo.arguments.contains("-uiTestLongHeader")
+            ? String(repeating: "Fixture Artist ", count: 20) : "Fixture Artist"
+        library.artists = [1: sortName(artist)]
         library.albums = [1: sortName("Fixture Album")]
         library.genres = [1: name("Fixture Genre")]
         let numbered = (1...120).map {
@@ -38,7 +40,7 @@ enum UITestSupport {
             + numbered.map(\.id).filter { $0 != "n100" }
             + ["t3"]
         library.playlists = [playlist]
-        library.trackUserChanges = true
+        library.trackUserChanges = !ProcessInfo.processInfo.arguments.contains("-uiTestReadOnly")
         library.updateTimeNs = 1
         return library
     }
@@ -57,6 +59,10 @@ enum UITestSupport {
         track.discNumber = 1
         track.musicFilename = "\(id).mp3"
         track.playlistIds = playlistIds
+        if id == "t1" || id == "t2" {
+            track.lyrics = (1...80).map { "\(name) line \($0): café 第二行 🎵" }.joined(separator: "\n")
+            track.comments = "\(name) notes\nsecond line"
+        }
         return track
     }
 
