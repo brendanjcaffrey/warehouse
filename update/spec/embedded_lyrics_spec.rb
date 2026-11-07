@@ -44,6 +44,41 @@ RSpec.describe 'embedded mp3 lyrics' do
       expect(Update::EmbeddedLyrics.clear(path)).to be_nil
       expect(Dir.children(File.dirname(path)).size).to eq(2)
     end
+
+    it "preserves empty id3v2.#{version} web-link frames while removing lyrics" do
+      title = frame('TIT2', "\0title", version)
+      links = %w[WOAF WOAR WOAS].map { |name| frame(name, '', version) }
+      lyrics = [frame('USLT', "\0heb\0first lyrics", version), frame('USLT', "\0eng\0second lyrics", version)]
+      original = mp3(version, [title, *links, lyrics.first, frame('COMM', "\0eng\0notes", version), lyrics.last])
+      File.binwrite(path, original)
+
+      backup = Update::EmbeddedLyrics.clear(path)
+
+      expected = mp3(version, [title, *links, frame('COMM', "\0eng\0notes", version)], padding: 32 + lyrics.sum(&:bytesize))
+      expect(File.binread(path)).to eq(expected)
+      expect(File.binread(backup)).to eq(original)
+      expect(Update::EmbeddedLyrics.clear(path)).to be_nil
+      expect(Dir.children(directory).size).to eq(2)
+    end
+
+    it "leaves empty id3v2.#{version} frames without lyrics unchanged and makes no backup" do
+      original = mp3(version, [frame('WOAF', '', version)], padding: 0)
+      File.binwrite(path, original)
+
+      expect(Update::EmbeddedLyrics.clear(path)).to be_nil
+      expect(File.binread(path)).to eq(original)
+      expect(Dir.children(directory)).to eq(['track.mp3'])
+    end
+
+    it "refuses a truncated id3v2.#{version} frame after an empty frame before backing up or writing" do
+      truncated = frame('WOAR', 'x', version).byteslice(0, 10)
+      original = mp3(version, [frame('USLT', "\0eng\0lyrics", version), frame('WOAF', '', version), truncated], padding: 0)
+      File.binwrite(path, original)
+
+      expect { Update::EmbeddedLyrics.clear(path) }.to raise_error('invalid id3 frame size')
+      expect(File.binread(path)).to eq(original)
+      expect(Dir.children(directory)).to eq(['track.mp3'])
+    end
   end
 
   it 'leaves a file without embedded lyrics unchanged and makes no backup' do

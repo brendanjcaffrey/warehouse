@@ -63,7 +63,8 @@ module Update
 
         size = version == 4 ? synchsafe(header.byteslice(4, 4)) : header.byteslice(4, 4).unpack1('N')
         length = 10 + size
-        raise 'invalid id3 frame size' if size.zero? || length > tag.bytesize - offset
+        # preserve empty legacy frames; their complete headers still define the next boundary.
+        raise 'invalid id3 frame size' if length > tag.bytesize - offset
 
         if header.start_with?('USLT')
           removed = true
